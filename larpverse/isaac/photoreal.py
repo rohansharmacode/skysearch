@@ -27,6 +27,9 @@ from isaac import rubble as RB
 S3 = "https://omniverse-content-production.s3-us-west-2.amazonaws.com/Assets/Isaac/6.0"
 
 
+WARP_PHASES = ("radar", "rescan", "relocate")     # long, repetitive stretches: shortened when recording
+
+
 def add_args(ap):
     g = ap.add_argument_group("photoreal look and recording (isaac/photoreal.py)")
     g.add_argument("--photoreal", type=int, default=0, help="1 = photoreal materials, irregular rubble, sky, vegetation")
@@ -41,8 +44,10 @@ def add_args(ap):
     g.add_argument("--rec-res", default="1920x1080")
     g.add_argument("--rec-fps", type=float, default=30.0, help="video frames per second")
     g.add_argument("--rec-speed", type=float, default=6.0, help="sim seconds per video second when recording")
-    g.add_argument("--rec-cams", default="director", help="comma list: director, chase:d1, fpv:d2, top")
+    g.add_argument("--rec-cams", default="director", help="comma list: director, wide, chase:d1, fpv:d2, top")
     g.add_argument("--rec-stop-t", type=float, default=0.0, help="stop recording at this mission time (s)")
+    g.add_argument("--rec-warp", type=float, default=1.0,
+                   help="recording: speed up the long radar/rescan/relocate phases by this factor (e.g. 4)")
     g.add_argument("--rec-every", type=int, default=1, help="save every Nth frame (preview runs)")
     g.add_argument("--rtx", choices=["realtime", "pathtracing"], default="realtime")
     g.add_argument("--spp", type=int, default=16, help="--rtx pathtracing: samples per pixel per frame")
@@ -430,14 +435,14 @@ def _look_at(eye, target, up=(0, 0, 1)):
 
 class Rigs:
     """Extra recording cameras that follow drones: chase:<id> (behind and above) and fpv:<id> (nose camera),
-    plus top (straight down on the active pile)."""
+    plus top (straight down on the active pile) and wide (slow high orbit of the whole grid and staging)."""
 
     def __init__(self, stage, specs, surface):
         from pxr import Gf, UsdGeom
         self.Gf, self.surface, self.rigs = Gf, surface, []
         for spec in specs:
             mode, _, who = spec.partition(":")
-            if mode not in ("chase", "fpv", "top"):
+            if mode not in ("chase", "fpv", "top", "wide"):
                 continue
             path = f"/World/RecCams/{mode}_{who or 'x'}"
             cam = UsdGeom.Camera.Define(stage, path)
@@ -450,7 +455,11 @@ class Rigs:
 
     def update(self, poses, focus, dt):
         for r in self.rigs:
-            if r["mode"] == "top":
+            if r["mode"] == "wide":                       # establishing / pull-back: whole grid at dusk
+                r["th"] = r.get("th", -math.pi / 2 - 0.45) + dt * 2 * math.pi / 140.0
+                eye = np.array([64 * math.cos(r["th"]), 64 * math.sin(r["th"]) - 10.0, 36.0])
+                tgt = np.array([0.0, -10.0, 0.0])
+            elif r["mode"] == "top":
                 if focus is None:
                     continue
                 eye = np.array([focus[0], focus[1] - 0.01, focus[2] + 26.0]); tgt = np.array(focus, float)

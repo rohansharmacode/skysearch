@@ -312,6 +312,9 @@ def main(argv=None):
                 new = as_dict(mission.build_state())
                 dt_sim = max(float(new.get("t", 0)) - float(cur.get("t", 0)), 1e-3)
                 prev, cur = cur, new
+                if a.record and a.rec_warp > 1:     # recording: compress the long radar stretches
+                    from isaac.photoreal import WARP_PHASES
+                    a.speed = a.rec_speed * (a.rec_warp if cur.get("phase") in WARP_PHASES else 1.0)
                 last_step, next_step = next_step, next_step + dt_sim / max(a.speed, 1e-3)
                 if now - next_step > 1.0:      # fell behind (slow step): resync instead of spiralling
                     last_step, next_step = now, now + dt_sim / max(a.speed, 1e-3)

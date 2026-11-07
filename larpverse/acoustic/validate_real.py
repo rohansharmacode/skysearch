@@ -437,7 +437,52 @@ def fetch_esc50(per_class):
 
 
 # =========================================================================== run
-RESULTS = os.path.join(DATA, "results.jsonl")
+SNAP_FILES = ("__init__.py", "models.py", "agent.py", "scene.py", "dsp.py", "run.py")
+# commit under test: acoustic BL-3 by default; VALIDATE_REV=<rev> evaluates another (before/after)
+CODE_REV = os.environ.get("VALIDATE_REV", "eb8cdba")
+SNAP = os.path.join(DATA, "code_snapshot", CODE_REV)
+
+
+def snapshot(rev=None):
+    """acoustic/*.py belong to other agents and change while we run, so the code under test is a
+    frozen copy of a commit (data/audio_real/code_snapshot/acoustic_snap, from `git show`), made
+    on first use or when --rev changes it. Results files carry its hash (models.py + agent.py)."""
+    import hashlib
+    import subprocess
+    d = os.path.join(SNAP, "acoustic_snap")
+    taken = os.path.join(d, "REV")
+    have = open(taken).read().strip() if os.path.exists(taken) else None
+    want = rev or CODE_REV
+    if want != have or not all(os.path.exists(os.path.join(d, f)) for f in SNAP_FILES):
+        os.makedirs(d, exist_ok=True)
+        for f in SNAP_FILES:
+            src = subprocess.run(["git", "-C", ROOT, "show", f"{want}:acoustic/{f}"], capture_output=True,
+                                 check=True).stdout
+            open(os.path.join(d, f), "wb").write(src)
+        open(taken, "w").write(want + "\n")
+    h = hashlib.sha1()
+    for f in ("models.py", "agent.py"):
+        h.update(open(os.path.join(d, f), "rb").read())
+    return h.hexdigest()[:8]
+
+
+def code(full=False):
+    """(agent, models) - or (agent, models, scene, dsp, run) - from the snapshot; model files and
+    the TTS / dog-clip caches stay in acoustic/."""
+    if SNAP not in sys.path:
+        sys.path.insert(0, SNAP)
+    if ROOT not in sys.path:
+        sys.path.insert(0, ROOT)
+    from acoustic_snap import agent, dsp, models, run, scene
+    scene.MODEL_DIR = models.MODEL_DIR = os.path.join(HERE, "models")
+    scene.DATA_DIR = os.path.join(HERE, "data")
+    scene.PIPER_VOICE = os.path.join(scene.MODEL_DIR, "en_US-lessac-low.onnx")
+    scene.DOG_WAV = os.path.join(scene.DATA_DIR, "esc50", "1-100032-A-0.wav")
+    return (agent, models, scene, dsp, run) if full else (agent, models)
+
+
+VERSION = snapshot()
+RESULTS = os.path.join(DATA, f"results-{VERSION}.jsonl")
 RESULTS_FV = os.path.join(DATA, "results_fv.jsonl")
 MANIFEST = os.path.join(DATA, "manifest.json")
 # No array here: DoA-dependent agent inputs are fixed to one neutral, good geometry so the
@@ -627,7 +672,7 @@ def load_clip(c):
 
 
 def analyse(c, x, whisper="base.en"):
-    from acoustic import agent, models
+    agent, models = code()
     vad = models.vad_speech_ratio(x)
     cls, scores, heur, top = models.classify(x, vad)
     text = models.transcribe(x, whisper) if vad >= 0.15 else ""
@@ -795,11 +840,11 @@ WHATIF_SETS = r"^(esc|so|fv|so_cond)\||^(das_mix|esc_mix)\|high\+0\||^dws\|90db-
 def cmd_whatif(args):
     """Candidate class-group changes, evaluated in-process by temporarily swapping
     acoustic.models.GROUPS (the file is not edited). Also raw Whisper without the
-    hallucination filter on noisy speech segments. -> data/audio_real/whatif.jsonl"""
-    from acoustic import agent, models
+    hallucination filter on noisy speech segments. -> data/audio_real/whatif-<version>.jsonl"""
+    agent, models = code()
     man = [c for c in json.load(open(MANIFEST)) if not c.get("asr") and re.search(WHATIF_SETS, c["id"])]
     res = {json.loads(line)["id"]: json.loads(line) for line in open(RESULTS)}
-    path = os.path.join(DATA, "whatif.jsonl")
+    path = os.path.join(DATA, f"whatif-{VERSION}.jsonl")
     done = {json.loads(line)["id"] for line in open(path)} if os.path.exists(path) else set()
     base = {k: list(v) for k, v in models.GROUPS.items()}
     t0 = time.time()
@@ -828,7 +873,7 @@ def cmd_whatif(args):
         from faster_whisper import WhisperModel
         wm = WhisperModel("base.en", device="cpu", compute_type="int8", cpu_threads=2,
                           download_root=os.path.join(models.MODEL_DIR, "whisper"))
-        rp = os.path.join(DATA, "whisper_raw.jsonl")
+        rp = os.path.join(DATA, f"whisper_raw-{VERSION}.jsonl")
         with open(rp, "w") as fh:
             for c in json.load(open(MANIFEST)):
                 if c.get("asr") and re.search(r"asr_(das_mix\|high(\+5|\+0|-5)|dws\|90db-room1-1m-low)", c["id"]):
@@ -839,6 +884,270 @@ def cmd_whatif(args):
                                          "segs": [[round(sg.no_speech_prob, 2), round(sg.avg_logprob, 2)]
                                                   for sg in segs]}) + "\n")
     print(f"what-if done in {time.time() - t0:.0f} s")
+
+
+# =========================================================================== synthetic head-to-head
+# EVALUATOR: reads scenario truth after both pipelines have run (rule 9).
+SYNTH = os.path.join(DATA, "synth-{fam}-%s.jsonl")
+MATCH_DEG = 15.0                       # a bearing flag counts for a source within this angle
+HUMAN_KINDS = {"voice", "weak_voice", "knock"}
+_fvmod = {}
+
+
+def fv_module():
+    """Teammate's pipeline (branch acoustic-voice-detection, copied read-only to data/audio_real/frances)."""
+    if "m" not in _fvmod:
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("fv_pipeline", os.path.join(DATA, "frances", "acoustic_pipeline.py"))
+        m = importlib.util.module_from_spec(spec)
+        sys.modules["fv_pipeline"] = m           # dataclasses resolve the module by name
+        spec.loader.exec_module(m)
+        _fvmod["m"] = m
+    return _fvmod["m"]
+
+
+def _brg(o, p):
+    return float(np.degrees(np.arctan2(p[1] - o[1], p[0] - o[0])) % 360)
+
+
+def _gap(a, b):
+    return abs((a - b + 180) % 360 - 180)
+
+
+def score_flags(flags, sources):
+    """flags [(drone_xy, bearing)], sources [(kind, xy)] -> per-flag nearest source + error."""
+    out = []
+    for o, b in flags:
+        best = min(((_gap(b, _brg(o, xy)), kind, i) for i, (kind, xy) in enumerate(sources)), default=None)
+        out.append({"err": round(best[0], 1), "kind": best[1], "src": best[2]} if best and best[0] <= MATCH_DEG
+                   else {"err": None, "kind": None, "src": None, "nearest_err": None if not best else round(best[0], 1)})
+    return out
+
+
+def ours_single_array(sig, offs, fs, run, dsp, models, agent):
+    """Our front end on ONE array (no multi-drone pile association): CLEAN SRP-PHAT per 0.5 s
+    block, directions seen in >= 2 blocks (10 deg clusters), LCMV beam toward each with nulls on
+    the others, its active blocks -> VAD / YAMNet+heuristics / gated Whisper / fallback agent."""
+    model = dsp.SrpModel(offs, fs)
+    Rt, Wt, Rs, Ws = dsp.gcc_blocks(model, sig, fs)
+    B = Rt.shape[0]
+    comps = [dsp.clean(model, Rt[b], Wt[b]) for b in range(B)]
+    pts = [(az, amp, b) for b in range(B) for az, amp, _w in comps[b]]
+    dirs = []
+    while pts:
+        cnt = [sum(amp for az2, amp, _ in pts if _gap(az, az2) <= 10) for az, _, _ in pts]
+        c = pts[int(np.argmax(cnt))][0]
+        mem = [q for q in pts if _gap(q[0], c) <= 10]
+        pts = [q for q in pts if _gap(q[0], c) > 10]
+        blocks = sorted({b for _, _, b in mem})
+        if len(blocks) >= 2:
+            w = np.array([amp for _, amp, _ in mem])
+            ang = np.radians([az for az, _, _ in mem])
+            dirs.append((float(np.degrees(np.arctan2((w * np.sin(ang)).sum(), (w * np.cos(ang)).sum())) % 360), blocks))
+    blk = int(dsp.BLOCK_S * fs)
+    out = []
+    for i, (az, blocks) in enumerate(dirs[:6]):
+        nulls = [d for j, (d, _) in enumerate(dirs[:6]) if j != i and _gap(d, az) > 25][:4]
+        y = dsp.beamform(sig, offs, fs, az, nulls=nulls)
+        act = np.zeros(B, bool)
+        act[blocks] = True
+        act = act | np.r_[act[1:], False] | np.r_[False, act[:-1]]
+        clip = np.concatenate([y[b * blk:(b + 1) * blk] for b in np.flatnonzero(act)])[: 14 * fs]
+        vad = models.vad_speech_ratio(clip)
+        cls, scores, heur, top = models.classify(clip, vad)
+        text = models.transcribe(clip) if vad >= 0.15 else ""
+        f = {"class_scores": scores, "vad_speech_ratio": vad, "transcript": text, "heuristics": heur,
+             "sound_class": cls, "width_deg": 25.0, "snr_db": 10.0,
+             "doa": {"drones_agreeing": 1, "drones_listening": 1, "tri_err_m": None, "assigned": False}}
+        j = agent.fallback_judge(f)
+        out.append({"bearing": round(az, 1), "blocks": len(blocks), "cls": cls, "human": j["human"],
+                    "text": text, "flag": j["human"] >= LEAD})
+    return out
+
+
+def synth_family_a(seed, noise_x):
+    """Our scenario generator + scene synthesis (3 landed 6-mic 0.3 m arrays, pyroomacoustics,
+    TTS voices, numpy knocks, ESC dog, generator, debris). Ours = full run.analyse; teammate =
+    detect_voice per drone on the same signals."""
+    from sim.scenario import make_scenario
+    agent, models, scene_m, dsp, run = code(full=True)
+    fv = fv_module()
+    sc = make_scenario(seed)
+    scene, truth = scene_m.build_scene(sc, noise_rms=4.0e-3 * noise_x)
+    t = time.time()
+    state = run.analyse(scene, (), mode="fallback")
+    t_ours = time.time() - t
+    srcs = [(v["kind"], v["xy"], p) for p, v in truth.items() if p != scene.start_pile]
+    ours = []
+    for c in state["clips"]:
+        o = scene.drones[c["drone_id"]]
+        tr = truth.get(c["pile_id"])
+        ours.append({"pile": c["pile_id"], "human": c["human"], "flag": c["human"] >= LEAD, "cls": c["sound_class"],
+                     "association": c.get("association"), "truth_kind": tr["kind"] if tr else None,
+                     "brg_err": round(_gap(c["bearing_deg"], _brg(o, tr["xy"])), 1) if tr else None})
+    t = time.time()
+    fvd = []
+    for d, xy in scene.drones.items():
+        mic = np.column_stack([xy[0] + scene.mic_offsets[0], xy[1] + scene.mic_offsets[1], np.zeros(scene.mic_offsets.shape[1])])
+        for det in fv.detect_voice(scene.signals[d].T.astype(float), scene.fs, mic):
+            fvd.append({"drone": d, "bearing": det.bearing_deg, "blocks": det.voice_blocks})
+    t_fv = time.time() - t
+    allsrc = [(v["kind"], v["xy"]) for v in truth.values()]
+    for f, m in zip(fvd, score_flags([(scene.drones[f["drone"]], f["bearing"]) for f in fvd], allsrc)):
+        f.update(m)
+    return {"family": "A", "seed": seed, "noise_x": noise_x, "start_pile": scene.start_pile,
+            "sources": [{"kind": k, "pile": p, "xy": xy} for k, xy, p in srcs],
+            "all_sources": [{"kind": k, "xy": xy} for k, xy in allsrc],
+            "drones": {k: list(v) for k, v in scene.drones.items()},
+            "ours": ours, "fv": fvd, "t_ours": round(t_ours, 2), "t_fv": round(t_fv, 2), "audio_s": scene.duration,
+            "n_drones": len(scene.drones)}
+
+
+def synth_family_b(seed, ambient):
+    """Teammate's simulator (8-mic 0.1 m array, 30 s, diffuse ambient + wind, 1/r free field).
+    Sources: 1-2 real 'help' recordings (her CC0 voice clips) + synthetic voice, distractors =
+    her dog recordings / generator / engine / birds. Teammate = detect_voice; ours = our front
+    end on one array (ours_single_array)."""
+    fv = fv_module()
+    agent, models, scene_m, dsp, run = code(full=True)
+    rng = np.random.default_rng(seed)
+    fdir = os.path.join(DATA, "frances")
+    voices = sorted(f for f in os.listdir(fdir) if f.startswith("voice_"))
+    dogs = sorted(f for f in os.listdir(fdir) if f.startswith("dog_"))
+    sites = [fv.Site(k, (float(x), float(y), 0.0), (float(np.cos(q / 2)), 0.0, 0.0, float(np.sin(q / 2))))
+             for k, (x, y, q) in zip("ABC", [(0, 0, rng.uniform(0, 6.28)), (60, 0, rng.uniform(0, 6.28)),
+                                             (0, 80, rng.uniform(0, 6.28))])]
+    sources = []
+    for site in sites:
+        nv = int(rng.integers(0, 3))                  # 0-2 voices per site
+        nd = int(rng.integers(1, 3))                  # 1-2 distractors
+        for k in range(nv + nd):
+            r, a = rng.uniform(6, 25), rng.uniform(0, 2 * np.pi)
+            pos = (site.position[0] + r * np.cos(a), site.position[1] + r * np.sin(a), 0.3)
+            if k < nv:
+                wav = os.path.join(fdir, voices[int(rng.integers(len(voices)))]) if rng.uniform() < 0.7 else None
+                sources.append(fv.Source("voice", pos, float(rng.uniform(75, 90)), wav))
+            else:
+                kind = ["generator", "engine", "birds", "recording"][int(rng.integers(4))]
+                wav = os.path.join(fdir, dogs[int(rng.integers(len(dogs)))]) if kind == "recording" else None
+                sources.append(fv.Source(kind, pos, float(rng.uniform(70, 85)), wav))
+    scene = fv.Scene(tuple(sites), tuple(sources), scan_seconds=30.0, ambient_spl=ambient, wind_spl=ambient - 5,
+                     seed=seed)
+    cfg = fv.ArrayConfig()
+    rows = []
+    for site in sites:
+        stems = fv.simulate_site(scene, site, cfg)
+        audio = stems["voice"] + stems["noise"]
+        mic = fv.mic_positions_world(site, cfg)
+        o = site.position[:2]
+        t = time.time()
+        dets = fv.detect_voice(audio.astype(float), cfg.fs, mic)
+        t_fv = time.time() - t
+        offs = (mic[:, :2] - mic[:, :2].mean(axis=0)).T
+        t = time.time()
+        oo = ours_single_array(audio.T.astype(np.float64), offs, cfg.fs, run, dsp, models, agent)
+        t_ours = time.time() - t
+        # every source in the scene can be heard (1/r): flags are matched against all of them;
+        # recall counts the site's own sources (range <= 30 m, "local")
+        srcs = [(s.kind if s.kind != "recording" else "dog", s.position[:2]) for s in sources]
+        fvd = [{"bearing": d.bearing_deg, "blocks": d.voice_blocks} for d in dets]
+        for f, m in zip(fvd, score_flags([(o, f["bearing"]) for f in fvd], srcs)):
+            f.update(m)
+        for f, m in zip(oo, score_flags([(o, f["bearing"]) for f in oo], srcs)):
+            f.update(m)
+        rows.append({"family": "B", "seed": seed, "ambient": ambient, "site": site.id,
+                     "sources": [{"kind": k, "xy": list(xy), "brg": round(_brg(o, xy), 1),
+                                  "range": round(float(np.hypot(xy[0] - o[0], xy[1] - o[1])), 1)} for k, xy in srcs],
+                     "snr_db": fv.band_snr_db(stems, cfg), "fv": fvd, "ours": oo, "t_fv": round(t_fv, 2),
+                     "t_ours": round(t_ours, 2), "audio_s": 30.0})
+    return rows
+
+
+def synth_summary():
+    """Per family and level: human / voice recall, false flags per scene, flag precision,
+    bearing error of matched flags, runtime. Pools all levels as 'all'."""
+    out = {}
+    for fam in ("A", "B"):
+        path = SYNTH.format(fam=fam) % VERSION
+        if not os.path.exists(path):
+            continue
+        rows = [json.loads(line) for line in open(path)]
+        lvkey = "noise_x" if fam == "A" else "ambient"
+        for lv in sorted({r[lvkey] for r in rows}) + ["all"]:
+            R = [r for r in rows if lv == "all" or r[lvkey] == lv]
+            res = {}
+            for who in ("ours", "fv"):
+                hum = vo = hum_hit = vo_hit = flags = tp = 0
+                errs, errs_all, t = [], [], []
+                for r in R:
+                    if fam == "A":
+                        srcs = r["sources"]
+                        allsrc = r["all_sources"]
+                        if who == "ours":
+                            flagged = {c["pile"] for c in r["ours"] if c["flag"]}
+                            hit = lambda s_: s_["pile"] in flagged
+                            fl = [c for c in r["ours"] if c["flag"]]
+                            flags += len(fl)
+                            tp += sum(c["truth_kind"] in HUMAN_KINDS for c in fl)
+                            errs += [c["brg_err"] for c in fl if c["truth_kind"] in HUMAN_KINDS]
+                            errs_all += [c["brg_err"] for c in r["ours"] if c["brg_err"] is not None]
+                        else:
+                            matched = {tuple(allsrc[f["src"]]["xy"]) for f in r["fv"] if f["src"] is not None}
+                            hit = lambda s_, m=matched: tuple(s_["xy"]) in m
+                            flags += len(r["fv"])
+                            tp += sum(f["kind"] in HUMAN_KINDS for f in r["fv"])
+                            errs += [f["err"] for f in r["fv"] if f["kind"] in HUMAN_KINDS]
+                            errs_all += [f["err"] for f in r["fv"] if f["err"] is not None]
+                    else:
+                        srcs = r["sources"]
+                        fl = [f for f in r[who] if (f.get("flag", True))]
+                        flags += len(fl)
+                        tp += sum(f["kind"] == "voice" for f in fl)
+                        got = {f["src"] for f in fl if f["kind"] == "voice"}
+                        hit = lambda s_, g=got, ss=srcs: ss.index(s_) in g
+                        errs += [f["err"] for f in fl if f["kind"] == "voice"]
+                        errs_all += [f["err"] for f in r[who] if f["err"] is not None]
+                    for s_ in srcs:
+                        if s_.get("range", 0) > 30:
+                            continue
+                        if s_["kind"] in HUMAN_KINDS:
+                            hum += 1
+                            hum_hit += bool(hit(s_))
+                        if s_["kind"] in ("voice", "weak_voice"):
+                            vo += 1
+                            vo_hit += bool(hit(s_))
+                    t.append(r["t_" + who] / r["audio_s"])
+                res[who] = {"human_recall": hum_hit / max(hum, 1), "n_human": hum, "voice_recall": vo_hit / max(vo, 1),
+                            "n_voice": vo, "flags": flags, "precision": tp / flags if flags else float("nan"),
+                            "false_per_scene": (flags - tp) / max(len(R), 1),
+                            "brg_err_med": float(np.median(errs)) if errs else float("nan"),
+                            "brg_err_p90": float(np.percentile(errs, 90)) if errs else float("nan"),
+                            "rtf": float(np.mean(t)), "n_scenes": len(R)}
+            out[f"{fam}|{lv}"] = res
+    return out
+
+
+def cmd_synth(args):
+    path = SYNTH.format(fam=args.family) % VERSION
+    done = set()
+    if os.path.exists(path):
+        done = {(r["seed"], r.get("noise_x", r.get("ambient"))) for r in map(json.loads, open(path))}
+    levels = [1, 4, 10] if args.family == "A" else [45, 60, 70]
+    t0 = time.time()
+    with open(path, "a") as fh:
+        for lv in levels:
+            for seed in args.seeds:
+                if (seed, lv) in done:
+                    continue
+                if time.time() - t0 > args.budget_s:
+                    print("budget reached; rerun to continue")
+                    return
+                rows = synth_family_a(seed, lv) if args.family == "A" else synth_family_b(seed, lv)
+                for r in rows if isinstance(rows, list) else [rows]:
+                    fh.write(json.dumps(r) + "\n")
+                fh.flush()
+                print(f"family {args.family} seed {seed} level {lv} done ({time.time() - t0:.0f} s)", flush=True)
+    print("all done")
 
 
 # =========================================================================== report
@@ -940,7 +1249,8 @@ def asr_summary(rows):
         help_ref = bool(re.search(r"\bhelp", rt.lower()))
         o = out.setdefault(g, {"n": 0, "err_gated": 0, "err_ungated": 0, "ref_words": 0, "help_ref": 0,
                                "help_hit_gated": 0, "help_hit_ungated": 0, "help_false": 0, "vad": [], "snr": [],
-                               "gated_out": 0, "examples": []})
+                               "gated_out": 0, "examples": [], "seg_wer": []})
+        o["seg_wer"].append(round(e_u / max(n, 1), 3))
         o["n"] += 1
         o["err_gated"] += e_g
         o["err_ungated"] += e_u
@@ -962,6 +1272,7 @@ def asr_summary(rows):
     for o in out.values():
         o["wer_gated"] = o["err_gated"] / max(o["ref_words"], 1)
         o["wer_ungated"] = o["err_ungated"] / max(o["ref_words"], 1)
+        o["wer_median"] = float(np.median(o["seg_wer"]))
         o["vad_mean"] = float(np.mean(o.pop("vad")))
         sn = o.pop("snr")
         o["snr_db"] = float(np.mean(sn)) if sn else None
@@ -1005,8 +1316,42 @@ def cmd_report(args):
             kw[g] = {"n": len(sel), "help_gated": sum(bool(re.search(r"\bhelp", r["text"].lower())) for r in sel),
                      "help_ungated": sum(bool(re.search(r"\bhelp", r.get("text_ungated", "").lower())) for r in sel),
                      "examples": [(r["fine"] + ":" + r["id"].split("|")[-1], r.get("text_ungated", "")[:80]) for r in sel[:13]]}
-    summ = {"detection": det, "asr": asr, "confusion": conf, "fv_compare": cmp_, "fv_keywords": kw}
+    wi = {}
+    wpath = os.path.join(DATA, f"whatif-{VERSION}.jsonl")
+    if os.path.exists(wpath):
+        byid = {r["id"]: r for r in rows}
+        W = [json.loads(line) for line in open(wpath)]
+        for g in sorted({group_key(byid[w["id"]]) for w in W if w["id"] in byid}):
+            ws = [w for w in W if w["id"] in byid and group_key(byid[w["id"]]) == g]
+            y = [byid[w["id"]]["human"] for w in ws]
+            wi[g] = {v: {"n": len(ws), "agent": prf(y, [w[v]["human"] >= LEAD for w in ws]),
+                         "class": prf(y, [w[v]["cls"] in HUMAN_CLASSES for w in ws]),
+                         "auc": auc([w[v]["priority"] for w, t in zip(ws, y) if t],
+                                    [w[v]["priority"] for w, t in zip(ws, y) if not t])} for v in WHATIF}
+    raw = {}
+    rpath = os.path.join(DATA, f"whisper_raw-{VERSION}.jsonl")
+    if os.path.exists(rpath):
+        ref = {(r["file"], r["fine"]): (r.get("text_ungated") or r["text"]) for r in rows if r["set"] == "asr_ref"}
+        man = {c["id"]: c for c in json.load(open(MANIFEST))}
+        for line in open(rpath):
+            q = json.loads(line)
+            c = man[q["id"]]
+            g = q["id"].split("|")[0] + "|" + q["id"].split("|")[1]
+            e, n = wer(ref[(c["file"], c["fine"])], q["raw"])
+            o = raw.setdefault(g, {"n": 0, "err": 0, "words": 0, "help": 0, "examples": []})
+            o["n"] += 1
+            o["err"] += e
+            o["words"] += n
+            o["help"] += bool(re.search(r"\bhelp", q["raw"].lower()))
+            o["examples"].append(q["raw"][:120])
+        for o in raw.values():
+            o["wer"] = o["err"] / max(o["words"], 1)
+    summ = {"detection": det, "asr": asr, "confusion": conf, "fv_compare": cmp_, "fv_keywords": kw,
+            "whatif": wi, "whisper_raw": raw}
     json.dump(summ, open(os.path.join(DATA, "summary.json"), "w"), indent=1, default=float)
+    summ["code_version"] = VERSION
+    summ["synth"] = synth_summary()
+    print(f"code under test: acoustic/models.py + agent.py sha1 {VERSION}; {len(rows)} clips")
     print_tables(summ)
     if args.plot:
         plot(summ, rows, args.plot)
@@ -1031,11 +1376,11 @@ def print_tables(summ):
             print(f"- {g}: " + "; ".join(f"{lab} {v['flag_agent']:.2f} (n={v['n']}, {v['pred']})"
                                        for lab, v in summ["detection"][g]["by_label"].items()))
     print("\n## ASR (reference = Whisper base.en on the digital source segment)")
-    print("| group | segs | SNR dB | mean VAD | gated out | WER gated | WER ungated | help hit (ungated) | help false |")
-    print("|---|---|---|---|---|---|---|---|---|")
+    print("| group | segs | SNR dB | mean VAD | gated out | WER gated | WER ungated | median seg WER | help hit (ungated) | help false |")
+    print("|---|---|---|---|---|---|---|---|---|---|")
     for g, o in sorted(summ["asr"].items()):
         print(f"| {g} | {o['n']} | {_f(o['snr_db'], 1)} | {o['vad_mean']:.2f} | {o['gated_out']} | "
-              f"{o['wer_gated']:.2f} | {o['wer_ungated']:.2f} | {o['help_hit_ungated']}/{o['help_ref']} | {o['help_false']} |")
+              f"{o['wer_gated']:.2f} | {o['wer_ungated']:.2f} | {o['wer_median']:.2f} | {o['help_hit_ungated']}/{o['help_ref']} | {o['help_false']} |")
     print("\n## Ours vs teammate (F.V.) rule on identical clips: P / R / F1, AUC")
     print("| group | n | ours agent | ours class | F.V. rule | AUC ours / F.V. |")
     print("|---|---|---|---|---|---|")
@@ -1048,6 +1393,28 @@ def print_tables(summ):
         if g in summ["fv_compare"]:
             print(f"- {g} share flagged [ours, F.V., n]: {summ['fv_compare'][g]['by_label']}")
     print("\n## 'help' keyword on teammate voice clips:", json.dumps(summ["fv_keywords"], indent=1))
+    if summ.get("synth"):
+        print("\n## Synthetic head-to-head (A = our 3-drone scenes, B = teammate's 1-array scenes)")
+        print("| family / level | pipeline | scenes | human recall | voice recall | flags | precision | false/scene | "
+              "brg err med / p90 | real-time factor |")
+        print("|---|---|---|---|---|---|---|---|---|---|")
+        for g, res in summ["synth"].items():
+            for who, d in res.items():
+                print(f"| {g} | {who} | {d['n_scenes']} | {d['human_recall']:.2f} (n={d['n_human']}) | "
+                      f"{d['voice_recall']:.2f} (n={d['n_voice']}) | {d['flags']} | {_f(d['precision'])} | "
+                      f"{d['false_per_scene']:.2f} | {_f(d['brg_err_med'], 1)} / {_f(d['brg_err_p90'], 1)} | {d['rtf']:.3f} |")
+    if summ["whatif"]:
+        print("\n## What-if class groups (agent P / R / F1, AUC priority)")
+        print("| group | n | " + " | ".join(WHATIF) + " |")
+        print("|---|---|" + "---|" * len(WHATIF))
+        for g, d in summ["whatif"].items():
+            print(f"| {g} | {d['baseline']['n']} | " + " | ".join(
+                f"{_f(d[v]['agent']['precision'])} / {_f(d[v]['agent']['recall'])} / {_f(d[v]['agent']['f1'])}, "
+                f"{_f(d[v]['auc'])}" for v in WHATIF) + " |")
+    if summ["whisper_raw"]:
+        print("\n## Whisper without the hallucination filter / VAD gate")
+        for g, o in summ["whisper_raw"].items():
+            print(f"- {g}: n={o['n']} WER {o['wer']:.2f}, 'help' in {o['help']}; e.g. {o['examples'][:2]}")
     for st, c in summ["confusion"].items():
         print(f"\n## Confusion {st} (rows true, cols predicted {c['cols']})")
         for f, m in zip(c["rows"], c["m"]):
@@ -1062,7 +1429,7 @@ def plot(summ, rows, path):
     INK, MUTED, GRID = "#0b0b0b", "#52514e", "#e4e3df"
     plt.rcParams.update({"font.size": 9, "axes.edgecolor": MUTED, "axes.labelcolor": INK, "xtick.color": MUTED,
                          "ytick.color": MUTED, "axes.spines.top": False, "axes.spines.right": False})
-    fig, ax = plt.subplots(2, 2, figsize=(12, 9.5), facecolor="#fcfcfb")
+    fig, ax = plt.subplots(3, 2, figsize=(13, 15.5), facecolor="#fcfcfb")
     det = summ["detection"]
 
     # (a) ESC-50 clean confusion, row-normalised
@@ -1111,7 +1478,7 @@ def plot(summ, rows, path):
     a.set_ylabel("rate")
     a.set_ylim(-0.03, 1.03)
     a.grid(color=GRID, lw=0.6)
-    a.legend(fontsize=7.5, frameon=False, loc="center left")
+    a.legend(fontsize=7.5, frameon=False, loc="upper center", bbox_to_anchor=(0.45, -0.13), ncol=2)
     a.set_title("(b) DroneAudioSet 5 s windows: agent human flag (>= 0.4) vs SNR", loc="left", fontsize=10, color=INK)
 
     # (c) ASR vs SNR
@@ -1119,20 +1486,20 @@ def plot(summ, rows, path):
     asr = summ["asr"]
     ks = sorted([k for k in asr if k.startswith("asr_das_mix|high")], key=lambda k: int(k.split("high")[1]))
     x = [int(k.split("high")[1]) for k in ks]
-    a.plot(x, [min(asr[k]["wer_ungated"], 1.5) for k in ks], "-", color=C1, lw=2, marker="o", ms=5,
-           label="WER vs clean-source transcript (no VAD gate)")
+    a.plot(x, [min(asr[k]["wer_median"], 1.5) for k in ks], "-", color=C1, lw=2, marker="o", ms=5,
+           label="median segment WER vs clean-source transcript (no VAD gate)")
     a.plot(x, [asr[k]["help_hit_ungated"] / max(asr[k]["help_ref"], 1) for k in ks], "-", color=C2, lw=2,
            marker="s", ms=5, label="'help' recovered (segments whose reference says it)")
     a.plot(x, [1 - asr[k]["gated_out"] / asr[k]["n"] for k in ks], "--", color=C3, lw=2, marker="^", ms=5,
            label="segments passing the VAD >= 0.15 gate")
     if "asr_so|90db-room1-1m" in asr:
         o = asr["asr_so|90db-room1-1m"]
-        a.scatter([15], [o["wer_ungated"]], s=60, color=C1, zorder=5)
+        a.scatter([15], [o["wer_median"]], s=60, color=C1, zorder=5)
         a.scatter([15], [o["help_hit_ungated"] / max(o["help_ref"], 1)], s=60, color=C2, marker="s", zorder=5)
         a.annotate("rotors off", (15, -0.08), ha="center", fontsize=8, color=MUTED)
     for k in [k for k in asr if k.startswith("asr_dws|")]:
         o = asr[k]
-        a.scatter([o["snr_db"]], [min(o["wer_ungated"], 1.5)], s=50, facecolors="none", edgecolors=C1, lw=1.5)
+        a.scatter([o["snr_db"]], [min(o["wer_median"], 1.5)], s=50, facecolors="none", edgecolors=C1, lw=1.5)
         if o["help_ref"]:
             a.scatter([o["snr_db"]], [o["help_hit_ungated"] / o["help_ref"]], s=50, marker="s",
                       facecolors="none", edgecolors=C2, lw=1.5)
@@ -1141,7 +1508,7 @@ def plot(summ, rows, path):
     a.set_ylabel("rate (WER clipped at 1.5)")
     a.set_ylim(-0.12, 1.55)
     a.grid(color=GRID, lw=0.6)
-    a.legend(fontsize=7.5, frameon=False, loc="upper left")
+    a.legend(fontsize=7.5, frameon=False, loc="upper center", bbox_to_anchor=(0.45, -0.13), ncol=2)
     a.set_title("(c) faster-whisper base.en on ~30 s speech/scream/help segments", loc="left", fontsize=10, color=INK)
 
     # (d) agent priority, positives vs negatives, per set
@@ -1158,18 +1525,50 @@ def plot(summ, rows, path):
                 a.plot([i + off - 0.13, i + off + 0.13], [np.median(y)] * 2, color=INK, lw=2)
         if g in det:
             a.text(i, 103, f"AUC {det[g]['auc_priority']:.2f}", ha="center", fontsize=8, color=INK)
-    a.scatter([], [], color=C1, label="human (speech, scream, cry, knock, cough, breathing...)")
-    a.scatter([], [], color=C2, label="non-human (dog, engine, rotor, ambient, debris...)")
+    a.scatter([], [], color=C1, label="human (speech/scream, cry, knock, cough, breathing)")
+    a.scatter([], [], color=C2, label="non-human (dog, engine, rotor, ambient, debris)")
     a.set_xticks(range(len(sets)), [n for _, n in sets])
     a.set_ylabel("agent clip priority (0-100, neutral DoA)")
     a.set_ylim(-3, 110)
     a.grid(axis="y", color=GRID, lw=0.6)
-    a.legend(fontsize=7.5, frameon=False, loc="center right")
-    a.set_title("(d) deterministic scorer: priority of human vs non-human clips (bar = median)",
+    a.legend(fontsize=7.5, frameon=False, loc="upper center", bbox_to_anchor=(0.5, -0.08), ncol=2)
+    a.set_title("(d) agent fallback scorer: clip priority, human vs non-human (bar = median)",
                 loc="left", fontsize=10, color=INK)
+    # (e)/(f) head-to-head with the teammate's pipeline: real clips (F1) and synthetic scenes
+    a = ax[2, 0]
+    cmpd = summ.get("fv_compare", {})
+    gs = [("fv", "teammate clips"), ("fv_mix|high|+0", "  + rotor 0 dB"), ("esc", "ESC-50"),
+          ("esc_mix|high|+0", "  + rotor 0 dB"), ("so", "DAS rotors off"), ("das_mix|high|+0", "  + rotor 0 dB"),
+          ("dws|90db-room1-1m-low", "DAS rotors on")]
+    gs = [(g, n) for g, n in gs if g in cmpd]
+    xx = np.arange(len(gs))
+    for off, key, col, lab in ((-0.2, "ours_agent", C1, "ours (agent human >= 0.4)"), (0.2, "fv", C2, "teammate rule")):
+        v = [np.nan_to_num(cmpd[g][key]["f1"]) for g, _ in gs]
+        a.bar(xx + off, v, 0.36, color=col, label=lab)
+    a.set_xticks(xx, [n for _, n in gs], rotation=25, ha="right")
+    a.set_ylabel("F1, human vs non-human")
+    a.set_ylim(0, 1)
+    a.grid(axis="y", color=GRID, lw=0.6)
+    a.legend(fontsize=7.5, frameon=False, loc="upper right")
+    a.set_title("(e) same real clips, both classifiers (single channel)", loc="left", fontsize=10, color=INK)
+    a = ax[2, 1]
+    sy = summ.get("synth", {})
+    cols = [k for k in sy if not k.endswith("|all")]
+    xx = np.arange(len(cols))
+    for off, who, col, lab in ((-0.2, "ours", C1, "ours"), (0.2, "fv", C2, "teammate")):
+        a.bar(xx + off, [sy[k][who]["human_recall"] for k in cols], 0.36, color=col, label=f"{lab}: human-source recall")
+        a.plot(xx + off, [min(sy[k][who]["false_per_scene"], 3) / 3 for k in cols], "D", color=INK if who == "ours" else MUTED,
+               ms=6, label=f"{lab}: false flags per scene / 3")
+    a.set_xticks(xx, [("A noise x" if k.startswith("A") else "B ambient ") + k.split("|")[1] + ("" if k.startswith("A") else " dB")
+                      for k in cols], rotation=25, ha="right")
+    a.set_ylim(0, 1.05)
+    a.grid(axis="y", color=GRID, lw=0.6)
+    a.legend(fontsize=7, frameon=False, loc="upper center", bbox_to_anchor=(0.5, -0.22), ncol=2)
+    a.set_title("(f) synthetic scenes: A = our 3-drone site, B = teammate's 1-array sites", loc="left", fontsize=10,
+                color=INK)
     fig.suptitle("Larpverse acoustic front end on real audio (ESC-50, DroneAudioSet mic1)", x=0.01, ha="left",
                  fontsize=12, color=INK)
-    fig.tight_layout()
+    fig.tight_layout(rect=(0, 0, 1, 0.98))
     fig.savefig(path, dpi=110, facecolor=fig.get_facecolor())
     print("wrote", path)
 
@@ -1194,6 +1593,11 @@ def main(argv=None):
     a.add_argument("--budget-s", type=float, default=240.0)
     a.add_argument("--whisper-raw", action="store_true")
     a.set_defaults(fn=cmd_whatif)
+    a = sub.add_parser("synth")
+    a.add_argument("--family", choices=["A", "B"], required=True)
+    a.add_argument("--seeds", type=int, nargs="+", default=[3, 7, 11, 19, 23, 29, 31, 37])
+    a.add_argument("--budget-s", type=float, default=240.0)
+    a.set_defaults(fn=cmd_synth)
     a = sub.add_parser("report")
     a.add_argument("--plot", default=os.path.join(ROOT, "docs", "acoustic_real_validation.png"))
     a.set_defaults(fn=cmd_report)

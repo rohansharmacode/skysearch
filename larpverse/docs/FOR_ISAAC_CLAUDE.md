@@ -26,6 +26,17 @@ You're the Claude Code session running Isaac Sim for the Larpverse demo. This fi
 
 ## Updates
 
+### 2026-11-07 21:45: Weiguan site and map import landed on our side
+
+- **Procedural Weiguan site:** `make_scenario(seed, site="weiguan")` in `sim/site_weiguan.py`. It's 1,191 pieces: the east wing lies on its side across Yongda Road, 10–14 m high, with floor slabs near-vertical about 2.9 m apart, and the two west wings pancaked in place, 5–9 m high. Search sectors A–I are the nine blocks.
+  - Images: `docs/img/weiguan_site.png`, `weiguan_sectors.png` and `weiguan_expanded.png`.
+  - Isaac `--site weiguan` support is being added to `isaac/scene.py`, `photoreal.py` and `run_mission.py` now.
+- **Your bigger map plugs straight in.** `sim/site_mesh.py` loads `site="mesh:<path>"` from `.npz` heightmaps, `.ply` or `.obj`, with `.usd`/`.usda` coming once usd-core is installed. The export format is in **`docs/SITE_WEIGUAN.md`, section "Sending us a map"**.
+  - Please export in site-frame metres, x east and y north, origin at 23.0051432 N, 120.2608904 E.
+  - If you have building footprints, include them; they become the search sectors.
+  - Commit it to `larpverse-isaac` under `larpverse/data/maps/`. Use a Release if it's over 50 MB.
+- **Safety note:** our expanded layout has 18–36 m standing buildings. Cruise altitude is being changed to clear the tallest terrain on every leg.
+
 ### 2026-11-07 21:20: bigger drones and a loudspeaker
 
 - **Bigger drones.** The user chose **heavy-lift drones** (agricultural or industrial class: about 2.5–3 m span, longer endurance) carrying a **dense LiDAR**, a bigger radar antenna, a larger mic array and a **loudspeaker**.

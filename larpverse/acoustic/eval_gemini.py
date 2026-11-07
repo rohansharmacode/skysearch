@@ -50,7 +50,11 @@ ESC_DIR = os.path.join(REAL, "esc50")
 DAS_DIR = os.path.join(REAL, "das")
 OUT_DIR = os.path.join(ROOT, "eval", "acoustic_gemini")
 VOICE_DIR = os.path.join(HERE, "models", "piper_multi")
-LANGS = {"cmn_hans_cn": "zh", "en_us": "en", "id_id": "id", "vi_vn": "vi"}
+LANGS = {"cmn_hans_cn": "zh", "yue_hant_hk": "yue", "en_us": "en", "id_id": "id", "vi_vn": "vi",
+         "fil_ph": "fil", "th_th": "th", "ja_jp": "ja", "ko_kr": "ko"}
+LANG_OK = {"zh": ("zh", "cmn"), "yue": ("yue",), "en": ("en",), "id": ("id", "ind"), "vi": ("vi", "vie"),
+           "fil": ("fil", "tl", "tgl"), "th": ("th", "tha"), "ja": ("ja", "jpn"), "ko": ("ko", "kor")}
+NO_SPACE = ("zh", "yue", "ja", "th")         # scored by CER only; the rest also by WER
 HF = "https://huggingface.co/datasets/google/fleurs/resolve/main/data/{lang}/{path}"
 PIPER = "https://huggingface.co/rhasspy/piper-voices/resolve/main/{p}"
 VOICES = {"zh": "zh/zh_CN/huayan/x_low/zh_CN-huayan-x_low", "vi": "vi/vi_VN/vivos/x_low/vi_VN-vivos-x_low",
@@ -67,6 +71,7 @@ PHRASES = [
     ("id", "Ada orang? Kami berdua di sini, anak saya tidak bisa bernapas.", ["call_for_help", "multiple_people", "child", "cant_breathe"]),
 ]
 ESC_HUMAN = {20: "crying", 24: "cough", 23: "breathing", 30: "knock"}
+ESC_EXTRA = {42: ("siren", 3), 21: ("sneeze", 2)}     # fetched by `fetch` (ESC-50 GitHub, CC BY-NC 3.0)
 ESC_OTHER = {0: "dog", 44: "engine", 41: "chainsaw", 40: "helicopter", 39: "glass", 12: "fire", 33: "creak",
              10: "rain", 16: "wind"}
 
@@ -101,10 +106,12 @@ def fetch_fleurs(n=3, split="dev", max_s=11.0):
                 r = rows[base]
                 if r["id"] in seen_ids:
                     continue
-                data = tf.extractfile(m).read()          # bytes only; never tar.extract()
-                with open(os.path.join(d, base), "wb") as fh:
-                    fh.write(data)
-                total += len(data)
+                dst = os.path.join(d, base)
+                if not os.path.exists(dst):
+                    data = tf.extractfile(m).read()      # bytes only; never tar.extract()
+                    with open(dst, "wb") as fh:
+                        fh.write(data)
+                    total += len(data)
                 seen_ids.add(r["id"])
                 index.append({"lang": lang, "code": LANGS[lang], "wav": f"{lang}/{base}", "sentence_id": r["id"],
                               "transcript": r["raw"], "en_reference": en[r["id"]], "gender": r["gender"],
@@ -118,6 +125,21 @@ def fetch_fleurs(n=3, split="dev", max_s=11.0):
     with open(os.path.join(FLEURS_DIR, "SOURCE.md"), "w") as fh:
         fh.write(SOURCE_MD.format(n=n, split=split, mb=total / 1e6, langs=", ".join(LANGS)))
     print(f"FLEURS: {len(index)} clips, {total / 1e6:.1f} MB written to {FLEURS_DIR}")
+
+
+def fetch_esc_extra():
+    """A few ESC-50 clips not mirrored yet (siren, sneeze), resampled to 16 kHz next to the others."""
+    import soundfile as sf
+    rows = list(csv.DictReader(open(os.path.join(ESC_DIR, "esc50.csv"))))
+    for tgt, (name, n) in ESC_EXTRA.items():
+        for r in [r for r in rows if int(r["target"]) == tgt][:n]:
+            dst = os.path.join(ESC_DIR, r["filename"].replace(".wav", "_16k.wav"))
+            if os.path.exists(dst):
+                continue
+            with _get(f"https://raw.githubusercontent.com/karolpiczak/ESC-50/master/audio/{r['filename']}") as resp:
+                x, fs = sf.read(io.BytesIO(resp.read()), dtype="float64")
+            sf.write(dst, sps.resample_poly(x, 160, 441) if fs == 44100 else x, FS)
+        print(f"esc50 {name}: {n} clips")
 
 
 def fetch_voices():
@@ -231,11 +253,15 @@ def events(include_tts=True):
     from acoustic import scene
     rng = np.random.default_rng(11)
     out = []
-    idx = _fleurs_index()
+    idx, per = [], {}
+    for r in _fleurs_index():                        # stage 1: two clips per language is plenty
+        per[r["lang"]] = per.get(r["lang"], 0) + 1
+        if per[r["lang"]] <= 2:
+            idx.append(r)
     for r in idx:
         out.append((f"fleurs:{r['wav']}", "human", f"speech_{r['code']}", _read(os.path.join(FLEURS_DIR, r["wav"]))[: 8 * FS]))
     files = sorted(glob.glob(os.path.join(ESC_DIR, "*_16k.wav")))
-    for tgt, fine in list(ESC_HUMAN.items()) + list(ESC_OTHER.items()):
+    for tgt, fine in list(ESC_HUMAN.items()) + list(ESC_OTHER.items()) + [(42, "siren")]:
         sel = [f for f in files if re.search(rf"-{tgt}_16k\.wav$", f)][:3 if tgt in (0, 20, 23, 24, 30, 44) else 2]
         grp = "human" if tgt in ESC_HUMAN else "other"
         for f in sel:
@@ -323,21 +349,29 @@ def _pct(rows, k):
 
 # --------------------------------------------------------------------------- stage 2
 def _norm_text(t, code):
-    t = (t or "").lower()
-    t = re.sub(r"[\s\W_]+", " " if code != "zh" else "", t, flags=re.UNICODE).strip()
-    return t
+    t = (t or "").lower().replace("[...]", " ")
+    return re.sub(r"[\s\W_]+", "" if code in NO_SPACE else " ", t, flags=re.UNICODE).strip()
+
+
+def _edit(a, b):
+    d = list(range(len(b) + 1))
+    for i, x in enumerate(a, 1):
+        prev, d[0] = d[:], i
+        for j, y in enumerate(b, 1):
+            d[j] = min(prev[j] + 1, d[j - 1] + 1, prev[j - 1] + (x != y))
+    return d[len(b)]
 
 
 def cer(hyp, ref, code):
-    h, r = _norm_text(hyp, code), _norm_text(ref, code)
-    if not r:
+    h, r = _norm_text(hyp, code).replace(" ", ""), _norm_text(ref, code).replace(" ", "")
+    return round(_edit(r, h) / len(r), 3) if r else None
+
+
+def wer(hyp, ref, code):
+    if code in NO_SPACE:
         return None
-    d = np.arange(len(h) + 1)
-    for i, rc in enumerate(r, 1):
-        prev, d[0] = d.copy(), i
-        for j, hc in enumerate(h, 1):
-            d[j] = min(prev[j] + 1, d[j - 1] + 1, prev[j - 1] + (rc != hc))
-    return round(float(d[len(h)]) / len(r), 3)
+    h, r = _norm_text(hyp, code).split(), _norm_text(ref, code).split()
+    return round(_edit(r, h) / len(r), 3) if r else None
 
 
 def token_f1(hyp, ref):
@@ -356,105 +390,226 @@ def token_f1(hyp, ref):
 def _lang_ok(langs, code):
     if not langs:
         return False
-    c = langs[0]["code"].lower().split("-")[0]
-    want = {"zh": ("zh", "cmn", "yue", "nan"), "en": ("en",), "id": ("id", "ind", "ms"), "vi": ("vi", "vie")}[code]
-    return c in want
+    return langs[0]["code"].lower().split("-")[0] in LANG_OK[code]
 
 
-def run_stage2(mode, snrs, limit=None, whisper=None, start=0):
+NOISY = [("ambient", 10.0), ("ambient", 0.0), ("rotor", 5.0), ("generator", 0.0)]
+HUMAN_SOUND = {"crying": ("crying", "moaning", "scream"), "cough": ("coughing",), "knock": ("knocking_tapping",),
+               "knock_pattern": ("knocking_tapping",), "breathing": None, "sneeze": None}
+
+
+def _cond_name(c):
+    return "clean" if c == "clean" else f"{c[0]}{c[1]:+.0f}"
+
+
+def _esc(tgt, n):
+    files = sorted(f for f in glob.glob(os.path.join(ESC_DIR, "*_16k.wav")) if re.search(rf"-{tgt}_16k\.wav$", f))
+    return [(os.path.basename(f), _trim(_read(f))) for f in files[:n]]
+
+
+def stage2_items(which, langs=None):
+    """Item sets for the live evaluation: fleurs | distress | edge."""
+    from acoustic import scene
+    items = []
+    if which == "fleurs":
+        per = {}
+        for r in _fleurs_index():
+            if langs and r["lang"] not in langs and r["code"] not in langs:
+                continue
+            k = per[r["lang"]] = per.get(r["lang"], -1) + 1
+            items.append({"item": f"fleurs:{r['wav']}", "set": "fleurs", "group": "human", "fine": f"speech_{r['code']}",
+                          "code": r["code"], "ref": r["transcript"], "en_ref": r["en_reference"], "tags": None,
+                          "sig": _read(os.path.join(FLEURS_DIR, r["wav"])), "conds": ["clean", NOISY[k % 4]]})
+    elif which == "distress":
+        for i, (code, text, tags) in enumerate(PHRASES):
+            x = tts_multi(code, text)
+            if x is not None:
+                items.append({"item": f"tts:{code}{i}", "set": "distress", "group": "human", "fine": f"distress_{code}",
+                              "code": code, "ref": text, "en_ref": PHRASES[i % 2][1], "tags": tags, "sig": x,
+                              "conds": ["clean", ("ambient", 0.0), ("rotor", 0.0)]})
+    elif which == "edge":
+        amb0 = [("ambient", 0.0)]
+        for tgt, fine, n in ((20, "crying", 3), (24, "cough", 3), (23, "breathing", 3), (30, "knock", 3), (21, "sneeze", 2)):
+            for name, x in _esc(tgt, n):
+                items.append({"item": f"esc:{name}", "set": "edge", "group": "human", "fine": fine, "sig": x, "conds": amb0})
+        rng = np.random.default_rng(21)
+        for i in range(2):
+            items.append({"item": f"scene:knocking{i}", "set": "edge", "group": "human", "fine": "knock_pattern",
+                          "sig": scene.knocking(rng), "conds": amb0})
+        idx = {}
+        for r in _fleurs_index():
+            idx.setdefault(r["code"], []).append(r)
+        for r in idx.get("en", [])[3:6]:                                  # faint speech, well below the bed
+            items.append({"item": f"faint:{r['wav']}", "set": "edge", "group": "human", "fine": "faint_speech",
+                          "code": "en", "ref": r["transcript"], "sig": _read(os.path.join(FLEURS_DIR, r["wav"])),
+                          "conds": [("ambient", -10.0)]})
+        for a, b in (("en", "zh"), ("id", "vi"), ("ja", "ko")):          # two people talking at once
+            if idx.get(a) and idx.get(b):
+                xa, xb = (_read(os.path.join(FLEURS_DIR, idx[c][0]["wav"])) for c in (a, b))
+                n = min(len(xa), len(xb))
+                xa, xb = xa[:n] / _active_rms(xa[:n]), xb[:n] / _active_rms(xb[:n])
+                items.append({"item": f"overlap:{a}+{b}", "set": "edge", "group": "overlap", "fine": "overlap",
+                              "codes": [a, b], "sig": xa + 0.8 * xb, "conds": amb0})
+        for i in (0, 2):                                                  # shouted phrase under a hovering drone
+            code, text, tags = PHRASES[i]
+            x = tts_multi(code, text)
+            if x is not None:
+                items.append({"item": f"tts-rotor:{code}{i}", "set": "edge", "group": "human", "fine": "distress_rotor",
+                              "code": code, "tags": tags, "sig": x, "conds": [("rotor", -5.0)]})
+        for tgt, fine, n in ((0, "dog", 3), (42, "siren", 3), (44, "engine", 3), (41, "chainsaw", 2), (40, "helicopter", 2),
+                             (39, "glass", 2), (12, "fire", 2), (33, "creak", 2), (10, "rain", 1), (16, "wind", 1)):
+            for name, x in _esc(tgt, n):
+                items.append({"item": f"esc:{name}", "set": "edge", "group": "other", "fine": fine, "sig": x, "conds": amb0})
+        for i in range(2):
+            items.append({"item": f"scene:debris{i}", "set": "edge", "group": "other", "fine": "debris",
+                          "sig": scene.debris(rng), "conds": amb0})
+    return items
+
+
+def _model_tag(mode):
+    from acoustic import gemini_audio as ga
+    from agents import llm
+    return "fallback" if mode == "fallback" else (ga.audio_model() or llm.resolve("gemini")[1])
+
+
+def run_live(which, mode="auto", langs=None, start=0, limit=None, whisper=None):
+    """Run one item set through stage 1 (noisy conditions) and stage 2. Rows accumulate in
+    eval/acoustic_gemini/live_<set>_<model>.json keyed by (item, condition), so chunks can be resumed."""
+    import zlib
     from acoustic import gemini_audio as ga
     from acoustic import novelty
-    if mode == "live":
-        os.environ.setdefault("GEMINI_RPM", "6")       # leave headroom for a demo on the same key
-    items = []
-    for r in _fleurs_index():
-        items.append({"item": f"fleurs:{r['wav']}", "code": r["code"], "ref": r["transcript"], "en_ref": r["en_reference"],
-                      "tags": None, "sig": _read(os.path.join(FLEURS_DIR, r["wav"]))})
-    for i, (code, text, tags) in enumerate(PHRASES):
-        x = tts_multi(code, text)
-        if x is not None:
-            items.append({"item": f"tts:{code}{i}", "code": code, "ref": text,
-                          "en_ref": PHRASES[i % 2][1] if code != "en" else None, "tags": tags, "sig": x})
-    rng = np.random.default_rng(5)
-    beds_ = {id(it): beds("ambient", 20 * FS, rng) for it in items}       # same bed per item whatever the slice
-    items = items[start: (start + limit) if limit else None]
-    rows = []
+    if mode in ("live", "auto"):
+        os.environ.setdefault("GEMINI_RPM", "8")           # leave headroom for a demo on the same key
+    items = stage2_items(which, langs)[start: (start + limit) if limit else None]
+    tag = _model_tag(mode)
+    path = os.path.join(OUT_DIR, f"live_{which}_{tag}.json")
+    os.makedirs(OUT_DIR, exist_ok=True)
+    rows = {(r["item"], r["cond"]): r for r in (json.load(open(path)) if os.path.exists(path) else [])}
+    t_all = time.time()
     for it in items:
-        for snr in snrs:
-            if snr == "clean":
-                clip, cand, fwd = it["sig"], {"label": "likely_human", "vad_top": 1.0, "human_score": 0.9,
-                                               "sound_type": "speech", "reason": "clean clip (stage 1 skipped)"}, True
+        for cond in it["conds"]:
+            cn = _cond_name(cond)
+            row = {k: it.get(k) for k in ("item", "set", "group", "fine", "code", "codes", "tags")}
+            row.update(cond=cn, model=tag)
+            if cond == "clean":
+                clip = it["sig"][: 15 * FS]
+                cand = {"label": "likely_human", "vad_top": 1.0, "human_score": 0.9, "sound_type": "speech",
+                        "reason": "clean clip (stage 1 skipped)", "yamnet_top": [], "novelty_peak": 0.0,
+                        "t0": 0.0, "t1": len(clip) / FS}
+                row["forwarded"] = True
             else:
-                x, win = mix(beds_[id(it)], it["sig"][: 11 * FS], float(snr))
+                rng = np.random.default_rng(zlib.crc32(f"{it['item']}|{cn}".encode()))
+                x, win = mix(beds(cond[0], 20 * FS, rng), it["sig"][: 11 * FS], cond[1])
                 r = novelty.detect(x, bg_seconds=6.0)
+                over = [c for c in r["candidates"] if _overlap(c, win)]
                 hits = [g for g in r["groups"] if _overlap(g, win)]
-                fwd = bool(hits)
-                if not fwd:
-                    rows.append({"item": it["item"], "code": it["code"], "snr": snr, "forwarded": False})
+                row.update(stage1_labels=[c["label"] for c in over],
+                           dismissed=sorted({c["dismissed"] for c in over if c["dismissed"]}),
+                           detected=bool(over), forwarded=bool(hits))
+                if not hits:
+                    rows[(it["item"], cn)] = row
+                    print(f"{it['item']:40} {cn:12} stage 1: not forwarded {row['dismissed'] or row['stage1_labels']}")
                     continue
                 cand = max(hits, key=lambda g: min(g["t1"], win[1]) - max(g["t0"], win[0]))
                 clip = cand["clip"]
             a = ga.analyse_clip(clip, cand=cand, mode=mode, whisper=whisper)
-            row = {"item": it["item"], "code": it["code"], "snr": snr, "forwarded": fwd, "by": a["by"],
-                   "error": a.get("error"), "lang_pred": [lg["code"] for lg in a["languages"]],
-                   "lang_ok": _lang_ok(a["languages"], it["code"]), "transcript": a["transcript"],
-                   "translation": a["translation_en"], "cer": cer(a["transcript"], it["ref"], it["code"]),
-                   "sound_type": a["sound_type"], "human_vocal": a["human_vocal"], "confidence": a["confidence"],
-                   "distress": a["distress"], "latency_ms": a["latency_ms"], "cached": a.get("cached", False),
-                   "cross_check": a.get("cross_check"),
-                   "usage": a.get("usage") or {}, "audio_s": a["audio_s"]}
-            ref_en = it["en_ref"] or (it["ref"] if it["code"] == "en" else None)
-            if it["tags"] is not None:
-                row["tags_expected"] = it["tags"]
-                row["tag_recall"] = round(len(set(a["distress"]) & set(it["tags"])) / len(it["tags"]), 2)
+            row.update(by=a["by"], by_note=a.get("by_note"), error=a.get("error"), cached=a.get("cached", False),
+                       lang_pred=[lg["code"] for lg in a["languages"]], transcript=a["transcript"],
+                       translation=a["translation_en"], sound_type=a["sound_type"], human_vocal=a["human_vocal"],
+                       confidence=a["confidence"], distress=a["distress"], people_count=a.get("people_count", 0),
+                       location_hints=a.get("location_hints", []), rationale=a["rationale"],
+                       cross_check=a.get("cross_check"), latency_ms=a["latency_ms"], usage=a.get("usage") or {},
+                       audio_s=a["audio_s"])
+            if it.get("code"):
+                row["lang_ok"] = _lang_ok(a["languages"], it["code"])
+            if it.get("ref"):
+                row["cer"], row["wer"] = cer(a["transcript"], it["ref"], it["code"]), wer(a["transcript"], it["ref"], it["code"])
+            ref_en = it.get("en_ref") or (it.get("ref") if it.get("code") == "en" else None)
             if ref_en:
-                row["translation_f1"] = token_f1(a["translation_en"], ref_en)
-            rows.append(row)
-            print(f"{it['item']:34} {str(snr):>5} {a['by']:8} lang {row['lang_pred']} ok={row['lang_ok']} "
-                  f"cer={row['cer']} f1={row.get('translation_f1')} tags={a['distress']} "
-                  f"{a['latency_ms']:.0f} ms" + (f" err={a['error']}" if a.get("error") else ""), flush=True)
-    os.makedirs(OUT_DIR, exist_ok=True)
-    path = os.path.join(OUT_DIR, f"stage2_{mode}_{'_'.join(str(s) for s in snrs)}.json")
-    if start:                                                    # a later slice appends to the same file
-        old = json.load(open(path)) if os.path.exists(path) else []
-        done = {(r["item"], str(r["snr"])) for r in rows}
-        rows = [r for r in old if (r["item"], str(r["snr"])) not in done] + rows
-    json.dump(rows, open(path, "w"), indent=1, ensure_ascii=False)
-    print(f"-> {path}")
-    report_stage2(path)
+                row["translation_f1"] = token_f1(a["translation_en"] or (a["transcript"] if it.get("code") == "en" else ""), ref_en)
+            if it.get("tags"):
+                got, want = set(a["distress"]), set(it["tags"])
+                row["tag_recall"] = round(len(got & want) / len(want), 2)
+                row["tag_precision"] = round(len(got & want) / len(got), 2) if got else None
+            rows[(it["item"], cn)] = row
+            print(f"{it['item']:40} {cn:12} {a['by']:8} {row.get('lang_pred')} cer={row.get('cer')} "
+                  f"f1={row.get('translation_f1')} {a['sound_type']} hv={a['human_vocal']} c={a['confidence']} "
+                  f"tags={a['distress']} n={row['people_count']} {a['latency_ms']:.0f} ms"
+                  + (f" err={a['error']}" if a.get("error") else ""), flush=True)
+            json.dump(list(rows.values()), open(path, "w"), indent=1, ensure_ascii=False)
+    json.dump(list(rows.values()), open(path, "w"), indent=1, ensure_ascii=False)
+    print(f"-> {path} ({len(rows)} rows, {time.time() - t_all:.0f} s)")
+    report_live(path)
 
 
-PRICE_IN = float(os.environ.get("GEMINI_PRICE_AUDIO_IN_PER_M", "1.00"))     # USD per 1M audio input tokens (assumed)
-PRICE_OUT = float(os.environ.get("GEMINI_PRICE_OUT_PER_M", "2.50"))         # USD per 1M output+thinking tokens (assumed)
+PRICE_IN = float(os.environ.get("GEMINI_PRICE_IN_PER_M", "0.10"))      # USD / 1M input tokens (assumed lite list price)
+PRICE_OUT = float(os.environ.get("GEMINI_PRICE_OUT_PER_M", "0.40"))    # USD / 1M output tokens (assumed)
 
 
-def report_stage2(path):
+def _med(v):
+    v = [x for x in v if x is not None]
+    return f"{np.median(v):.2f}" if v else "-"
+
+
+def _mean(v):
+    v = [x for x in v if x is not None]
+    return f"{np.mean(v):.2f}" if v else "-"
+
+
+def report_live(path):
     rows = json.load(open(path))
     done = [r for r in rows if r.get("by")]
-    print(f"\nstage 2 ({os.path.basename(path)}): {len(done)}/{len(rows)} clips analysed "
-          f"({sum(not r['forwarded'] for r in rows)} not forwarded by stage 1)")
-    for code in ("zh", "en", "id", "vi"):
-        rr = [r for r in done if r["code"] == code]
-        if not rr:
-            continue
-        cers = [r["cer"] for r in rr if r["cer"] is not None]
-        f1 = [r["translation_f1"] for r in rr if "translation_f1" in r]
-        print(f"  {code}: lang-ID {sum(r['lang_ok'] for r in rr)}/{len(rr)}  median CER "
-              f"{np.median(cers) if cers else float('nan'):.2f}  translation F1 {np.mean(f1) if f1 else float('nan'):.2f}")
-    tags = [r["tag_recall"] for r in done if "tag_recall" in r]
-    if tags:
-        print(f"  distress-tag recall (TTS phrases): {np.mean(tags):.2f} over {len(tags)} clips")
-    by = {}
-    for r in done:
-        by.setdefault(r["by"], []).append(r)
-    for b, rr in by.items():
-        lat = [r["latency_ms"] for r in rr if not r.get("cached")]
-        ain = sum((r["usage"].get("promptTokenCount") or 0) for r in rr)
-        out = sum((r["usage"].get("candidatesTokenCount") or 0) + (r["usage"].get("thoughtsTokenCount") or 0) for r in rr)
-        cost = (ain * PRICE_IN + out * PRICE_OUT) / 1e6
-        print(f"  by={b}: {len(rr)} clips, median latency {np.median(lat) if lat else 0:.0f} ms, "
-              f"tokens in {ain} out {out}, est. cost ${cost:.4f} (${cost / max(1, len(rr)):.5f}/clip at "
-              f"${PRICE_IN}/M in, ${PRICE_OUT}/M out: assumed prices, override GEMINI_PRICE_*)")
+    gem = [r for r in done if r["by"] == "gemini"]
+    print(f"\n== {os.path.basename(path)}: {len(rows)} rows, {len(done)} analysed ({len(gem)} by Gemini, "
+          f"{len(done) - len(gem)} fallback), {sum(not r.get('forwarded') for r in rows)} not forwarded by stage 1")
+    sets = {r["set"] for r in rows}
+    if "fleurs" in sets or "distress" in sets:
+        print(f"  {'lang':5} {'cond':8} {'n':>3} {'langID':>7} {'CER':>5} {'WER':>5} {'trF1':>5}")
+        for code in [c for c in LANG_OK if any(r.get("code") == c for r in done)]:
+            for cg, f in (("clean", lambda r: r["cond"] == "clean"), ("noisy", lambda r: r["cond"] != "clean")):
+                rr = [r for r in done if r.get("code") == code and f(r) and r["set"] in ("fleurs", "distress")]
+                if rr:
+                    print(f"  {code:5} {cg:8} {len(rr):>3} {sum(r.get('lang_ok', False) for r in rr):>3}/{len(rr):<3} "
+                          f"{_med([r.get('cer') for r in rr]):>5} {_med([r.get('wer') for r in rr]):>5} "
+                          f"{_mean([r.get('translation_f1') for r in rr]):>5}")
+        tg = [r for r in done if r.get("tags") and r["set"] == "distress"]
+        if tg:
+            print(f"  distress cues: recall {_mean([r['tag_recall'] for r in tg])}, precision "
+                  f"{_mean([r['tag_precision'] for r in tg])} over {len(tg)} clips; all 4 cues in "
+                  f"{sum(r['tag_recall'] == 1.0 for r in tg)}/{len(tg)}")
+    if "edge" in sets:
+        e = [r for r in rows if r["set"] == "edge"]
+        oth = [r for r in e if r["group"] == "other"]
+        fo = [r for r in oth if r.get("by")]
+        print(f"  non-human: stage 1 dismissed {sum(not r.get('forwarded') for r in oth)}/{len(oth)}; of the "
+              f"{len(fo)} forwarded, stage 2 called human (human_vocal or conf>=0.4) "
+              f"{sum(r['human_vocal'] or r['confidence'] >= 0.4 for r in fo)}")
+        for r in fo:
+            print(f"     fwd {r['fine']:10} -> {r['sound_type']} hv={r['human_vocal']} conf={r['confidence']}")
+        hum = [r for r in e if r["group"] == "human"]
+        for fine in sorted({r["fine"] for r in hum}):
+            rr = [r for r in hum if r["fine"] == fine]
+            an = [r for r in rr if r.get("by")]
+            exp = HUMAN_SOUND.get(fine)
+            ok = sum(r["sound_type"] in exp for r in an) if exp else None
+            print(f"  {fine:15} fwd {sum(bool(r.get('forwarded')) for r in rr)}/{len(rr)}  human "
+                  f"{sum(r['human_vocal'] or r['confidence'] >= 0.4 for r in an)}/{len(an)}"
+                  + (f"  type ok {ok}/{len(an)}" if exp else "")
+                  + f"  types {[r['sound_type'] for r in an]}")
+        ov = [r for r in e if r["group"] == "overlap" and r.get("by")]
+        if ov:
+            print(f"  overlap: people>=2 {sum(r['people_count'] >= 2 for r in ov)}/{len(ov)}, >=2 languages "
+                  f"{sum(len(r['lang_pred']) >= 2 for r in ov)}/{len(ov)}  "
+                  + "; ".join(f"{r['item']}: {r['lang_pred']} n={r['people_count']}" for r in ov))
+    lat = [r["latency_ms"] for r in gem if not r.get("cached")]
+    if lat:
+        tin = sum(r["usage"].get("promptTokenCount") or 0 for r in gem)
+        tout = sum((r["usage"].get("candidatesTokenCount") or 0) + (r["usage"].get("thoughtsTokenCount") or 0) for r in gem)
+        aud = [r["usage"].get("audioTokenCount") for r in gem if r["usage"].get("audioTokenCount")]
+        cost = (tin * PRICE_IN + tout * PRICE_OUT) / 1e6
+        print(f"  latency per clip: median {np.median(lat) / 1000:.1f} s, p90 {np.percentile(lat, 90) / 1000:.1f} s "
+              f"(n={len(lat)}); tokens/clip in {tin / len(gem):.0f} (audio {np.mean(aud) if aud else 0:.0f}) "
+              f"out {tout / len(gem):.0f}; est. ${cost / len(gem):.5f}/clip at assumed ${PRICE_IN}/M in, ${PRICE_OUT}/M out")
     errs = sorted({r["error"] for r in done if r.get("error")})
     if errs:
         print("  errors: " + "; ".join(errs[:4]))
@@ -499,42 +654,40 @@ def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = ap.add_subparsers(dest="cmd", required=True)
     f = sub.add_parser("fetch")
-    f.add_argument("--n", type=int, default=3)
+    f.add_argument("--n", type=int, default=10)
     f.add_argument("--no-voices", action="store_true")
     s1 = sub.add_parser("stage1")
     s1.add_argument("--bed", default="ambient", choices=["ambient", "rotor", "generator"])
     s1.add_argument("--snrs", default="10,0,-5")
     s1.add_argument("--profile", default="first6", choices=["first6", "minstat"])
     s1.add_argument("--limit", type=int, default=None)
-    s2 = sub.add_parser("stage2")
-    g = s2.add_mutually_exclusive_group()
-    g.add_argument("--live", action="store_true", help="call Gemini (needs GEMINI_API_KEY in .env)")
-    g.add_argument("--replay", action="store_true", help="recorded Gemini answers only")
-    s2.add_argument("--snrs", default="clean,10,0")
+    s2 = sub.add_parser("live", help="stage 2 on an item set (Gemini when a key is set, else fallback)")
+    s2.add_argument("--set", default="fleurs", choices=["fleurs", "distress", "edge"])
+    s2.add_argument("--mode", default="auto", choices=["auto", "live", "replay", "fallback"])
+    s2.add_argument("--langs", default="", help="comma-separated FLEURS configs or codes (fleurs set)")
+    s2.add_argument("--start", type=int, default=0)
     s2.add_argument("--limit", type=int, default=None)
-    s2.add_argument("--start", type=int, default=0, help="skip the first N items (append to the results file)")
-    s2.add_argument("--whisper", default=None, help="force a faster-whisper model name")
+    s2.add_argument("--whisper", default=None, help="force a faster-whisper model name (fallback)")
     sc = sub.add_parser("scene")
     sc.add_argument("--seeds", default="3")
     sub.add_parser("report")
     a = ap.parse_args(argv)
     if a.cmd == "fetch":
         fetch_fleurs(a.n)
+        fetch_esc_extra()
         if not a.no_voices:
             fetch_voices()
     elif a.cmd == "stage1":
         run_stage1(a.bed, [float(s) for s in a.snrs.split(",")], a.profile, a.limit)
-    elif a.cmd == "stage2":
-        mode = "live" if a.live else "replay" if a.replay else "fallback"
-        snrs = [s if s == "clean" else float(s) for s in a.snrs.split(",")]
-        run_stage2(mode, snrs, a.limit, a.whisper, a.start)
+    elif a.cmd == "live":
+        run_live(a.set, a.mode, [x for x in a.langs.split(",") if x] or None, a.start, a.limit, a.whisper)
     elif a.cmd == "scene":
         run_scene([int(s) for s in a.seeds.split(",")])
     elif a.cmd == "report":
         ps = sorted(glob.glob(os.path.join(OUT_DIR, "stage1_*.json")))
         report_stage1(ps)
-        for p in sorted(glob.glob(os.path.join(OUT_DIR, "stage2_*.json"))):
-            report_stage2(p)
+        for p in sorted(glob.glob(os.path.join(OUT_DIR, "live_*.json"))):
+            report_live(p)
 
 
 if __name__ == "__main__":

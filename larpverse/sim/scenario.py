@@ -165,7 +165,18 @@ def _top_face_points(pc: Piece, step=0.25):
     return np.concatenate(out) if out else np.zeros((0, 3))
 
 
-def make_scenario(seed: int = 7, start_pile: str | None = None) -> Scenario:
+SITES = ("grid", "weiguan")
+
+
+def make_scenario(seed: int = 7, start_pile: str | None = None, site: str = "grid") -> Scenario:
+    if site == "weiguan":     # Weiguan Jinlong case study (procedural stand-in): sim/site_weiguan.py
+        from .site_weiguan import make_weiguan
+        return make_weiguan(seed, start_pile)
+    if site.startswith("mesh:"):   # external map "mesh:<path>[?sectors=weiguan]": sim/site_mesh.py
+        from .site_mesh import make_from_spec
+        return make_from_spec(seed, start_pile, site[5:])
+    if site != "grid":
+        raise ValueError(f"unknown site {site!r}; one of {SITES} or mesh:<path>")
     rng = np.random.default_rng(seed)
     U = rng.uniform
     noise = (U(0.3, 1.0, 5), U(-0.4, 0.4, 5), U(-0.4, 0.4, 5), U(0, 2 * np.pi, 5))
@@ -253,10 +264,11 @@ if __name__ == "__main__":
     ap = argparse.ArgumentParser(description="Write the public scenario (and optionally the hidden truth) to JSON.")
     ap.add_argument("--seed", type=int, default=7)
     ap.add_argument("--start-pile")
+    ap.add_argument("--site", default="grid", help="grid (synthetic 3x3, default) | weiguan (case study) | mesh:<path>")
     ap.add_argument("--out", default="scenario.json")
     ap.add_argument("--truth-out", help="separate file for hidden truth (generators/evaluators only)")
     a = ap.parse_args()
-    sc = make_scenario(a.seed, a.start_pile)
+    sc = make_scenario(a.seed, a.start_pile, site=a.site)
     with open(a.out, "w") as f:
         f.write(sc.public_json(indent=1))
     if a.truth_out:

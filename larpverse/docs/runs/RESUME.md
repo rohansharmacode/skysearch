@@ -48,6 +48,9 @@ Read this first after a context compaction or restart.
 - Running (9): acoustic-fix, mission, acoustic-validation, gemini-audio, vitals, weiguan-site, dashboard-b3, tech-report, visual-b4. Paused: video-cut (resume when Isaac re-record exists).
 - Next when brain lands: full rehearsal (demo.sh live Gemini) → reviewer pass 3 → post 'ready to re-record' to FOR_ISAAC_CLAUDE → resume video-cut.
 
+## 21:30 network outage
+- A DNS outage (EAI_AGAIN) killed 10 agents mid-task; all 10 resumed via SendMessage with 'check git status, rerun what failed'. Vitals builder unaffected. If this recurs: wait for `getent hosts api.anthropic.com`, then resume each agent by ID (ListAgents).
+
 ## Review loop
 - Pass 1 done (575253f): 46 findings. Batches routed: brain → acoustic + mission builders; dashboard → builder; Isaac handoff → orchestrator (done except R1-033/037/038); animation → animation builder.
 - Next: reviewer pass 2 once brain + dashboard batches land (verify fixes; new angles: skeptical judge 5-min demo, Isaac teammate cold start).

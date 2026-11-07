@@ -156,7 +156,7 @@ Give each session one workstream and point it at this file plus `contracts/INTER
 | BL-16 | P0 | Gemini audio pipeline: open-model background/novelty filter → Gemini multilingual audio analysis → sector priorities (user design) | builder — running |
 | BL-17 | P0 | Case-study map: Weiguan Jinlong collapse, Tainan 2016 (23.0051432 N, 120.2608904 E) — georeferenced basemap in dashboard | dashboard builder |
 | BL-18 | P0 | Radar penetration realism: ~0.5–3 m through rubble, 10–20 dB/m concrete; coverage + 'beyond radar reach' | mission builder |
-| BL-19 | P1 | Weiguan model in Isaac: Sketchfab 'VR-Weiguan Collapsed Building' (NCKU Museum, photogrammetry, 1M tris, licence/download not stated) — needs permission; else procedural stand-in of the toppled 16-storey U-shaped block | blocked on licence |
+| BL-19 | P1 | (procedural stand-in DONE 92ec1c4/79a5dea; Isaac --site in progress) Weiguan model in Isaac: Sketchfab 'VR-Weiguan Collapsed Building' (NCKU Museum, photogrammetry, 1M tris, licence/download not stated) — needs permission; else procedural stand-in of the toppled 16-storey U-shaped block | blocked on licence |
 | BL-20 | P0 | Radar vital-sign triage: breathing pattern (rapid-shallow / slow-deep / irregular-apnoeic / calm / fast-small) → triage hint → dig-order priority; validated on real apnea data where possible | builder — running |
 | BL-21 | P0 | Technical report (docs/TECHNICAL_REPORT.md + abstract) | builder — running |
 | BL-22 | P1 | Visual consistency batch 4 (animation + isaac/overlay) + grid MP4 re-record | builder — running |

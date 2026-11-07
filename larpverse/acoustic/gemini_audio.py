@@ -38,7 +38,7 @@ from . import novelty
 
 FS = 16000
 MAX_CLIP_S = 15.0
-PROMPT_VERSION = "gemini-audio-v2"
+PROMPT_VERSION = "gemini-audio-v4"
 HERE = os.path.dirname(os.path.abspath(__file__))
 WHISPER_DIR = os.path.join(HERE, "models", "whisper")
 MULTI_WHISPER = ("small", "base", "tiny")         # preferred multilingual faster-whisper models, if on disk
@@ -48,20 +48,22 @@ SOUND_TYPES = ["speech", "call_for_help", "scream", "crying", "moaning", "coughi
 DISTRESS = ["call_for_help", "trapped", "injured", "cant_breathe", "child", "multiple_people", "elderly",
             "water_request", "weak_or_fading", "location_hint"]
 
-SYSTEM = """You are the acoustic analyst for an urban search-and-rescue team at a collapsed building
-(case study: the Weiguan Jinlong building collapse, Tainan, Taiwan, 6 Feb 2016). A drone landed on the
-rubble with its rotors off and recorded this clip with a microphone array. The clip was denoised and was
-flagged by an anomaly detector as different from the background. It may contain a buried person, an
-animal, machinery, debris or just noise. Speech may be in Mandarin, Taiwanese Hokkien, English,
-Indonesian, Vietnamese, Tagalog, Thai or another language, and is often faint, muffled or partial.
+SYSTEM = """You are the acoustic analyst for an urban search-and-rescue team at a collapsed building.
+A drone landed on the rubble with its rotors off and recorded this clip with a microphone array. The clip
+was denoised and was flagged by an anomaly detector as different from the background. It may contain a
+buried person, an animal, machinery, debris or just noise. Speech can be in any language (residents,
+migrant workers, caregivers and visitors) and is often faint, muffled or partial.
 
 Report only what is audible:
 - human_vocal: true only if a human voice or human body sound (speech, shouting, screaming, crying,
   moaning, coughing, breathing) is audible.
 - sound_type: the dominant sound. knocking_tapping = deliberate knocks or taps (note any repeating pattern).
-- languages: every language heard, as BCP-47 code and English name (e.g. cmn-TW Mandarin, nan-TW
-  Taiwanese Hokkien, en English, id Indonesian, vi Vietnamese). Empty if there is no intelligible speech.
-- transcript: verbatim, in the original language and script. Mark unclear words with [...]. Never invent
+- languages: every language heard, as BCP-47 code and English name (e.g. cmn Mandarin, nan Taiwanese
+  Hokkien, yue Cantonese, en English, id Indonesian, vi Vietnamese, fil Filipino, th Thai, ja Japanese,
+  ko Korean). Identify the language from the sounds themselves; if the transcript is written in a
+  language's own script or spelling (e.g. Vietnamese diacritics), the code must match it. Empty if there
+  is no intelligible speech.
+- transcript: verbatim, in the original language and its usual script (never a translation). Mark unclear words with [...]. Never invent
   words; "" if no intelligible speech.
 - translation_en: faithful English translation of the transcript ("" if none).
 - distress: only indicators supported by the audio: call_for_help, trapped, injured, cant_breathe, child,
@@ -368,7 +370,7 @@ def analyse_clip(clip, *, cand=None, mode="auto", whisper=None, cache_path=None,
         if out is not None:
             cross_check(out, cand)
             out.update(by="gemini", model=meta.get("model"), cached=meta.get("cached", False),
-                       latency_ms=meta.get("latency_ms", 0.0), usage=meta.get("usage") or {},
+                       latency_ms=meta.get("latency_ms", 0.0), throttled_ms=meta.get("throttled_ms", 0.0), usage=meta.get("usage") or {},
                        audio_s=round(min(len(clip) / FS, MAX_CLIP_S), 2), error=None)
             return out
         err = meta.get("error") or ("invalid Gemini answer" if raw is not None else "Gemini call failed")

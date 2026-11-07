@@ -426,7 +426,7 @@ def call_json_audio(prompt, wav_bytes: bytes, schema=None, *, system=None, mime=
     model = model or resolve("gemini")[1]
     asha = hashlib.sha256(wav_bytes or b"").hexdigest()
     m.update(provider=p, model=model, cached=False, latency_ms=0.0,
-             error=None, busy=False, audio_sha=asha[:16], usage={})
+             error=None, busy=False, audio_sha=asha[:16], usage={}, throttled_ms=0.0)
     if p == "none":
         m["error"] = "no LLM provider configured"
         return None
@@ -448,7 +448,7 @@ def call_json_audio(prompt, wav_bytes: bytes, schema=None, *, system=None, mime=
     if not _key("gemini"):
         m["error"] = "no gemini API key"
         return None
-    t0 = time.time()
+    t0, w0 = time.time(), bucket("gemini").waited_s
     try:
         out = _gemini(model, system, prompt, schema, timeout, max_tokens, temperature,
                       audio=(mime, wav_bytes), usage=m["usage"], thinking=thinking, retries=retries)
@@ -462,7 +462,8 @@ def call_json_audio(prompt, wav_bytes: bytes, schema=None, *, system=None, mime=
     except Exception as e:                                      # noqa: BLE001
         m["error"] = f"gemini {type(e).__name__}"
         out = None
-    m["latency_ms"] = round((time.time() - t0) * 1000, 1)
+    m["throttled_ms"] = round((bucket("gemini").waited_s - w0) * 1000, 1)       # client-side rate-limit wait
+    m["latency_ms"] = round((time.time() - t0) * 1000 - m["throttled_ms"], 1)
     if out is not None and not isinstance(out, dict):
         m["error"], out = "response is not a JSON object", None
     ok = out is not None and (validate is None or _safe_validate(validate, out))

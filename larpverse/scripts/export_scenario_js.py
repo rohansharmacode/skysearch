@@ -2,9 +2,15 @@
 
     .venv/bin/python scripts/export_scenario_js.py                  # seed 7 -> animation/scenario_seed7.js
     .venv/bin/python scripts/export_scenario_js.py --seed 3 --out /tmp/s3.js
+    .venv/bin/python scripts/export_scenario_js.py --site weiguan   # -> animation/scenario_weiguan.js
 
 The file sets ``window.LARP_SCENARIO``. Everything is already converted to the three.js frame the
 animation uses: x = east, y = up, z = -north (so the staging area, site y = -47, sits at z = +47).
+
+Weiguan site (sim/site_weiguan.py): same layout plus ``site``, ``bounds`` and ``site_info`` (road, blocks
+before the collapse, three frame); the terrain is still ``Scenario.ground_height`` (nine sector mounds +
+noise, same formula), and every piece is a box as before. Victims carry ``y`` (absolute height, three
+frame), voices carry ``lang``.
 
   site (x, y, z)      ->  three (x, z, -y)            basis change S = [[1,0,0],[0,0,1],[0,-1,0]], det +1
   piece rotation R    ->  quaternion of S @ R          (R = Rz(yaw) Ry(pitch) Rx(roll), sim.scenario.rot_matrix)
@@ -62,8 +68,9 @@ def to3(x, y, z=0.0):
     return [x, z, -y]
 
 
-def build(seed: int, start_pile: str | None = None) -> dict:
-    sc = make_scenario(seed, start_pile)
+def build(seed: int, start_pile: str | None = None, site: str = "grid") -> dict:
+    sc = make_scenario(seed, start_pile, site=site)
+    pub = sc.public_dict()
     piles = []
     for p in sc.piles:
         pieces = []
@@ -76,8 +83,9 @@ def build(seed: int, start_pile: str | None = None) -> dict:
                       "lx": round(p.lump[0], 4), "lz": round(-p.lump[1], 4), "pieces": pieces})
     a, kx, ky, ph = sc._noise
     # coarse bare-terrain grid (three frame), for cross-checking the JS port of ground_height
-    xs = np.arange(-36.0, 36.01, 2.0)
-    zs = np.arange(-36.0, 54.01, 2.0)
+    bx0, by0, bx1, by1 = pub["bounds"]
+    xs = np.arange(bx0, bx1 + 0.01, 2.0)
+    zs = np.arange(-by1, -by0 + 0.01, 2.0)
     X, Z = np.meshgrid(xs, zs)
     hg = sc.ground_height(X, -Z)
     t = sc.truth
@@ -87,13 +95,22 @@ def build(seed: int, start_pile: str | None = None) -> dict:
         "start_pile": t["start_pile"],
         "roles": t["roles"],
         "sounds": [{"pile": s["pile"], "kind": s["kind"], "x": round(s["xy"][0], 3), "z": round(-s["xy"][1], 3),
-                    "level_db": round(s["level_db"], 2), **({"text": s["text"]} if "text" in s else {})}
+                    "level_db": round(s["level_db"], 2), **({"text": s["text"]} if "text" in s else {}),
+                    **{k: s[k] for k in ("lang", "text_en", "romanised") if k in s}}
                    for s in t["sounds"]],
         "victims": [{"id": v["id"], "pile": v["pile"], "x": round(v["xy"][0], 3), "z": round(-v["xy"][1], 3),
-                     "depth": round(v["depth"], 3), "sound": v["sound"]} for v in t["victims"]],
+                     "depth": round(v["depth"], 3), "sound": v["sound"],
+                     **({"y": round(v["z"], 3), "depth_class": v["depth_class"]} if "z" in v else {}),
+                     **({"lang": v["lang"]} if "lang" in v else {})} for v in t["victims"]],
         "transcripts": TRANSCRIPTS,
     }
-    pub = sc.public_dict()
+    extra = {}
+    if site != "grid":
+        info = pub.get("site_info", {})
+        road = info.get("road")
+        extra = {"site": pub.get("site", site), "bounds": pub["bounds"], "geo": pub["geo"],
+                 "site_info": {**info, **({"road_three": {"x": road["x"], "z": [-road["y"][1], -road["y"][0]]}}
+                                          if road else {})}}
     return {
         "schema": "larpverse.scenario.three/v1", "seed": seed, "source": "sim/scenario.py make_scenario",
         "frame": "three.js: x east, y up, z = -north (site y). Piece q = quaternion of S @ R(rpy), size along local box axes.",
@@ -101,10 +118,11 @@ def build(seed: int, start_pile: str | None = None) -> dict:
         "drone_pads": [{"x": x, "z": -y} for x, y in pub["drone_pads"]],
         "noise": {"a": r(a, 6), "kx": r(kx, 6), "ky": r(ky, 6), "ph": r(ph, 6),
                   "formula": "m + 0.03*sum a sin(kx x + ky y + ph) + clip(m/0.9,0,1)*sum 0.08 sin(7kx x + 7ky y + 3ph), y = -z"},
-        "terrain_grid": {"x0": -36.0, "z0": -36.0, "res": 2.0, "nx": len(xs), "nz": len(zs),
+        "terrain_grid": {"x0": float(xs[0]), "z0": float(zs[0]), "res": 2.0, "nx": len(xs), "nz": len(zs),
                          "h": [round(float(v), 2) for v in hg.ravel()]},
         "piles": piles,
         "story": story,
+        **extra,
     }
 
 
@@ -112,13 +130,17 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--seed", type=int, default=7)
     ap.add_argument("--start-pile")
+    ap.add_argument("--site", choices=["grid", "weiguan"], default="grid")
     ap.add_argument("--out")
     a = ap.parse_args()
-    out = a.out or os.path.join(ROOT, "animation", f"scenario_seed{a.seed}.js")
-    d = build(a.seed, a.start_pile)
+    name = f"scenario_seed{a.seed}.js" if a.site == "grid" else \
+        (f"scenario_{a.site}.js" if a.seed == 7 else f"scenario_{a.site}_seed{a.seed}.js")
+    out = a.out or os.path.join(ROOT, "animation", name)
+    d = build(a.seed, a.start_pile, a.site)
     body = json.dumps(d, separators=(",", ":"))
     with open(out, "w") as f:
-        f.write(f"// Generated by scripts/export_scenario_js.py --seed {a.seed} from sim/scenario.py. Do not edit.\n"
+        site_arg = "" if a.site == "grid" else f" --site {a.site}"
+        f.write(f"// Generated by scripts/export_scenario_js.py --seed {a.seed}{site_arg} from sim/scenario.py. Do not edit.\n"
                 "// Frame: three.js (x east, y up, z = -north). `story` = STORYBOARD TRUTH, display only.\n"
                 f"window.LARP_SCENARIO = {body};\n")
     n = sum(len(p["pieces"]) for p in d["piles"])

@@ -157,3 +157,18 @@ def test_tasking_revision_merge():
                           rev=3))
     assert tr.should_visit("Z1") and "operator" in tr.zone("Z1")["retask_reason"]
     assert "Z3" not in tr.zones and tr.zone("Z2")["status"] == "unsearched"
+
+
+def test_default_tasking_skips_standing_sectors_and_polygons_are_ccw():
+    from types import SimpleNamespace as NS
+    from sim.tasking import ccw
+    piles = [NS(name="L1", x=0.0, y=0.0, sx=5.0, sy=4.0, rot=0.0, pieces=[], kind="collapsed"),
+             NS(name="B7", x=40.0, y=0.0, sx=8.0, sy=8.0, rot=0.0, pieces=[], kind="standing"),
+             NS(name="M3", x=0.0, y=40.0, sx=4.0, sy=4.0, rot=0.0, pieces=[], polygon=[[0, 36], [0, 44], [4, 40]])]
+    tk = default_tasking(NS(piles=piles))
+    assert [z.id for z in tk.zones] == ["L1", "M3"]
+    assert points_in_polygon(0, 0, tk.zones[0].polygon) and points_in_polygon(1, 40, tk.zones[1].polygon)
+    cw = Tasking.from_dict({"zones": [{"id": "Z", "polygon": SQ[::-1]}]}).zones[0].polygon
+    assert polygon_area(cw) == pytest.approx(100) and np.allclose(ccw(cw), cw)
+    x, y = np.asarray(cw).T
+    assert np.dot(x, np.roll(y, -1)) - np.dot(y, np.roll(x, -1)) > 0

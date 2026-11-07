@@ -8,7 +8,7 @@
 
 ``model="heavy"`` builds a FlyCart 30 / Agras T50-class airframe at true scale from ``sim.platform``
 (``heavy_sar``: 2.2 m wheelbase, 4 arms x coaxial pairs = 8 rotors of 1.375 m, ~0.6 m landing gear) with the
-SAR payload: LiDAR puck on the nose gimbal (spin axis along +x, as mounted in the sim), radar panel under the
+SAR payload: LiDAR puck on the nose gimbal (drawn with its axis along +x; the sim mounts it pitched 45 deg), radar panel under the
 belly facing down, loudspeaker horn at the tail, 8-mic ring, thermal camera.  ``scale`` is ignored for it
 (dimensions are metres from the spec).  ``heavy_parts`` is the pure-python parts list (tested without pxr).
 

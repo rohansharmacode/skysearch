@@ -50,6 +50,14 @@ def as_poly(poly) -> np.ndarray:
     return p
 
 
+def ccw(poly) -> np.ndarray:
+    """Polygon with counter-clockwise vertex order (contract v1.2.1: polygons are CCW, site metres)."""
+    p = as_poly(poly)
+    x, y = p[:, 0], p[:, 1]
+    signed = np.dot(x, np.roll(y, -1)) - np.dot(y, np.roll(x, -1))
+    return p[::-1].copy() if signed < 0 else p
+
+
 def points_in_polygon(x, y, poly) -> np.ndarray:
     """Even-odd rule, vectorised over points (any shape). Points exactly on an edge may go either way."""
     p = as_poly(poly)
@@ -154,6 +162,21 @@ def rasterise(poly, origin, res, w, h, dilate_m=0.0) -> np.ndarray:
     return out
 
 
+def rasterise_box(poly, origin, res, w, h, dilate_m=0.0):
+    """Cropped ``rasterise``: (j0, j1, i0, i1, sub-mask) over the polygon's bounding box (scales to hundreds
+    of zones on a 320 m site without a full-site mask per zone)."""
+    p = as_poly(poly)
+    x0, y0 = p.min(0) - dilate_m - res
+    x1, y1 = p.max(0) + dilate_m + res
+    i0, i1 = max(0, int(np.floor((x0 - origin[0]) / res))), min(w, int(np.ceil((x1 - origin[0]) / res)) + 1)
+    j0, j1 = max(0, int(np.floor((y0 - origin[1]) / res))), min(h, int(np.ceil((y1 - origin[1]) / res)) + 1)
+    if i0 >= i1 or j0 >= j1:
+        return 0, 0, 0, 0, np.zeros((0, 0), bool)
+    X, Y = raster_mesh((origin[0] + i0 * res, origin[1] + j0 * res), res, i1 - i0, j1 - j0)
+    sub = distance_to_polygon(X, Y, p) <= dilate_m if dilate_m > 0 else points_in_polygon(X, Y, p)
+    return j0, j1, i0, i1, sub
+
+
 def grid_mask(poly, grid, dilate_m=0.0) -> np.ndarray:
     """``rasterise`` on any grid-like object with ``origin``, ``res``, ``w``, ``h`` (sim.world.Grid)."""
     return rasterise(poly, grid.origin, grid.res, grid.w, grid.h, dilate_m)
@@ -184,6 +207,58 @@ def pile_outline(pile, margin_m=2.0) -> np.ndarray:
         a = np.linspace(0, 2 * np.pi, 16, endpoint=False)
         pts = np.stack([_pile_attr(pile, "x") + 6 * np.cos(a), _pile_attr(pile, "y") + 6 * np.sin(a)], 1)
     return buffer_convex(convex_hull(pts), margin_m)
+
+
+STANDING_KINDS = {"standing", "intact", "building", "standing_building", "damaged_standing", "obstacle"}
+
+
+def pile_kind(scenario, pile):
+    """Sector kind if the scenario says (``Pile.kind`` / ``.state``, ``scenario.sector_kind(name)`` or a
+    public sector entry's ``kind`` / ``state``), else None (= rubble)."""
+    for k in ("kind", "state", "sector_kind"):
+        v = getattr(pile, k, None) if not isinstance(pile, dict) else pile.get(k)
+        if isinstance(v, str):
+            return v
+    name = _pile_attr(pile, "name")
+    fn = getattr(scenario, "sector_kind", None)
+    if callable(fn):
+        try:
+            return fn(name)
+        except Exception:                                  # noqa: BLE001
+            pass
+    for sec in (getattr(scenario, "_sectors", None) or getattr(scenario, "sectors", None) or []):
+        if isinstance(sec, dict) and sec.get("name") == name:
+            return sec.get("kind") or sec.get("state")
+    return None
+
+
+def sector_outline(scenario, pile, margin_m=2.0) -> np.ndarray:
+    """Zone outline of one scenario sector: its own polygon if the scenario provides one (``Pile.polygon`` /
+    ``outline`` / ``footprint`` or a public sector ``polygon``), else the hull of its pieces' footprints, else
+    its public bbox, else an ellipse from its spread (``sx``, ``sy``); plus ``margin_m``."""
+    name = _pile_attr(pile, "name")
+    for k in ("polygon", "outline", "footprint"):
+        v = getattr(pile, k, None) if not isinstance(pile, dict) else pile.get(k)
+        if v is not None and len(as_poly(v)) >= 3:
+            return buffer_convex(convex_hull(as_poly(v)), margin_m)
+    pcs = _pile_attr(pile, "pieces") if (isinstance(pile, dict) and "pieces" in pile) or hasattr(pile, "pieces") else None
+    if pcs:
+        return pile_outline(pile, margin_m)
+    for sec in (getattr(scenario, "_sectors", None) or getattr(scenario, "sectors", None) or []):
+        if isinstance(sec, dict) and sec.get("name") == name:
+            if sec.get("polygon") is not None:
+                return buffer_convex(convex_hull(as_poly(sec["polygon"])), margin_m)
+            if sec.get("bbox") is not None:
+                x0, y0, x1, y1 = sec["bbox"]
+                return buffer_convex(np.array([[x0, y0], [x1, y0], [x1, y1], [x0, y1]], float), margin_m)
+    cx, cy = float(_pile_attr(pile, "x")), float(_pile_attr(pile, "y"))
+    sx = float(getattr(pile, "sx", 6.0) if not isinstance(pile, dict) else pile.get("sx", 6.0))
+    sy = float(getattr(pile, "sy", 6.0) if not isinstance(pile, dict) else pile.get("sy", 6.0))
+    rot = float(getattr(pile, "rot", 0.0) if not isinstance(pile, dict) else pile.get("rot", 0.0))
+    a = np.linspace(0, 2 * np.pi, 24, endpoint=False)
+    u, v = sx * np.cos(a), sy * np.sin(a)
+    pts = np.stack([cx + u * np.cos(rot) - v * np.sin(rot), cy + u * np.sin(rot) + v * np.cos(rot)], 1)
+    return buffer_convex(pts, margin_m)
 
 
 def piles_in_zone(poly, piles, min_frac=0.2):
@@ -241,7 +316,7 @@ class Tasking:
         for i, z in enumerate(doc["zones"]):
             if not isinstance(z, dict):
                 continue
-            poly = as_poly(z.get("polygon") or [])
+            poly = ccw(z.get("polygon") or [[0, 0]])
             if len(poly) < 3 or not np.isfinite(poly).all() or polygon_area(poly) < 1e-6:
                 continue                                   # degenerate outline: ignored
             zid = str(z.get("id") or f"Z{i + 1}")
@@ -286,9 +361,16 @@ def load_tasking(path, allow_empty=False) -> Tasking | None:
 
 
 def default_tasking(scenario, margin_m=2.0) -> Tasking:
-    """One zone per rubble pile: convex hull of the pile's piece footprints + ``margin_m``, id = pile name."""
-    zones = [Zone(_pile_attr(p, "name"), f"Pile {_pile_attr(p, 'name')}", pile_outline(p, margin_m).round(2).tolist())
-             for p in scenario.piles]
+    """One zone per collapsed / rubble sector (standing buildings are obstacles, not zones): the sector's
+    outline (convex hull of its pieces' footprints on the grid site) + ``margin_m``; id = sector name."""
+    zones = []
+    for p in scenario.piles:
+        kind = pile_kind(scenario, p)
+        if kind is not None and kind.lower() in STANDING_KINDS:
+            continue
+        n = _pile_attr(p, "name")
+        zones.append(Zone(n, f"Pile {n}" if kind is None else f"{n} ({kind})",
+                          sector_outline(scenario, p, margin_m).round(2).tolist()))
     return Tasking(zones, 0, "scenario-default")
 
 
@@ -374,7 +456,6 @@ class ZoneTracker:
         x0, y0, x1, y1 = bounds
         self.origin, self.res = (float(x0), float(y0)), float(res)
         self.w, self.h = int(round((x1 - x0) / res)), int(round((y1 - y0) / res))
-        self.X, self.Y = raster_mesh(self.origin, self.res, self.w, self.h)
         self.lidar = np.zeros((self.h, self.w), bool)
         self.radar = np.zeros((self.h, self.w), bool)
         self.reach_cap_m, self.reach_min, self.revisit_max = reach_cap_m, reach_min, revisit_max
@@ -400,8 +481,11 @@ class ZoneTracker:
         return st
 
     def _geom(self, st):
-        st["mask"] = rasterise(st["polygon"], self.origin, self.res, self.w, self.h)
-        st["n_cells"] = int(st["mask"].sum())
+        j0, j1, i0, i1, sub = rasterise_box(st["polygon"], self.origin, self.res, self.w, self.h)
+        st["box"], st["sub"] = (j0, j1, i0, i1), sub
+        st["n_cells"] = int(sub.sum())
+        p = st["polygon"]
+        st["bbox"] = (*p.min(0), *p.max(0))
         st["area_m2"] = polygon_area(st["polygon"])
         st["centroid"] = polygon_centroid(st["polygon"])
         st["piles"] = piles_in_zone(st["polygon"], self.piles) if self.piles else []
@@ -422,6 +506,8 @@ class ZoneTracker:
     def zone_at(self, x, y, margin_m=0.0):
         """Active zone containing (x, y) (within ``margin_m``): highest operator priority, then nearest centroid."""
         hits = [k for k, z in self.zones.items() if z["status"] != "cancelled"
+                and z["bbox"][0] - margin_m <= x <= z["bbox"][2] + margin_m
+                and z["bbox"][1] - margin_m <= y <= z["bbox"][3] + margin_m
                 and distance_to_polygon(x, y, z["polygon"]) <= margin_m]
         if not hits:
             return None
@@ -517,8 +603,18 @@ class ZoneTracker:
     def mark_lidar_mask(self, mask):
         self.lidar |= np.asarray(mask, bool)
 
+    def _disc(self, layer, xy, r):
+        i0 = max(0, int((xy[0] - r - self.origin[0]) / self.res) - 1)
+        i1 = min(self.w, int((xy[0] + r - self.origin[0]) / self.res) + 2)
+        j0 = max(0, int((xy[1] - r - self.origin[1]) / self.res) - 1)
+        j1 = min(self.h, int((xy[1] + r - self.origin[1]) / self.res) + 2)
+        if i0 >= i1 or j0 >= j1:
+            return
+        X, Y = raster_mesh((self.origin[0] + i0 * self.res, self.origin[1] + j0 * self.res), self.res, i1 - i0, j1 - j0)
+        layer[j0:j1, i0:i1] |= (X - xy[0]) ** 2 + (Y - xy[1]) ** 2 <= r * r
+
     def mark_lidar_disc(self, xy, radius_m):
-        self.lidar |= np.hypot(self.X - xy[0], self.Y - xy[1]) <= radius_m
+        self._disc(self.lidar, xy, radius_m)
 
     def mark_lidar_points(self, pts):
         pts = np.asarray(pts, float).reshape(-1, pts.shape[-1] if np.ndim(pts) == 2 else 2)
@@ -540,7 +636,7 @@ class ZoneTracker:
         reach = obs.get("max_reliable_depth_m")
         reach = self.reach_cap_m if reach is None else min(float(reach), self.reach_cap_m)
         x, y = obs["sensor_pose"][:2]
-        self.radar |= np.hypot(self.X - x, self.Y - y) <= reach
+        self._disc(self.radar, (x, y), reach)
         return True
 
     def mark_listened(self, drone_xy, range_m=None):
@@ -554,8 +650,9 @@ class ZoneTracker:
     def coverage(self, zid):
         z = self.zones[zid]
         n = max(z["n_cells"], 1)
-        return {"lidar_mapped": round(float((self.lidar & z["mask"]).sum()) / n, 3),
-                "radar_reached": round(float((self.radar & z["mask"]).sum()) / n, 3),
+        j0, j1, i0, i1 = z["box"]
+        return {"lidar_mapped": round(float((self.lidar[j0:j1, i0:i1] & z["sub"]).sum()) / n, 3),
+                "radar_reached": round(float((self.radar[j0:j1, i0:i1] & z["sub"]).sum()) / n, 3),
                 "listened": bool(z["listened"])}
 
     # ---------------------------------------------------------------- acoustic evidence
@@ -564,11 +661,26 @@ class ZoneTracker:
         return clip_position(clip, self.pile_xy)
 
     def assign_clip(self, clip):
-        """Zone id the clip's source falls in (see ``clip_xy``), else the first active zone along a single
-        bearing ray (2..60 m), else None."""
-        p, how = self.clip_xy(clip)
-        if p is not None and how != "single bearing":
-            return self.zone_at(p[0], p[1], margin_m=1.0)
+        """Zone id for a clip: the first active zone containing its explicit xy, its >= 2-bearing
+        triangulation or its associated pile's centre (the acoustic pipeline's association), in that order;
+        with none of these, the first zone along its single bearing ray (2..60 m); else None. Noisy bearings
+        therefore never pull a pile-associated clip out of its zone (no spurious suggestions)."""
+        pts = []
+        xy = _clip_get(clip, "xy")
+        if xy is not None:
+            pts.append(np.asarray(xy, float)[:2])
+        tri = triangulate(_clip_rays(clip))
+        if tri is not None:
+            pts.append(tri)
+        pid = _clip_get(clip, "pile_id")
+        if pid in self.pile_xy:
+            pts.append(np.asarray(self.pile_xy[pid], float))
+        for p in pts:
+            zid = self.zone_at(p[0], p[1], margin_m=1.0)
+            if zid is not None:
+                return zid
+        if pts:
+            return None
         for o, d in _clip_rays(clip)[:1]:
             for r in np.arange(2.0, 60.0, 0.5):
                 q = o + r * d
@@ -614,7 +726,7 @@ class ZoneTracker:
         pts = []
         for cid, c in self._outside.items():
             p, how = self.clip_xy(c)
-            if p is None or self.zone_at(p[0], p[1], margin_m=1.0) is not None:
+            if p is None or self.assign_clip(c) is not None:     # now inside a (new) zone
                 continue
             pts.append((cid, c, p, how))
         pts.sort(key=lambda e: -_clip_human(e[1]))
@@ -711,6 +823,8 @@ class ZoneTracker:
                 st["before_cancel"], st["status"] = st["status"], "cancelled"
                 msgs.append(f"zone {zid} no longer tasked (kept as cancelled; progress kept)")
         self.revision, self.source, self._digest = rev, tasking.source, dig
+        if self._outside:
+            self.suggest_zone([])                       # leads inside a newly tasked zone stop being suggestions
         for m in msgs:
             self._event(t, f"tasking revision {rev}: {m}")
         return msgs

@@ -8,7 +8,7 @@ Sensor (default ``LidarConfig()``, the legacy small drone): a spinning 32-channe
 down (elevations -18 to -80 deg below the body horizon, 0.5 deg azimuth step, 10 Hz, max range 40 m),
 i.e. ~23k beams per sweep.  ``LidarConfig.from_spec(sim.platform.get_platform("heavy_sar"))`` gives a
 dense sensor from a real spec (Ouster OS1-128: 128 ch x 1024 x 10 Hz = 1.31 M beams/s; Hesai XT32:
-640k/s), mounted with its spin axis along body +x (``tilt_deg`` 90: scan plane across track).  Dense
+640k/s), mounted with its spin axis pitched 45 deg forward (``tilt_deg``; 90 = across-track plane).  Dense
 sensors can be simulated on a random ``sim_fraction`` of the beam grid per sweep to keep runtime sane;
 the effective density is then the simulated density / sim_fraction.  Each sweep is taken at one pose
 (no intra-sweep motion), so KISS-ICP deskewing is switched off.  ``python -m mapping.raycast_lidar

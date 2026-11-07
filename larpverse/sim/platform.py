@@ -40,7 +40,7 @@ class LidarSpec:
     range_10pct_m: float           # range on 10% reflectivity targets
     range_sigma_m: float           # 1-sigma range precision
     weight_kg: float
-    mount_tilt_deg: float = 90.0   # spin axis pitched to body +x: scan plane across track, looks down + sideways
+    mount_tilt_deg: float = 45.0   # spin axis pitched 45 deg forward: scan plane slanted down-forward (study: beats 90)
     mount_z_m: float = 0.0         # sensor height above the mission pose point (skid level + LAND_HEIGHT)
     spinning: bool = True
 
@@ -213,10 +213,10 @@ _SRC = {
 
 OS1_128 = LidarSpec("Ouster OS1-128 (1024x10 mode)", channels=128, pts_per_s=128 * 1024 * 10, rate_hz=10.0,
                     hfov_deg=360.0, vfov_deg=(-22.5, 22.5), h_res_deg=360 / 1024, range_10pct_m=90.0,
-                    range_sigma_m=0.03, weight_kg=0.45, mount_tilt_deg=90.0, mount_z_m=0.25)
+                    range_sigma_m=0.03, weight_kg=0.45, mount_tilt_deg=45.0, mount_z_m=0.25)
 XT32 = LidarSpec("Hesai XT32", channels=32, pts_per_s=640_000, rate_hz=10.0, hfov_deg=360.0,
                  vfov_deg=(-16.0, 15.0), h_res_deg=0.18, range_10pct_m=80.0, range_sigma_m=0.01,
-                 weight_kg=0.80, mount_tilt_deg=90.0, mount_z_m=0.20)
+                 weight_kg=0.80, mount_tilt_deg=45.0, mount_z_m=0.20)
 MID360_LIKE = LidarSpec("Livox Mid-360-class (sim abstraction: 32 ch, -18..-80 deg fan)", channels=32,
                         pts_per_s=32 * 720 * 10, rate_hz=10.0, hfov_deg=360.0, vfov_deg=(-80.0, -18.0),
                         h_res_deg=0.5, range_10pct_m=40.0, range_sigma_m=0.02, weight_kg=0.265,
@@ -247,7 +247,7 @@ HEAVY_SAR = PlatformSpec(
                "cruise 10 m/s (spec max 20 m/s), climb 3 / descend 2 m/s, cruise_alt 12 m",
                "idle_power_w 250 (radar ~40 W, LiDAR ~20 W, compute ~60 W, avionics/links ~130 W)",
                "gear_footprint 1.6 x 1.4 m", "radar panel 0.6 x 0.5 m, 4 kg", "mic ring 8 x MEMS, 1.0 m, 1 kg",
-               "OS1 range sigma 3 cm, mount tilt 90 deg"),
+               "OS1 range sigma 3 cm, mount tilt 45 deg (density study, docs/PLATFORM.md)"),
     notes=("Downwash ~2x the disk value lifts dust and loose fragments: approach and land at the pile edge, never "
            "hover low over a suspected void.",
            "A ~77 kg drone on unstable rubble can shift debris onto a void: prefer street-level ground or a "

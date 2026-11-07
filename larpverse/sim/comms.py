@@ -43,7 +43,7 @@ RNG_STREAM = 123                       # separate RNG stream: default_rng([seed,
 PORTAL_URL = "http://10.42.0.1/"
 
 # ----------------------------------------------------------------------------- link budget (docs/HOTSPOT.md §3)
-FREQ_MHZ = 2437.0                      # Wi-Fi channel 6
+FREQ_MHZ = 2412.0                      # Wi-Fi channel 1 (docs/COMMS_ARCHITECTURE.md: mesh 5.8, pod 5.2, hotspot 2.4)
 AP_EIRP_DBM = 20.0                     # 100 mW EIRP (TW / EU 2.4 GHz limit; configured value)
 AP_RX_GAIN_DBI = 3.0                   # drone omni (est.)
 AP_SENS_DBM = -94.0                    # AP receive sensitivity at the lowest rate (est.; datasheets -94..-98)
@@ -76,7 +76,16 @@ MESH_MIN_SNR_DB = 5.0
 MESH_MAX_MBPS = 40.0                   # practical per-hop throughput, 20 MHz 2x2 (vendor 10 m figure)
 MESH_OBSTRUCTION_DB_PER_M = 20.0       # pile in the way ...
 MESH_OBSTRUCTION_CAP_DB = 25.0         # ... capped: diffraction over a short obstruction (est.)
-GCS_MAST_M = 3.0
+GCS_MAST_M = 10.5                      # van base node on a 9-12 m mast
+RELAY_MAST_M = 2.0                     # optional drop node: tripod at the pile edge
+HOP_LATENCY_MS = 3.0                   # per-hop MAC / forwarding latency (est.) + 1500 B serialisation at the hop rate
+DRONE_DATA_KBPS = 225.0                # ~1.8 Mbps per drone steady (map deltas, clips, thumbnails, RSSI; est.)
+GCS_UPLINKS = {                        # van backhaul to the internet (family messages, Gemini); config, not truth
+    "oneweb": "OneWeb via Chunghwa Telecom (Taiwan)",
+    "lte": "LTE / 5G where cells survive",
+    "starlink": "Starlink (generic option; no confirmed service in Taiwan)",
+    None: "none (local only)",
+}
 
 # ----------------------------------------------------------------------------- phones (hidden truth, est.)
 P_HAS_PHONE = 0.65
@@ -238,10 +247,15 @@ def mesh_link(a_xyz, b_xyz, grid=None):
     return round(rssi, 1), round(mbps, 1)
 
 
+def hop_latency_ms(mbps):
+    return HOP_LATENCY_MS + (12.0 / mbps if mbps > 0 else 0.0)
+
+
 def backhaul_routes(nodes, gcs_xyz, grid=None):
-    """Multi-hop routes to the GCS. nodes: {drone_id: xyz}. Shared-channel relay: end-to-end throughput of a path
-    is 1 / sum(1 / hop_mbps); each drone takes the path that maximises it (Dijkstra on sum of 1/mbps).
-    Returns {drone_id: {"next": id|"gcs"|None, "rssi_dbm", "mbps" (hop), "e2e_mbps", "hops"}}."""
+    """Multi-hop routes to the GCS. nodes: {node_id: xyz} (drones, plus an optional fixed "relay" drop node).
+    Shared-channel relay: end-to-end throughput of a path is 1 / sum(1 / hop_mbps); each node takes the path that
+    maximises it (Dijkstra on sum of 1/mbps). Returns {node_id: {"next": id|"gcs"|None, "rssi_dbm", "mbps" (hop),
+    "e2e_mbps", "hops", "latency_ms" (end to end, est.)}}."""
     ids = list(nodes)
     pos = dict(nodes, gcs=gcs_xyz)
     hop = {}
@@ -266,13 +280,15 @@ def backhaul_routes(nodes, gcs_xyz, grid=None):
     out = {}
     for u in ids:
         if u not in nxt:
-            out[u] = {"next": None, "rssi_dbm": None, "mbps": 0.0, "e2e_mbps": 0.0, "hops": 0}
+            out[u] = {"next": None, "rssi_dbm": None, "mbps": 0.0, "e2e_mbps": 0.0, "hops": 0, "latency_ms": None}
             continue
-        n, v = 0, u
+        n, v, lat = 0, u, 0.0
         while v != "gcs":
+            lat += hop_latency_ms(hop[(v, nxt[v])][1])
             v, n = nxt[v], n + 1
         rssi, mbps = hop[(u, nxt[u])]
-        out[u] = {"next": nxt[u], "rssi_dbm": rssi, "mbps": mbps, "e2e_mbps": round(1.0 / cost[u], 1), "hops": n}
+        out[u] = {"next": nxt[u], "rssi_dbm": rssi, "mbps": mbps, "e2e_mbps": round(1.0 / cost[u], 1), "hops": n,
+                  "latency_ms": round(lat, 1)}
     return out
 
 
@@ -597,14 +613,26 @@ class Comms:
     exactly as the acoustic / call-out generators do. Integration: see docs/HOTSPOT.md Requests."""
 
     def __init__(self, scenario, grid, gcs_xy, sectors=None, seed=0, site="WEIGUAN", internet=True,
-                 gcs_uplink="satellite", portal_url=PORTAL_URL, use_llm=False, llm_call=None, phones=None):
+                 gcs_uplink="oneweb", portal_url=PORTAL_URL, use_llm=False, llm_call=None, phones=None,
+                 relay_xy=None):
+        """``gcs_uplink``: oneweb (Tainan default, via Chunghwa Telecom) | lte | starlink | None; ``internet`` False
+        (or uplink None) means local only: portal and replies work, family messages and Gemini do not.
+        ``relay_xy``: optional drop node (tripod mesh radio) at the pile edge, a fixed relay for the drones."""
         self.grid, self.seed = grid, int(seed)
         self.gcs_xy = [float(gcs_xy[0]), float(gcs_xy[1])]
         gz = float(grid.height_at(*self.gcs_xy)) if grid is not None else 0.0
         self.gcs_xyz = [self.gcs_xy[0], self.gcs_xy[1], gz + GCS_MAST_M]
         self.sectors = sectors or {}
         self.ssid = "RESCUE-" + re.sub(r"[^A-Z0-9]+", "", str(site).upper())[:20]
-        self.internet, self.gcs_uplink, self.portal_url = bool(internet), gcs_uplink, portal_url
+        if gcs_uplink not in GCS_UPLINKS:
+            raise CommsError(f"gcs_uplink must be one of {list(GCS_UPLINKS)}")
+        self.internet = bool(internet) and gcs_uplink is not None
+        self.gcs_uplink, self.portal_url = gcs_uplink, portal_url
+        self.relay_xyz = None
+        if relay_xy is not None:
+            rz = float(grid.height_at(*relay_xy)) if grid is not None else 0.0
+            self.relay_xyz = [float(relay_xy[0]), float(relay_xy[1]), rz + RELAY_MAST_M]
+        self._dlink = {}        # drone_id -> {"link": mesh|stored, "last_link_t", "queued_kb"}
         self.use_llm, self.llm_call = use_llm, llm_call
         if phones is None:
             phones = (getattr(scenario, "truth", None) or {}).get("phones")
@@ -639,14 +667,18 @@ class Comms:
 
     def step(self, t, drones):
         """drones: flight.poses() [{id, pose: [x, y, z, ...], state, battery}]. Returns events (dicts with t, type,
-        device, ...): joined | status | message | located | evidence | left."""
+        device, ...): joined | status | message | located | evidence | left, and per drone link_lost | link_restored."""
+        dt = max(0.0, float(t) - self.t)
         self.t = float(t)
         aps = {d["id"]: [float(v) for v in d["pose"][:3]] for d in drones if self._ap_on(d)}
-        routes = backhaul_routes(aps, self.gcs_xyz, self.grid) if aps else {}
-        self._links = [{"from": did, "to": r["next"], "rssi_dbm": r["rssi_dbm"], "mbps": r["mbps"]}
-                       for did, r in routes.items() if r["next"] is not None]
+        nodes = {d["id"]: [float(v) for v in d["pose"][:3]] for d in drones}     # mesh radio is always on
+        if self.relay_xyz is not None:
+            nodes["relay"] = self.relay_xyz
+        routes = backhaul_routes(nodes, self.gcs_xyz, self.grid) if nodes else {}
+        self._links = [{"from": did, "to": r["next"], "rssi_dbm": r["rssi_dbm"], "mbps": r["mbps"],
+                        "latency_ms": r["latency_ms"]} for did, r in routes.items() if r["next"] is not None]
+        out = self._update_drone_links(routes, [d["id"] for d in drones], dt)
         raw, readings = self._radio.observe(self.t, aps)
-        out = []
         for r in readings:
             d = self._device(r["device"], t)
             rl = self._readings.setdefault(r["device"], [])
@@ -692,6 +724,31 @@ class Comms:
                                   "xy": [round(float(d["pose"][0]), 2), round(float(d["pose"][1]), 2)],
                                   "z": round(float(d["pose"][2]), 2), "clients": 0, "radius_m_est": 0.0})
         return out
+
+    def _update_drone_links(self, routes, ids, dt):
+        """Store-and-forward per drone: with a route the backlog drains at the end-to-end rate, without one it grows
+        at DRONE_DATA_KBPS (the drone keeps searching and data-mules later). Returns link_lost / link_restored."""
+        out = []
+        for did in ids:
+            r = routes.get(did) or {"next": None, "e2e_mbps": 0.0}
+            st = self._dlink.setdefault(did, {"link": "mesh", "last_link_t": self.t, "queued_kb": 0.0})
+            up = r["next"] is not None
+            if up:
+                st["queued_kb"] = max(0.0, st["queued_kb"] + (DRONE_DATA_KBPS - r["e2e_mbps"] * 125.0) * dt)
+                st["last_link_t"] = round(self.t, 1)
+            else:
+                st["queued_kb"] += DRONE_DATA_KBPS * dt
+            new = "mesh" if up else "stored"
+            if new != st["link"]:
+                out.append({"t": round(self.t, 1), "type": "link_restored" if up else "link_lost", "drone_id": did,
+                            "queued_kb": round(st["queued_kb"], 1)})
+                st["link"] = new
+        return out
+
+    def drone_link(self, drone_id):
+        """drones[].link / last_link_t / queued_kb for the mission's state (contract v1.4 comms additions)."""
+        st = self._dlink.get(drone_id) or {"link": "mesh", "last_link_t": None, "queued_kb": 0.0}
+        return {"link": st["link"], "last_link_t": st["last_link_t"], "queued_kb": round(st["queued_kb"], 1)}
 
     def _portal_event(self, d, ev, t):
         out = []
@@ -834,7 +891,8 @@ class Comms:
     def state(self):
         return {
             "backhaul": {"kind": "mesh", "gcs_xy": [round(v, 2) for v in self.gcs_xy], "internet": self.internet,
-                         "links": list(self._links)},
+                         "uplink": self.gcs_uplink, "links": list(self._links),
+                         **({"relay_xy": [round(v, 2) for v in self.relay_xyz[:2]]} if self.relay_xyz else {})},
             "hotspots": list(self._hot),
             "devices": [dict(d) for d in sorted(self.devices.values(), key=lambda d: d["first_seen"])],
             "portal": {"url": self.portal_url, "submissions": self.submissions},

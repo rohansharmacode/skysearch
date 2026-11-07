@@ -104,8 +104,8 @@ class ThermalSpec:
 @dataclass(frozen=True)
 class PodSpec:
     """Winch-lowered sensor pod (radar + 4-mic array) set down on the rubble surface from a hovering drone."""
-    mass_kg: float = 5.0
-    footprint_m: float = 0.5           # pod base edge
+    mass_kg: float = 4.9               # radar + 4-mic array + battery + shell (docs/HARDWARE.md)
+    footprint_m: float = 0.48          # pod face 0.48 x 0.48 m = the radar aperture in pod mode
     winch_m: float = 20.0              # usable line length
     lower_s: float = 8.0               # lowering time (hover to contact)
     raise_s: float = 8.0
@@ -113,6 +113,7 @@ class PodSpec:
     contact_coupling: bool = True      # antenna face in contact: no air-gap / stand-off path
     hover_clear_m: float = 5.0         # hover height over the tallest cell under the rotor disc
     n_mics: int = 4
+    winch_kg: float = 3.1              # FlyCart 30 winch kit; its 5 kg minimum load leaves no margin over the pod
 
 
 POD = PodSpec()
@@ -244,12 +245,13 @@ HEAVY_SAR = PlatformSpec(
     name="heavy_sar",
     airframe="Heavy-lift coaxial X8, DJI FlyCart 30 / Agras T50 class (54-in props, 2.2 m wheelbase)",
     layout="coaxial-X8", n_rotors=8, span_m=3.085, wheelbase_m=2.20, prop_d_m=1.375,
-    empty_mass_kg=65.0, payload_kg=12.0, mtow_kg=95.0, battery_wh=2 * 1984.4,
-    endurance_min=24.6, cruise_mps=10.0, climb_mps=3.0, descend_mps=2.0, cruise_alt_m=12.0,
+    empty_mass_kg=65.0, payload_kg=14.0, mtow_kg=95.0, battery_wh=2 * 1984.4,
+    endurance_min=23.9, cruise_mps=10.0, climb_mps=3.0, descend_mps=2.0, cruise_alt_m=12.0,
     terrain_clear_m=5.0, max_wind_mps=12.0, ip_rating="IP55", idle_power_w=250.0,
     gear_footprint_m=(1.6, 1.4),
     lidar=OS1_128,
-    radar=RadarSpec(band_ghz=(0.4, 2.0), aperture_m=(0.60, 0.50), weight_kg=4.0),
+    # pod mode (default): the radar is IN the pod (0.48 x 0.48 m face), no 4 kg panel on the drone
+    radar=RadarSpec(band_ghz=(0.4, 2.0), aperture_m=(0.48, 0.48), weight_kg=0.0),
     mics=MicArraySpec(n_mics=8, aperture_m=1.0, weight_kg=1.0),
     speaker=SpeakerSpec("DJI Zenmuse V1", spl_db_1m=129.0, band_hz=(800, 8000), weight_kg=0.69),
     thermal=ThermalSpec("DJI Zenmuse H30T (thermal channel)", (1280, 1024), 0.92),
@@ -261,8 +263,9 @@ HEAVY_SAR = PlatformSpec(
              "speaker: 129 dB @1 m (on M400), 800 Hz-8 kHz, 690 g": _SRC["v1"],
              "thermal 1280x1024": _SRC["h30t"]},
     estimates=("empty_mass_kg 65 = MTOW 95 kg minus the 30 kg rated cargo (42.5 kg frame + two DB2000 packs)",
-               "payload_kg 12 (OS1 0.45 + radar 4 + mics 1 + V1 0.69 + H30T 0.92 + compute 1.5 + gimbal/mounts 3.4)",
-               "endurance_min 24.6: linear between the spec's 29 min (empty) and 18 min (30 kg) at 12 kg",
+               "payload_kg 14 in pod mode (6 airframe sensors/compute/mounts + 3.1 winch + 4.9 pod; no radar panel on "
+               "the drone; docs/HARDWARE.md)",
+               "endurance_min 23.9: linear between the spec's 29 min (empty) and 18 min (30 kg) at 14 kg",
                "cruise 10 m/s (spec max 20 m/s), climb 3 / descend 2 m/s, cruise_alt 12 m",
                "idle_power_w 250 (radar ~40 W, LiDAR ~20 W, compute ~60 W, avionics/links ~130 W)",
                "gear_footprint 1.6 x 1.4 m", "radar panel 0.6 x 0.5 m, 4 kg", "mic ring 8 x MEMS, 1.0 m, 1 kg",

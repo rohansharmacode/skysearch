@@ -54,6 +54,14 @@ knock pattern (>= 0.2). Whisper runs when VAD >= 0.15 or the class is voice/shou
 DoA): ESC-50 0.46 -> 0.70 (door-knock recall 0.17 -> 0.67), teammate clips 0.83 -> 0.81, with real
 rotor noise mixed at 0 dB: ESC 0.24 -> 0.28, teammate 0.64 -> 0.69, DroneAudioSet 0.49 -> 0.58.
 
+Rotors (Request 0, docs/ACOUSTIC_VALIDATION.md section 6): `listen_and_rank(..., rotors={id: (x, y)})`
+takes our own drones hovering during the listen (public mission state). CLEAN components within 8 deg of
+a hovering drone's bearing are skipped before association, and those bearings are nulled in every beam.
+`run.rotor_veto` (inside `class_human_floor`) caps human at 0.3 for a voice/shout/knocking clip that
+sounds like a rotor (`heuristics.steadiness` >= 0.3, or a `blade_pass` comb >= 0.25 on continuous sound)
+without independent speech evidence (VAD < 0.3, human-minus-animal < 0.4). `scene.build_scene(rotors=)`
+synthesises blade-pass noise for testing; `python -m acoustic.run --rotor-xy '{"d4": [x, y]}'`.
+
 Evaluation (reads truth, evaluator only): `acoustic/eval_assign.py` replays the numpy grid mission with
 the real pipeline and scores per-pile assignment over every listen, one heavy job per seed:
 

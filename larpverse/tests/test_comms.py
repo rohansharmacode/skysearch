@@ -79,6 +79,27 @@ def test_mesh_multihop_relays_when_direct_link_fails():
     assert alone["d1"]["next"] is None and alone["d1"]["mbps"] == 0.0
     near = C.backhaul_routes({"d1": [40.0, 0.0, 10.0]}, gcs)
     assert near["d1"]["next"] == "gcs" and near["d1"]["mbps"] == C.MESH_MAX_MBPS
+    assert r["d1"]["latency_ms"] > r["d2"]["latency_ms"] > 0          # every hop adds latency
+    via = C.backhaul_routes({"d1": [1000.0, 0.0, 30.0], "relay": [500.0, 0.0, 2.0]}, gcs)   # drop node relays
+    assert via["d1"]["next"] == "relay" and via["relay"]["next"] == "gcs"
+
+
+def test_store_and_forward_when_mesh_is_lost(site):
+    sc, gw = site
+    comms = C.Comms(sc, gw.grid, BASE_XY, seed=7, gcs_uplink="lte")
+    near = [{"id": "d1", "pose": [0.0, -40.0, 15.0], "state": "flying", "battery": 0.9}]
+    far = [{"id": "d1", "pose": [4000.0, 0.0, 15.0], "state": "flying", "battery": 0.9}]
+    comms.step(0.0, near)
+    ev = comms.step(10.0, far)
+    assert ev[0]["type"] == "link_lost" and comms.drone_link("d1")["link"] == "stored"
+    comms.step(20.0, far)
+    q = comms.drone_link("d1")["queued_kb"]
+    assert q == pytest.approx(2 * 10 * C.DRONE_DATA_KBPS) and comms.drone_link("d1")["last_link_t"] == 0.0
+    ev = comms.step(30.0, near)
+    assert ev[0]["type"] == "link_restored" and comms.drone_link("d1")["queued_kb"] < q
+    with pytest.raises(C.CommsError):
+        C.Comms(sc, gw.grid, BASE_XY, gcs_uplink="satellite")
+    assert C.Comms(sc, gw.grid, BASE_XY, gcs_uplink=None).state()["backhaul"]["internet"] is False
 
 
 # ----------------------------------------------------------------------------- localisation
@@ -171,8 +192,13 @@ def test_state_schema_v14(site):
     assert set(st) == {"backhaul", "hotspots", "devices", "portal"}
     bh = st["backhaul"]
     assert bh["kind"] == "mesh" and len(bh["gcs_xy"]) == 2 and isinstance(bh["internet"], bool)
+    assert bh["uplink"] == "oneweb" and bh["internet"] is True
     for ln in bh["links"]:
-        assert set(ln) == {"from", "to", "rssi_dbm", "mbps"} and (ln["to"] == "gcs" or ln["to"].startswith("d"))
+        assert set(ln) == {"from", "to", "rssi_dbm", "mbps", "latency_ms"}
+        assert (ln["to"] == "gcs" or ln["to"].startswith("d")) and ln["latency_ms"] >= C.HOP_LATENCY_MS
+    for did in ("d1", "d2", "d3"):
+        dl = comms.drone_link(did)
+        assert set(dl) == {"link", "last_link_t", "queued_kb"} and dl["link"] in ("mesh", "stored")
     assert bh["links"], "landed drones near the staging area must reach the GCS"
     for h in st["hotspots"]:
         assert set(h) == {"drone_id", "ssid", "on", "xy", "z", "clients", "radius_m_est"}
@@ -189,7 +215,8 @@ def test_state_schema_v14(site):
             assert {"t", "text", "lang", "translation", "by"} <= set(m) and m["by"] in ("gemini", "fallback", "none")
             assert m.get("synthetic") is True          # sim messages are labelled synthetic
     assert set(st["portal"]) == {"url", "submissions"} and st["portal"]["submissions"] >= 1
-    assert {e["type"] for e in events} <= {"joined", "left", "status", "message", "located", "evidence"}
+    assert {e["type"] for e in events} <= {"joined", "left", "status", "message", "located", "evidence",
+                                           "link_lost", "link_restored"}
     for e in events:
         if e["type"] == "evidence":
             assert e["pile"] in gw.pile_xy and e["sigma_m"] <= C.EVIDENCE_SIGMA_M and e["status"] != "safe"

@@ -27,7 +27,7 @@ reseller prices in USD as of Nov 2026 and are always approximate.
 | Loudspeaker | CZI MP130 V2 (sim: DJI Zenmuse V1) | 0.55 kg | 2 / 25 W | ~$1k est. | COTS + adapter |
 | Thermal (optional) | Teledyne FLIR Hadron 640R+ on a micro gimbal | 0.36 kg est. | 3 / 5 W est. | ~$8k est. | COTS + integration |
 | Compute | Jetson AGX Orin 64GB, rugged carrier, 2 TB NVMe | 1.2 kg est. | 40 / 60 W | ~$4.6k est. | COTS + integration |
-| Mesh radio | Doodle Labs Mini-OEM Mesh Rider + antennas | 0.20 kg | 5 / 8 W | ~$3k est. | COTS + integration |
+| Mesh radio | Doodle Labs Mesh Rider, 5.8 GHz SKU + antennas | 0.20 kg | 5 / 8 W | ~$3k est. | COTS + integration |
 | Rescue hotspot | GL.iNet GL-MT300N-V2 (OpenWrt) + omni | 0.10 kg | 2 / 2.75 W | ~$60 | COTS |
 | GNSS / time | Holybro H-RTK F9P Ultralight (u-blox ZED-F9P) | 0.02 kg | 0.5 W | ~$300 est. | COTS |
 | Pod link | Intel AX210 (5 GHz AP) in the Orin carrier | 0.04 kg | 2 / 3 W | ~$40 | COTS |
@@ -189,10 +189,17 @@ hover power.
 | Price | quote | quote | quote |
 | Source | [Doodle Labs](https://doodlelabs.com/product/mini-oem-smart-radio) | [datasheet](https://silvustechnologies.com/wp-content/uploads/2024/10/Silvus_SL5200_OEM_Module_Datasheet_DL1_DIGITAL.pdf), [PR](https://prnewswire.com/news-releases/silvus-technologies-unveils-streamcaster-lite-5200-302283091.html) | [brochure](https://microhardcorp.com/brochures/pDDL2450.Brochure.Rev.1.4.1.pdf) |
 
-**Why Doodle:** it has the lowest SWaP of the three, it's widely integrated on PX4/ArduPilot drones, it routes
-Ethernet natively, and there's a SKU whose band avoids both our radar sweep and the 2.4 GHz hotspot (frequency plan,
-§13). Silvus is the stronger pick if MN-MIMO robustness in a rubble canyon matters more than cost; it's
+**Why Doodle:** it has the lowest SWaP of the three, it's widely integrated on PX4/ArduPilot drones, and it routes
+Ethernet natively. **Band:** **5.8 GHz ISM** by default. It's licence-free, sits above the 0.4–2 GHz radar sweep,
+stays off the 2.4 GHz hotspot, and matches `sim/comms.py` (`MESH_FREQ_MHZ = 5800`). The Mini-OEM page lists
+5650–5755 MHz (Japan) but not 5.8 GHz, so a 5.8 GHz build may need the larger OEM Mesh Rider (RM-5800 class,
+about 100 g, verify). With an emergency frequency assignment, the M-band SKU at 2.2–2.3 GHz trades bandwidth for
+better diffraction around rubble. Silvus is the stronger pick if MN-MIMO robustness in a rubble canyon matters more than cost; it's
 Motorola-owned and in the Blue UAS framework. Microhard is a cheap point-to-point link, not a mesh.
+
+**Frequency plan** (also in the BOM JSON): radar 0.4–2.0 GHz with GNSS and cellular notches · RC link 2.4 GHz (or
+902–928 MHz on the H6HL, which overlaps the sweep, so skip those steps) · hotspot 2.4 GHz channel 1 · pod link
+5.2 GHz UNII-1 (channels 36–48) · mesh 5.8 GHz · GNSS receive only.
 
 ## 9. Rescue hotspot access point
 

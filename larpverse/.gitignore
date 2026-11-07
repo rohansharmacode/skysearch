@@ -16,3 +16,5 @@ agents/cache/
 .env
 *.env
 .claude/
+!data/hardware_bom.json
+!data/audio_real/fleurs/SOURCE.md

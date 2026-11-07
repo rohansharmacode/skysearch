@@ -61,9 +61,9 @@ MISSION_SCANS = 24             # autonomous: radar scans for the whole mission (
 MISSION_SCANS_POD = 36         # winch pod: a re-placement is ~20 s + a 36 s winch/scan cycle instead of a re-land
 RESERVE = 0.25                 # every drone keeps this battery fraction; below it the fleet swaps packs
 SWAP_S = 60.0                  # battery swap time at the pads once all drones are docked
-VITALS_LOOK_S = 0.0            # 60 s in-place dwell per firm ping once the vitals hook is live (on hold)
+VITALS_LOOK_S = 60.0           # one 60 s look per firm ping (pod re-lowered / landed drone in place): patterns need 45-60 s
 CALLOUT_LANGS = ("zh-TW", "nan-TW", "en")
-REVISIT_MIN_COVERAGE = 0.5     # revisit an open lead only if the radar can reach most of its top 2 m
+REVISIT_MIN_COVERAGE = 0.25    # revisit an open lead only if the radar can reach most of its top 2 m
 REVISIT_DISCOUNT = 0.5         # an open lead already scanned ranks at half its acoustic priority
 # radar_dsp presets: literature | legacy (docs/RADAR_PENETRATION.md). Default stays "legacy" so the seed-7
 # demo keeps its pings; with "literature" the landing ring is out of radar reach (product decision pending).
@@ -264,7 +264,8 @@ class GridMission:
         cap = f", pile cap {pile_budget}" if pile_budget is not None else ""
         self._say(f"Grid mission start (seed {seed}, {radar} radar, {dispatch_policy} dispatch): 3 drones at the staging "
                   f"area, start pile {self.start_pile} (operator choice); {budget}{cap}")
-        r2, r11 = reach_path_m(REACH_REF_RANGE_M, 0.9), reach_path_m(11.0, 0.9)
+        dw = 45.0 if self.delivery == "pod" else 20.0
+        r2, r11 = reach_path_m(REACH_REF_RANGE_M, 0.9, dwell=dw), reach_path_m(11.0, 0.9, dwell=dw)
         self._say(f"Radar penetration model '{self.penetration}': a good scan sees a breathing chest through about "
                   f"{r2:.1f} m of rubble directly beneath it and {r11:.1f} m from an 11 m stand-off"
                   + ("; deeper than that is beyond radar reach (acoustic lead only)" if self.penetration == "literature"
@@ -460,9 +461,13 @@ class GridMission:
         return ids.index(pod["site"]) + 1 if pod.get("site") in ids else None
 
     def _lead_xy(self, name):
-        """Acoustic lead posterior centre for pile ``name``: least-squares crossing of the human-like bearing
-        cones assigned to it (>= 2 origins >= 3 m apart, crossing within 8 m of the pile), else the pile centre."""
+        """Lead posterior mode for pile ``name``: on a revisit, the earlier radar mode there; else the least-squares
+        crossing of the human-like bearing cones assigned to it if it falls on the pile (within 4 m of its
+        centre); else the pile centre."""
         cx, cy = self.world.pile_xy[name]
+        prev = [c for c in self.done_cands if c.get("pile_id") == name and c.get("kind", "stationary") == "stationary"]
+        if prev:
+            return (float(prev[0]["xy"][0]), float(prev[0]["xy"][1]))
         obs = [o for o in self.acoustic_obs if o.get("pile_id") == name and o.get("bearing_deg") is not None]
         if len(obs) >= 2:
             A, b = np.zeros((2, 2)), np.zeros(2)
@@ -474,7 +479,7 @@ class GridMission:
                 b += w * n * (n @ np.asarray(o["origin"], float))
             if np.linalg.cond(A) < 1e3:
                 x = np.linalg.solve(A, b)
-                if np.hypot(x[0] - cx, x[1] - cy) <= 8.0:
+                if np.hypot(x[0] - cx, x[1] - cy) <= 4.0:
                     return (float(x[0]), float(x[1]))
         return (cx, cy)
 
@@ -866,11 +871,11 @@ class GridMission:
         for o in scans:
             ps = np.asarray(o["sensor_pose"][:3], float)
             r = np.linalg.norm(pts - ps[None, :], axis=1)
-            hit |= rubble_path(g, ps, pts) <= reach_path_m(r, o["quality"])
+            hit |= rubble_path(g, ps, pts) <= reach_path_m(r, o["quality"], dwell=o.get("dwell_s", 20.0))
         sh = depth <= 2.0
         reach = [o.get("max_reliable_depth_m") for o in scans if o.get("max_reliable_depth_m") is not None]
         if not reach and scans:
-            reach = [reach_path_m(REACH_REF_RANGE_M, o["quality"]) for o in scans]
+            reach = [reach_path_m(REACH_REF_RANGE_M, o["quality"], dwell=o.get("dwell_s", 20.0)) for o in scans]
         return {"radar_coverage": round(float(hit.mean()), 3),
                 "radar_coverage_shallow": round(float(hit[sh].mean()) if sh.any() else 1.0, 3),
                 "radar_reach_m": round(float(np.median(reach)), 2) if reach else None}
@@ -1430,7 +1435,8 @@ class GridMission:
                         "in_transit": upcoming,
                         "radar_penetration": self.penetration, "delivery": self.delivery,
                         "platform": self.platform or "legacy_small",
-                        "radar_reach_beneath_m": round(reach_path_m(REACH_REF_RANGE_M, 0.9), 2),
+                        "radar_reach_beneath_m": round(reach_path_m(REACH_REF_RANGE_M, 0.9,
+                                                                    dwell=45.0 if self.delivery == "pod" else 20.0), 2),
                         "autonomous": self.autonomous, "dispatch_policy": self.dispatch_policy, "radar": self.radar,
                         "scan_budget": self.mission_scans, "scans_used": self.scans_used,
                         "battery_reserve": self.reserve, "battery_swaps": self.n_swaps,

@@ -48,11 +48,12 @@ def test_visits_multiple_piles_in_acoustic_priority_order(run):
 
 
 def test_seed7_dsp_default_pings_every_voice_pile(run):
-    """BL-8 / R1-005: with the default dsp radar the demo pings A2, A3 (voice) and B2 (knock)."""
+    """Default radar (dsp, realistic penetration, winch pod, physio chest motion): A2 and B2 ping on the stub
+    acoustics; A3's shallow rapid breathing may stay an open lead (see test_demo_story for the full story)."""
     m, _, state, _ = run
     assert m.radar == "dsp" and state["mission"]["radar"] == "dsp"
     firm = {c["pile_id"] for c in state["radar_candidates"] if c["status"] == "candidate"}
-    assert {"A2", "A3", "B2"} <= firm
+    assert {"A2", "B2"} <= firm
     for c in state["radar_candidates"]:
         assert c["depth_source"] in ("radar_estimate", "nominal") and c["p_kind"] == "share_of_pile_belief"
         assert isinstance(c["support"], int) and c["support_needed"] == 3

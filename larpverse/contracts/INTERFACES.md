@@ -464,3 +464,10 @@ when that value is higher and the task is a `lead`, then re-picks `radar_ping` a
 - **No `tasking.json`, or no active zones: the mission runs recon** (the user's decision). The scenario's default sector zones are opt-in with `--tasking default`.
 - `tasking.json` may carry `aoi` (one polygon, site metres), which restricts the recon coverage flight. `scripts/serve.py` validates it and passes it through.
 - Mission `stage` adds `recon`. `phase` uses `recon_mapping` and `recon_listening` (above) while it's active.
+
+### Link status and pod commands (v1.4.2, from docs/COMMS_ARCHITECTURE.md)
+
+- `drones[]`: `link` (`ok|degraded|lost`), `last_link_t`, `queued_kb` (data held on board while the mesh is down; forwarded later).
+- `comms.backhaul.links[]`: `latency_ms`.
+- Commands from the van to the drones (MAVLink winch commands on the flight side; JSON on the ops API): `lower_pod {drone_id, xy}`, `raise_pod {drone_id}`, `relay_hold {drone_id, xy, alt}` (park a drone as a mesh relay).
+- Backhaul for Tainan: OneWeb via Chunghwa Telecom, or LTE. Starlink is the generic option where it's licensed.

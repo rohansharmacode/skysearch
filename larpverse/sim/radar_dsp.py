@@ -172,30 +172,35 @@ def reflection_amplitude(range_m, rubble_path_m=0.0, rcs_db=0.0, params: RadarPa
 
 # detection threshold of process_if: chest amplitude (dB re unit noise per IF sample) at which ~90% of scans
 # give a strong candidate, per landing quality (measured by scripts in docs/RADAR_PENETRATION.md)
-A90_DB = {0.95: -17.0, 0.6: -15.0, 0.3: -11.0}   # 12 scans per 3 dB step at 6 m, seeds 0-11
+# Measured with the breath-by-breath chest waveform of a calm adult (sim/physio.py, ~5 mm peak-to-peak, 15/min) at
+# 6 m, 10 scans per 3 dB step (docs/RADAR_PENETRATION.md). Longer dwell integrates more breaths: 20 s -> 45 s is
+# ~6 dB here. Low-quality scans saturate below 90% (platform motion), so their entries are where ~90% is reached
+# or a conservative cap. The old 4-8 mm-amplitude sinusoid needed 14 dB less (A90 -17 dB at 20 s): optimistic.
+A90_DB = {20.0: {0.95: -3.0, 0.6: 0.0, 0.3: 9.0},
+          45.0: {0.95: -9.0, 0.6: -6.0, 0.3: 3.0},
+          60.0: {0.95: -11.5, 0.6: -8.5, 0.3: 0.5}}
 
 
-def detect_threshold_db(quality):
-    qs = sorted(k for k, v in A90_DB.items() if v is not None)
-    if not qs:
-        return 20 * np.log10(AMP_1M / REACH_REF_RANGE_M ** 2) - two_way_loss_db(REACH_BENEATH_M)
-    return float(np.interp(quality, qs, [A90_DB[q] for q in qs]))
+def detect_threshold_db(quality, dwell=20.0):
+    ds = sorted(A90_DB)
+    by_d = [float(np.interp(quality, sorted(A90_DB[d]), [A90_DB[d][q] for q in sorted(A90_DB[d])])) for d in ds]
+    return float(np.interp(np.log(max(float(dwell), 1.0)), np.log(ds), by_d))
 
 
-def reach_path_m(range_m, quality=0.9, params: RadarParams | None = None):
+def reach_path_m(range_m, quality=0.9, params: RadarParams | None = None, dwell=20.0):
     """Rubble path (m) through which a breathing chest at ``range_m`` still clears the detection threshold
     in ~90% of scans of the given quality (0 when even free space is out of reach). Vectorised over range.
     Not ground truth: a property of the radar and the propagation model (planner, coverage map, scans)."""
     r = np.maximum(np.asarray(range_m, float), 1.0)
-    margin = 20 * np.log10(AMP_1M / r ** 2) + CHEST_RCS_DB + _PEN["rx_gain_db"] - detect_threshold_db(quality)
+    margin = 20 * np.log10(AMP_1M / r ** 2) + CHEST_RCS_DB + _PEN["rx_gain_db"] - detect_threshold_db(quality, dwell)
     Ls = np.linspace(0.0, 8.0 if _PEN["model"] == "literature" else 60.0, 241)
     out = np.where(margin > 0, np.interp(margin, two_way_loss_db(Ls, params), Ls), 0.0)
     return out if np.ndim(range_m) else float(out)
 
 
-def reach_prob(range_m, path_m, quality=0.9, params: RadarParams | None = None, soft_m=0.25):
+def reach_prob(range_m, path_m, quality=0.9, params: RadarParams | None = None, soft_m=0.25, dwell=20.0):
     """Probability the breathing return clears the threshold: logistic in (reach - path), 90% at the reach."""
-    x = reach_path_m(range_m, quality, params) - np.asarray(path_m, float)
+    x = reach_path_m(range_m, quality, params, dwell) - np.asarray(path_m, float)
     out = 1.0 / (1.0 + np.exp(np.clip(-x / soft_m, -50, 50)) / 9.0)
     return out if np.ndim(out) else float(out)
 
@@ -472,6 +477,8 @@ class ScanResult:
             "doppler_moving": False,
             # rubble this scan can see through directly beneath (2 m slant), from its measured quality
             "max_reliable_depth_m": round(reach_path_m(REACH_REF_RANGE_M, float(self.quality)), 2),
+            # one entry per range candidate (same order): sim/vitals.py contract dict, or None
+            "vitals": [c.get("vitals") for c in self.candidates],
         }]
         if self.doppler_moving and self.moving:
             out.append({
@@ -636,7 +643,12 @@ def process_if(iq: np.ndarray, params: RadarParams | None = None, cfg: DspConfig
         if edge:
             conf *= 0.5
         conf *= float(np.clip(1.0 - (asym - 0.25) / 0.35, 0.0, 1.0))      # one-sided Doppler = bulk motion
-        vit = None                    # vitals hook (sim/vitals.extract) on hold until its API settles
+        try:                          # breathing-pattern triage aid (sim/vitals.py); never blocks detection
+            from . import vitals as _vitals
+            vit = _vitals.extract(x_bin, fs, kind="iq", wavelength=params.wavelength, range_m=r_ref,
+                                  quality=quality, snr_db=float(snr_db), params=params)
+        except Exception:             # noqa: BLE001
+            vit = None
         cands.append({"bin": int(k), "range_m": r_ref, "confidence": conf, "breathing_hz": est["rate_hz"], "vitals": vit,
                       "snr_db": float(snr_db), "asym": asym, "static_frac": static_frac, "peakiness": est["peakiness"], "band_ratio": est["band_ratio"],
                       "_disp": disp, "_filt": est["filtered"], "_f": est["f"], "_p": est["p"]})

@@ -184,7 +184,7 @@ POD_CORRIDOR_M = 1.0      # max height of anything within ~0.75 m above the plac
 
 def detect_pod_sites(grid: Grid, centre, lead_xy=None, lead_r: float = 3.0, max_slope: float = 30.0,
                      winch_m: float = 20.0, hover_clear: float = 5.0, rotor_r: float = 1.6,
-                     max_sites: int = 16, min_spacing: float = 1.5):
+                     max_sites: int = 16, min_spacing: float = 1.0):
     """Pod placements on the pile surface, from the heightmap only (no targets).
 
     A cell qualifies when it is on the pile (> 0.4 m above local ground), within ``lead_r`` + 3 m of the acoustic
@@ -210,10 +210,11 @@ def detect_pod_sites(grid: Grid, centre, lead_xy=None, lead_r: float = 3.0, max_
     rotor_cells = 2 * int(np.ceil(rotor_r / res)) + 1
     hover_z = maximum_filter(z, size=rotor_cells) + hover_clear
     drop = hover_z - z
-    ok = ((z - ground > 0.4) & (rl <= lead_r + 3.0) & (slope <= max_slope) & (rough <= POD_MAX_ROUGH)
+    ok = ((z - ground > 0.4) & (slope <= max_slope) & (rough <= POD_MAX_ROUGH)
           & (corridor <= POD_CORRIDOR_M) & (drop <= winch_m))
-    # nearest to the lead first (1.5 m bands), flattest seat (roughness, then slope) within a band
-    rows = sorted(zip(*np.nonzero(ok)), key=lambda ji: (int(rl[ji] / 1.5), rough[ji] / 0.03 + slope[ji] / 30))
+    ok = ok & (rl <= lead_r + 3.0)
+    # within 2 m (horizontal) of the lead first, then 2 m bands outwards; flattest seat within a band
+    rows = sorted(zip(*np.nonzero(ok)), key=lambda ji: (int(rl[ji] / 2.0), rough[ji] / 0.03 + slope[ji] / 30))
     chosen = []
     for j, i in rows:
         if len(chosen) >= max_sites:

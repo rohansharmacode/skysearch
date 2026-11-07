@@ -1,6 +1,6 @@
 # Isaac Sim brief for the teammate's Claude session
 
-**Read this first, every time you pull.** It's the single, current, Isaac-only brief. Older docs (`ISAAC_HANDOFF.md`, `FOR_ISAAC_CLAUDE.md`) carry history; when they disagree, this file wins. Status labels:
+**Interim fast version: `docs/ISAAC_QUICK.md` (7 Nov 23:20); start there.** **Read this first, every time you pull.** It's the single, current, Isaac-only brief. Older docs (`ISAAC_HANDOFF.md`, `FOR_ISAAC_CLAUDE.md`) carry history; when they disagree, this file wins. Status labels:
 - ✅ means committed and tested here: dry-run, tests, and USD checks without a GPU.
 - 🟡 means it lands in the next push.
 - 🎯 means you need to do it.

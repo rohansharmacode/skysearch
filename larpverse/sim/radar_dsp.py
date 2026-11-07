@@ -2,18 +2,20 @@
 
 *** PART 1 (``simulate_if`` and the Scene classes) IS A SYNTHETIC SIGNAL GENERATOR. ***
 It fabricates the complex intermediate-frequency (IF) samples a low-frequency UWB / FMCW radar
-would deliver after dechirping: a 1-3 GHz sweep (2 GHz bandwidth -> 7.5 cm range resolution),
-512 complex fast-time samples per sweep (unambiguous range 38.4 m, useful range about 20 m after
-rubble loss), 20 Hz slow-time frame rate and a 20 s dwell.  The scene it renders contains
+would deliver after dechirping: a 0.4-2.0 GHz sweep (1.6 GHz bandwidth -> 9.4 cm range resolution;
+the sub-1 GHz part is what penetrates concrete), 512 complex fast-time samples per sweep (unambiguous
+range 48 m), 20 Hz slow-time frame rate and a 20 s dwell.  The scene it renders contains
   * strong static clutter (rubble layers, ground, antenna leakage),
   * a breathing chest (4-8 mm at 0.2-0.33 Hz, with slight rate / amplitude irregularity),
-  * two-way attenuation through rubble (SNR falls with range and rubble path length),
+  * two-way attenuation through rubble: frequency-dependent concrete loss (~10 dB/m below 1 GHz,
+    ~20 dB/m above, FHWA rule of thumb) x solid fraction, power-averaged over the sweep
+    (``two_way_loss_db``; preset ``literature``) or the old flat 0.7 dB/m (preset ``legacy``),
   * thermal noise,
   * platform-motion artefacts scaled by (1 - quality): slow drift + band-limited jitter,
   * optionally a walking person (bulk range migration -> doppler_moving) and a periodic
     non-human source (e.g. a 1.2 Hz fan / machinery vibration).
-Real through-rubble propagation is NOT simulated (it is a scalar loss in dB per metre); the slides
-must say so.  The generator is told where its reflectors are by the caller (sim/radar_model.py,
+Real through-rubble propagation is NOT simulated (scattering, rebar, moisture, layering are folded into
+a per-metre loss along the heightmap path); the slides must say so. docs/RADAR_PENETRATION.md.  The generator is told where its reflectors are by the caller (sim/radar_model.py,
 the only module allowed to read hidden truth).  This file never imports the world.
 
 *** PART 2 (``process_if`` and friends) IS THE REAL DSP, KNOWN TO THE PLANNER SIDE. ***
@@ -45,8 +47,8 @@ C0 = 299_792_458.0
 # =============================================================================== parameters
 @dataclass
 class RadarParams:
-    f_start: float = 1.0e9          # sweep start (Hz)
-    f_stop: float = 3.0e9           # sweep stop (Hz)
+    f_start: float = 0.4e9          # sweep start (Hz): low band so part of the sweep penetrates concrete
+    f_stop: float = 2.0e9           # sweep stop (Hz)
     n_fast: int = 512               # complex IF samples per sweep (= range bins)
     fs_slow: float = 20.0           # frame (slow-time) rate, Hz
     dwell: float = 20.0             # s
@@ -70,7 +72,7 @@ class RadarParams:
 
     @property
     def range_res(self):
-        return C0 / (2.0 * self.bandwidth)          # 7.5 cm for 2 GHz
+        return C0 / (2.0 * self.bandwidth)          # 9.4 cm for 1.6 GHz
 
     @property
     def max_range(self):
@@ -90,19 +92,102 @@ class RadarParams:
 
 
 # =============================================================================== generator (SYNTHETIC)
-# Calibration: per-sample amplitude of a 0 dB reflector at 1 m with unit-variance complex noise.
+# Per-sample amplitude of a 0 dB reflector at 1 m (unit complex noise). With A90_DB below this puts the
+# reach directly beneath a good scan (2 m slant) at ~3.0 m of rubble (docs/RADAR_PENETRATION.md).
 AMP_1M = 70.0
-RUBBLE_DB_PER_M = 0.7       # one-way rubble loss, dB/m (low-frequency UWB, lossy concrete mix)
 CHEST_RCS_DB = 0.0
 PERSON_RCS_DB = 8.0
 CLUTTER_RCS_DB = (12.0, 28.0)
 
+# ---- through-rubble propagation (SYNTHETIC physics; sources and numbers in docs/RADAR_PENETRATION.md)
+CONCRETE_DB_PER_M_LOW = 10.0     # one-way loss in solid concrete below 1 GHz (FHWA GPR rule of thumb)
+CONCRETE_DB_PER_M_HIGH = 20.0    # ... and above ~2 GHz; linear in between
+SOLID_FRACTION = 0.65            # share of a slant path through a collapse pile that is solid (rest: voids)
+REBAR_DB_PER_M = 0.0             # extra one-way loss per metre for dense rebar mesh (0: plain / mixed rubble)
+PERCH_ROUGH_FACTOR = 0.6         # adaptive legs settle on a slab: effective roughness of a perch
+LEVEL_DEG = 12.0                 # self-levelling radar mount: perch tilt up to this does not tilt the beam
+REACH_BENEATH_M = 3.0            # design point: rubble a good scan sees through at 2 m slant range
+REACH_REF_RANGE_M = 2.0
+LEGACY_DB_PER_M = 0.7            # pre-review model: one flat one-way loss for any rubble (optimistic)
+
+# Penetration presets. "literature": frequency-dependent concrete loss x solid fraction, ~3 m reach beneath
+# a good scan, < 1 m at a 11 m stand-off, 10 m of rubble is hopeless. "legacy": the original flat 0.7 dB/m
+# (kept so the pre-review seed-7 demo can still be reproduced; it lets the radar see through 10+ m).
+PENETRATION_MODELS = ("literature", "legacy")
+_PEN = {"model": "legacy"}       # process default; GridMission / CLI select explicitly
+
+
+def use_penetration(model: str):
+    """Select the propagation preset for this process (generators, planner, coverage use the same one)."""
+    if model not in PENETRATION_MODELS:
+        raise ValueError(f"penetration model {model!r}; choose {PENETRATION_MODELS}")
+    _PEN["model"] = model
+
+
+def penetration_model() -> str:
+    return _PEN["model"]
+
+
+def concrete_db_per_m(f_hz):
+    """One-way attenuation of solid concrete (dB/m) vs frequency: ~10 dB/m below 1 GHz, ~20 dB/m at 2 GHz+."""
+    f = np.asarray(f_hz, float) / 1e9
+    return np.clip(CONCRETE_DB_PER_M_LOW + (CONCRETE_DB_PER_M_HIGH - CONCRETE_DB_PER_M_LOW) * (f - 1.0),
+                   CONCRETE_DB_PER_M_LOW, CONCRETE_DB_PER_M_HIGH)
+
+
+def two_way_loss_db(rubble_path_m, params: RadarParams | None = None):
+    """Two-way rubble loss (dB) of the swept band through ``rubble_path_m`` metres of pile.
+
+    Power is averaged over the sweep, so deep returns are carried by the low (sub-1 GHz) part of the band:
+    loss(L) = -10 log10( mean_f 10^(-2 L (SOLID_FRACTION alpha_c(f) + REBAR) / 10) ).
+    """
+    P = params or RadarParams()
+    L = np.atleast_1d(np.asarray(rubble_path_m, float))
+    if _PEN["model"] == "legacy":
+        out = 2.0 * LEGACY_DB_PER_M * L
+        return out if np.ndim(rubble_path_m) else float(out[0])
+    f = np.linspace(P.f_start, P.f_stop, 33)
+    a = SOLID_FRACTION * concrete_db_per_m(f) + REBAR_DB_PER_M                     # (F,) one-way dB/m
+    lin = 10 ** (-2.0 * L[:, None] * a[None, :] / 10.0)
+    out = -10 * np.log10(lin.mean(axis=1))
+    return out if np.ndim(rubble_path_m) else float(out[0])
+
 
 def reflection_amplitude(range_m, rubble_path_m=0.0, rcs_db=0.0, params: RadarParams | None = None):
-    """SYNTHETIC radar-equation amplitude: 1/R^2 spreading and two-way rubble loss."""
+    """SYNTHETIC radar-equation amplitude: 1/R^2 spreading (amplitude) and the two-way rubble loss."""
     r = max(float(range_m), 1.0)
-    loss_db = 2.0 * RUBBLE_DB_PER_M * float(rubble_path_m)
+    loss_db = two_way_loss_db(float(rubble_path_m), params) if rubble_path_m else 0.0
     return AMP_1M * 10 ** ((rcs_db - loss_db) / 20.0) / r ** 2
+
+
+# detection threshold of process_if: chest amplitude (dB re unit noise per IF sample) at which ~90% of scans
+# give a strong candidate, per landing quality (measured by scripts in docs/RADAR_PENETRATION.md)
+A90_DB = {0.95: -17.0, 0.6: -15.0, 0.3: -11.0}   # 12 scans per 3 dB step at 6 m, seeds 0-11
+
+
+def detect_threshold_db(quality):
+    qs = sorted(k for k, v in A90_DB.items() if v is not None)
+    if not qs:
+        return 20 * np.log10(AMP_1M / REACH_REF_RANGE_M ** 2) - two_way_loss_db(REACH_BENEATH_M)
+    return float(np.interp(quality, qs, [A90_DB[q] for q in qs]))
+
+
+def reach_path_m(range_m, quality=0.9, params: RadarParams | None = None):
+    """Rubble path (m) through which a breathing chest at ``range_m`` still clears the detection threshold
+    in ~90% of scans of the given quality (0 when even free space is out of reach). Vectorised over range.
+    Not ground truth: a property of the radar and the propagation model (planner, coverage map, scans)."""
+    r = np.maximum(np.asarray(range_m, float), 1.0)
+    margin = 20 * np.log10(AMP_1M / r ** 2) + CHEST_RCS_DB - detect_threshold_db(quality)
+    Ls = np.linspace(0.0, 8.0 if _PEN["model"] == "literature" else 60.0, 241)
+    out = np.where(margin > 0, np.interp(margin, two_way_loss_db(Ls, params), Ls), 0.0)
+    return out if np.ndim(range_m) else float(out)
+
+
+def reach_prob(range_m, path_m, quality=0.9, params: RadarParams | None = None, soft_m=0.25):
+    """Probability the breathing return clears the threshold: logistic in (reach - path), 90% at the reach."""
+    x = reach_path_m(range_m, quality, params) - np.asarray(path_m, float)
+    out = 1.0 / (1.0 + np.exp(np.clip(-x / soft_m, -50, 50)) / 9.0)
+    return out if np.ndim(out) else float(out)
 
 
 @dataclass
@@ -371,6 +456,8 @@ class ScanResult:
             "quality": round(float(self.quality), 2),
             "breathing_hz": None if self.breathing_hz is None else round(float(self.breathing_hz), 3),
             "doppler_moving": False,
+            # rubble this scan can see through directly beneath (2 m slant), from its measured quality
+            "max_reliable_depth_m": round(reach_path_m(REACH_REF_RANGE_M, float(self.quality)), 2),
         }]
         if self.doppler_moving and self.moving:
             out.append({

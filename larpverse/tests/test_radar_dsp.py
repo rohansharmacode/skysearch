@@ -6,10 +6,10 @@ from sim import radar_dsp as R
 
 P = R.RadarParams()
 SCHEMA = {"scan_id", "drone_id", "sensor_pose", "timestamp", "range_candidates", "confidence", "quality",
-          "breathing_hz", "doppler_moving"}
+          "breathing_hz", "doppler_moving", "max_reliable_depth_m"}
 
 
-def make(seed, range_m=8.0, path=1.5, q=0.95, hz=0.27, breather=True, fan=False, mover=False):
+def make(seed, range_m=8.0, path=0.5, q=0.95, hz=0.27, breather=True, fan=False, mover=False):
     rng = np.random.default_rng(seed)
     sc = R.Scene(quality=q)
     sc.clutter = R.default_clutter(rng)
@@ -23,9 +23,10 @@ def make(seed, range_m=8.0, path=1.5, q=0.95, hz=0.27, breather=True, fan=False,
 
 
 def test_radar_parameters():
-    assert P.range_res == pytest.approx(0.075, abs=1e-3)
+    assert (P.f_start, P.f_stop) == (0.4e9, 2.0e9)
+    assert P.range_res == pytest.approx(0.0937, abs=1e-3)
     assert P.n_slow == 400 and P.fs_slow == 20.0
-    assert 19 < P.max_range < 40
+    assert 19 < P.max_range < 50
 
 
 @pytest.mark.parametrize("seed,range_m,hz", [(0, 8.0, 0.27), (1, 6.0, 0.22), (2, 10.0, 0.31), (3, 7.3, 0.25)])
@@ -42,8 +43,8 @@ def test_low_quality_lowers_confidence_and_quality():
     def conf_at(q):
         out = []
         for s in range(6):
-            r = make(s, range_m=11.5, path=3.0, q=q)
-            hit = [c for rg, c in zip(r.range_candidates, r.confidence) if abs(rg - 11.5) < 0.3]
+            r = make(s, range_m=6.0, path=1.0, q=q)
+            hit = [c for rg, c in zip(r.range_candidates, r.confidence) if abs(rg - 6.0) < 0.3]
             out.append((max(hit) if hit else 0.0, r.quality))
         return np.mean([o[0] for o in out]), np.mean([o[1] for o in out])
 
@@ -88,3 +89,47 @@ def test_no_breather_no_confident_detection():
     for s in range(5):
         res = make(s, breather=False)
         assert all(c < 0.5 for c in res.confidence)
+
+
+
+# ------------------------------------------------------------------ through-rubble penetration limit
+@pytest.fixture
+def literature():
+    old = R.penetration_model()
+    R.use_penetration("literature")
+    yield
+    R.use_penetration(old)
+
+
+def test_penetration_physics_numbers(literature):
+    # FHWA rule of thumb: ~10 dB/m one-way below 1 GHz, ~20 dB/m above; voids dilute it
+    assert R.concrete_db_per_m(0.6e9) == pytest.approx(10.0) and R.concrete_db_per_m(2.5e9) == pytest.approx(20.0)
+    losses = [R.two_way_loss_db(L) for L in (0.0, 1.0, 2.0, 3.0, 10.0)]
+    assert losses[0] == pytest.approx(0.0, abs=1e-6) and all(b > a for a, b in zip(losses, losses[1:]))
+    assert losses[-1] > 120                                 # 10 m of rubble: hopeless at any range
+    beneath = R.reach_path_m(R.REACH_REF_RANGE_M, 0.95)
+    assert 2.0 <= beneath <= 4.0                            # literature: ~0.5-3 m typical, vendor claims to ~4.6 m
+    assert R.reach_path_m(11.0, 0.95) < beneath - 1.0       # spreading eats reach at a stand-off
+    assert R.reach_path_m(2.0, 0.3) <= beneath
+
+
+@pytest.mark.parametrize("seed", [0, 1, 2])
+def test_breather_beyond_reach_gives_no_detection(seed, literature):
+    deep = make(seed, range_m=6.0, path=6.0)
+    assert not any(abs(r - 6.0) < 0.3 for r in deep.range_candidates)
+    near = make(seed, range_m=6.0, path=0.3)
+    assert any(abs(r - 6.0) < 0.3 for r in near.range_candidates)
+    obs = near.observations("s1", "d1", [0, 0, 0.4, 0], 20.0)[0]
+    assert 0.0 <= obs["max_reliable_depth_m"] <= 5.0
+
+
+def test_legacy_preset_is_the_optimistic_flat_loss():
+    old = R.penetration_model()
+    try:
+        R.use_penetration("legacy")
+        assert R.two_way_loss_db(10.0) == pytest.approx(14.0)          # 10 m costs only 14 dB: not credible
+        assert R.reach_path_m(2.0, 0.95) > 10
+    finally:
+        R.use_penetration(old)
+    with pytest.raises(ValueError):
+        R.use_penetration("nope")

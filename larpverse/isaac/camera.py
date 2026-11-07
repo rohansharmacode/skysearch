@@ -1,6 +1,12 @@
 """Director camera: a UsdGeom.Camera set as the viewport camera that follows the active pile / drones with a
 slow orbit. ``--camera free`` places it once and leaves it for the user to fly.
 
+The pose is re-applied EVERY frame, and mirrored onto ``mirrors`` (e.g. /OmniverseKit_Persp, which is what the
+Brev /viewer livestream shows, and the Isaac Lab recording camera /World/Cams/rec). That is the team's verified
+workaround for the black viewport on Isaac Sim 6.0.1, where a camera posed once rendered black
+(docs/ISAAC_VERIFIED_APIS.md, "Black viewport"). Switching the viewport's camera_path is tried too, but is
+unverified on 6.x.
+
 The pose maths is numpy (``look_at``) so ``--dry-run`` exercises it without pxr; ``stage=None`` skips USD.
 """
 from __future__ import annotations
@@ -27,7 +33,7 @@ def look_at(eye, target, up=(0, 0, 1)):
 
 class DirectorCamera:
     def __init__(self, stage=None, path="/World/DirectorCam", mode="director", start=(0.0, -40.0, 3.0),
-                 orbit_period=150.0, dist=40.0, height=24.0):
+                 orbit_period=150.0, dist=40.0, height=24.0, mirrors=(), switch_viewport=True):
         self.mode, self.path = mode, path
         self.target = np.array(start, float)
         self.dist, self.height = dist, height
@@ -37,6 +43,7 @@ class DirectorCamera:
         self.op = None
         self.updates = 0
         self.is_viewport = False
+        self.mirrors = []
         if stage is not None:
             from pxr import Gf, UsdGeom
             self.Gf = Gf
@@ -47,16 +54,28 @@ class DirectorCamera:
             xf = UsdGeom.Xformable(cam)
             xf.ClearXformOpOrder()
             self.op = xf.AddTransformOp(UsdGeom.XformOp.PrecisionDouble)
-            self._apply()
             from isaac import compat
-            self.is_viewport = compat.set_viewport_camera(path)
-            if not self.is_viewport:
-                print(f"[camera] could not switch the viewport to {path}; pick it in the viewport camera menu")
+            self.mirrors = [compat.PoseWriter(p) for p in mirrors]
+            self._apply()
+            if switch_viewport:
+                self.is_viewport = compat.set_viewport_camera(path)
+                if not self.is_viewport:
+                    print(f"[camera] viewport not switched to {path} (headless, or API drift); "
+                          f"driving {', '.join(mirrors) or 'nothing else'} every frame instead")
+
+    def quat_wxyz(self, M=None):
+        from isaac.compat import mat_to_quat_wxyz
+        M = look_at(self.eye, self.target) if M is None else M
+        return mat_to_quat_wxyz(M[:3, :3].T)          # rows are the camera axes -> column convention
 
     def _apply(self):
         M = look_at(self.eye, self.target)
         if self.op is not None:
             self.op.Set(self.Gf.Matrix4d(*M.flatten().tolist()))
+            if self.mirrors:
+                q = self.quat_wxyz(M)
+                for w in self.mirrors:
+                    w.set(self.eye, q, M.tolist())
         self.updates += 1
         return M
 
@@ -64,6 +83,9 @@ class DirectorCamera:
         """Ease towards ``focus_xyz`` and orbit; ``spread`` (m) pulls the camera back to fit the drones."""
         if self.mode == "free":
             return None
+        return self.update_pose(dt, focus_xyz, spread)
+
+    def update_pose(self, dt, focus_xyz=None, spread=0.0):
         if focus_xyz is not None:
             k = 1.0 - math.exp(-dt / 2.5)           # ~2.5 s time constant: slow, cinematic
             self.target += (np.asarray(focus_xyz, float) - self.target) * k

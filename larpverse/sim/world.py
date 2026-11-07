@@ -84,8 +84,8 @@ def heightmap_from_points(pts, origin, res, w, h):
         zp = np.pad(np.where(hole, np.nan, z), 1, constant_values=np.nan)
         nb = np.stack([zp[1 + dy:1 + dy + h, 1 + dx:1 + dx + w]
                        for dy in (-1, 0, 1) for dx in (-1, 0, 1)])
-        with np.errstate(all="ignore"):
-            fill = np.nanmean(nb, axis=0)
+        n_ok = np.isfinite(nb).sum(axis=0)
+        fill = np.where(n_ok > 0, np.nansum(nb, axis=0) / np.maximum(n_ok, 1), np.nan)   # nan-safe mean
         z = np.where(hole & np.isfinite(fill), fill, z)
     return Grid(tuple(origin), res, w, h, np.where(np.isfinite(z), z, 0.0).astype(np.float32))
 

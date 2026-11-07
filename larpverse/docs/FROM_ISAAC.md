@@ -1,5 +1,27 @@
 # From the Isaac Sim session (newest first)
 
+### 2026-11-07 21:00: ISAAC_BRIEF.md pass (branch `larpverse-isaac`, rebased on `larpverse-sensing` 451feeb)
+
+**Branch:** `larpverse-isaac` now starts from `larpverse-sensing`, because your tree already has every GPU-verified `isaac/` change: ribbons, Recorder, `--rec-windows`, `timeline.csv` and path tracing. On top of that it carries only the GPU media (lv2/pt2 timelines, dashboard state, contact sheets) plus the brief items below. It's force-pushed (old tip 230a626…277b520 kept as tag `larpverse-isaac-pre-rebase`).
+
+**Done from §5 (no GPU needed; dry run PASS, `--help` lists the flags):**
+- **5, scene look:**
+  - `--fog-intensity` 0.35 → **0.18**, `--fog-end` 450 → **700 m**, `--fog-start` stays 70 m (≥ the 60 m you asked for). The values are logged as `[photoreal] haze: …`.
+  - `--fpv-tilt` default **40°** down (was ~19°).
+  - Chase rig at **6 m behind, 3 m up** (`--chase-back`, `--chase-up`).
+  - `--veg` now defaults to **auto**: off on `collapse` / `weiguan` / `mesh:` sites, on for the grid. `--veg 0/1` forces it.
+  - Flow dust is untouched; your `--look pretty` decides.
+- **6, identification overlays:** the Recorder writes **`cameras.jsonl`** next to `timeline.csv`. One line per saved frame and camera: `frame, cam, width, height, world` (USD row-major 4×4; camera looks down local −Z, +Y up), `focal_mm, h_aperture_mm, v_aperture_mm, clip`. That's enough to project pile/zone IDs and ping tags in `scripts/cut_video.py`. Failures only log once and never stop a recording.
+- **Held:** no re-record until you post **READY TO RE-RECORD**. Both GPUs are off: the L40S is stopped and the RTX PRO 6000 box is deleted.
+
+**Answers to §6:**
+1. **Merge `3d_model`?** Yes. Merge only `collapse_site/` (generator, `collapse_site.usda`, `geo/*.usdc`, textures, previews) into `larpverse-sensing` at `<repo>/collapse_site/`. The branch is based on the old `main` (292551d), so don't take its root `README.md` / `.gitignore`. The demo should run from `larpverse-sensing`/`larpverse-isaac` with `--site collapse --site-usd <repo>/collapse_site/collapse_site.usda`.
+2. **0.125 m heightfield as `.npz`?** Yes, regenerated from the `3d_model` generator (`prep.py` → `outer_layout.py` → `heightfield.py`) and committed as **`larpverse/media/isaac/collapse_heightfield_0p125m.npz`** (16.5 MB). It holds `H` float32 2561×2561 (terrain z in metres, −0.26…5.97; buildings and debris are separate USD prims and not in H), `res=0.125`, `extent=160`. Row 0 is y=+160 (north), column 0 is x=−160 (west). `col = (x+160)/0.125`, `row = (160−y)/0.125`, in the site frame (x east, y north).
+3. **Original Weiguan blocks A–I?** Not labelled in the model. The scanned core in `collapse_site/generator/sitecfg.py` names `CORE_BUILDINGS` by position (NW_warehouse, N_site_office, N_damaged_hall, N_shed, NE_hut, E_tank, **Block6_remnant**, W_long_shed, S_warehouse, SE_red_roof, SE_white, SE_tower, SE_green_roof) plus the two fallen 16-storey towers (`SLABS`: W_tower, E_tower). Only `Block6_remnant` carries a block number. I wouldn't map A–I onto these without a source.
+4. **Frame time on the L40S, collapse site + 3 drones + recording, debris on/off:** not measured yet. It needs `--site collapse` (🟡 on your side) and a GPU run. I'll measure it in the first collapse-site self-test after READY. From the forest and earthquake runs: real-time RTX with 3–5 cams at 1080p was ~2 s per recorded frame on the L40S, and path tracing at 16 spp was <1 s/frame per camera on an RTX PRO 6000.
+
+**Licence (§5.8):** noted. For any public showing I'll render a procedural-texture variant of the scanned core (no scan-photo albedo).
+
 ## 2026-11-07 18:20 (branch `larpverse-isaac`)
 
 **Setup:** Isaac Sim 6.0.1 on a Brev L40S (headless), driven from Rohan's desktop.

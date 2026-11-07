@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Larpverse Operator Console</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%230b1016'/%3E%3Ccircle cx='16' cy='16' r='11' fill='none' stroke='%23ff4545' stroke-opacity='.55' stroke-width='2'/%3E%3Ccircle cx='16' cy='16' r='5.5' fill='%23ff4545'/%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+Condensed:wght@400;500;600&display=swap">
@@ -13,87 +14,163 @@
 <div id="shell">
   <header id="hdr">
     <div class="brand"><i></i>Larpverse</div>
-    <div class="site" id="siteName">Rubble site</div>
     <div class="pill" id="phase">phase</div>
+    <div class="pill recon" id="reconChip" hidden></div>
+    <div class="site" id="siteName">Rubble site</div>
+    <button class="case" id="caseBtn" aria-expanded="false" aria-controls="casePop"><span class="long">Case study (layout synthetic): Weiguan Jinlong collapse, Tainan, 2016</span><span class="short">Case study (layout synthetic)</span></button>
     <div class="meta"><span id="simT">t = 0.0 s</span><span id="conn" class="conn">connecting</span></div>
   </header>
+  <div id="banner" role="status" hidden></div>
+
+  <div id="casePop" role="dialog" aria-labelledby="caseTitle" hidden>
+    <div class="hh"><h3 id="caseTitle">Case study: Weiguan Jinlong building, Tainan</h3><button class="btn" id="caseClose" aria-label="Close case study">Close</button></div>
+    <ul>
+      <li>On 6 February 2016 at 03:57 local time, a magnitude 6.4 earthquake centred in Meinong District, Kaohsiung, struck southern Taiwan.</li>
+      <li>The Weiguan Jinlong building (維冠金龍大樓) in Yongkang District, Tainan, was a residential complex built in the early 1990s: 16 storeys plus a basement, in nine blocks (A–I) arranged in a U shape facing west.</li>
+      <li>In the 6 Feb 2016 Meinong earthquake the whole building toppled from west to east across Yongda Road Section 2; 115 people died there. The search was declared over on 13 Feb, about a week later.</li>
+      <li>In 2019 Taiwan's Supreme Court upheld five-year sentences for the developer, two architects, a designer and a structural engineer for homicide through professional negligence.</li>
+      <li class="src">Sources: zh.wikipedia 維冠金龍大樓; Taipei Times, 22 Feb 2019.</li>
+    </ul>
+    <p class="note"><b>In this demo</b> the real site only anchors the map frame. Rubble piles, sectors, people, radar returns and sounds are synthetic.</p>
+    <p class="note mono" id="caseGeo"></p>
+  </div>
 
   <main id="mapWrap">
-    <canvas id="map" aria-label="Site map. Red dots are radar candidate regions; yellow cones are acoustic directions."></canvas>
-    <div id="layers" class="float">
-      <button class="tog" data-k="basemap" aria-pressed="true">LiDAR relief</button>
-      <button class="tog" data-k="belief" aria-pressed="true">Radar belief</button>
-      <button class="tog" data-k="rings" aria-pressed="false">Range rings</button>
-      <button class="tog" data-k="acoustic" aria-pressed="true">Acoustic cones</button>
-      <button class="tog" data-k="sites" aria-pressed="true">Landing sites</button>
-      <button class="tog" data-k="piles" aria-pressed="true" id="togPiles" hidden>Piles &amp; dispatch</button>
+    <canvas id="map" aria-label="Site map. Red dots are radar candidate regions; yellow cones are acoustic directions. Open 'How to read this map' for the full key."></canvas>
+    <div id="tools" class="float">
+      <button class="tog key" id="helpBtn" aria-expanded="false" aria-controls="help"><span class="long">? How to read this map</span><span class="short">? Map key</span></button>
+      <button class="tog plan" id="planBtn" aria-pressed="false" title="Outline the rubble zones the drones should search">✎ Plan search</button>
+      <button class="tog" id="layersBtn" aria-expanded="false" aria-controls="layers">Layers ▾</button>
+      <div id="layers">
+        <div class="seg" role="group" aria-label="Basemap"><span>Basemap</span><button class="tog" data-bm="relief" aria-pressed="true">LiDAR relief</button><button class="tog" data-bm="map" aria-pressed="false">Map</button><button class="tog" data-bm="sat" aria-pressed="false">Satellite</button></div>
+        <button class="tog" data-k="belief" aria-pressed="true">Radar belief</button>
+        <button class="tog" data-k="rings" aria-pressed="false">Range rings</button>
+        <button class="tog" data-k="acoustic" aria-pressed="true">Acoustic cones</button>
+        <button class="tog" data-k="sites" aria-pressed="true">Landing sites</button>
+        <button class="tog" data-k="reach" aria-pressed="true">Radar reach</button>
+        <button class="tog" data-k="piles" aria-pressed="true" id="togPiles" hidden>Piles &amp; dispatch</button>
+      </div>
     </div>
     <div id="zoom" class="float">
       <button class="btn" id="zin" aria-label="Zoom in">+</button>
       <button class="btn" id="zout" aria-label="Zoom out">−</button>
       <button class="btn" id="zfit" aria-label="Fit site">Fit</button>
     </div>
+    <div id="plan" class="float" role="dialog" aria-labelledby="planTitle" hidden>
+      <div class="hh"><h3 id="planTitle">Plan search zones</h3><button class="btn" id="planClose" aria-label="Close planning">Done</button></div>
+      <div id="planTools"></div>
+      <p id="planHint" class="hint"></p>
+      <div id="planList"></div>
+      <button class="btn send" id="planSend">Send tasking to drones</button>
+      <p id="planMsg" class="tmsg" role="status" hidden></p>
+    </div>
+    <div id="reconTag" class="float" hidden>LiDAR map, live — satellite imagery predates the collapse</div>
     <div id="cursor" class="float mono">x — · y — m</div>
+    <div id="attrib" class="float" hidden></div>
     <div id="legend" class="float">
-      <span><i class="dot red"></i>Radar candidate (95% region)</span>
-      <span><i class="wedge"></i>Acoustic direction</span>
-      <span><i class="tri"></i>Drone</span>
-      <span><i class="sq"></i>Landing site</span>
-      <span id="legendGrid" hidden><i class="badge">64</i>Acoustic priority <i class="arrow"></i>Dispatch</span>
+      <span><i class="dot red"></i>Radar ping (candidate region)</span>
+      <span class="lx"><i class="ring"></i>Insufficient evidence</span>
+      <span class="lx"><i class="tring"></i>Triage ring (dig order)</span>
+      <span><i class="wedge"></i>Heard a human-like sound</span>
+      <span class="lx"><i class="tri"></i>Drone</span>
+      <span class="lx"><i class="sq"></i>Landing site</span>
+      <span id="legendGrid" hidden><i class="badge">64</i>Acoustic priority <i class="arrow"></i><span class="dl">Dispatch</span></span>
+    </div>
+
+    <div id="help" class="float" role="dialog" aria-labelledby="helpTitle" hidden>
+      <div class="hh"><h3 id="helpTitle">How to read this map</h3><button class="btn" id="helpClose" aria-label="Close map key">Close</button></div>
+      <p class="lead">Three drones search a 3×3 grid of rubble piles. They land, listen for people, and use radar to look for breathing under the rubble. Nothing on this map is a confirmed person: it tells a ground team where to search first.</p>
+      <ul class="keys">
+        <li><i class="k-pile"></i><div><b>Pile circle</b> (A1…C3, columns west→east, rows north→south). Solid ring = heard or visited; <b>dashed ring = nothing heard, not cleared</b>. The pulsing ring is the pile the drones are working now.</div></li>
+        <li><i class="k-badge">64</i><div><b>Acoustic priority 0–100</b>: how urgently the acoustic agent wants a pile searched, from what the drones heard. It orders the search; it is not proof.</div></li>
+        <li><i class="k-chip" style="color:#ff4545">PING</i><div>Radar found a breathing-like return at this pile.</div></li>
+        <li><i class="k-chip" style="color:#22c3d6">LEAD</i><div>Acoustic lead: a human-like sound (voice, knocking) was heard from this pile.</div></li>
+        <li><i class="k-chip" style="color:#8a9caa">NON-HUMAN</i><div><b>Non-human sound · not cleared</b>: only a dog, engine or debris was heard. Dismissed as an acoustic lead, but the pile is <b>not cleared</b>.</div></li>
+        <li><i class="k-chip" style="color:#8a9caa">NOT CLEARED</i><div>Nothing heard. Silence is not absence.</div></li>
+        <li><i class="k-dot"></i><div><b>Radar ping</b>: red dot, pulsing, with its 95% region. Its <b>belief share</b> is the share of this pile's radar belief at that spot, not the chance that someone is there. Click it for the 3D LiDAR view.</div></li>
+        <li><i class="k-tri-rings"><i class="r2"></i><i class="r1"></i><i class="rd"></i><i class="ro"></i></i><div><b>Triage ring</b> around a ping (dig order, from its breathing pattern): <b>double</b> = immediate, <b>solid</b> = urgent, <b>dashed</b> = delayed, <b>dotted</b> = assess (no usable pattern). <b>#1</b> is dug first. An aid for rescuers, not a diagnosis.</div></li>
+        <li><i class="k-hatch"></i><div><b>Hatched part of a searched pile</b>: beyond radar reach from the sites the drones scanned from (≈3 m of rubble). Only acoustic leads cover it: not cleared.</div></li>
+        <li><i class="k-weak"></i><div><b>Insufficient evidence</b>: hollow orange, dashed. Too few radar ranges agree (e.g. 2 of 3): rescan before acting on it.</div></li>
+        <li><i class="k-cone"></i><div><b>Yellow cone</b>: direction a landed drone heard a human-like sound from (its apex is the drone). Grey short cones are non-human sounds. Pick a listen in the Acoustic agent panel to see its cones.</div></li>
+        <li><i class="k-tri"></i><div><b>Drone</b> (white; hollow with a small "ear" ring while landed and listening, rotors off). <i class="k-sq-inline"></i> green squares are landing sites the drones chose from the LiDAR map.</div></li>
+        <li><i class="k-arrow"></i><div><b>Dispatch</b>: where the coordinator sent the fleet next, and why (see Dispatch decisions).</div></li>
+        <li><i class="k-zone"></i><div><b>Search zones</b> the operator tasked (✎ Plan search): white outline. Dashed = not searched yet; grey hatch = <b>searched — not cleared</b>; red = ping inside; teal = acoustic lead. <b>Proposed</b> zones from recon are dashed with a "proposed" tag until you accept them; <b>suggested</b> circles are sounds heard outside every zone.</div></li>
+        <li><i class="k-stage"></i><div><b>Staging</b>: the operator's console and the drone pads.</div></li>
+        <li><i class="k-geo">N</i><div><b>Basemap</b>: by default the drones' LiDAR relief of the (synthetic) rubble. <i>Map</i> and <i>Satellite</i> show the real case-study site (OpenStreetMap or imagery, dimmed) with the site frame anchored at the building (the N arrow, top right, shows true north). The pile layout is synthetic: nothing here marks where real victims were. Without network the map falls back to the LiDAR relief.</div></li>
+      </ul>
+      <p class="lead small">Depth is shown as <b>(nominal)</b> when it is an assumed 1.5 m rather than measured, and as <b>± (radar estimate)</b> when the radar measured it.</p>
     </div>
   </main>
 
   <aside id="side">
-    <section>
-      <h2>Radar candidates <span id="nCand" class="count">0</span></h2>
-      <div id="cands"></div>
-    </section>
-    <section id="secPiles" hidden>
-      <h2>Pile priority <span id="nPiles" class="count">0</span></h2>
-      <div id="piles"></div>
-      <div id="dispatch"></div>
-    </section>
-    <section id="secAgent" hidden>
-      <h2>Acoustic agent <span id="agentSrc" class="count">waiting</span></h2>
-      <div id="clips"></div>
-    </section>
-    <section id="secAc">
-      <h2>Acoustic directions <span id="nAc" class="count">0</span></h2>
-      <div id="acList"></div>
-    </section>
-    <section>
+    <div class="col colA">
+      <section id="secZones" hidden>
+        <h2>Search zones <span id="nZones" class="count"></span></h2>
+        <div id="zones"></div>
+      </section>
+      <section id="secPiles" hidden>
+        <h2><span id="pilesTitle">Pile priority</span> <span id="nPiles" class="count">0</span></h2>
+        <div id="piles"></div>
+        <div id="dispatch"></div>
+      </section>
+      <section id="secDec" hidden>
+        <h2>Dispatch decisions <span id="nDec" class="count">0</span></h2>
+        <div id="decs"></div>
+      </section>
+    </div>
+    <div class="col colB">
+      <section id="secCands">
+        <h2><span id="candsTitle">Radar candidates</span> <span id="nCand" class="count">0</span></h2>
+        <div id="cands"></div>
+      </section>
+      <section id="secAgent" hidden>
+        <h2>Acoustic agent <span id="agentSrc" class="count">waiting</span></h2>
+        <div id="agentMeta"></div>
+        <div id="listens" role="tablist" aria-label="Listen"></div>
+        <div id="clips"></div>
+      </section>
+      <section id="secAc">
+        <h2>Acoustic directions <span id="nAc" class="count">0</span></h2>
+        <div id="acList"></div>
+      </section>
+    </div>
+    <section id="secFleet">
       <h2>Fleet</h2>
       <div id="fleet"></div>
       <div id="next"></div>
     </section>
-    <section class="grow">
+    <section id="secLog" class="grow">
       <h2>Coordinator log</h2>
       <div id="log" class="mono"></div>
     </section>
-    <p class="caveat">Red regions are where to search, not confirmed people. Acoustic priority orders the search; it is not proof, and silent piles are not cleared. Radar and audio here are labelled synthetic models. No detection is not proof that nobody is present.</p>
+    <p class="caveat" id="railCaveat">Red regions are where to search, not confirmed people. Acoustic priority orders the search; it is not proof, and silent piles are not cleared. Radar and audio here come from labelled synthetic models. No detection is not proof that nobody is present.</p>
   </aside>
 </div>
 
 <div id="detail" hidden>
   <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="dTitle">
     <div class="viewer"><div id="v3d"></div>
-      <div class="vhint mono">Drag to orbit · scroll to zoom</div>
+      <div class="vhint mono" id="vhint">Drag to orbit · scroll to zoom</div>
     </div>
     <div class="facts">
       <div class="dhead"><h3 id="dTitle">R1</h3><button class="btn" id="dClose" aria-label="Close">Close</button></div>
       <div class="status" id="dStatus"></div>
+      <div id="dVitals"></div>
       <dl id="dFacts"></dl>
-      <h4>Evidence</h4>
+      <div id="dHeard"></div>
+      <h4>Radar evidence</h4>
       <div class="tablewrap"><table id="dEv"><thead><tr><th>Scan</th><th>Drone</th><th>Range</th><th>Conf.</th><th>Quality</th></tr></thead><tbody></tbody></table></div>
-      <p class="caveat">Depth comes from the LiDAR surface height minus the radar depth estimate. Geometry says nothing about structural safety. Confirm on site before digging.</p>
+      <p class="caveat" id="dCaveat"></p>
     </div>
   </div>
 </div>
 
+<!-- three.js resolves through dashboard/vendor/ (thin re-exports of the CDN build). To run fully offline,
+     replace those three files with the real three@0.160.0 files: see the header of dashboard/vendor/three.module.js. -->
 <script type="importmap">
 { "imports": {
-  "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
-  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+  "three": "./vendor/three.module.js",
+  "three/addons/": "./vendor/addons/"
 } }
 </script>
 <script type="module" src="app.js"></script>

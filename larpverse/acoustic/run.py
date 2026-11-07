@@ -15,6 +15,7 @@ os.environ.setdefault("OMP_NUM_THREADS", "2")      # laptop-friendly; set before
 
 import argparse  # noqa: E402
 import json  # noqa: E402
+import re  # noqa: E402
 import sys  # noqa: E402
 import time  # noqa: E402
 
@@ -27,13 +28,34 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 DEFAULT_OUT = os.path.join(ROOT, "dashboard", "data")
 MIN_SNR_DB = 2.0
+AMBIGUOUS_PRIORITY_CAP = 19    # one below sim.grid_mission.PRIORITY_MIN (20): ambiguous leads never dispatch alone
 PILE_NAMES = [f"{c}{r}" for r in (1, 2, 3) for c in "ABC"]
 
 
-def clip_features(cid, det, did, snr, clip, n_drones, whisper):
+SPEECH_BLOCK = 0.3        # a clip block "has speech" when this share of its VAD frames is speech
+XTALK_MARGIN = 0.15       # another clip owns that speech when its VAD in the same block is this much higher
+
+
+def gate_transcript(text, vad, cls):
+    """Whisper output is only kept as evidence when the clip looks like speech (R1-003)."""
+    if not text:
+        return "", None
+    if vad < 0.3:
+        return "", f"transcript dropped: VAD {vad:.2f} too low"
+    if cls not in ("voice", "shout") and vad < 0.5:
+        return "", f"transcript dropped: {cls} clip with VAD {vad:.2f}"
+    return text, None
+
+
+def _words(t):
+    return {w for w in re.findall(r"[a-z']+", (t or "").lower()) if len(w) > 2}
+
+
+def clip_features(cid, det, did, snr, clip, n_drones, whisper, notes=()):
     vad = models.vad_speech_ratio(clip)
     cls, scores, heur, top = models.classify(clip, vad)
-    text = models.transcribe(clip, whisper) if vad >= 0.15 else ""
+    raw = models.transcribe(clip, whisper) if vad >= 0.15 else ""
+    text, why = gate_transcript(raw, vad, cls)
     pd = det["per_drone"][did]
     return {
         "clip_id": cid, "pile_id": det["pile_id"], "drone_id": did,
@@ -41,10 +63,96 @@ def clip_features(cid, det, did, snr, clip, n_drones, whisper):
         "bearing_deg": pd["bearing_deg"], "width_deg": pd["width_deg"], "snr_db": snr,
         "vad_speech_ratio": vad, "transcript": text, "sound_class": cls, "class_scores": scores,
         "heuristics": heur, "yamnet_top": [[lbl, sc] for lbl, sc in top],
-        "doa": {"drones_agreeing": len(det["drones_agreeing"]), "drones_listening": n_drones,
+        "doa": {"drones_agreeing": len(det["drones_consistent"]), "drones_listening": n_drones,
                 "tri_err_m": det["tri_err_m"], "tri_resid_m": det["tri_resid_m"],
-                "assigned": det["assigned"]},
+                "assigned": det["assigned"], "association": det["association"],
+                "association_conf": det["assoc_conf"], "ambiguous_with": det["ambiguous_with"],
+                "overlap_frac": det.get("dominated_frac", 0.0)},
+        "notes": [n for n in list(notes) + [why] if n],
     }
+
+
+def _talker(s):
+    """A separated source is a talker when speech fills a good share of its clip's blocks."""
+    sp = s["speech"][: len(s["blocks"])]
+    return len(sp) > 0 and float(np.mean(sp >= SPEECH_BLOCK)) >= 0.4
+
+
+def remove_crosstalk(seps, blk):
+    """Speech that another separated source owns is cut out of a clip (R1-002).
+
+    A block of clip c with speech is cross-talk from source o (kept, or an excluded pile's) when
+    o is a talker associated with that time (its active blocks, +-1 block) and either c is not a
+    talker itself, or o's clip covers the block with clearly more speech. The 0.3 m array cannot
+    null a talker well below ~1 kHz, so a dog or debris beam still carries a nearby voice. Owned
+    blocks are removed (if >= 2 blocks stay); otherwise the content cannot be pinned on this pile."""
+    log = []
+    for s in seps:
+        act = s["det"]["active_blocks"]
+        s["near"] = act | np.r_[act[1:], False] | np.r_[False, act[:-1]]
+        s["talker"] = _talker(s)
+    for s in seps:
+        if s["det"]["excluded"]:
+            continue
+        drop, owners = [], set()
+        for j, b in enumerate(s["blocks"]):
+            # a non-talker (dog, debris, engine) gives up any speech that coincides with a talker
+            if j >= len(s["speech"]) or s["speech"][j] < (SPEECH_BLOCK if s["talker"] else 0.1):
+                continue
+            for o in seps:
+                if o is s or not o["talker"] or o["det"].get("continuous") or not o["near"][b]:
+                    continue
+                if b in o["pos"]:
+                    owns = o["speech"][o["pos"][b]] >= s["speech"][j] + XTALK_MARGIN or not s["talker"]
+                else:
+                    owns = not s["talker"]
+                if owns:
+                    drop.append(j)
+                    owners.add(o["det"]["pile_id"])
+                    break
+        if not drop:
+            continue
+        keep = [j for j in range(len(s["blocks"])) if j not in set(drop)]
+        src = ", ".join(sorted(owners))
+        if len(keep) >= 2:
+            s["clip"] = np.concatenate([s["clip"][j * blk:(j + 1) * blk] for j in keep])
+            s["notes"].append(f"suppressed cross-talk from {src} ({len(drop)} blocks)")
+        else:
+            s["xtalk_only"] = True
+            s["notes"].append(f"content is cross-talk from {src}")
+        log.append(f"{s['det']['pile_id']}: suppressed cross-talk from {src} ({len(drop)}/{len(s['blocks'])} blocks)")
+    return log
+
+
+def finalise_association(det, dominated):
+    """Fold the clip-content check into the detection's association (in place).
+
+    A clip whose blocks are mostly shared with a more strongly associated source may carry
+    that source's speech or knocks: its content cannot be pinned on this pile."""
+    det["dominated_frac"] = dominated
+    det["assoc_conf"] = round(det["assoc_conf"] * (1.0 - 0.5 * dominated), 3)
+    if dominated > 0.5 or det["assoc_conf"] < dsp.CONF_MIN:
+        det["association"] = "ambiguous"
+    det["assigned"] = det["association"] == "confident"
+
+
+def apply_association(clips, dets_by_pile):
+    """Association confidence feeds reliability (and so priority); ambiguous human leads are
+    reported as "Lead (ambiguous direction)" instead of confident sources."""
+    for c in clips:
+        det = dets_by_pile[c["pile_id"]]
+        c["association"] = det["association"]
+        c["association_conf"] = det["assoc_conf"]
+        c["ambiguous_with"] = det["ambiguous_with"]
+        c["reliability_agent"] = c["reliability"]
+        c["reliability"] = round(c["reliability"] * (0.5 + 0.5 * det["assoc_conf"]), 2)
+        c["priority"] = agent.clip_priority(c)
+        if det["association"] != "confident":
+            c["reliability"] = min(c["reliability"], 0.45)
+            # listed as a lead, but below the mission's dispatch threshold until a listen from
+            # elsewhere pins the direction down
+            c["priority"] = min(agent.clip_priority(c), AMBIGUOUS_PRIORITY_CAP)
+    return clips
 
 
 def analyse(scene, exclude_piles=(), mode="auto", whisper="base.en", save_clips=False, timing=None):
@@ -53,31 +161,69 @@ def analyse(scene, exclude_piles=(), mode="auto", whisper="base.en", save_clips=
     t = time.time()
     dets, B = dsp.localise_piles(scene, exclude=set(exclude_piles))
     log, kept = [], []
+    explainers = [d for d in dets if d["excluded"]]     # visited piles' sources: null them, no clips
     for d in dets:
-        snr0 = dsp.extract_clip(scene, d, B)[1]
-        if d["assigned"] and snr0 >= MIN_SNR_DB:
+        if d["excluded"]:
+            continue
+        snr0 = dsp.extract_clip(scene, d, B, explainers)[1]
+        if snr0 >= MIN_SNR_DB and d["posterior"] >= dsp.POST_MIN:
             kept.append(d)
         else:
-            log.append(f"rejected {d['pile_id']} hypothesis: assigned={d['assigned']} "
-                       f"tri_err={d['tri_err_m']} m, SNR {snr0} dB")
+            log.append(f"rejected {d['pile_id']} hypothesis: bearings fit {d['best_pile']} better "
+                       f"(posterior {d['posterior']:.2f}), tri_err={d['tri_err_m']} m, SNR {snr0} dB")
     T["doa"] = time.time() - t
 
     t = time.time()
+    blk = int(dsp.BLOCK_S * scene.fs)
     seps = []
-    for d in kept:
-        did, snr, clip = dsp.extract_clip(scene, d, B, [o for o in kept if o is not d])
-        seps.append((d, did, snr, clip))
+    pool = kept + explainers
+    for d in pool:
+        did, snr, clip, dom, idx = dsp.extract_clip(scene, d, B, [o for o in pool if o is not d])
+        if not d["excluded"]:
+            finalise_association(d, dom)
+        seps.append({"det": d, "did": did, "snr": snr, "clip": clip, "blocks": list(idx),
+                     "pos": {int(b): j for j, b in enumerate(idx)},
+                     "speech": models.block_speech(clip, blk), "notes": []})
+    log += remove_crosstalk(seps, blk)
+    T["separate"] = time.time() - t
+
+    t = time.time()
+    feats = []
+    ref_text = {}                                       # transcripts of excluded piles' talkers
+    for s_ in seps:
+        if s_["det"]["excluded"] and np.mean(s_["speech"] >= SPEECH_BLOCK) >= 0.2:
+            ref_text[s_["det"]["pile_id"]] = models.transcribe(s_["clip"], whisper)
+    for s_ in seps:
+        d = s_["det"]
+        if d["excluded"]:
+            continue
+        f = clip_features(f"ac-{d['pile_id']}", d, s_["did"], s_["snr"], s_["clip"], len(scene.drones),
+                          whisper, s_["notes"])
+        if s_.get("xtalk_only"):
+            f["transcript"] = ""
+            d["association"], d["assigned"] = "ambiguous", False
+            f["doa"].update(association="ambiguous", assigned=False)
+        feats.append(f)
         if save_clips:
             import soundfile as sf
             cd = os.path.join(DATA_DIR, "clips")
             os.makedirs(cd, exist_ok=True)
             sf.write(os.path.join(cd, f"seed{scene.seed}_{d['pile_id']}.wav"),
-                     clip / (np.abs(clip).max() + 1e-9) * 0.8, 16000)
-    T["separate"] = time.time() - t
-
-    t = time.time()
-    feats = [clip_features(f"ac-{d['pile_id']}", d, did, snr, clip, len(scene.drones), whisper)
-             for d, did, snr, clip in seps]
+                     s_["clip"] / (np.abs(s_["clip"]).max() + 1e-9) * 0.8, 16000)
+    # backstop: the same words heard on two piles belong to the clip with more speech
+    for f in feats:
+        w = _words(f["transcript"])
+        if len(w) < 2:
+            continue
+        rivals = [(p, t_, None) for p, t_ in ref_text.items()] + \
+                 [(g["pile_id"], g["transcript"], g) for g in feats if g is not f]
+        for p, t_, g in rivals:
+            ov = len(w & _words(t_)) / len(w)
+            if ov >= 0.5 and (g is None or g["vad_speech_ratio"] > f["vad_speech_ratio"]):
+                f["notes"].append(f"transcript repeats {p}'s talker: dropped as cross-talk")
+                log.append(f"{f['pile_id']}: suppressed cross-talk from {p} (transcript)")
+                f["transcript"] = ""
+                break
     T["recognise"] = time.time() - t
 
     t = time.time()
@@ -86,18 +232,30 @@ def analyse(scene, exclude_piles=(), mode="auto", whisper="base.en", save_clips=
     for f in feats:
         j = judg[f["clip_id"]]
         c = {k: f[k] for k in ("clip_id", "drone_id", "pile_id", "bearing_deg", "width_deg", "snr_db",
-                               "vad_speech_ratio", "transcript", "sound_class", "class_scores")}
+                               "vad_speech_ratio", "transcript", "sound_class", "class_scores", "heuristics")}
         c.update(human=j["human"], urgency=j["urgency"], reliability=j["reliability"],
                  rationale=j["rationale"], by=j["by"])
-        c["priority"] = agent.clip_priority(c)
         c["doa_agree"] = f"{f['doa']['drones_agreeing']}/{f['doa']['drones_listening']}"
         clips.append(c)
+    for c, f in zip(clips, feats):
+        c["notes"] = f["notes"]
+    apply_association(clips, {d["pile_id"]: d for d in kept})
     piles_xy = {p: v for p, v in scene.piles.items() if p not in set(exclude_piles)}
     piles, dispatch = agent.aggregate(clips, piles_xy, scene.start_pile)
+    clip_by = {c["clip_id"]: c for c in clips}
+    for p in piles:                                     # association onto the pile list
+        c = clip_by.get(p["top_clip"])
+        if c is None:
+            continue
+        p["association"] = c["association"]
+        if c["association"] != "confident" and p["status"] in ("lead", "radar_ping"):
+            alt = ", ".join(c["ambiguous_with"])
+            p["why"] = ("Lead (ambiguous direction" + (f"; could be {alt}" if alt else "") + "): " + p["why"])
     T["agent"] = time.time() - t
 
     return {
         "schema": "larpverse.acoustic/v1",
+        "algo": dsp.ALGO_VERSION,
         "t": scene.duration,
         "seed": scene.seed, "start_pile": scene.start_pile, "synthetic": True,
         "excluded_piles": sorted(exclude_piles),

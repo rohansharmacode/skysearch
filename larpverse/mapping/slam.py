@@ -60,6 +60,13 @@ def transform(T, pts):
     return pts @ T[:3, :3].T + T[:3, 3]
 
 
+def rasterise(cloud, origin, w, h, res=HM_RES):
+    """heightmap_from_points on the window only (it clamps outside points onto the edge cells)."""
+    x1, y1 = origin[0] + w * res, origin[1] + h * res
+    inside = (cloud[:, 0] >= origin[0]) & (cloud[:, 0] < x1) & (cloud[:, 1] >= origin[1]) & (cloud[:, 1] < y1)
+    return heightmap_from_points(cloud[inside], origin, res, w, h)
+
+
 def ate(est, gt):
     e = np.linalg.norm(est[:, :3, 3] - gt[:, :3, 3], axis=1)
     return float(np.sqrt((e ** 2).mean())), float(e.max()), float(e[-1])
@@ -71,10 +78,11 @@ def rot_err_deg(est, gt):
     return float(np.degrees(np.arccos(c)).mean())
 
 
-def pile_window(centre, half=HALF_WINDOW, res=HM_RES):
-    """(origin, w, h) of a square window around ``centre`` snapped to the site heightmap grid."""
-    x0 = SITE_BOUNDS[0] + np.floor((centre[0] - half - SITE_BOUNDS[0]) / res) * res
-    y0 = SITE_BOUNDS[1] + np.floor((centre[1] - half - SITE_BOUNDS[1]) / res) * res
+def pile_window(centre, half=HALF_WINDOW, res=HM_RES, bounds=SITE_BOUNDS):
+    """(origin, w, h) of a square window around ``centre`` snapped to the site heightmap grid
+    (``bounds``: the scenario's, e.g. ``getattr(sc, "bounds", SITE_BOUNDS)`` for Weiguan / mesh sites)."""
+    x0 = bounds[0] + np.floor((centre[0] - half - bounds[0]) / res) * res
+    y0 = bounds[1] + np.floor((centre[1] - half - bounds[1]) / res) * res
     n = int(round(2 * half / res))
     return (float(x0), float(y0)), n, n
 
@@ -192,11 +200,13 @@ def height_error(g: Grid, truth: Grid, observed, centre, radius=SEARCH_RADIUS):
 # --------------------------------------------------------------------------- main entry
 def run_pile_slam(scenario: Scenario, pile_name: str, seed: int = 0, n_scans: int = 300,
                   method: str = "kiss", cfg: LidarConfig | None = None, threads: int = 2,
-                  evaluate: bool = True):
-    """Full run; returns a dict with cloud, grids, poses, landing sites and metrics."""
+                  evaluate: bool = True, revs: float = 1.0):
+    """Full run; returns a dict with cloud, grids, poses, landing sites and metrics.
+
+    ``revs`` = orbit revolutions flown during the ``n_scans`` sweeps (1.0: one loop in 30 s at 300)."""
     timing = {}
     t0 = time.perf_counter()
-    sim = simulate_orbit(scenario, pile_name, seed=seed, n_scans=n_scans, cfg=cfg)
+    sim = simulate_orbit(scenario, pile_name, seed=seed, n_scans=n_scans, cfg=cfg, revs=revs)
     timing["raycast_s"] = time.perf_counter() - t0
     scans, gt, odom = sim["scans"], sim["gt_poses"], sim["odom_poses"]
     centre = sim["centre"]
@@ -223,8 +233,8 @@ def run_pile_slam(scenario: Scenario, pile_name: str, seed: int = 0, n_scans: in
 
     t2 = time.perf_counter()
     cloud = accumulate(scans, est)
-    origin, w, h = pile_window(centre)
-    grid = heightmap_from_points(cloud, origin, HM_RES, w, h)
+    origin, w, h = pile_window(centre, bounds=getattr(scenario, "bounds", SITE_BOUNDS))
+    grid = rasterise(cloud, origin, w, h)
     cnt = np.zeros((h, w), int)
     ix = ((cloud[:, 0] - origin[0]) / HM_RES).astype(int)
     iy = ((cloud[:, 1] - origin[1]) / HM_RES).astype(int)
@@ -248,9 +258,9 @@ def run_pile_slam(scenario: Scenario, pile_name: str, seed: int = 0, n_scans: in
         sub = slice(None, None, max(1, len(scans) // 30))     # point-level error on a subset of sweeps
         pe = np.concatenate([np.linalg.norm(transform(T, s) - tw, axis=1)
                              for s, T, tw in zip(scans[sub], est[sub], sim["truth_world"][sub])])
-        gt_grid = heightmap_from_points(accumulate(scans, gt), origin, HM_RES, w, h)
+        gt_grid = rasterise(accumulate(scans, gt), origin, w, h)
         odom_cloud = accumulate(scans, odom)
-        odom_grid = heightmap_from_points(odom_cloud, origin, HM_RES, w, h)
+        odom_grid = rasterise(odom_cloud, origin, w, h)
         land = landing_agreement(grid, truth, centre)
         land_odom = landing_agreement(odom_grid, truth, centre)["summary"]
         metrics.update({
@@ -274,11 +284,11 @@ def run_pile_slam(scenario: Scenario, pile_name: str, seed: int = 0, n_scans: in
 
 
 def build_pile_map(scenario: Scenario, pile_name: str, seed: int = 0, n_scans: int = 300,
-                   method: str = "kiss", evaluate: bool = True):
+                   method: str = "kiss", evaluate: bool = True, **kw):
     """Orbit ``pile_name``, run LiDAR SLAM, return (points Nx3 float32 site frame, Grid, metrics).
 
     ``Grid`` covers a 32 m window around the pile at 0.5 m, aligned to the site heightmap grid,
     with an extra ``grid.observed`` (h, w) bool mask of cells that received LiDAR points.
     """
-    r = run_pile_slam(scenario, pile_name, seed=seed, n_scans=n_scans, method=method, evaluate=evaluate)
+    r = run_pile_slam(scenario, pile_name, seed=seed, n_scans=n_scans, method=method, evaluate=evaluate, **kw)
     return r["cloud"], r["grid"], r["metrics"]

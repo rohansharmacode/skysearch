@@ -5,13 +5,23 @@ Geometry is computed here in numpy; a backend draws it:
   * ``UsdBackend``        USD prims only (BasisCurves, Points, Spheres) - shows up in every renderer/capture
   * ``NullBackend``       records counts; used by ``--dry-run`` (no omni/pxr)
 
-What is drawn: red ping spheres at (x, y, z_est) with a tall thin red beacon and a 2-sigma surface ring per
-radar candidate; amber range rings for the active pile's scans; yellow cones for human-classified acoustic
-clips; a green dispatch arc; LiDAR points coloured by height (incremental).
+What is drawn: red ping spheres at (x, y, z_est) with a tall emissive red beacon (slow pulse, readable from
+wide shots) and a 2-sigma surface ring per radar candidate; amber range rings for the active pile's scans;
+yellow cones for human-audio clips (scores.human >= 0.4, the dashboard rule); a green dispatch arc; LiDAR
+points in one purple (brightness by height), shown during the survey and faded out after it.
+Operator search zones (state["zones"]) are thin outlines draped on the surface: dashed white = tasked /
+unsearched, green = being searched, grey = searched (not cleared), red = ping, teal = acoustic lead. Recon
+(state["recon"]): dashed low-alpha green coverage path in the air, green perch rings, and fine-dashed grey
+proposed outlines (state["zone_proposals"]) until accepted (then they arrive as zones).
+
+Colour system (same as dashboard/ and animation/): red = radar ping / candidate search region, yellow =
+human-audio direction cone, teal = acoustic priority, amber = radar range rings, green = coordinator /
+dispatch, purple = LiDAR. Text (``label_specs``) uses the dashboard pill style: IBM Plex Mono on dark.
 """
 from __future__ import annotations
 
 import math
+import os
 
 import numpy as np
 
@@ -20,31 +30,66 @@ RED_DIM = (0.95, 0.45, 0.25, 0.7)
 AMBER = (1.0, 0.68, 0.10, 0.9)
 YELLOW = (1.0, 0.92, 0.15, 0.95)
 GREEN = (0.20, 0.95, 0.35, 1.0)
-HUMAN = {"voice", "weak_voice", "shout", "knock", "knocking", "tapping", "human"}
+HUMAN = {"voice", "weak_voice", "shout", "knock", "knocking", "tapping", "human"}   # no longer used for cones (R2-007)
+LIDAR_RGB = (0.61, 0.42, 1.0)       # #9b6bff, the animation's LiDAR purple (sRGB values)
 # Drawing scale (metres per width unit for lines, point diameter, how many recent scans get range rings).
 # isaac/photoreal.py lowers these for footage: thick tubes and big dots read as props in a realistic render.
 LINE_W = 0.03
 POINT_W = 0.09
 MAX_SCANS = 12
 LINE_MESH = False        # True: draw lines as flat ribbon meshes LINE_W * width metres wide (exact in every renderer)
+# Ping beacon: column radius (m), emissive gain and pulse rate. ~0.3 m wide so it reads in wide shots.
+BEACON_R = 0.15
+BEACON_GLOW = 4.0
+PULSE_HZ = 0.8                      # same period as the animation/dashboard ping ring
+# LiDAR display: only while surveying, then fade out over LIDAR_FADE_S (render-clock seconds) and start a
+# fresh map at the next survey. LIDAR_SURVEY_ONLY = False keeps the old behaviour (points stay forever).
+LIDAR_SURVEY_ONLY = True
+LIDAR_FADE_S = 2.5
+SURVEY_PHASES = {"survey", "surveying", "mapping", "lidar", "recon_mapping"}
+# Operator search zones (state["zones"], INTERFACES "Operator tasking (v1.2)"): thin draped outlines.
+# Off with LARPVERSE_ZONES=0, Overlay(..., zones=False) or overlay.ZONES = False (run_mission --no-zones).
+ZONES = os.environ.get("LARPVERSE_ZONES", "1") not in ("0", "false", "off", "no")
+TEAL = (0.13, 0.76, 0.84, 1.0)      # #22c3d6 acoustic priority / lead
+GREY = (0.55, 0.60, 0.65, 0.85)
+WHITE = (0.90, 0.93, 0.95, 0.80)
+ZONE_STYLE = {   # status -> (rgba, dashed)
+    "tasked": (WHITE, True), "unsearched": (WHITE, True),
+    "surveying": (GREEN, False), "scanning": (GREEN, False), "in_progress": (GREEN, False),
+    "searched_no_ping": (GREY, False), "beyond_radar_reach": (GREY, True),
+    "ping": (RED, False), "lead": (TEAL, False),
+}
+RECON_PATH = (*GREEN[:3], 0.35)     # recon coverage path in the air: dashed, low alpha
+PROPOSAL = (*GREY[:3], 0.75)        # dashboard-proposed rubble outlines (until the operator accepts them)
+ZONE_W = 2.0                        # width units (x LINE_W); thin enough not to read as a prop
+CONE_HUMAN_MIN = 0.4                # dashboard/app.js: (c.scores?.human ?? 0) >= 0.4
 ACTIVE = {"active", "survey", "surveying", "scanning", "searching", "in_progress", "radar", "landing",
           "relocate", "rescan", "acoustic"}
+# Dashboard label look for any burn-in text (post-process / drawtext): dark pill, IBM Plex Mono, coloured border.
+LABEL_STYLE = {
+    "font": "IBM Plex Mono", "weight": 500, "size_px": 13, "fg": "#e4ebf0", "bg": "rgba(8,12,16,0.78)",
+    "radius_px": 3, "pad_px": (3, 6),
+    "border": {"pile": "rgba(150,180,200,0.18)", "ping": "#ff4545", "priority": "#22c3d6", "cone": "#ffe14a",
+               "dispatch": "#6fd36f", "drone": "rgba(150,180,200,0.18)"},
+    "text": {"pile": "#e4ebf0", "ping": "#ffd0d0", "priority": "#c4f3f8", "cone": "#fff3b0",
+             "dispatch": "#c9f5c9", "drone": "#e4ebf0"},
+}
 
 
-def height_colors(z, lo=-0.5, hi=5.0):
-    """Blue -> teal -> yellow -> red ramp, RGBA float32."""
-    t = np.clip((np.asarray(z, float) - lo) / (hi - lo), 0, 1)
-    stops = np.array([[0.15, 0.30, 0.95], [0.10, 0.80, 0.80], [0.95, 0.90, 0.20], [0.95, 0.25, 0.15]])
-    f = t * (len(stops) - 1)
-    i = np.minimum(f.astype(int), len(stops) - 2)
-    u = (f - i)[:, None]
-    rgb = stops[i] * (1 - u) + stops[i + 1] * u
+def lidar_colors(z, lo=-0.5, hi=5.0):
+    """Single-hue LiDAR purple, brightness 0.45..1 by height, RGBA float32. (No red/yellow: those mean ping/cone.)"""
+    t = np.clip((np.asarray(z, float).ravel() - lo) / (hi - lo), 0, 1)
+    rgb = (0.45 + 0.55 * t)[:, None] * np.asarray(LIDAR_RGB, float)[None, :]
     return np.concatenate([rgb, np.ones((len(rgb), 1))], 1).astype(np.float32)
 
 
+height_colors = lidar_colors        # old name, kept for callers
+
+
 class Overlay:
-    def __init__(self, backend, surface_fn, pile_xy=None, base_xy=(0.0, -47.0)):
+    def __init__(self, backend, surface_fn, pile_xy=None, base_xy=(0.0, -47.0), zones=None):
         self.b = backend
+        self.zones = zones                   # None = follow the module flag ZONES
         self.surface = surface_fn            # (x, y) arrays -> z; public geometry (state heightmap or scenario)
         self.pile_xy = dict(pile_xy or {})
         self.base_xy = base_xy
@@ -52,6 +97,12 @@ class Overlay:
         self.n_pings = 0
         self.n_points = 0
         self.updates = 0
+        self.labels = []                     # label_specs() of the last update (for burn-in text)
+        self._surveying = False              # LiDAR display state (survey-only + fade)
+        self._new_pts = False
+        self._lidar_shown = False
+        self._live_t = None
+        self._alpha = 1.0
 
     # ------------------------------------------------------------------ helpers
     def _drape(self, xy, lift=0.15, max_seg=0.8):
@@ -63,6 +114,17 @@ class Overlay:
             out.append(a + (b - a) * (np.arange(1, n + 1) / n)[:, None])
         p = np.concatenate(out)
         return np.column_stack([p, np.asarray(self.surface(p[:, 0], p[:, 1]), float) + lift])
+
+    @staticmethod
+    def _dashed(poly, rgba, width, acc, dash=1.0, gap=0.6):
+        """Segments of a dense 3D polyline, keeping only the 'on' part of a dash pattern (by arc length)."""
+        if len(poly) < 2:
+            return
+        d = np.linalg.norm(np.diff(poly, axis=0), axis=1)
+        mid = np.concatenate([[0.0], np.cumsum(d)[:-1]]) + d / 2
+        on = (mid % (dash + gap)) < dash
+        if on.any():
+            acc.append((poly[:-1][on], poly[1:][on], np.tile(rgba, (int(on.sum()), 1)), np.full(int(on.sum()), width)))
 
     @staticmethod
     def _segs(poly, rgba, width, acc):
@@ -102,6 +164,11 @@ class Overlay:
             self.pile_xy[p["id"]] = p["xy"]
         segs, pings = [], []
         active = self.active_pile(state)
+        surveying = str(state.get("phase") or "") in SURVEY_PHASES
+        if LIDAR_SURVEY_ONLY and surveying and not self._surveying and self._lidar_shown:
+            self.b.clear_points()            # next pile's survey: start a fresh map
+            self._lidar_shown, self._alpha = False, 1.0
+        self._surveying = surveying
 
         # radar candidates: ping sphere + beacon + 2-sigma surface ring
         for c in state.get("radar_candidates") or []:
@@ -121,6 +188,44 @@ class Overlay:
             a = np.linspace(0, 2 * np.pi, 49)
             ell = (V @ np.stack([w[0] * np.cos(a), w[1] * np.sin(a)])).T + [x, y]
             self._segs(self._drape(ell, 0.12), col, 3.0, segs)
+
+        # operator search zones: ground-hugging outlines coloured by mission status
+        if (ZONES if self.zones is None else self.zones):
+            for z in state.get("zones") or []:
+                poly = z.get("polygon") or []
+                st = str(z.get("status") or "unsearched")
+                if st == "cancelled" or len(poly) < 3:
+                    continue
+                rgba, dashed = ZONE_STYLE.get(st, (WHITE, True))
+                ring = np.asarray([q[:2] for q in poly] + [poly[0][:2]], float)
+                line = self._drape(ring, 0.12, max_seg=0.4)
+                (self._dashed if dashed else self._segs)(line, rgba, ZONE_W, segs)
+
+        # recon (INTERFACES "Reconnaissance mode (v1.2)"): coverage path in the air, perches, proposed outlines
+        if (ZONES if self.zones is None else self.zones):
+            rc = state.get("recon") if isinstance(state.get("recon"), dict) else {}
+            path = np.asarray([q[:3] for q in rc.get("path") or [] if len(q) >= 3], float)
+            if len(path) >= 2 and rc.get("status") != "done":
+                dense = [path[:1]]
+                for a, b in zip(path[:-1], path[1:]):
+                    n = max(1, int(math.ceil(np.linalg.norm(b - a) / 0.8)))
+                    dense.append(a + (b - a) * (np.arange(1, n + 1) / n)[:, None])
+                self._dashed(np.concatenate(dense), RECON_PATH, 1.5, segs, dash=1.5, gap=1.0)
+            a = np.linspace(0, 2 * np.pi, 25)
+            for pc in rc.get("perches") or []:
+                xy = pc.get("xy") if isinstance(pc, dict) else None
+                if xy is None or len(xy) < 2:
+                    continue
+                ring = np.stack([xy[0] + 0.9 * np.cos(a), xy[1] + 0.9 * np.sin(a)], 1)
+                self._segs(self._drape(ring, 0.15, max_seg=0.4), GREEN, ZONE_W, segs)
+            accepted = {str(z.get("id")) for z in state.get("zones") or []} | \
+                       {str(z.get("proposal_id")) for z in state.get("zones") or [] if z.get("proposal_id")}
+            for zp in state.get("zone_proposals") or []:
+                poly = zp.get("polygon") or []
+                if len(poly) < 3 or str(zp.get("id")) in accepted or zp.get("status") in ("accepted", "rejected"):
+                    continue                  # accepted proposals come back as state["zones"] (tasked style)
+                ring = np.asarray([q[:2] for q in poly] + [poly[0][:2]], float)
+                self._dashed(self._drape(ring, 0.12, max_seg=0.4), PROPOSAL, ZONE_W, segs, dash=0.6, gap=0.6)
 
         # amber range rings for the active pile's scans
         pxy = self.pile_xy.get(active) if active else None
@@ -144,14 +249,20 @@ class Overlay:
                 ring = np.stack([sx + r * np.cos(a), sy + r * np.sin(a)], 1)
                 self._segs(self._drape(ring, 0.2), rgba, 2.0 if cf < 0.5 else 3.0, segs)
 
-        # yellow cones for human-classified acoustic clips
+        # yellow cones for human audio: scores.human >= 0.4 only (dashboard rule), latest listen only
         clips = state.get("acoustic_clips")
         if clips is None:
             clips = state.get("acoustic") or []
+        listens = [c.get("listen") for c in clips if c.get("listen") is not None]
+        last_listen = max(listens) if listens else None
         for c in clips:
-            human = c.get("human")            # explicit flag wins; else the classifier's label
-            if human is None:
-                human = c.get("class") in HUMAN or float((c.get("scores") or {}).get("human", 0)) >= 0.5
+            sc = c.get("scores")
+            if isinstance(sc, dict):
+                human = float(sc.get("human") or 0.0) >= CONE_HUMAN_MIN
+            else:                             # legacy v1 `acoustic` entries carry no scores: dashboard draws them
+                human = bool(c.get("human", True))
+            if last_listen is not None and c.get("listen", last_listen) != last_listen:
+                continue
             if not human or c.get("bearing_deg") is None:
                 continue
             o = c.get("origin") or self._drone_xy(state, c.get("drone_id"))
@@ -196,16 +307,56 @@ class Overlay:
         self.b.set_lines(P0, P1, C, W)
         self.b.set_pings(pings)
         self.n_lines, self.n_pings = len(P0), len(pings)
+        self.labels = self.label_specs(state)
         self.updates += 1
         return active
+
+    def label_specs(self, state):
+        """World-anchored text in the dashboard style (LABEL_STYLE), for burn-in by a post-process.
+
+        Pile IDs (white), "A2-R1 · candidate search region" tags (red border) and teal acoustic-priority
+        badges on acoustic-lead piles. Same names and wording as the dashboard and the animation; a ping is never "confirmed".
+        """
+        out = []
+        cands = {str(c.get("id")): c for c in state.get("radar_candidates") or []}
+        for p in state.get("piles") or []:
+            x, y = map(float, p["xy"][:2])
+            z = float(self.surface(np.array([x]), np.array([y]))[0])
+            out.append({"kind": "pile", "text": str(p["id"]), "xyz": (x, y, z + 4.0)})
+            pr = p.get("priority")
+            if pr is not None and p.get("status") in ("lead", "acoustic_lead"):     # dashboard's teal badge
+                out.append({"kind": "priority", "text": f"priority {int(round(float(pr)))}", "xyz": (x, y, z + 3.0)})
+        for cid, c in cands.items():
+            x, y = map(float, c["xy"][:2])
+            z = float(self.surface(np.array([x]), np.array([y]))[0])
+            weak = c.get("status") == "insufficient_evidence"
+            out.append({"kind": "ping", "text": f"{cid} · {'weak candidate' if weak else 'candidate search region'}",
+                        "xyz": (x, y, z + 2.0)})
+        for o in out:
+            o["fg"] = LABEL_STYLE["text"][o["kind"]]
+            o["border"] = LABEL_STYLE["border"][o["kind"]]
+        return out
 
     def add_points(self, pts):
         if pts is None or len(pts) == 0:
             return
-        self.b.add_points(np.asarray(pts, np.float32), height_colors(pts[:, 2]))
+        if LIDAR_SURVEY_ONLY and self._alpha < 1.0:      # points arriving again: show the map at full strength
+            self._alpha = 1.0
+            self.b.set_points_alpha(1.0)
+        self.b.add_points(np.asarray(pts, np.float32), lidar_colors(pts[:, 2]))
         self.n_points += len(pts)
+        self._new_pts = self._lidar_shown = True
 
     def tick(self, t):
+        if LIDAR_SURVEY_ONLY and self._lidar_shown:
+            if self._surveying or self._new_pts or self._live_t is None or t < self._live_t:
+                self._live_t = t                 # (t < live_t: the caller switched clocks; restart the fade)
+            self._new_pts = False
+            a = float(np.clip(1.0 - (t - self._live_t) / max(LIDAR_FADE_S, 1e-6), 0.0, 1.0))
+            a = math.ceil(a * 8) / 8             # 8 steps: each step rewrites the point widths
+            if a != self._alpha:
+                self._alpha = a
+                self.b.set_points_alpha(a)
         self.b.tick(t)
 
 
@@ -225,6 +376,12 @@ class NullBackend:
     def add_points(self, P, C):
         self.points += len(P)
 
+    def clear_points(self):
+        self.points = 0
+
+    def set_points_alpha(self, a):
+        self.alpha = a
+
     def tick(self, t):
         pass
 
@@ -233,8 +390,8 @@ class UsdBackend:
     """USD prims for everything. Lines: one linear BasisCurves prim (2 verts per segment)."""
 
     def __init__(self, stage, root="/World/Overlay", point_cap=400000, flush_every=1500):
-        from pxr import Gf, Sdf, UsdGeom, Vt
-        self.Gf, self.Sdf, self.UsdGeom, self.Vt = Gf, Sdf, UsdGeom, Vt
+        from pxr import Gf, Sdf, UsdGeom, UsdShade, Vt
+        self.Gf, self.Sdf, self.UsdGeom, self.UsdShade, self.Vt = Gf, Sdf, UsdGeom, UsdShade, Vt
         self.stage, self.root = stage, root
         UsdGeom.Xform.Define(stage, root)
         self.curves = UsdGeom.BasisCurves.Define(stage, root + "/Lines")
@@ -246,6 +403,7 @@ class UsdBackend:
         self.point_cap, self.flush_every = point_cap, flush_every
         self.ping_prims = {}
         self.live = set()
+        self.pt_scale = 1.0                  # LiDAR fade: point widths shrink to 0, then the prim hides
 
     def _ribbons(self, P0, P1, C, W):
         """Flat quads along each segment (horizontal, width LINE_W * W m): thin painted-light lines."""
@@ -309,14 +467,39 @@ class UsdBackend:
         sxf = UsdGeom.Xformable(sph)
         st, ss = sxf.AddTranslateOp(UsdGeom.XformOp.PrecisionDouble), sxf.AddScaleOp(UsdGeom.XformOp.PrecisionDouble)
         cyl = UsdGeom.Cylinder.Define(self.stage, f"{self.root}/Beacons/{safe}")
-        cyl.CreateRadiusAttr(0.06)
+        cyl.CreateRadiusAttr(1.0)                    # radius = BEACON_R via the scale op (pulsed in tick)
         cyl.CreateHeightAttr(1.0)
         cyl.CreateAxisAttr("Z")
         cxf = UsdGeom.Xformable(cyl)
         ct, cs = cxf.AddTranslateOp(UsdGeom.XformOp.PrecisionDouble), cxf.AddScaleOp(UsdGeom.XformOp.PrecisionDouble)
-        rec = {"sph": sph, "st": st, "ss": ss, "cyl": cyl, "ct": ct, "cs": cs, "r": 0.35, "live": True}
+        rec = {"sph": sph, "st": st, "ss": ss, "cyl": cyl, "ct": ct, "cs": cs, "r": 0.35, "h": 1.0,
+               "rgb": RED[:3], "emis": self._glow_material(safe, (sph, cyl)), "live": True}
         self.ping_prims[pid] = rec
         return rec
+
+    def _glow_material(self, safe, gprims):
+        """Emissive UsdPreviewSurface for a ping (sphere + beacon), so it glows in RTX wide shots.
+        Returns the emissiveColor input (pulsed in tick) or None if materials fail (displayColor still works)."""
+        UsdShade, Sdf, Gf = self.UsdShade, self.Sdf, self.Gf
+        try:
+            path = f"{self.root}/Looks/Ping_{safe}"
+            mat = UsdShade.Material.Define(self.stage, path)
+            sh = UsdShade.Shader.Define(self.stage, path + "/Shader")
+            sh.CreateIdAttr("UsdPreviewSurface")
+            sh.CreateInput("diffuseColor", Sdf.ValueTypeNames.Color3f).Set(Gf.Vec3f(*map(float, RED[:3])))
+            sh.CreateInput("roughness", Sdf.ValueTypeNames.Float).Set(0.4)
+            emis = sh.CreateInput("emissiveColor", Sdf.ValueTypeNames.Color3f)
+            emis.Set(Gf.Vec3f(*(BEACON_GLOW * float(c) for c in RED[:3])))
+            mat.CreateSurfaceOutput().ConnectToSource(sh.ConnectableAPI(), "surface")
+            for g in gprims:
+                try:
+                    api = UsdShade.MaterialBindingAPI.Apply(g.GetPrim())
+                except AttributeError:               # very old USD: non-applied API
+                    api = UsdShade.MaterialBindingAPI(g.GetPrim())
+                api.Bind(mat)
+            return emis
+        except Exception:
+            return None
 
     def set_pings(self, pings):
         Gf = self.Gf
@@ -329,8 +512,9 @@ class UsdBackend:
             rec["r"] = p["radius"]
             rec["ss"].Set(Gf.Vec3d(*(3 * [p["radius"]])))
             h = max(0.5, p["top"] - z)
+            rec["h"], rec["rgb"] = h, tuple(p["rgba"][:3])
             rec["ct"].Set(Gf.Vec3d(x, y, z + h / 2))
-            rec["cs"].Set(Gf.Vec3d(1, 1, h))
+            rec["cs"].Set(Gf.Vec3d(BEACON_R, BEACON_R, h))
             col = [Gf.Vec3f(*map(float, p["rgba"][:3]))]
             rec["sph"].CreateDisplayColorAttr(col)
             rec["cyl"].CreateDisplayColorAttr(col)
@@ -341,6 +525,19 @@ class UsdBackend:
                 rec["sph"].CreateVisibilityAttr("invisible")
                 rec["cyl"].CreateVisibilityAttr("invisible")
         self.live = seen
+
+    def clear_points(self):
+        self.pts_buf, self.col_buf = [], []
+        self.n_pts, self.unflushed, self.pt_scale = 0, 0, 1.0
+        self.pts_prim.CreateVisibilityAttr("invisible")
+
+    def set_points_alpha(self, a):
+        """LiDAR fade: 1 = full map, 0 = hidden. Widths shrink (displayOpacity needs a material in RTX)."""
+        self.pt_scale = float(a)
+        if a <= 0:
+            self.pts_prim.CreateVisibilityAttr("invisible")
+            return
+        self.flush_points()
 
     def add_points(self, P, C):
         if self.n_pts >= self.point_cap:
@@ -359,8 +556,9 @@ class UsdBackend:
         P = np.concatenate(self.pts_buf).astype(np.float32)
         C = np.concatenate(self.col_buf).astype(np.float32)
         self.pts_buf, self.col_buf = [P], [C]
+        self.pts_prim.CreateVisibilityAttr("inherited")
         self.pts_prim.CreatePointsAttr(Vt.Vec3fArray.FromNumpy(P))
-        self.pts_prim.CreateWidthsAttr(Vt.FloatArray.FromNumpy(np.full(len(P), POINT_W, np.float32)))
+        self.pts_prim.CreateWidthsAttr(Vt.FloatArray.FromNumpy(np.full(len(P), POINT_W * self.pt_scale, np.float32)))
         self.pts_prim.SetWidthsInterpolation(self.UsdGeom.Tokens.vertex)
         lo, hi = P.min(0), P.max(0)
         self.pts_prim.CreateExtentAttr([self.Gf.Vec3f(*map(float, lo)), self.Gf.Vec3f(*map(float, hi))])
@@ -370,15 +568,25 @@ class UsdBackend:
         self.unflushed = 0
 
     def tick(self, t):
-        s = 1.0 + 0.35 * math.sin(t * 4.0)          # pulse the ping spheres
+        w = 0.5 + 0.5 * math.sin(2 * math.pi * PULSE_HZ * t)   # slow pulse, 0..1
+        s = 1.0 + 0.35 * w                                       # ping sphere
+        b = BEACON_R * (0.8 + 0.5 * w)                           # beacon column width
+        g = BEACON_GLOW * (0.5 + 0.5 * w)                        # emissive gain
+        Gf = self.Gf
         for pid, rec in self.ping_prims.items():
             if pid in self.live:
                 r = rec["r"] * s
-                rec["ss"].Set(self.Gf.Vec3d(r, r, r))
+                rec["ss"].Set(Gf.Vec3d(r, r, r))
+                rec["cs"].Set(Gf.Vec3d(b, b, rec["h"]))
+                if rec["emis"] is not None:
+                    rec["emis"].Set(Gf.Vec3f(*(g * float(c) for c in rec["rgb"])))
 
 
 class DebugDrawBackend(UsdBackend):
-    """Lines and points through debug_draw (cheap, viewport overlay); pings stay USD prims."""
+    """Lines and points through debug_draw (cheap, viewport overlay); pings stay USD prims.
+    Signatures verified on 6.0.1: draw_lines(starts, ends, rgba, widths), draw_points(points, rgba, sizes),
+    clear_lines(), clear_points(); lists of tuples. The team's Isaac Lab Camera recordings appear to include
+    the lines (media/preview/isaac_t3s_light_fixed.png); Movie Capture is untested, so --overlay usd for that."""
 
     def __init__(self, stage, dd, point_cap=600000):
         super().__init__(stage)
@@ -397,6 +605,14 @@ class DebugDrawBackend(UsdBackend):
             return
         self.dd.draw_points([tuple(map(float, p)) for p in P], [tuple(map(float, c)) for c in C], [4.0] * len(P))
         self.dd_points += len(P)
+
+    def clear_points(self):
+        self.dd.clear_points()
+        self.dd_points = 0
+
+    def set_points_alpha(self, a):
+        if a <= 0:                                   # debug_draw points can't be dimmed: hide at the end of the fade
+            self.clear_points()
 
 
 def make_backend(kind, stage=None, dd=None):

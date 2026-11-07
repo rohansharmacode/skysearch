@@ -1,4 +1,6 @@
 <meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="data:,">
 <title>Larpverse Grid Search</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -41,6 +43,7 @@ body { background: var(--ink); color: var(--fg); font-family: var(--f-display); 
 .lbl.teal { border-color: var(--acoustic); color: #c4f3f8; }
 .lbl.op { border-color: var(--op); color: #d2e7ff; }
 .lbl.truth { border-style: dashed; color: var(--muted); }
+.lbl.ping { margin-top: -26px; margin-left: 70px; }
 .lbl.drone b { color: #ef5350; font-weight: 500; }
 
 #top { top: 16px; left: 16px; max-width: min(440px, calc(100% - 32px)); }
@@ -50,7 +53,7 @@ body { background: var(--ink); color: var(--fg); font-family: var(--f-display); 
 #phaseTitle { font-size: clamp(24px, 3.6vw, 38px); font-weight: 600; line-height: 1.02; margin: 6px 0 10px; text-wrap: balance; }
 #caption { font-size: 15px; line-height: 1.45; color: #c8d3db; background: var(--panel); border-left: 2px solid var(--coord); padding: 10px 12px; }
 
-#layers { top: 16px; right: 16px; display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-end; max-width: 380px; }
+#layers { z-index: 4; top: 16px; right: 16px; display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-end; max-width: 380px; }
 .tog { font: 500 11.5px/1 var(--f-mono); color: var(--fg); background: var(--panel); border: 1px solid var(--line); padding: 7px 9px; border-radius: 3px; display: flex; align-items: center; gap: 7px; cursor: pointer; }
 .tog i { width: 9px; height: 9px; border-radius: 2px; background: var(--c); box-shadow: 0 0 8px var(--c); }
 .tog[aria-pressed="false"] { color: var(--muted); }
@@ -66,8 +69,9 @@ body { background: var(--ink); color: var(--fg); font-family: var(--f-display); 
 #dash canvas { display: block; width: 236px; height: 288px; }
 #dash h3 b { color: var(--detect); font-weight: 500; }
 
-#agent { right: 16px; top: 64px; bottom: 74px; width: 340px; display: flex; flex-direction: column; }
+#agent { right: 16px; top: 104px; bottom: 74px; width: 340px; display: flex; flex-direction: column; }
 #agent .panel { display: flex; flex-direction: column; gap: 8px; min-height: 0; max-height: 100%; overflow: hidden; }
+.illus { color: var(--cone); letter-spacing: 0.06em; }
 .pipe { display: flex; flex-wrap: wrap; gap: 4px; font: 500 10.5px/1 var(--f-mono); color: var(--muted); }
 .pipe span { border: 1px solid var(--line); padding: 4px 5px; border-radius: 2px; }
 .pipe span.on { border-color: var(--acoustic); color: #c4f3f8; }
@@ -124,7 +128,9 @@ body { background: var(--ink); color: var(--fg); font-family: var(--f-display); 
 @media (max-width: 760px) {
   #agent { display: none; }
   #layers { top: auto; bottom: 70px; right: 16px; left: auto; max-width: 50%; }
-  #dash canvas { width: 150px; height: 183px; }
+  #dash canvas { width: 130px; height: 159px; }
+  #dash .panel { padding: 6px 8px; } #dash h3 { font-size: 9px; letter-spacing: 0.06em; flex-direction: column; gap: 2px; }
+  .tog { padding: 5px 7px; font-size: 10.5px; }
   .chap span { display: none; }
   #tablet { width: calc(100% - 32px); }
 }
@@ -156,8 +162,8 @@ body { background: var(--ink); color: var(--fg); font-family: var(--f-display); 
   </div>
   <div class="hud" id="agent" hidden>
     <div class="panel">
-      <h3><span>Acoustic agent</span><span id="agentState">receiving</span></h3>
-      <div class="pipe"><span data-p="0">Silero VAD</span><span data-p="1">Whisper speech-to-text</span><span data-p="2">YAMNet sound class</span><span data-p="3">LLM intent + urgency</span><span data-p="4">priority</span></div>
+      <h3><span>Acoustic agent · <span class="illus">illustrative</span></span><span id="agentState">receiving</span></h3>
+      <div class="pipe"><span data-p="0">Silero VAD</span><span data-p="1">Whisper speech-to-text</span><span data-p="2">YAMNet sound class</span><span data-p="3">judge: Gemini or rule fallback</span><span data-p="4">priority</span></div>
       <div id="clips"></div>
       <div id="queue" hidden></div>
       <div id="dispatch" hidden></div>
@@ -180,6 +186,8 @@ body { background: var(--ink); color: var(--fg); font-family: var(--f-display); 
   </div>
 </div>
 
+<!-- Seed-7 scenario shared with Isaac + dashboard (scripts/export_scenario_js.py). Missing file => random fallback. -->
+<script src="scenario_seed7.js"></script>
 <script>
 // Shows load/runtime failures on screen instead of a silent frozen page.
 window.__fail = msg => {
@@ -214,7 +222,11 @@ const CHAPTERS = [
   ['Audio to the agent', 28, 40], ['Priority & dispatch', 40, 44], ['Next pile', 44, 54], ['Operator on site', 54, 64], ['Dig', 64, 72], ['Whole system', 72, 88],
 ].map(([name, t0, t1]) => ({ name, t0, t1 }));
 function mulberry32(a) { return () => { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
-const SEED = (() => { const m = location.hash.match(/^#s(\d+)$/); return m ? +m[1] : Math.floor(Math.random() * 1e6); })();
+// Default: the seeded scenario from animation/scenario_seed7.js (same map as Isaac + dashboard).
+// Fallback: the old in-page random generator, when that file is missing or the URL has #s<number> (New scenario).
+const HASH_SEED = (() => { const m = location.hash.match(/^#s(\d+)$/); return m ? +m[1] : null; })();
+const SCN = HASH_SEED == null && window.LARP_SCENARIO && window.LARP_SCENARIO.piles ? window.LARP_SCENARIO : null;
+const SEED = SCN ? SCN.seed : HASH_SEED ?? Math.floor(Math.random() * 1e6);
 const rnd = mulberry32(SEED);
 const R = (a, b) => a + (b - a) * rnd();
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
@@ -228,7 +240,8 @@ function shuffle(a) { for (let i = a.length - 1; i > 0; i--) { const j = Math.fl
 
 // ================= the 3x3 grid of piles =================
 const PILES = [];
-for (let r = 0; r < 3; r++) for (let c = 0; c < 3; c++) PILES.push({
+if (SCN) for (const q of SCN.piles) PILES.push({ name: q.name, x: q.x, z: q.z, h: q.h, sx: q.sx, sz: q.sz, rot: q.rot, lx: q.lx, lz: q.lz, meshes: [], def: q });
+else for (let r = 0; r < 3; r++) for (let c = 0; c < 3; c++) PILES.push({
   name: 'ABC'[c] + (r + 1), x: (c - 1) * SP + R(-1.5, 1.5), z: (r - 1) * SP + R(-1.5, 1.5),
   h: R(2.6, 3.7), sx: R(5, 6.2), sz: R(4.4, 5.6), rot: R(0, Math.PI), lx: R(-2, 2), lz: R(-2, 2), meshes: [],
 });
@@ -237,36 +250,56 @@ function mound(p, x, z) {
   const cs = Math.cos(p.rot), sn = Math.sin(p.rot), u = dx * cs + dz * sn, v = -dx * sn + dz * cs;
   return p.h * Math.exp(-((u / p.sx) ** 2 + (v / p.sz) ** 2) * 1.4) + 0.8 * Math.exp(-((dx - p.lx) ** 2 + (dz - p.lz) ** 2) / 4.5);
 }
+const NZ = SCN && SCN.noise;
 function H(x, z) {
   let m = 0; for (const p of PILES) m += mound(p, x, z);
   const f = clamp(m / 0.9, 0, 1);
+  if (NZ) { // exact port of sim/scenario.py Scenario.ground_height (site y = -z)
+    const y = -z; let n = 0, r = 0;
+    for (let i = 0; i < NZ.a.length; i++) { n += NZ.a[i] * Math.sin(NZ.kx[i] * x + NZ.ky[i] * y + NZ.ph[i]); r += 0.08 * Math.sin(NZ.kx[i] * 7 * x + NZ.ky[i] * 7 * y + NZ.ph[i] * 3); }
+    return m + 0.03 * n + f * r;
+  }
   return m + f * ((vnoise(x * 0.9, z * 0.9) - 0.5) * 0.5 + (vnoise(x * 3.1, z * 3.1) - 0.5) * 0.15) + (vnoise(x * 0.35, z * 0.35) - 0.5) * 0.05;
 }
 
-// ================= scenario (random start pile, random sounds) =================
-const order = shuffle([0, 1, 2, 3, 4, 5, 6, 7, 8]);
-const P1 = PILES[order[0]];
+// ================= scenario: who is where (storyboard truth, display only) =================
 const ROLE_DEFS = [
   { kind: 'voice', cls: 'voice · call for help', quote: 'Help! Can anyone hear me? My leg is trapped.', human: 0.97, urg: 0.95, base: 0.95, why: 'clear call for help, injury, conscious' },
-  { kind: 'weak', cls: 'faint voice', quote: '…hello?… …water…', human: 0.86, urg: 0.9, base: 0.55, why: 'faint speech asking for water' },
+  { kind: 'weak', cls: 'faint voice', quote: '…hello?… …water…', human: 0.85, urg: 0.9, base: 0.55, why: 'faint speech asking for water' },
   { kind: 'knock', cls: 'patterned knocking', quote: '[knock ×3, repeats every ~20 s]', human: 0.8, urg: 0.7, base: 0.92, why: 'rhythmic knocking, likely deliberate' },
-  { kind: 'dog', cls: 'dog barking', quote: '[barking]', human: 0.04, urg: 0.3, base: 0.9, why: 'animal; check later, pets stay near owners' },
-  { kind: 'gen', cls: 'machinery', quote: '[50 Hz engine hum]', human: 0.01, urg: 0, base: 0.95, why: 'generator hum, not human' },
-  { kind: 'settle', cls: 'rubble noise', quote: '[debris settling]', human: 0.03, urg: 0, base: 0.6, why: 'collapse noise, not human' },
+  { kind: 'dog', cls: 'dog barking', quote: '[barking]', human: 0.04, urg: 0.3, base: 0.9, why: 'animal · dismissed as a lead, pile not cleared' },
+  { kind: 'gen', cls: 'machinery', quote: '[50 Hz engine hum]', human: 0.01, urg: 0, base: 0.95, why: 'generator hum · dismissed, pile not cleared' },
+  { kind: 'settle', cls: 'rubble noise', quote: '[debris settling]', human: 0.03, urg: 0, base: 0.6, why: 'collapse noise · dismissed, pile not cleared' },
 ];
-const SOURCES = ROLE_DEFS.map((def, k) => {
-  const pile = PILES[order[k + 1]], a = R(0, TAU), r = R(0.5, 2.8);
-  const x = pile.x + r * Math.cos(a), z = pile.z + r * Math.sin(a);
-  const rel = def.base * clamp(1.15 - d2(pile, P1) / 70, 0.45, 1);
-  const score = Math.round(100 * def.human * (0.5 + 0.5 * def.urg) * (0.6 + 0.4 * rel));
-  pile.source = { ...def, pile, x, z, rel, score, depth: R(1.0, 1.8) };
-  return pile.source;
-});
-const silentPiles = order.slice(7).map(i => PILES[i]);
+const KIND_MAP = { voice: 'voice', weak_voice: 'weak', knock: 'knock', dog: 'dog', generator: 'gen', settling: 'settle' };
+const byName = n => PILES.find(p => p.name === n);
+let P1, SOURCES, silentPiles, T1;
+const scoreOf = (def, pile) => { const rel = def.base * clamp(1.15 - d2(pile, P1) / 70, 0.45, 1); return { rel, score: Math.round(100 * def.human * (0.5 + 0.5 * def.urg) * (0.6 + 0.4 * rel)) }; };
+if (SCN) {
+  const st = SCN.story; P1 = byName(st.start_pile);
+  SOURCES = st.sounds.map(snd => {
+    const def = { ...ROLE_DEFS.find(d => d.kind === KIND_MAP[snd.kind]) }; if (snd.text) def.quote = snd.text;
+    const pile = byName(snd.pile), vic = st.victims.find(v => v.pile === snd.pile);
+    pile.source = { ...def, pile, x: snd.x, z: snd.z, ...scoreOf(def, pile), depth: vic ? vic.depth : 1.2 };
+    return pile.source;
+  });
+  silentPiles = Object.entries(st.roles).filter(([, k]) => k === 'silent').map(([n]) => byName(n));
+  const v1 = st.victims.find(v => v.pile === P1.name); T1 = { x: v1.x, z: v1.z, depth: v1.depth };
+} else {
+  const order = shuffle([0, 1, 2, 3, 4, 5, 6, 7, 8]);
+  P1 = PILES[order[0]];
+  SOURCES = ROLE_DEFS.map((def, k) => {
+    const pile = PILES[order[k + 1]], a = R(0, TAU), r = R(0.5, 2.8);
+    const x = pile.x + r * Math.cos(a), z = pile.z + r * Math.sin(a);
+    pile.source = { ...def, pile, x, z, ...scoreOf(def, pile), depth: R(1.0, 1.8) };
+    return pile.source;
+  });
+  silentPiles = order.slice(7).map(i => PILES[i]);
+  T1 = (() => { const a = R(0, TAU), r = R(0.6, 2.6); return { x: P1.x + r * Math.cos(a), z: P1.z + r * Math.sin(a), depth: R(1.3, 1.9) }; })();
+}
 silentPiles.forEach(p => p.silent = true);
 const QUEUE = [...SOURCES].sort((a, b) => b.score - a.score);
 const P2 = QUEUE[0].pile, P3 = QUEUE[1].pile;
-const T1 = (() => { const a = R(0, TAU), r = R(0.6, 2.6); return { x: P1.x + r * Math.cos(a), z: P1.z + r * Math.sin(a), depth: R(1.3, 1.9) }; })();
 const T2 = { x: P2.source.x, z: P2.source.z, depth: P2.source.depth };
 
 // ================= renderer / scene =================
@@ -304,13 +337,18 @@ const groundGeo = new THREE.PlaneGeometry(150, 150, 300, 300); groundGeo.rotateX
   groundGeo.setAttribute('color', new THREE.BufferAttribute(col, 3)); groundGeo.computeVertexNormals();
 }
 const ground = new THREE.Mesh(groundGeo, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1 })); ground.receiveShadow = true; scene.add(ground);
-const outer = new THREE.Mesh(new THREE.PlaneGeometry(600, 600).rotateX(-Math.PI / 2), new THREE.MeshStandardMaterial({ color: 0x5a544c, roughness: 1 })); outer.position.y = -0.09; scene.add(outer);
+const outer = new THREE.Mesh(new THREE.PlaneGeometry(600, 600).rotateX(-Math.PI / 2), new THREE.MeshStandardMaterial({ color: 0x5a544c, roughness: 1 })); outer.position.y = -0.45; scene.add(outer);
 
 const rubble = [];
 const mkMat = c => new THREE.MeshStandardMaterial({ color: c, roughness: 0.93, metalness: 0.02, flatShading: true });
 const concrete = ['#8f8b84', '#7c7973', '#9d978d', '#6d6963', '#a59c8f'].map(mkMat), brick = ['#86614d', '#7a4f3f'].map(mkMat);
 function addR(m, pile) { m.castShadow = m.receiveShadow = true; m.updateMatrixWorld(); rubble.push(m); pile.meshes.push(m); return m; } // merged into a few draw calls later
-for (const p of PILES) {
+const _q4 = new THREE.Quaternion();
+if (SCN) for (const p of PILES) p.def.pieces.forEach((pc, i) => { // boxes, exactly as Isaac builds them
+  const m = new THREE.Mesh(new THREE.BoxGeometry(...pc.s), pc.m === 'brick' ? brick[i % 2] : concrete[i % 5]);
+  m.position.set(...pc.c); m.quaternion.copy(_q4.set(...pc.q)); addR(m, p);
+});
+else for (const p of PILES) {
   const brickRatio = R(0.05, 0.5);
   for (let i = 0; i < 40; i++) {
     const r = 6 * Math.pow(rnd(), 0.7), a = rnd() * TAU, x = p.x + r * Math.cos(a), z = p.z + r * Math.sin(a);
@@ -430,7 +468,7 @@ const landY = s => s.y + LEG * SCALE;
 const orbit = (p, deg) => ({ x: p.x + 11 * Math.cos(deg * D2R), y: 9.5, z: p.z + 11 * Math.sin(deg * D2R) });
 function buildPath(i) {
   const k = [], add = (t, p, ease = true) => k.push({ t, p: { ...p }, ease });
-  const pad = { x: BASE.x - 4 + i * 2.6, y: 0.12 + LEG * SCALE, z: 50.5 };
+  const pad = SCN ? { x: SCN.drone_pads[i].x, y: 0.12 + LEG * SCALE, z: SCN.drone_pads[i].z } : { x: BASE.x - 4 + i * 2.6, y: 0.12 + LEG * SCALE, z: 50.5 };
   const a1 = th1 + i * 120 + 60, a2 = th2 + i * 120 + 60, a3 = R(0, 360) + i * 120;
   add(0, pad); add(1.2, { ...pad, y: 8 }); add(6, orbit(P1, a1));
   for (let t = 6.5; t <= 14; t += 0.5) add(t, orbit(P1, a1 + (t - 6) / 8 * 120), false);
@@ -529,7 +567,7 @@ function buildRadar(P, T, tRing, tEst, name) {
   estG.add(new THREE.Mesh(new THREE.CircleGeometry(0.32, 32).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: C.detect, side: THREE.DoubleSide })));
   const pr = new THREE.Mesh(new THREE.RingGeometry(0.9, 1, 48).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: C.detect, transparent: true, side: THREE.DoubleSide, depthWrite: false })); estG.add(pr);
   { const pts = []; for (let i = 0; i < 72; i++) { const u = i / 72 * TAU, x = ell.a * Math.cos(u), z = ell.b * Math.sin(u); pts.push({ x: x * Math.cos(ell.ang) - z * Math.sin(ell.ang), z: x * Math.sin(ell.ang) + z * Math.cos(ell.ang) }); } estG.add(loopLine(pts, lineMat(C.detect, 0.95))); }
-  const estLbl = label(`${name} · ping · p ${est.mass.toFixed(2)}`, 'detect', estG, [0, 0.6, 0]);
+  const estLbl = label(`${name} · candidate ping · ${P.name}`, 'detect ping', estG, [0, 0.6, 0]);
   const beam = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.07, 40, 8, 1, true), new THREE.MeshBasicMaterial({ color: C.detect, transparent: true, opacity: 0.5, blending: THREE.AdditiveBlending, depthWrite: false }));
   beam.position.set(est.x, LAYER_Y + 20, est.z); scene.add(beam);
   const depthG = new THREE.Group(); scene.add(depthG);
@@ -562,7 +600,7 @@ function buildRadar(P, T, tRing, tEst, name) {
 const RAD1 = buildRadar(P1, T1, [21.2, 22.2, 23.2], 24.4, 'R1');
 const RAD2 = buildRadar(P2, T2, [55.4, 56.4, 57.4], 58.4, 'R2');
 
-// ================= survivors (hidden ground truth) =================
+// ================= buried people (storyboard truth, display only) =================
 const ghostMat = new THREE.MeshBasicMaterial({ color: 0xf2f5f7, transparent: true, opacity: 0.45, depthTest: false });
 function figure(p, pose) {
   const g = new THREE.Group(), torso = new THREE.Mesh(new THREE.CapsuleGeometry(0.2, 0.62, 4, 10), ghostMat); torso.rotation.z = Math.PI / 2; g.add(torso);
@@ -571,7 +609,7 @@ function figure(p, pose) {
   g.position.set(p.x, H(p.x, p.z) - p.depth, p.z); g.rotation.y = rnd() * TAU; g.traverse(o => o.renderOrder = 20); scene.add(g); return { g, torso };
 }
 const ghosts = [figure(T1, 0.1), ...SOURCES.filter(s => s.human > 0.5).map(s => figure(s, 0.6))];
-const gtLbl = label('Ground truth · hidden from the system', 'truth', ghosts[0].g, [0, 0.7, 0]);
+const gtLbl = label('Storyboard truth · hidden from the system', 'truth', ghosts[0].g, [0, 0.7, 0]);
 
 // ================= acoustics: sound waves, direction cones =================
 const sndGeo = new THREE.SphereGeometry(1, 20, 10);
@@ -680,32 +718,33 @@ const CAM = [
   [51, add(P2v, 15, 15, 15), P2v],
   [53.4, add(P2v, -10, 9, 13), add(P2v, 0, 1.5, 0)],
   [54.4, opAt(54.4).add(opDir(54.4).multiplyScalar(-6)).add(V(0, 3.2, 0)), opAt(54.4).add(opDir(54.4).multiplyScalar(6))],
-  [57.5, STANDv.clone().addScaledVector(toPing, -4.6).addScaledVector(side, 2.2).add(V(0, 3.6, 0)), EST1],
-  [64, STANDv.clone().addScaledVector(side, 4.2).addScaledVector(toPing, 1).add(V(0, 2, 0)), add(EST1, 0, 0.4, 0)],
+  [57.5, STANDv.clone().addScaledVector(toPing, -5.6).addScaledVector(side, 2.6).add(V(0, 5.2, 0)), EST1],
+  [64, STANDv.clone().addScaledVector(side, 5).addScaledVector(toPing, 0.5).add(V(0, 3.4, 0)), add(EST1, 0, 0.4, 0)],
   [70, STANDv.clone().addScaledVector(side, 6).addScaledVector(toPing, -4).add(V(0, 4.5, 0)), EST1],
   [75, V(-20, 58, 78), V(0, 0, 4)],
   [82, V(52, 62, 52), V(0, 0, 2)],
   [88, V(68, 56, -14), V(0, 0, 0)],
 ];
 const _cp = new THREE.Vector3(), _ct = new THREE.Vector3();
-function camAt(t) { let j = 0; while (j < CAM.length - 2 && CAM[j + 1][0] <= t) j++; const [ta, pa, qa] = CAM[j], [tb, pb, qb] = CAM[j + 1], u = sstep(0, 1, (t - ta) / (tb - ta)); _cp.lerpVectors(pa, pb, u); _ct.lerpVectors(qa, qb, u); }
+const camFloor = (x, z) => { let y = H(x, z); for (const p of [P1, P2]) if (p.hg && Math.abs(x - p.x) < 11 && Math.abs(z - p.z) < 11) y = Math.max(y, p.hg.at(x, z)); return y; };
+function camAt(t) { let j = 0; while (j < CAM.length - 2 && CAM[j + 1][0] <= t) j++; const [ta, pa, qa] = CAM[j], [tb, pb, qb] = CAM[j + 1], u = sstep(0, 1, (t - ta) / (tb - ta)); _cp.lerpVectors(pa, pb, u); _ct.lerpVectors(qa, qb, u); _cp.y = Math.max(_cp.y, camFloor(_cp.x, _cp.z) + 2.2); }
 
 // ================= captions =================
 const CAPS = [
-  [0, `Three drones launch from the staging area. They start on a random pile, ${P1.name}. Flight is kinematic in the sim.`],
+  [0, SCN ? `Seed ${SEED}, the same site as the Isaac scene and the dashboard. Three drones launch from the staging area to the start pile, ${P1.name}. Flight is kinematic in the sim.` : `Random scenario #s${SEED}. Three drones launch from the staging area. They start on pile ${P1.name}. Flight is kinematic in the sim.`],
   [6, 'Spinning LiDAR maps the pile from 9.5 m. Every return is a point in a shared 3D map.'],
   [14, 'Each 1 m cell around the pile is scored for slope and roughness. The drones land on flat green cells so the radar stays still.'],
   [19.5, 'Rotors off. The radars look for a breathing-like signal under the rubble, and their three ranges cross at one spot.'],
-  [24.4, 'Ping: a candidate position, with its depth below the surface.'],
+  [24.4, 'Ping: a candidate search region, with a radar estimate of its depth. A candidate, not a confirmed person.'],
   [25, 'The ping goes straight to the operator dashboard at the staging area.'],
   [28, `The operator sets off for ${P1.name}. Meanwhile the landed drones listen to the other piles and stream audio clips to the acoustic agent.`],
   [31, 'For each clip the agent detects voices, transcribes the speech, classifies other sounds and judges how human, how urgent and how reliable it is.'],
-  [40, 'The scores become a priority list per pile. It is a priority, not proof: silent piles are not cleared.'],
-  [41.6, `Top priority is ${P2.name}, a clear call for help. The coordinator sends the drones there.`],
+  [40, `The scores become a priority list per pile. Non-human sounds are dismissed as leads. It is a priority, not proof: silent piles (${silentPiles.map(p => p.name).join(', ')}) are not cleared.`],
+  [41.6, `Top priority is ${P2.name} (${QUEUE[0].cls}), then ${QUEUE[1].pile.name} and ${QUEUE[2].pile.name}. The coordinator sends the drones to ${P2.name}.`],
   [44, `At ${P2.name} the cycle repeats: LiDAR map, flat landing cells, radar scan.`],
   [54, `The operator reaches ${P1.name} and taps the ping on the dashboard.`],
-  [59.4, 'The ping opens the LiDAR model of the pile, with the candidate placed inside it: where on the pile and how deep.'],
-  [64, 'The operator digs at the marked spot.'],
+  [59.4, 'The ping opens the LiDAR model of the pile, with the candidate placed inside it: where on the pile, and the radar estimate of how deep.'],
+  [64, 'The operator checks the spot on site, then digs at the candidate point.'],
   [72, `Whole system: audio sets the order, radar pins the spot, the operator digs. The drones move on to ${P3.name}, the next priority.`],
 ];
 
@@ -732,6 +771,7 @@ function updateAgent(t) {
   document.getElementById('agentState').textContent = st;
   const stage = t < 31 ? -1 : t < 40 ? Math.floor(((t - 31) % 1.45) / 0.29) : 4;
   document.querySelectorAll('.pipe span').forEach((s, i) => s.classList.toggle('on', i <= stage && t >= 31));
+  const dTxt = t >= 73.4 ? `Dispatch d1–d3 → ${P3.name} (priority ${QUEUE[1].score}) · ${P2.name} has ping R2` : `Dispatch d1–d3 → ${P2.name} (priority ${QUEUE[0].score})`; if (dispEl.textContent !== dTxt) dispEl.textContent = dTxt;
   const showQ = t >= 40; clipsEl.hidden = showQ; queueEl.hidden = !showQ; dispEl.hidden = t < 41.6;
   clipEls.forEach((el, k) => {
     const t0 = CLIP_T[k]; el.hidden = t < t0; if (t < t0) return;
@@ -755,7 +795,7 @@ function drawMap(ctx, W, Hh, view, t, opts = {}) {
   for (const v of [-33, -11, 11, 33]) { let [a, b] = P(v, -36), [c, d] = P(v, 52); ctx.beginPath(); ctx.moveTo(a, b); ctx.lineTo(c, d); ctx.stroke(); [a, b] = P(-36, v); [c, d] = P(36, v); ctx.beginPath(); ctx.moveTo(a, b); ctx.lineTo(c, d); ctx.stroke(); }
   const fs = Math.max(10, s * 1.6);
   for (const p of PILES) {
-    const [x, y] = P(p.x, p.z); ctx.fillStyle = 'rgba(160,150,135,0.32)'; ctx.beginPath(); ctx.ellipse(x, y, 6.5 * s, 5.6 * s, -p.rot, 0, TAU); ctx.fill();
+    const [x, y] = P(p.x, p.z); ctx.fillStyle = 'rgba(160,150,135,0.32)'; ctx.beginPath(); ctx.ellipse(x, y, 6.5 * s, 5.6 * s, p.rot, 0, TAU); ctx.fill();
     ctx.fillStyle = '#8b9dab'; ctx.font = `500 ${fs}px "IBM Plex Mono", monospace`; ctx.textAlign = 'center'; ctx.fillText(p.name, x, y - 6.8 * s);
     const sc = p.source ? p.source.score : p.silent ? 10 : null;
     if (t >= 40 && sc != null && p !== P1) {
@@ -798,7 +838,7 @@ const tabletEl = document.getElementById('tablet'), tabGL = document.getElementB
 const tabPing = document.getElementById('tabPing'), tabYou = document.getElementById('tabYou');
 document.getElementById('tabTitle').textContent = `R1 · pile ${P1.name}`;
 const compass = (() => { const a = Math.atan2(-(RAD1.est.z - P1.z), RAD1.est.x - P1.x) / D2R; return ['east', 'north-east', 'north', 'north-west', 'west', 'south-west', 'south', 'south-east'][((Math.round(a / 45) % 8) + 8) % 8]; })();
-document.getElementById('tabFacts').innerHTML = `<span>depth<b>≈${RAD1.depth.toFixed(1)} m</b></span><span>flank<b>${compass}</b></span><span>95% region<b>${(2 * RAD1.ell.a).toFixed(1)}×${(2 * RAD1.ell.b).toFixed(1)} m</b></span><span>from you<b>${d2(STAND, RAD1.est).toFixed(1)} m</b></span>`;
+document.getElementById('tabFacts').innerHTML = `<span>candidate depth (radar est.)<b>≈${RAD1.depth.toFixed(1)} m</b></span><span>flank<b>${compass}</b></span><span>95% region<b>${(2 * RAD1.ell.a).toFixed(1)}×${(2 * RAD1.ell.b).toFixed(1)} m</b></span><span>from you<b>${d2(STAND, RAD1.est).toFixed(1)} m</b></span>`;
 const TAB0 = 56.6, TAP = 59.2, TAB1 = 64;
 const tabletOn = t => t >= TAB0 && t < TAB1;
 const tab3D = t => t >= TAP + 0.25 && t < TAB1;
@@ -932,9 +972,10 @@ function frame(now) {
     renderer.autoClear = false; renderer.setClearColor(0x070b0f, 1); renderer.clear(); const bg = scene.background, fog = scene.fog; scene.background = null; scene.fog = null;
     renderer.render(scene, cam2); scene.background = bg; scene.fog = fog; renderer.autoClear = true; renderer.setScissorTest(false); renderer.setViewport(0, 0, a.width, a.height);
     const proj = (p, el) => { const v = p.clone().project(cam2); el.style.left = ((v.x + 1) / 2 * r.width) + 'px'; el.style.top = ((1 - v.y) / 2 * r.height) + 'px'; };
-    tabPing.textContent = `R1 · ≈${RAD1.depth.toFixed(1)} m below surface · dig here`; proj(V(RAD1.est.x, RAD1.estY, RAD1.est.z), tabPing); proj(youMk.position, tabYou);
+    tabPing.textContent = `R1 · candidate depth ≈${RAD1.depth.toFixed(1)} m`; proj(V(RAD1.est.x, RAD1.estY, RAD1.est.z), tabPing); proj(youMk.position, tabYou);
   }
-  for (const o of allLabels) { let v = true; for (let p = o.parent; p; p = p.parent) if (!p.visible) { v = false; break; } o.element.style.visibility = v ? '' : 'hidden'; }
+  const _lp = new THREE.Vector3(), yMax = 1 - 2 * 78 / Math.max(1, app.clientHeight);
+  for (const o of allLabels) { let v = true; for (let p = o.parent; p; p = p.parent) if (!p.visible) { v = false; break; } if (v) { o.getWorldPosition(_lp).project(camera); if (_lp.y < -yMax) v = false; } o.element.style.visibility = v ? '' : 'hidden'; }
   labelR.render(scene, camera);
 }
 function safeFrame(now) { try { frame(now); } catch (e) { console.error(e); window.__fail && window.__fail(e.message || String(e)); } }
@@ -943,9 +984,10 @@ function raf(now) { safeFrame(now); requestAnimationFrame(raf); }
 setInterval(() => { if (performance.now() - lastTick > 400) safeFrame(performance.now()); }, 50);
 renderer.domElement.addEventListener('webglcontextlost', e => { e.preventDefault(); window.__fail && window.__fail('The graphics context was lost (GPU busy or out of memory). Reload the page.'); });
 setPlay(playing);
-window.seek = v => { T = v; setPlay(false); };
+window.seek = v => { T = v; setPlay(false); document.getElementById('bigPlay').hidden = true; };
 window.__bench = (n = 20) => { const gl = renderer.getContext(), px = new Uint8Array(4); update(T); renderer.render(scene, camera); gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px); const t0 = performance.now(); for (let i = 0; i < n; i++) { update(T); renderer.render(scene, camera); labelR.render(scene, camera); } gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px); const r = renderer.info.render; return { msPerFrame: +((performance.now() - t0) / n).toFixed(1), calls: r.calls, tris: r.triangles, pr: renderer.getPixelRatio(), w: innerWidth }; };
-window.__sweep = () => { const errs = []; for (let t = 0; t <= T_END; t += 0.25) { try { update(t); } catch (e) { errs.push(t + ': ' + e.message); if (errs.length > 3) break; } } update(T); return { seed: SEED, P1: P1.name, P2: P2.name, errs }; };
+window.__cam = (p, q) => { follow = false; followBtn.hidden = false; camera.position.set(...p); controls.target.set(...q); }; // debug: fixed camera (e.g. top-down, north up)
+window.__sweep = () => { const errs = []; for (let t = 0; t <= T_END; t += 0.25) { try { update(t); } catch (e) { errs.push(t + ': ' + e.message); if (errs.length > 3) break; } } update(T); return { seed: SEED, scenario: !!SCN, P1: P1.name, P2: P2.name, P3: P3.name, queue: QUEUE.map(q => q.pile.name + ':' + q.score), silent: silentPiles.map(p => p.name), errs }; };
 document.getElementById('loading').remove();
 last = performance.now(); safeFrame(last);
 requestAnimationFrame(raf);

@@ -22,7 +22,10 @@ import os
 
 import numpy as np
 
-from isaac import rubble as RB
+try:                                                  # rubble.py needs scipy; keep --help / --dry-run working without it
+    from isaac import rubble as RB
+except ImportError as _e:                             # dress() re-raises this, so the failure is loud and early
+    RB, _RB_ERR = None, _e
 
 S3 = "https://omniverse-content-production.s3-us-west-2.amazonaws.com/Assets/Isaac/6.0"
 
@@ -39,7 +42,14 @@ def add_args(ap):
     g.add_argument("--sky", type=float, default=900.0, help="HDRI dome intensity")
     g.add_argument("--sun", type=float, default=2200.0, help="sun intensity")
     g.add_argument("--sun-elev", type=float, default=24.0, help="sun elevation (deg): low = long dusk shadows")
-    g.add_argument("--veg", type=int, default=1, help="dry grass, shrubs and a few trees around the site")
+    g.add_argument("--veg", type=int, default=-1,
+                   help="dry grass, shrubs and a few trees: 1 on, 0 off, -1 auto (off on the urban collapse site)")
+    g.add_argument("--fog-start", type=float, default=70.0, help="distance haze starts (m); the brief wants >= 60")
+    g.add_argument("--fog-end", type=float, default=700.0, help="distance haze is full (m)")
+    g.add_argument("--fog-intensity", type=float, default=0.18, help="haze strength (was 0.35: fpv_d2 read hazy)")
+    g.add_argument("--fpv-tilt", type=float, default=40.0, help="fpv camera pitch below the horizon (deg)")
+    g.add_argument("--chase-back", type=float, default=6.0, help="chase camera distance behind the drone (m)")
+    g.add_argument("--chase-up", type=float, default=3.0, help="chase camera height above the drone (m)")
     g.add_argument("--operator", type=int, default=1, help="a person model (operator) at the dashboard table")
     g.add_argument("--record", default="", help="write PNG frames per camera to this folder (virtual clock)")
     g.add_argument("--rec-res", default="1920x1080")
@@ -240,6 +250,11 @@ def scatter_debris(stage, sc, mats, log, seed=0):
     LiDAR and landing cells are unaffected)."""
     rng = np.random.default_rng(2000 + seed)
     tot = 0
+    # grid: stones on the bare mounds (teammate's behaviour); other sites: on the top surface (slabs, wreck)
+    if getattr(sc, "site", "grid") == "grid":
+        ground = sc.ground_height
+    else:
+        ground = sc.heightmap(0.5).height_at
     for p in sc.piles:
         for mat, n, smin, smax in (("concrete", 2400, 0.025, 0.09), ("brick", 700, 0.03, 0.12), ("concrete2", 700, 0.10, 0.45)):
             parts = []
@@ -248,7 +263,7 @@ def scatter_debris(stage, sc, mats, log, seed=0):
                 ang = rng.uniform(0, 2 * np.pi)
                 x = p.x + r * p.sx * math.cos(ang)
                 y = p.y + r * p.sy * math.sin(ang)
-                z = float(np.asarray(sc.ground_height(np.array([x]), np.array([y]))).ravel()[0])
+                z = float(np.asarray(ground(np.array([x]), np.array([y]))).ravel()[0])
                 s = rng.uniform(smin, smax)
                 P, F = RB.rock(rng, s, s * rng.uniform(0.6, 1.0), s * rng.uniform(0.35, 0.7), n=9 if s < 0.1 else 14)
                 c, si = math.cos(rng.uniform(0, 6.28)), math.sin(rng.uniform(0, 6.28))
@@ -298,23 +313,39 @@ PEOPLE = ("male_adult_construction_01_new/male_adult_construction_01_new.usd",
 
 def vegetation(stage, sc, nv, log, seed=0):
     """Dry grass clumps and shrubs between the piles, a few trees at the edges; nothing on piles, flight paths
-    over the grid centre lines, or the staging area."""
-    from sim.scenario import BASE_XY
+    over the grid centre lines, or the staging area. Non-grid sites: only on bare street-level ground inside
+    the site bounds, off the road (site_info.road)."""
+    from isaac.site import base_xy, bounds
+    BASE_XY = base_xy(sc)
+    grid = getattr(sc, "site", "grid") == "grid"
     rng = np.random.default_rng(3000 + seed)
     pts = []
+    if grid:
+        area, ring = ((-34, 34), (-40, 34)), (0.0, -6.0, 46.0, 50.0)
+    else:
+        bx0, by0, bx1, by1 = bounds(sc)
+        area = ((bx0 + 2, bx1 - 2), (by0 + 2, by1 - 2))
+        ring = ((bx0 + bx1) / 2, (by0 + by1) / 2, 0.44 * (bx1 - bx0), 0.44 * (by1 - by0))
+        top = sc.heightmap(0.5)
+        road = (getattr(sc, "public_dict", lambda: {})().get("site_info") or {}).get("road") if hasattr(sc, "site") else None
 
     def free(x, y, gap):
         if any(math.hypot(x - p.x, y - p.y) < max(p.sx, p.sy) * 1.6 for p in sc.piles):
             return False
         if abs(x - BASE_XY[0]) < 14 and abs(y - BASE_XY[1]) < 8:
             return False
+        if not grid:
+            if float(top.height_at(x, y)) > 0.4:                 # rubble / building here
+                return False
+            if road and road["x"][0] - 1 < x < road["x"][1] + 1:
+                return False
         return all(math.hypot(x - a, y - b) > gap for a, b in pts)
 
     n_s = n_t = 0
     for _ in range(3000):
         if n_s >= 70:
             break
-        x, y = rng.uniform(-34, 34), rng.uniform(-40, 34)
+        x, y = rng.uniform(*area[0]), rng.uniform(*area[1])
         if free(x, y, 2.5):
             z = float(np.asarray(sc.ground_height(np.array([x]), np.array([y]))).ravel()[0])
             u = f"{nv}/Assets/Vegetation/Shrub/{VEG_SHRUBS[n_s % len(VEG_SHRUBS)]}.usd"
@@ -327,7 +358,7 @@ def vegetation(stage, sc, nv, log, seed=0):
         if n_t >= 12:
             break
         ang = rng.uniform(0, 2 * np.pi)
-        x, y = 46 * math.cos(ang) + rng.normal(0, 3), -6 + 50 * math.sin(ang) + rng.normal(0, 3)
+        x, y = ring[0] + ring[2] * math.cos(ang) + rng.normal(0, 3), ring[1] + ring[3] * math.sin(ang) + rng.normal(0, 3)
         if free(x, y, 7.0):
             u = f"{nv}/Assets/Vegetation/Trees/{VEG_TREES[n_t % len(VEG_TREES)]}.usd"
             try:
@@ -370,10 +401,12 @@ def sky_and_sun(stage, a, nv, log):
 def dress(stage, sc, a, log=print):
     try:                                              # thin glowing lines and fine points, not tubes and balls
         from isaac import overlay as _ov
-        _ov.LINE_MESH, _ov.LINE_W, _ov.POINT_W, _ov.MAX_SCANS = True, 0.03, 0.025, 3   # ribbons 6-12 cm wide
+        _ov.LINE_W, _ov.POINT_W, _ov.MAX_SCANS = 0.006, 0.035, 3
     except Exception as e:
         log(f"[photoreal] overlay scale unchanged ({type(e).__name__}: {e})")
     """Call right after scene.build(stage, sc) and before PhysX loads the stage."""
+    if RB is None:
+        raise ImportError(f"--photoreal needs isaac/rubble.py, which needs scipy in Isaac's python: {_RB_ERR}")
     nv, isa = _roots(a)
     M = mdl_paths(nv)
     mats = {}
@@ -393,11 +426,14 @@ def dress(stage, sc, a, log=print):
         bind(stage, "/World/Staging/Pad", mats["asphalt"])
     dress_rubble(stage, sc, mats, log, seed=sc.seed)
     scatter_debris(stage, sc, mats, log, seed=sc.seed)
-    if a.veg:
+    veg = a.veg if a.veg in (0, 1) else int(not str(getattr(a, "site", "grid")).startswith(("collapse", "weiguan", "mesh:")))
+    if veg:
         vegetation(stage, sc, nv, log, seed=sc.seed)
+    else:
+        log("[photoreal] vegetation off (urban site or --veg 0)")
     if a.operator:
-        from sim.scenario import BASE_XY
-        bx, by = BASE_XY
+        from isaac.site import base_xy
+        bx, by = base_xy(sc)
         try:
             reference(stage, "/World/Operator", f"{isa}/People/Characters/{PEOPLE[0]}", (bx - 3.2, by - 0.4, 0.0), 90.0)
             log("[photoreal] operator model at the dashboard table")
@@ -407,9 +443,11 @@ def dress(stage, sc, a, log=print):
         import carb
         s = carb.settings.get_settings()
         s.set_bool("/rtx/fog/enabled", True)
-        s.set_float("/rtx/fog/fogColorIntensity", 0.35)
-        s.set_float("/rtx/fog/fogStartDist", 70.0)
-        s.set_float("/rtx/fog/fogEndDist", 450.0)
+        s.set_float("/rtx/fog/fogColorIntensity", float(getattr(a, "fog_intensity", 0.18)))
+        s.set_float("/rtx/fog/fogStartDist", float(getattr(a, "fog_start", 70.0)))
+        s.set_float("/rtx/fog/fogEndDist", float(getattr(a, "fog_end", 700.0)))
+        log(f"[photoreal] haze: start {getattr(a, 'fog_start', 70.0):.0f} m, end {getattr(a, 'fog_end', 700.0):.0f} m, "
+            f"intensity {getattr(a, 'fog_intensity', 0.18):.2f}")
         s.set_float("/rtx/fog/fogColor/0", 0.78); s.set_float("/rtx/fog/fogColor/1", 0.70); s.set_float("/rtx/fog/fogColor/2", 0.60)
     except Exception:
         pass
@@ -446,9 +484,11 @@ class Rigs:
     """Extra recording cameras that follow drones: chase:<id> (behind and above) and fpv:<id> (nose camera),
     plus top (straight down on the active pile) and wide (slow high orbit of the whole grid and staging)."""
 
-    def __init__(self, stage, specs, surface):
+    def __init__(self, stage, specs, surface, fpv_tilt=40.0, chase_back=6.0, chase_up=3.0):
         from pxr import Gf, UsdGeom
         self.Gf, self.surface, self.rigs = Gf, surface, []
+        self.fpv_drop = math.tan(math.radians(fpv_tilt))   # metres down per metre forward
+        self.chase_back, self.chase_up = chase_back, chase_up
         for spec in specs:
             mode, _, who = spec.partition(":")
             if mode not in ("chase", "fpv", "top", "wide"):
@@ -481,9 +521,9 @@ class Rigs:
                 pos = np.array([x, y, z])
                 if r["mode"] == "fpv":
                     eye = pos + 0.45 * fwd + [0, 0, -0.08]
-                    tgt = eye + fwd * 10 + [0, 0, -3.5]
+                    tgt = eye + fwd * 10 + [0, 0, -10 * self.fpv_drop]
                 else:
-                    eye = pos - 5.5 * fwd + [0, 0, 2.2]
+                    eye = pos - self.chase_back * fwd + [0, 0, self.chase_up]
                     eye[2] = max(eye[2], float(self.surface(eye[0], eye[1])) + 1.2)
                     tgt = pos + 2.0 * fwd
             k = 1.0 - math.exp(-dt / (0.25 if r["mode"] == "fpv" else 0.6))
@@ -524,7 +564,7 @@ class Recorder:
     def parse_windows(spec):
         out = {}
         for part in filter(None, (p.strip() for p in (spec or "").split(";"))):
-            cam, _, rngs = part.partition(":")
+            cam, _, rngs = part.rpartition(":")        # last colon: "chase:d1:5-9" and "chase_d1:5-9" both work
             out[cam.strip().replace(":", "_")] = [tuple(int(v) for v in r.split("-")) for r in rngs.split(",") if r.strip()]
         return out
 
@@ -572,9 +612,34 @@ class Recorder:
                 continue
             img = np.asarray(d)[..., :3]
             Image.fromarray(img).save(os.path.join(self.out, name, f"f{idx:05d}.png"), compress_level=1)
+            self._pose(name, idx)
             ok += 1
         self.n += ok > 0
         return ok
+
+    def _pose(self, name, idx):
+        """cameras.jsonl: per saved frame, the camera's world matrix and intrinsics, so post can project
+        pile/zone IDs and ping tags into the shot (scripts/cut_video.py). USD convention: row-major 4x4,
+        camera looks down its local -Z, +Y up; focal and apertures in mm (USD tenths of scene units)."""
+        try:
+            import json
+            import omni.usd
+            from pxr import Usd, UsdGeom
+            prim = omni.usd.get_context().get_stage().GetPrimAtPath(self.paths[name])
+            cam = UsdGeom.Camera(prim)
+            M = UsdGeom.Xformable(prim).ComputeLocalToWorldTransform(Usd.TimeCode.Default())
+            rec = dict(frame=idx, cam=name, width=self.wh[0], height=self.wh[1],
+                       world=[float(M[r][c]) for r in range(4) for c in range(4)],
+                       focal_mm=float(cam.GetFocalLengthAttr().Get() or 0),
+                       h_aperture_mm=float(cam.GetHorizontalApertureAttr().Get() or 0),
+                       v_aperture_mm=float(cam.GetVerticalApertureAttr().Get() or 0),
+                       clip=list(cam.GetClippingRangeAttr().Get() or (0, 0)))
+            with open(os.path.join(self.out, "cameras.jsonl"), "a") as fh:
+                fh.write(json.dumps(rec) + "\n")
+        except Exception as e:                         # never let metadata break a recording
+            if not getattr(self, "_pose_warned", False):
+                self.log(f"[photoreal] camera pose log off ({type(e).__name__}: {e})")
+                self._pose_warned = True
 
     def note(self, idx, state, pile):
         """timeline.csv: video frame -> mission time, phase, active pile, pings so far (for cutting the shots)."""

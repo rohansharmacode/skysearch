@@ -1,0 +1,766 @@
+{
+ "schema": "larpverse.acoustic-fixture/v1",
+ "algo": "assoc-v6",
+ "seed": 7,
+ "truth_roles_evaluator_only": {
+  "A3": "voice",
+  "B1": "weak_voice",
+  "B2": "knock",
+  "C2": "dog",
+  "C1": "generator",
+  "B3": "settling",
+  "A1": "silent",
+  "C3": "silent"
+ },
+ "listens": [
+  {
+   "drones": {
+    "d1": [
+     -24.75,
+     11.25
+    ],
+    "d2": [
+     -31.25,
+     4.25
+    ],
+    "d3": [
+     -25.25,
+     -8.75
+    ]
+   },
+   "exclude": [
+    "A2"
+   ],
+   "listen_seed": 108,
+   "state": {
+    "schema": "larpverse.acoustic/v1",
+    "algo": "assoc-v6",
+    "seed": 108,
+    "excluded_piles": [
+     "A2"
+    ],
+    "listening_drones": [
+     {
+      "id": "d1",
+      "xy": [
+       -24.75,
+       11.25
+      ]
+     },
+     {
+      "id": "d2",
+      "xy": [
+       -31.25,
+       4.25
+      ]
+     },
+     {
+      "id": "d3",
+      "xy": [
+       -25.25,
+       -8.75
+      ]
+     }
+    ],
+    "clips": [
+     {
+      "clip_id": "ac-B1",
+      "drone_id": "d3",
+      "pile_id": "B1",
+      "bearing_deg": 45.4,
+      "width_deg": 49.0,
+      "snr_db": 12.6,
+      "vad_speech_ratio": 0.538,
+      "transcript": "Run their water. Hello is anyone their water.",
+      "sound_class": "voice",
+      "human": 0.9,
+      "urgency": 0.56,
+      "reliability": 0.61,
+      "priority": 50,
+      "doa_agree": "3/3",
+      "association": "confident",
+      "association_conf": 0.998,
+      "ambiguous_with": [],
+      "notes": [],
+      "by": "fallback"
+     },
+     {
+      "clip_id": "ac-C1",
+      "drone_id": "d3",
+      "pile_id": "C1",
+      "bearing_deg": 31.0,
+      "width_deg": 19.0,
+      "snr_db": 16.7,
+      "vad_speech_ratio": 0.0,
+      "transcript": "",
+      "sound_class": "engine",
+      "human": 0.05,
+      "urgency": 0.02,
+      "reliability": 0.92,
+      "priority": 2,
+      "doa_agree": "3/3",
+      "association": "confident",
+      "association_conf": 1.0,
+      "ambiguous_with": [],
+      "notes": [],
+      "by": "fallback"
+     },
+     {
+      "clip_id": "ac-B2",
+      "drone_id": "d1",
+      "pile_id": "B2",
+      "bearing_deg": 329.0,
+      "width_deg": 24.0,
+      "snr_db": 17.9,
+      "vad_speech_ratio": 0.0,
+      "transcript": "",
+      "sound_class": "knocking",
+      "human": 0.62,
+      "urgency": 0.42,
+      "reliability": 0.91,
+      "priority": 37,
+      "doa_agree": "3/3",
+      "association": "confident",
+      "association_conf": 1.0,
+      "ambiguous_with": [],
+      "notes": [],
+      "by": "fallback"
+     },
+     {
+      "clip_id": "ac-C2",
+      "drone_id": "d3",
+      "pile_id": "C2",
+      "bearing_deg": 14.0,
+      "width_deg": 22.0,
+      "snr_db": 16.9,
+      "vad_speech_ratio": 0.0,
+      "transcript": "",
+      "sound_class": "dog",
+      "human": 0.0,
+      "urgency": 0.02,
+      "reliability": 0.87,
+      "priority": 0,
+      "doa_agree": "3/3",
+      "association": "confident",
+      "association_conf": 0.997,
+      "ambiguous_with": [],
+      "notes": [],
+      "by": "fallback"
+     },
+     {
+      "clip_id": "ac-A3",
+      "drone_id": "d3",
+      "pile_id": "A3",
+      "bearing_deg": 288.6,
+      "width_deg": 27.0,
+      "snr_db": 29.7,
+      "vad_speech_ratio": 0.567,
+      "transcript": "Help, can anyone hear me, my leg is trapped. Help, can anyone hear me?",
+      "sound_class": "voice",
+      "human": 0.9,
+      "urgency": 0.94,
+      "reliability": 0.93,
+      "priority": 83,
+      "doa_agree": "3/3",
+      "association": "confident",
+      "association_conf": 1.0,
+      "ambiguous_with": [],
+      "notes": [],
+      "by": "fallback"
+     },
+     {
+      "clip_id": "ac-B3",
+      "drone_id": "d3",
+      "pile_id": "B3",
+      "bearing_deg": 336.5,
+      "width_deg": 29.0,
+      "snr_db": 10.6,
+      "vad_speech_ratio": 0.0,
+      "transcript": "",
+      "sound_class": "debris",
+      "human": 0.03,
+      "urgency": 0.02,
+      "reliability": 0.81,
+      "priority": 1,
+      "doa_agree": "3/3",
+      "association": "confident",
+      "association_conf": 1.0,
+      "ambiguous_with": [],
+      "notes": [],
+      "by": "fallback"
+     }
+    ],
+    "piles": [
+     {
+      "pile_id": "A3",
+      "xy": [
+       -20.596515846853535,
+       -22.85498788793236
+      ],
+      "priority": 83,
+      "status": "radar_ping",
+      "top_clip": "ac-A3",
+      "why": "Voice saying \"Help, can anyone hear me, my leg is trapped.\u2026\"; human 0.90, urgency 0.94, reliability 0.93.",
+      "association": "confident"
+     },
+     {
+      "pile_id": "B1",
+      "xy": [
+       0.3876787634730312,
+       22.04235293979854
+      ],
+      "priority": 50,
+      "status": "lead",
+      "top_clip": "ac-B1",
+      "why": "Voice saying \"Run their water. Hello is anyone their water.\"; human 0.90, urgency 0.56, reliability 0.61.",
+      "association": "confident"
+     },
+     {
+      "pile_id": "B2",
+      "xy": [
+       -1.3222450729634891,
+       -0.3371045966678139
+      ],
+      "priority": 37,
+      "status": "lead",
+      "top_clip": "ac-B2",
+      "why": "Knocking; human 0.62, urgency 0.42, reliability 0.91.",
+      "association": "confident"
+     },
+     {
+      "pile_id": "A1",
+      "xy": [
+       -22.854073905293202,
+       20.980636101573534
+      ],
+      "priority": 8,
+      "status": "no_signal_not_cleared",
+      "top_clip": null,
+      "why": "No sound assigned to this pile during the listen. Silence is not absence: not cleared."
+     },
+     {
+      "pile_id": "C3",
+      "xy": [
+       23.15217068258941,
+       -21.575284884332557
+      ],
+      "priority": 8,
+      "status": "no_signal_not_cleared",
+      "top_clip": null,
+      "why": "No sound assigned to this pile during the listen. Silence is not absence: not cleared."
+     },
+     {
+      "pile_id": "C1",
+      "xy": [
+       21.60860893180662,
+       20.511202726156228
+      ],
+      "priority": 2,
+      "status": "dismissed_nonhuman",
+      "top_clip": "ac-C1",
+      "why": "Heard engine (human 0.05); dismissed as an acoustic lead, but the pile is not cleared.",
+      "association": "confident"
+     },
+     {
+      "pile_id": "B3",
+      "xy": [
+       1.3348445134349385,
+       -20.78824963541222
+      ],
+      "priority": 1,
+      "status": "dismissed_nonhuman",
+      "top_clip": "ac-B3",
+      "why": "Heard debris (human 0.03); dismissed as an acoustic lead, but the pile is not cleared.",
+      "association": "confident"
+     },
+     {
+      "pile_id": "C2",
+      "xy": [
+       22.315168761489552,
+       0.4139897423649965
+      ],
+      "priority": 0,
+      "status": "dismissed_nonhuman",
+      "top_clip": "ac-C2",
+      "why": "Heard dog (human 0.00); dismissed as an acoustic lead, but the pile is not cleared.",
+      "association": "confident"
+     }
+    ],
+    "dispatch": {
+     "pile_id": "A3",
+     "reason": "Send the radar drone to A3: highest priority (83) from \"Help, can anyone hear me, my leg is trapped.\u2026\", 3/3 drones agreeing on the bearing at 30 dB SNR."
+    },
+    "log": []
+   }
+  },
+  {
+   "drones": {
+    "d1": [
+     -31.75,
+     -25.25
+    ],
+    "d2": [
+     -26.75,
+     -32.25
+    ],
+    "d3": [
+     -12.75,
+     -31.75
+    ]
+   },
+   "exclude": [
+    "A2",
+    "A3"
+   ],
+   "listen_seed": 209,
+   "state": {
+    "schema": "larpverse.acoustic/v1",
+    "algo": "assoc-v6",
+    "seed": 209,
+    "excluded_piles": [
+     "A2",
+     "A3"
+    ],
+    "listening_drones": [
+     {
+      "id": "d1",
+      "xy": [
+       -31.75,
+       -25.25
+      ]
+     },
+     {
+      "id": "d2",
+      "xy": [
+       -26.75,
+       -32.25
+      ]
+     },
+     {
+      "id": "d3",
+      "xy": [
+       -12.75,
+       -31.75
+      ]
+     }
+    ],
+    "clips": [
+     {
+      "clip_id": "ac-B1",
+      "drone_id": "d3",
+      "pile_id": "B1",
+      "bearing_deg": 73.0,
+      "width_deg": 54.0,
+      "snr_db": 8.8,
+      "vad_speech_ratio": 0.707,
+      "transcript": "Hello is anyone there water. Hello is anyone there water.",
+      "sound_class": "voice",
+      "human": 0.9,
+      "urgency": 0.56,
+      "reliability": 0.49,
+      "priority": 46,
+      "doa_agree": "3/3",
+      "association": "confident",
+      "association_conf": 0.998,
+      "ambiguous_with": [],
+      "notes": [],
+      "by": "fallback"
+     },
+     {
+      "clip_id": "ac-C1",
+      "drone_id": "d2",
+      "pile_id": "C1",
+      "bearing_deg": 49.0,
+      "width_deg": 19.0,
+      "snr_db": 25.8,
+      "vad_speech_ratio": 0.0,
+      "transcript": "",
+      "sound_class": "debris",
+      "human": 0.02,
+      "urgency": 0.02,
+      "reliability": 0.98,
+      "priority": 1,
+      "doa_agree": "3/3",
+      "association": "confident",
+      "association_conf": 0.996,
+      "ambiguous_with": [],
+      "notes": [],
+      "by": "fallback"
+     },
+     {
+      "clip_id": "ac-B2",
+      "drone_id": "d3",
+      "pile_id": "B2",
+      "bearing_deg": 70.7,
+      "width_deg": 27.0,
+      "snr_db": 14.9,
+      "vad_speech_ratio": 0.0,
+      "transcript": "",
+      "sound_class": "engine",
+      "human": 0.24,
+      "urgency": 0.03,
+      "reliability": 0.89,
+      "priority": 8,
+      "doa_agree": "3/3",
+      "association": "confident",
+      "association_conf": 0.998,
+      "ambiguous_with": [],
+      "notes": [],
+      "by": "fallback"
+     },
+     {
+      "clip_id": "ac-C2",
+      "drone_id": "d3",
+      "pile_id": "C2",
+      "bearing_deg": 44.0,
+      "width_deg": 21.0,
+      "snr_db": 16.8,
+      "vad_speech_ratio": 0.0,
+      "transcript": "",
+      "sound_class": "dog",
+      "human": 0.07,
+      "urgency": 0.02,
+      "reliability": 0.88,
+      "priority": 2,
+      "doa_agree": "3/3",
+      "association": "confident",
+      "association_conf": 1.0,
+      "ambiguous_with": [],
+      "notes": [],
+      "by": "fallback"
+     },
+     {
+      "clip_id": "ac-B3",
+      "drone_id": "d3",
+      "pile_id": "B3",
+      "bearing_deg": 39.5,
+      "width_deg": 26.0,
+      "snr_db": 13.7,
+      "vad_speech_ratio": 0.0,
+      "transcript": "",
+      "sound_class": "debris",
+      "human": 0.01,
+      "urgency": 0.02,
+      "reliability": 0.91,
+      "priority": 0,
+      "doa_agree": "3/3",
+      "association": "confident",
+      "association_conf": 1.0,
+      "ambiguous_with": [],
+      "notes": [],
+      "by": "fallback"
+     }
+    ],
+    "piles": [
+     {
+      "pile_id": "B1",
+      "xy": [
+       0.3876787634730312,
+       22.04235293979854
+      ],
+      "priority": 46,
+      "status": "radar_ping",
+      "top_clip": "ac-B1",
+      "why": "Voice saying \"Hello is anyone there water. Hello is anyone\u2026\"; human 0.90, urgency 0.56, reliability 0.49.",
+      "association": "confident"
+     },
+     {
+      "pile_id": "A1",
+      "xy": [
+       -22.854073905293202,
+       20.980636101573534
+      ],
+      "priority": 8,
+      "status": "no_signal_not_cleared",
+      "top_clip": null,
+      "why": "No sound assigned to this pile during the listen. Silence is not absence: not cleared."
+     },
+     {
+      "pile_id": "B2",
+      "xy": [
+       -1.3222450729634891,
+       -0.3371045966678139
+      ],
+      "priority": 8,
+      "status": "dismissed_nonhuman",
+      "top_clip": "ac-B2",
+      "why": "Heard engine (human 0.24); dismissed as an acoustic lead, but the pile is not cleared.",
+      "association": "confident"
+     },
+     {
+      "pile_id": "C3",
+      "xy": [
+       23.15217068258941,
+       -21.575284884332557
+      ],
+      "priority": 8,
+      "status": "no_signal_not_cleared",
+      "top_clip": null,
+      "why": "No sound assigned to this pile during the listen. Silence is not absence: not cleared."
+     },
+     {
+      "pile_id": "C2",
+      "xy": [
+       22.315168761489552,
+       0.4139897423649965
+      ],
+      "priority": 2,
+      "status": "dismissed_nonhuman",
+      "top_clip": "ac-C2",
+      "why": "Heard dog (human 0.07); dismissed as an acoustic lead, but the pile is not cleared.",
+      "association": "confident"
+     },
+     {
+      "pile_id": "C1",
+      "xy": [
+       21.60860893180662,
+       20.511202726156228
+      ],
+      "priority": 1,
+      "status": "dismissed_nonhuman",
+      "top_clip": "ac-C1",
+      "why": "Heard debris (human 0.02); dismissed as an acoustic lead, but the pile is not cleared.",
+      "association": "confident"
+     },
+     {
+      "pile_id": "B3",
+      "xy": [
+       1.3348445134349385,
+       -20.78824963541222
+      ],
+      "priority": 0,
+      "status": "dismissed_nonhuman",
+      "top_clip": "ac-B3",
+      "why": "Heard debris (human 0.01); dismissed as an acoustic lead, but the pile is not cleared.",
+      "association": "confident"
+     }
+    ],
+    "dispatch": {
+     "pile_id": "B1",
+     "reason": "Send the radar drone to B1: highest priority (46) from \"Hello is anyone there water. Hello is anyone\u2026\", 3/3 drones agreeing on the bearing at 9 dB SNR."
+    },
+    "log": []
+   }
+  },
+  {
+   "drones": {
+    "d1": [
+     -7.75,
+     26.75
+    ],
+    "d2": [
+     -6.25,
+     13.75
+    ],
+    "d3": [
+     5.75,
+     13.25
+    ]
+   },
+   "exclude": [
+    "A2",
+    "A3",
+    "B1"
+   ],
+   "listen_seed": 310,
+   "state": {
+    "schema": "larpverse.acoustic/v1",
+    "algo": "assoc-v6",
+    "seed": 310,
+    "excluded_piles": [
+     "A2",
+     "A3",
+     "B1"
+    ],
+    "listening_drones": [
+     {
+      "id": "d1",
+      "xy": [
+       -7.75,
+       26.75
+      ]
+     },
+     {
+      "id": "d2",
+      "xy": [
+       -6.25,
+       13.75
+      ]
+     },
+     {
+      "id": "d3",
+      "xy": [
+       5.75,
+       13.25
+      ]
+     }
+    ],
+    "clips": [
+     {
+      "clip_id": "ac-C1",
+      "drone_id": "d2",
+      "pile_id": "C1",
+      "bearing_deg": 5.0,
+      "width_deg": 19.0,
+      "snr_db": 14.9,
+      "vad_speech_ratio": 0.0,
+      "transcript": "",
+      "sound_class": "engine",
+      "human": 0.02,
+      "urgency": 0.02,
+      "reliability": 0.52,
+      "priority": 1,
+      "doa_agree": "3/3",
+      "association": "confident",
+      "association_conf": 1.0,
+      "ambiguous_with": [],
+      "notes": [],
+      "by": "fallback"
+     },
+     {
+      "clip_id": "ac-B2",
+      "drone_id": "d2",
+      "pile_id": "B2",
+      "bearing_deg": 283.2,
+      "width_deg": 24.0,
+      "snr_db": 21.4,
+      "vad_speech_ratio": 0.0,
+      "transcript": "",
+      "sound_class": "voice",
+      "human": 0.1,
+      "urgency": 0.16,
+      "reliability": 0.89,
+      "priority": 4,
+      "doa_agree": "3/3",
+      "association": "confident",
+      "association_conf": 0.999,
+      "ambiguous_with": [],
+      "notes": [],
+      "by": "fallback"
+     },
+     {
+      "clip_id": "ac-C2",
+      "drone_id": "d3",
+      "pile_id": "C2",
+      "bearing_deg": 328.9,
+      "width_deg": 21.0,
+      "snr_db": 20.4,
+      "vad_speech_ratio": 0.0,
+      "transcript": "",
+      "sound_class": "dog",
+      "human": 0.04,
+      "urgency": 0.02,
+      "reliability": 0.87,
+      "priority": 1,
+      "doa_agree": "3/3",
+      "association": "confident",
+      "association_conf": 1.0,
+      "ambiguous_with": [],
+      "notes": [],
+      "by": "fallback"
+     },
+     {
+      "clip_id": "ac-B3",
+      "drone_id": "d2",
+      "pile_id": "B3",
+      "bearing_deg": 283.0,
+      "width_deg": 26.0,
+      "snr_db": 10.0,
+      "vad_speech_ratio": 0.0,
+      "transcript": "",
+      "sound_class": "debris",
+      "human": 0.01,
+      "urgency": 0.02,
+      "reliability": 0.71,
+      "priority": 0,
+      "doa_agree": "3/3",
+      "association": "confident",
+      "association_conf": 0.87,
+      "ambiguous_with": [
+       "B2"
+      ],
+      "notes": [],
+      "by": "fallback"
+     }
+    ],
+    "piles": [
+     {
+      "pile_id": "A1",
+      "xy": [
+       -22.854073905293202,
+       20.980636101573534
+      ],
+      "priority": 8,
+      "status": "no_signal_not_cleared",
+      "top_clip": null,
+      "why": "No sound assigned to this pile during the listen. Silence is not absence: not cleared."
+     },
+     {
+      "pile_id": "C3",
+      "xy": [
+       23.15217068258941,
+       -21.575284884332557
+      ],
+      "priority": 8,
+      "status": "no_signal_not_cleared",
+      "top_clip": null,
+      "why": "No sound assigned to this pile during the listen. Silence is not absence: not cleared."
+     },
+     {
+      "pile_id": "B2",
+      "xy": [
+       -1.3222450729634891,
+       -0.3371045966678139
+      ],
+      "priority": 4,
+      "status": "dismissed_nonhuman",
+      "top_clip": "ac-B2",
+      "why": "Heard voice (human 0.10); dismissed as an acoustic lead, but the pile is not cleared.",
+      "association": "confident"
+     },
+     {
+      "pile_id": "C1",
+      "xy": [
+       21.60860893180662,
+       20.511202726156228
+      ],
+      "priority": 1,
+      "status": "dismissed_nonhuman",
+      "top_clip": "ac-C1",
+      "why": "Heard engine (human 0.02); dismissed as an acoustic lead, but the pile is not cleared.",
+      "association": "confident"
+     },
+     {
+      "pile_id": "C2",
+      "xy": [
+       22.315168761489552,
+       0.4139897423649965
+      ],
+      "priority": 1,
+      "status": "dismissed_nonhuman",
+      "top_clip": "ac-C2",
+      "why": "Heard dog (human 0.04); dismissed as an acoustic lead, but the pile is not cleared.",
+      "association": "confident"
+     },
+     {
+      "pile_id": "B3",
+      "xy": [
+       1.3348445134349385,
+       -20.78824963541222
+      ],
+      "priority": 0,
+      "status": "dismissed_nonhuman",
+      "top_clip": "ac-B3",
+      "why": "Heard debris (human 0.01); dismissed as an acoustic lead, but the pile is not cleared.",
+      "association": "confident"
+     }
+    ],
+    "dispatch": {
+     "pile_id": null,
+     "reason": "No human-like acoustic lead; continue the systematic search and keep every pile marked not cleared."
+    },
+    "log": []
+   }
+  }
+ ]
+}

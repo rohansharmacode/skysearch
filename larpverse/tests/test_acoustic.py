@@ -7,6 +7,14 @@ import pytest
 from acoustic import agent
 
 
+@pytest.fixture(autouse=True)
+def _no_llm(monkeypatch):
+    """Tests never reach the network: no provider, no keys (agents.llm also reads .env)."""
+    monkeypatch.setenv("LLM_PROVIDER", "none")
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+
+
 def _feat(cid, transcript, cls, scores, vad, snr=12.0, width=25.0, n=3):
     base = {c: 0.0 for c in ("voice", "shout", "knocking", "dog", "engine", "debris", "noise")}
     base.update(scores)
@@ -25,9 +33,64 @@ def test_srp_phat_doa_clean_source(src):
     from acoustic.scene import single_source_scene
     sc = single_source_scene(src, (0.0, 0.0), duration=2.0)
     _, zs = dsp.srp_blocks(sc.signals["d1"], sc.mic_offsets, sc.fs)
-    est = dsp.circ_peaks(zs)[0][0]
+    est = dsp.circ_peaks(zs, height=0.2)[0][0]
     truth = np.degrees(np.arctan2(src[1], src[0])) % 360
     assert abs(dsp.wrap180(est - truth)) <= 10.0
+
+
+def _two_source_cross(az_strong, az_weak, ratio, seed=0, n=16000):
+    """Synthetic far-field mixture on the 6-mic array: PHAT cross-spectra (P, F) and cell counts."""
+    from acoustic import dsp
+    from acoustic.scene import FS, mic_offsets
+    offs = mic_offsets()
+    model = dsp.SrpModel(offs, FS)
+    rng = np.random.default_rng(seed)
+    f = np.fft.rfftfreq(dsp.NFFT, 1 / FS)
+    S = n // dsp.HOP
+    X = 1e-3 * (rng.normal(size=(6, len(f), S)) + 1j * rng.normal(size=(6, len(f), S)))
+    for az, g in ((az_strong, 1.0), (az_weak, ratio)):
+        u = np.array([np.cos(np.radians(az)), np.sin(np.radians(az))])
+        lead = offs.T @ u / 343.0
+        src = g * (rng.normal(size=(len(f), S)) + 1j * rng.normal(size=(len(f), S)))
+        X += src[None] * np.exp(2j * np.pi * f[None, :, None] * lead[:, None, None])
+    C = model.cross(X)
+    return model, C.sum(axis=2), np.full(C.shape[1], float(S))
+
+
+def test_clean_removes_sidelobes_and_keeps_weak_source():
+    pytest.importorskip("scipy")
+    from acoustic import dsp
+    model, R, w = _two_source_cross(40.0, 160.0, 0.6)
+    comps = dsp.clean(model, R, w)
+    az = [c[0] for c in comps]
+    assert any(abs(dsp.wrap180(a - 40)) <= 4 for a in az)
+    assert any(abs(dsp.wrap180(a - 160)) <= 4 for a in az)
+    assert len(comps) <= 3                       # no ghost peaks from the strong source's sidelobes
+
+
+def _scene_stub(drones, piles):
+    from types import SimpleNamespace
+    return SimpleNamespace(drones=drones, piles=piles)
+
+
+def test_association_needs_two_consistent_drones_and_flags_collinear_piles():
+    from acoustic import dsp
+    piles = {"A": (0.0, 30.0), "B": (30.0, 0.0), "C": (60.0, 0.0), "D": (-30.0, 0.0)}
+    drones = {"d1": (0.0, 0.0), "d2": (-8.0, -5.0), "d3": (8.0, -5.0)}
+    g = dsp._Geom(_scene_stub(drones, piles))
+    src = (0.5, 29.0)                            # a source at pile A
+    comps = {d: [(dsp.bearing_to(o, src), 0.5, 30.0)] for d, o in drones.items()}
+    ev = dsp.associate(g, comps)
+    assert [e["pile"] for e in ev] == ["A"] and len(ev[0]["match"]) == 3
+    post = dsp.bearing_posterior(g, {d: dsp.bearing_to(o, src) for d, o in drones.items()})
+    assert post["A"] > 0.9
+    # only one drone hears a weak component: no pile gets it
+    weak = {"d1": [(dsp.bearing_to(drones["d1"], piles["B"]), 0.1, 30.0)], "d2": [], "d3": []}
+    assert dsp.associate(g, weak) == []
+    # B and C lie on one line seen from these drones: a source at C is ambiguous with B
+    srcc = (59.0, 0.5)
+    post = dsp.bearing_posterior(g, {d: dsp.bearing_to(o, srcc) for d, o in drones.items()})
+    assert max(post["B"], post["C"]) < 0.9
 
 
 def test_fallback_ranks_trapped_call_above_dog():
@@ -39,7 +102,6 @@ def test_fallback_ranks_trapped_call_above_dog():
 
 
 def test_validation_and_replay_cache(tmp_path, monkeypatch):
-    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
     assert agent.validate_judgment({"human": 1.4, "urgency": 0.5, "reliability": 0.5, "rationale": "x"}) is None
     assert agent.validate_judgment({"human": 0.4, "urgency": 0.5, "rationale": "x"}) is None
     f = _feat("a", "help", "voice", {"voice": 0.9}, vad=0.5)
@@ -51,3 +113,61 @@ def test_validation_and_replay_cache(tmp_path, monkeypatch):
     cache.write_text(json.dumps(rec) + "\n")
     j, meta = agent.judge_clips([f], mode="replay", cache_path=str(cache))
     assert j["a"]["by"] == "llm" and j["a"]["rationale"] == "recorded" and meta["cache_hits"] == 1
+
+
+# --------------------------------------------------------------------------- committed pipeline fixture
+FIXTURE = __import__("os").path.join(__import__("os").path.dirname(__file__), "fixtures", "acoustic_seed7.json")
+HUMAN_KINDS = {"voice", "weak_voice", "knock"}
+
+
+@pytest.fixture(scope="module")
+def seed7():
+    """Real pipeline output for the seed-7 grid mission's listens (acoustic.eval_assign fixture)."""
+    with open(FIXTURE) as f:
+        return json.load(f)
+
+
+def _words(t):
+    import re
+    return {w for w in re.findall(r"[a-z']+", (t or "").lower()) if len(w) > 2}
+
+
+def test_fixture_no_confident_human_lead_on_a_pile_without_a_person(seed7):
+    roles = seed7["truth_roles_evaluator_only"]          # evaluator-side assertion only
+    for li in seed7["listens"]:
+        for c in li["state"]["clips"]:
+            if c["human"] >= 0.4 and c["association"] == "confident":
+                assert roles[c["pile_id"]] in HUMAN_KINDS, (li["exclude"], c["pile_id"], c["transcript"])
+
+
+def test_fixture_voice_ranked_first_and_faint_voice_is_a_lead(seed7):
+    roles = seed7["truth_roles_evaluator_only"]
+    first = seed7["listens"][0]["state"]
+    voice = next(p for p, k in roles.items() if k == "voice")
+    faint = next(p for p, k in roles.items() if k == "weak_voice")
+    assert first["dispatch"]["pile_id"] == voice
+    pr = {p["pile_id"]: p["priority"] for p in first["piles"]}
+    assert pr[faint] >= 20                                # GridMission PRIORITY_MIN
+
+
+def test_fixture_no_dog_clip_is_human_and_no_transcript_repeats_across_piles(seed7):
+    for li in seed7["listens"]:
+        clips = li["state"]["clips"]
+        for c in clips:
+            if c["sound_class"] == "dog":
+                assert c["human"] < 0.4, c
+        for i, a in enumerate(clips):
+            for b in clips[i + 1:]:
+                wa, wb = _words(a["transcript"]), _words(b["transcript"])
+                if len(wa) >= 2 and len(wb) >= 2:
+                    assert len(wa & wb) / min(len(wa), len(wb)) < 0.5, (a["pile_id"], b["pile_id"])
+
+
+def test_fixture_excluded_piles_are_not_reported(seed7):
+    for li in seed7["listens"]:
+        st = li["state"]
+        assert not {c["pile_id"] for c in st["clips"]} & set(li["exclude"])
+        assert all(p["pile_id"] not in li["exclude"] for p in st["piles"])
+        for c in st["clips"]:
+            n, m = map(int, c["doa_agree"].split("/"))
+            assert 0 <= n <= m

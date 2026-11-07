@@ -24,6 +24,22 @@ COLS = "ABC"
 BASE_XY = (0.0, -47.0)                     # staging area (coordinator, operator dashboard, acoustic agent)
 SITE_BOUNDS = (-36.0, -54.0, 36.0, 36.0)   # xmin, ymin, xmax, ymax
 DRONE_PADS = [(-2.6, -49.0), (0.0, -49.0), (2.6, -49.0)]
+# Case study anchor: Weiguan Jinlong building collapse, Yongkang District, Tainan (6 Feb 2016).
+# zh.wikipedia 維冠金龍大樓: 23.0051432 N, 120.2608904 E. Site frame origin = this point; x east, y north.
+SITE_GEO = {"lat": 23.0051432, "lon": 120.2608904, "bearing_deg": 0.0,
+            "name": "Weiguan Jinlong collapse, Yongkang District, Tainan (2016)"}
+# Breathing patterns used by the synthetic radar generator (ranges sampled per victim).
+# rate_bpm: breaths/min; depth_rel: chest excursion relative to a calm adult (1.0 ~ 5 mm);
+# cv: breath-interval variability; apnea_per_min: pauses > 10 s per minute.
+PHYSIO_STATES = {
+    "calm":                 {"rate_bpm": (12, 16), "depth_rel": (0.9, 1.1), "cv": (0.03, 0.08), "apnea_per_min": (0, 0)},
+    "distressed_tachypnea": {"rate_bpm": (26, 36), "depth_rel": (0.3, 0.5), "cv": (0.12, 0.25), "apnea_per_min": (0, 0)},
+    "unconscious_slow":     {"rate_bpm": (6, 10),  "depth_rel": (1.1, 1.5), "cv": (0.05, 0.12), "apnea_per_min": (0, 0.3)},
+    "irregular_apneic":     {"rate_bpm": (8, 14),  "depth_rel": (0.6, 1.2), "cv": (0.25, 0.45), "apnea_per_min": (0.5, 1.5)},
+}
+# Demo seed: one of each condition pattern so the priority list has something to decide.
+# (No age/child class: the user decided triage reads the survivor's condition only.)
+DEMO_PHYSIO = {7: {"A2": "distressed_tachypnea", "A3": "calm", "B1": "irregular_apneic", "B2": "unconscious_slow"}}
 SOUND_KINDS = ["voice", "weak_voice", "knock", "dog", "generator", "settling"]
 TRANSCRIPTS = {   # what a TTS voice says for the synthetic human sources (truth; the pipeline must recover it)
     "voice": "Help! Can anyone hear me? My leg is trapped.",
@@ -113,7 +129,7 @@ class Scenario:
     def public_dict(self):
         return {
             "schema": "larpverse.scenario/v1", "seed": self.seed, "spacing": SPACING,
-            "bounds": list(SITE_BOUNDS), "base_xy": list(BASE_XY), "drone_pads": [list(p) for p in DRONE_PADS],
+            "bounds": list(SITE_BOUNDS), "geo": dict(SITE_GEO), "base_xy": list(BASE_XY), "drone_pads": [list(p) for p in DRONE_PADS],
             "start_pile": self.truth["start_pile"],   # where the mission begins: an operator choice, not truth
             "noise": [list(map(float, v)) for v in self._noise],
             "piles": [{**{k: v for k, v in asdict(p).items() if k != "pieces"},
@@ -149,7 +165,18 @@ def _top_face_points(pc: Piece, step=0.25):
     return np.concatenate(out) if out else np.zeros((0, 3))
 
 
-def make_scenario(seed: int = 7, start_pile: str | None = None) -> Scenario:
+SITES = ("grid", "weiguan")
+
+
+def make_scenario(seed: int = 7, start_pile: str | None = None, site: str = "grid") -> Scenario:
+    if site == "weiguan":     # Weiguan Jinlong case study (procedural stand-in): sim/site_weiguan.py
+        from .site_weiguan import make_weiguan
+        return make_weiguan(seed, start_pile)
+    if site.startswith("mesh:"):   # external map "mesh:<path>[?sectors=weiguan]": sim/site_mesh.py
+        from .site_mesh import make_from_spec
+        return make_from_spec(seed, start_pile, site[5:])
+    if site != "grid":
+        raise ValueError(f"unknown site {site!r}; one of {SITES} or mesh:<path>")
     rng = np.random.default_rng(seed)
     U = rng.uniform
     noise = (U(0.3, 1.0, 5), U(-0.4, 0.4, 5), U(-0.4, 0.4, 5), U(0, 2 * np.pi, 5))
@@ -219,6 +246,14 @@ def make_scenario(seed: int = 7, start_pile: str | None = None) -> Scenario:
         if kind in ("voice", "weak_voice", "knock"):
             victims.append({"id": f"V{len(victims) + 1}", "pile": name, "xy": xy, "depth": float(U(0.8, 1.8)),
                             "breathing_hz": float(U(0.2, 0.33)), "sound": kind})
+    # Physiological breathing state per victim (HIDDEN TRUTH; drives the synthetic radar waveform).
+    # Separate RNG stream so adding this never changes the rest of the scenario for a given seed.
+    prng = np.random.default_rng([seed, 99])
+    states = list(PHYSIO_STATES)
+    for k, v in enumerate(victims):
+        name = states[int(prng.integers(0, len(states)))]
+        name = DEMO_PHYSIO.get(seed, {}).get(v["pile"], name)
+        v["physio"] = {"state": name, **{key: float(prng.uniform(*rng_)) for key, rng_ in PHYSIO_STATES[name].items()}}
     sc.truth = {"start_pile": start, "roles": roles, "victims": victims, "sounds": sounds}
     return sc
 
@@ -229,10 +264,11 @@ if __name__ == "__main__":
     ap = argparse.ArgumentParser(description="Write the public scenario (and optionally the hidden truth) to JSON.")
     ap.add_argument("--seed", type=int, default=7)
     ap.add_argument("--start-pile")
+    ap.add_argument("--site", default="grid", help="grid (synthetic 3x3, default) | weiguan (case study) | mesh:<path>")
     ap.add_argument("--out", default="scenario.json")
     ap.add_argument("--truth-out", help="separate file for hidden truth (generators/evaluators only)")
     a = ap.parse_args()
-    sc = make_scenario(a.seed, a.start_pile)
+    sc = make_scenario(a.seed, a.start_pile, site=a.site)
     with open(a.out, "w") as f:
         f.write(sc.public_json(indent=1))
     if a.truth_out:

@@ -5,6 +5,7 @@
 // The point cloud is resolved relative to that file's folder. ?poll=<ms> sets the poll interval (min 100 ms).
 // #ping=<id> opens that ping's detail view. A missing state file shows the demo state.
 import { demoState, demoCloud } from './demo.js';
+import { createTasking, reconText } from './tasking.js';
 import { digScore, triageOf, patternLabel, rateOf, spark, caveatsOf, triageChip, drawTriageRing, ALWAYS } from './vitals.js';
 
 const params = new URLSearchParams(location.search);
@@ -42,12 +43,13 @@ let S = null;                 // current state
 let cloud = null, cloudKey = null;
 let live = false, lastRaw = null;
 const layers = { belief: true, rings: false, acoustic: true, sites: true, piles: true, reach: true };
-const isGrid = () => Array.isArray(S?.piles) && S.piles.length > 0;
+const isGrid = () => (Array.isArray(S?.piles) && S.piles.length > 0) || !!S?.recon || S?.mission?.kind === 'grid';
 // UI state that survives re-renders
 let selListen = null;                                  // null = follow the latest listen
 const openRows = new Set(), openWhy = new Set(), decOpen = new Map();
 let dismOpen = false;
-let DIG = [], DIG_BY = new Map();       // dig order (ranked pings), recomputed per state
+let DIG = [], DIG_BY = new Map();
+let TK = null;                          // operator tasking + recon overlay (tasking.js)       // dig order (ranked pings), recomputed per state
 
 // ---------------- data ----------------
 async function poll() {
@@ -82,7 +84,7 @@ async function ensureCloud() {
 let hmKey = null;
 function setState(s) {
   const first = !S || (S.demo && !s.demo) || (!!S.piles !== !!s.piles);
-  const hk = s.heightmap ? `${s.heightmap.origin}|${s.heightmap.w}x${s.heightmap.h}|${s.heightmap.z.length}|${s.heightmap.z[(s.heightmap.z.length / 3) | 0]}` : null;
+  const hk = s.heightmap ? `${s.heightmap.origin}|${s.heightmap.w}x${s.heightmap.h}|${s.heightmap.z.length}|${s.heightmap.z[(s.heightmap.z.length / 3) | 0]}|${s.heightmap.rev ?? ''}|${s.recon?.mapped_fraction ?? ''}` : null;
   if (hk !== hmKey) { baseImg = null; rubbleImg = null; hmKey = hk; }
   S = s; beliefImg = null;
   ensureCloud();
@@ -174,7 +176,9 @@ const TILES = {
     filter: 'brightness(0.7) saturate(0.85)',
     attr: 'Imagery © <a href="https://www.esri.com/" target="_blank" rel="noopener">Esri</a>, Maxar, Earthstar Geographics, and the GIS User Community' },
 };
-let basemap = 'relief';   // R2-016: the synthetic piles should not sit on real street labels by default
+let basemap = 'relief', basemapUser = false;   // R2-016: the synthetic piles should not sit on real street labels by default
+// During recon the fresh LiDAR relief is drawn over the (pre-collapse) satellite imagery unless the operator picked a basemap.
+const bmMode = () => (!basemapUser && S?.recon && !tilesDead('sat') ? 'sat' : basemap);
 const tileCache = new Map(), tileStat = { map: { ok: 0, fail: 0 }, sat: { ok: 0, fail: 0 } };
 let tileVer = 0;
 function tile(mode, z, x, y) {
@@ -188,7 +192,7 @@ function tile(mode, z, x, y) {
   return t;
 }
 const tilesDead = m => !!TILES[m] && tileStat[m].ok === 0 && tileStat[m].fail >= 3;   // offline: fall back to LiDAR relief
-const tilesOn = () => !!TILES[basemap] && !tilesDead(basemap);
+const tilesOn = () => !!TILES[bmMode()] && !tilesDead(bmMode());
 const bmCv = document.createElement('canvas'); let bmKey = '';
 function renderTiles(mode) {
   bmCv.width = Math.max(1, W * dpr); bmCv.height = Math.max(1, Hh * dpr);
@@ -217,14 +221,16 @@ function renderTiles(mode) {
 }
 function drawBasemap() {
   if (!tilesOn()) return false;
-  const key = [basemap, view.cx, view.cy, view.scale, W, Hh, dpr, tileVer, JSON.stringify(S?.site?.geo || null)].join('|');
+  const basemap = bmMode(), key = [basemap, view.cx, view.cy, view.scale, W, Hh, dpr, tileVer, JSON.stringify(S?.site?.geo || null)].join('|');
   if (key !== bmKey) { bmKey = key; renderTiles(basemap); }
   ctx.globalAlpha = basemap === 'map' ? 0.55 : 0.8; ctx.drawImage(bmCv, 0, 0, W, Hh); ctx.globalAlpha = 1; return true;
 }
 function renderBasemapUI() {
+  const basemap = bmMode();
   document.querySelectorAll('[data-bm]').forEach(b => { b.setAttribute('aria-pressed', b.dataset.bm === basemap); b.classList.toggle('dead', tilesDead(b.dataset.bm)); b.title = tilesDead(b.dataset.bm) ? 'Map tiles unavailable (offline): showing the LiDAR relief' : ''; });
   const on = tilesOn(); $('attrib').hidden = !on; if (on) $('attrib').innerHTML = TILES[basemap].attr;
   cv.classList.toggle('bmrelief', !on);
+  $('reconTag').hidden = !(S?.recon && on);
 }
 
 // ---------------- map ----------------
@@ -259,11 +265,15 @@ function gridImage(g, fn) {
   }
   x.putImageData(im, 0, 0); return c;
 }
+// Progressive (recon) maps: cells with z null / NaN, or heightmap.mask[k] == 0, are not mapped yet and stay transparent.
+const hmKnown = (g, i, j) => { const k = j * g.w + i, v = g.z[k]; return v != null && Number.isFinite(+v) && !(g.mask && !g.mask[k]); };
+const hmMax = g => { let m = 0.5; for (const v of g.z) if (v != null && +v > m) m = +v; return m; };
 function makeBase() {
   const g = S.heightmap; if (!g) return null;
-  const z = (i, j) => g.z[Math.min(g.h - 1, Math.max(0, j)) * g.w + Math.min(g.w - 1, Math.max(0, i))];
-  let zmax = 0.5; for (const v of g.z) zmax = Math.max(zmax, v);
+  const z = (i, j) => +g.z[Math.min(g.h - 1, Math.max(0, j)) * g.w + Math.min(g.w - 1, Math.max(0, i))] || 0;
+  const zmax = hmMax(g);
   return gridImage(g, (i, j) => {
+    if (!hmKnown(g, i, j)) return [0, 0, 0, 0];
     const dx = (z(i + 1, j) - z(i - 1, j)) / (2 * g.res), dy = (z(i, j + 1) - z(i, j - 1)) / (2 * g.res);
     const shade = Math.max(0, Math.min(1, 0.62 + (-dx * 0.55 + dy * 0.55) / Math.sqrt(1 + dx * dx + dy * dy)));
     const e = z(i, j) / zmax, k = 26 + 70 * shade + 40 * e;
@@ -272,13 +282,14 @@ function makeBase() {
 }
 function makeRubble() {
   const g = S.heightmap; if (!g) return null;
-  const z = (i, j) => g.z[Math.min(g.h - 1, Math.max(0, j)) * g.w + Math.min(g.w - 1, Math.max(0, i))];
-  let zmax = 0.5; for (const v of g.z) zmax = Math.max(zmax, v);
+  const z = (i, j) => +g.z[Math.min(g.h - 1, Math.max(0, j)) * g.w + Math.min(g.w - 1, Math.max(0, i))] || 0;
+  const zmax = hmMax(g), live = !!S.recon;
   return gridImage(g, (i, j) => {
+    if (!hmKnown(g, i, j)) return [0, 0, 0, 0];
     const dx = (z(i + 1, j) - z(i - 1, j)) / (2 * g.res), dy = (z(i, j + 1) - z(i, j - 1)) / (2 * g.res);
     const shade = Math.max(0, Math.min(1, 0.62 + (-dx * 0.55 + dy * 0.55) / Math.sqrt(1 + dx * dx + dy * dy)));
     const h = z(i, j), k = 40 + 90 * shade + 40 * h / zmax, a = Math.max(0, Math.min(1, (h - 0.15) / 0.9));
-    return [k * 1.06, k, k * 0.9, 225 * a];
+    return live ? [k * 1.06, k, k * 0.9, 120 + 105 * a] : [k * 1.06, k, k * 0.9, 225 * a];   // recon: the whole fresh map shows over the stale imagery
   });
 }
 function makeBelief() {
@@ -364,6 +375,7 @@ function draw(now = performance.now()) {
   if (layers.belief && S.belief) { beliefImg ||= makeBelief(); if (beliefImg) { ctx.globalAlpha = 0.85; drawGridImage(beliefImg, S.belief); ctx.globalAlpha = 1; } }
 
   if (isGrid()) drawGridLayer(now);
+  TK?.draw(ctx, layers);
 
   // acoustic cones: the selected listen (default: latest) (R1-025)
   if (layers.acoustic) {
@@ -471,8 +483,8 @@ function drawGridLayer(now) {
     const latest = k === ds.length - 1, to = pileById(d.to_pile);
     arrow(pileById(d.from_pile).xy, to.xy, COL.coord, latest ? 0.95 : 0.35, latest ? `dispatch → ${d.to_pile}${to.priority != null && !short ? ' · priority ' + to.priority : ''}` : null);
   });
-  if (layers.reach) for (const p of S.piles) drawReach(p, short);
-  for (const p of S.piles) {
+  if (layers.reach) for (const p of S.piles || []) drawReach(p, short);
+  for (const p of S.piles || []) {
     const [x, y] = toPx(...p.xy), [lng0, sht, col, mapLng] = pst(p), lng = mapLng || lng0, txt = (short ? sht : lng).toUpperCase(), isActive = p.id === active;
     ctx.save();
     ctx.beginPath(); ctx.arc(x, y, 8.5 * view.scale, 0, Math.PI * 2);
@@ -540,6 +552,7 @@ function drawReach(p, short) {
   for (const q of g.pts) { const [px, py] = toPx(...q); h.beginPath(); h.arc(px - cx + half, py - cy + half, g.R * s, 0, Math.PI * 2); h.fill(); }
   h.globalCompositeOperation = 'source-over';
   ctx.drawImage(hatchCv, cx - half, cy - half, size, size);
+  if ((S.zones || []).length) return;   // tasked zones carry the reach status in their own label
   const t = short ? 'beyond radar reach' : `beyond radar reach — acoustic leads only${p.radar_coverage != null ? ` (${f0(100 * g.beyond)}%)` : ''}`;
   ctx.font = FONT_L; const w = ctx.measureText(t).width;
   qLabel(t, cx - w / 2, cy + PILE_R * s + 15, '#c3d0d9', 'rgba(11,16,22,0.84)', 8, 'rgba(205,218,228,0.35)');
@@ -556,8 +569,17 @@ function scaleBar() {
 
 // interaction
 let drag = null;
-cv.addEventListener('pointerdown', e => { drag = { x: e.clientX, y: e.clientY, cx: view.cx, cy: view.cy, moved: false }; cv.setPointerCapture(e.pointerId); });
+let tkGrab = false;   // a tasking gesture (lasso, vertex drag) owns the pointer
+const rel = e => { const r = cv.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; };
+cv.addEventListener('pointerdown', e => {
+  cv.setPointerCapture(e.pointerId);
+  if (TK?.ptr.down(e, ...rel(e)) === true) { tkGrab = true; return; }
+  drag = { x: e.clientX, y: e.clientY, cx: view.cx, cy: view.cy, moved: false };
+});
+cv.addEventListener('dblclick', e => { if (TK?.ptr.dbl()) e.preventDefault(); });
 cv.addEventListener('pointermove', e => {
+  if (TK?.ptr.move(e, ...rel(e)) && tkGrab) return;
+  if (tkGrab) return;
   const r = cv.getBoundingClientRect(), [mx, my] = toM(e.clientX - r.left, e.clientY - r.top);
   const [la, lo] = siteToLL(mx, my); $('cursor').textContent = `x ${mx.toFixed(1)} · y ${my.toFixed(1)} m · ${la.toFixed(5)}° N ${lo.toFixed(5)}° E`;
   if (drag) { const dx = e.clientX - drag.x, dy = e.clientY - drag.y; if (Math.hypot(dx, dy) > 3) drag.moved = true; view.cx = drag.cx - dx / view.scale; view.cy = drag.cy + dy / view.scale; cv.classList.add('drag'); draw(); return; }
@@ -565,6 +587,8 @@ cv.addEventListener('pointermove', e => {
 });
 cv.addEventListener('pointerup', e => {
   cv.classList.remove('drag'); const r = cv.getBoundingClientRect();
+  if (tkGrab) { tkGrab = false; TK.ptr.up(e, ...rel(e), false); return; }
+  if (drag && TK?.planning && TK.ptr.up(e, ...rel(e), drag.moved)) { drag = null; return; }
   if (drag && !drag.moved) { const hit = hitTest(e.clientX - r.left, e.clientY - r.top); if (hit) openDetail(hit); }
   drag = null;
 });
@@ -575,7 +599,7 @@ function hitTest(px, py) {
   for (const c of S?.radar_candidates || []) { const [x, y] = toPx(...c.xy); if (Math.hypot(px - x, py - y) < 16) return c; }
   return null;
 }
-document.querySelectorAll('[data-bm]').forEach(b => b.onclick = () => { basemap = b.dataset.bm; renderBasemapUI(); draw(); });
+document.querySelectorAll('[data-bm]').forEach(b => b.onclick = () => { basemap = b.dataset.bm; basemapUser = true; renderBasemapUI(); draw(); });
 document.querySelectorAll('#layers .tog[data-k]').forEach(b => b.onclick = () => { const k = b.dataset.k; layers[k] = !layers[k]; b.setAttribute('aria-pressed', layers[k]); draw(); });
 $('layersBtn').onclick = () => { const o = $('tools').classList.toggle('open'); $('layersBtn').setAttribute('aria-expanded', o); };
 function setHelp(open) { if (open) { const t = $('tools'); $('help').style.top = (t.offsetTop + t.offsetHeight + 8) + 'px'; } $('help').hidden = !open; $('helpBtn').setAttribute('aria-expanded', open); if (open) { $('tools').classList.remove('open'); $('layersBtn').setAttribute('aria-expanded', false); } }
@@ -594,8 +618,11 @@ function renderSide() {
   $('togPiles').hidden = !grid;
   $('legendGrid').hidden = !grid;
   renderBanner();
+  const rc = S.recon; $('reconChip').hidden = !rc; if (rc) $('reconChip').textContent = reconText(rc);
+  renderBasemapUI();
+  TK?.renderRail();
   renderCands(grid);
-  $('secAgent').hidden = !grid; $('secPiles').hidden = !grid; $('secAc').hidden = grid;
+  $('secAgent').hidden = !grid; $('secPiles').hidden = !grid || !(S.piles || []).length; $('secAc').hidden = grid;
   if (grid) { renderPiles(); renderDecisions(); renderClips(); }
   else {
     $('secDec').hidden = true;
@@ -656,10 +683,10 @@ $('cands').addEventListener('click', e => { const b = e.target.closest('[data-id
 function renderPiles() {
   const m = S.mission || {}, vis = [...new Set(m.visited || [])], done = m.stage === 'done', pmin = m.priority_min ?? 20;
   const visited = vis.map(pileById).filter(Boolean);
-  const rest = S.piles.filter(p => !vis.includes(p.id)).sort((a, b) => (b.priority ?? -1) - (a.priority ?? -1) || a.id.localeCompare(b.id));
+  const piles = S.piles || [], rest = piles.filter(p => !vis.includes(p.id)).sort((a, b) => (b.priority ?? -1) - (a.priority ?? -1) || a.id.localeCompare(b.id));
   const topUnvisited = done ? null : rest.find(p => p.priority != null && p.priority >= pmin);
   $('pilesTitle').textContent = done ? 'Open leads for ground teams' : 'Pile priority';
-  $('nPiles').textContent = `${vis.length}/${S.piles.length}`; $('nPiles').title = `${vis.length} of ${S.piles.length} piles searched by the drones`;   // R2-018
+  $('nPiles').textContent = `${vis.length}/${piles.length}`; $('nPiles').title = `${vis.length} of ${piles.length} piles searched by the drones`;   // R2-018
   const row = p => {
     const [txt, , col] = pst(p), amb = pileAmb(p);
     return `<div class="row ${p === topUnvisited ? 'top' : ''} ${vis.includes(p.id) ? 'done' : ''} ${openRows.has(p.id) ? 'open' : ''}" data-pile="${esc(p.id)}" title="Click to expand">
@@ -841,7 +868,7 @@ async function openDetail(c) {
 function closeDetail() { $('detail').hidden = true; viewer?.stop(); }
 $('dClose').onclick = closeDetail;
 $('detail').addEventListener('click', e => { if (e.target.id === 'detail') closeDetail(); });
-addEventListener('keydown', e => { if (e.key === 'Escape') { if (!$('detail').hidden) closeDetail(); else { setHelp(false); setCase(false); } } });
+addEventListener('keydown', e => { if (TK?.ptr.key(e)) { e.preventDefault(); return; } if (e.key === 'Escape') { if (!$('detail').hidden) closeDetail(); else { setHelp(false); setCase(false); } } });
 
 // ---------------- case study ----------------
 function setCase(open) {
@@ -850,6 +877,9 @@ function setCase(open) {
 }
 $('caseBtn').onclick = () => setCase($('casePop').hidden);
 $('caseClose').onclick = () => setCase(false);
+
+// ---------------- operator tasking ----------------
+TK = createTasking({ S: () => S, toPx, toM, scale: () => view.scale, ctx: () => ctx, draw: () => draw(), qLabel, font: FONT_L, $ });
 
 // ---------------- boot ----------------
 new ResizeObserver(() => resize()).observe(cv);

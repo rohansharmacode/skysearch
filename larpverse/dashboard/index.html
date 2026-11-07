@@ -15,6 +15,7 @@
   <header id="hdr">
     <div class="brand"><i></i>Larpverse</div>
     <div class="pill" id="phase">phase</div>
+    <div class="pill recon" id="reconChip" hidden></div>
     <div class="site" id="siteName">Rubble site</div>
     <button class="case" id="caseBtn" aria-expanded="false" aria-controls="casePop"><span class="long">Case study (layout synthetic): Weiguan Jinlong collapse, Tainan, 2016</span><span class="short">Case study (layout synthetic)</span></button>
     <div class="meta"><span id="simT">t = 0.0 s</span><span id="conn" class="conn">connecting</span></div>
@@ -38,6 +39,7 @@
     <canvas id="map" aria-label="Site map. Red dots are radar candidate regions; yellow cones are acoustic directions. Open 'How to read this map' for the full key."></canvas>
     <div id="tools" class="float">
       <button class="tog key" id="helpBtn" aria-expanded="false" aria-controls="help"><span class="long">? How to read this map</span><span class="short">? Map key</span></button>
+      <button class="tog plan" id="planBtn" aria-pressed="false" title="Outline the rubble zones the drones should search">✎ Plan search</button>
       <button class="tog" id="layersBtn" aria-expanded="false" aria-controls="layers">Layers ▾</button>
       <div id="layers">
         <div class="seg" role="group" aria-label="Basemap"><span>Basemap</span><button class="tog" data-bm="relief" aria-pressed="true">LiDAR relief</button><button class="tog" data-bm="map" aria-pressed="false">Map</button><button class="tog" data-bm="sat" aria-pressed="false">Satellite</button></div>
@@ -54,6 +56,15 @@
       <button class="btn" id="zout" aria-label="Zoom out">−</button>
       <button class="btn" id="zfit" aria-label="Fit site">Fit</button>
     </div>
+    <div id="plan" class="float" role="dialog" aria-labelledby="planTitle" hidden>
+      <div class="hh"><h3 id="planTitle">Plan search zones</h3><button class="btn" id="planClose" aria-label="Close planning">Done</button></div>
+      <div id="planTools"></div>
+      <p id="planHint" class="hint"></p>
+      <div id="planList"></div>
+      <button class="btn send" id="planSend">Send tasking to drones</button>
+      <p id="planMsg" class="tmsg" role="status" hidden></p>
+    </div>
+    <div id="reconTag" class="float" hidden>LiDAR map, live — satellite imagery predates the collapse</div>
     <div id="cursor" class="float mono">x — · y — m</div>
     <div id="attrib" class="float" hidden></div>
     <div id="legend" class="float">
@@ -83,6 +94,7 @@
         <li><i class="k-cone"></i><div><b>Yellow cone</b>: direction a landed drone heard a human-like sound from (its apex is the drone). Grey short cones are non-human sounds. Pick a listen in the Acoustic agent panel to see its cones.</div></li>
         <li><i class="k-tri"></i><div><b>Drone</b> (white; hollow with a small "ear" ring while landed and listening, rotors off). <i class="k-sq-inline"></i> green squares are landing sites the drones chose from the LiDAR map.</div></li>
         <li><i class="k-arrow"></i><div><b>Dispatch</b>: where the coordinator sent the fleet next, and why (see Dispatch decisions).</div></li>
+        <li><i class="k-zone"></i><div><b>Search zones</b> the operator tasked (✎ Plan search): white outline. Dashed = not searched yet; grey hatch = <b>searched — not cleared</b>; red = ping inside; teal = acoustic lead. <b>Proposed</b> zones from recon are dashed with a "proposed" tag until you accept them; <b>suggested</b> circles are sounds heard outside every zone.</div></li>
         <li><i class="k-stage"></i><div><b>Staging</b>: the operator's console and the drone pads.</div></li>
         <li><i class="k-geo">N</i><div><b>Basemap</b>: by default the drones' LiDAR relief of the (synthetic) rubble. <i>Map</i> and <i>Satellite</i> show the real case-study site (OpenStreetMap or imagery, dimmed) with the site frame anchored at the building (the N arrow, top right, shows true north). The pile layout is synthetic: nothing here marks where real victims were. Without network the map falls back to the LiDAR relief.</div></li>
       </ul>
@@ -92,6 +104,10 @@
 
   <aside id="side">
     <div class="col colA">
+      <section id="secZones" hidden>
+        <h2>Search zones <span id="nZones" class="count"></span></h2>
+        <div id="zones"></div>
+      </section>
       <section id="secPiles" hidden>
         <h2><span id="pilesTitle">Pile priority</span> <span id="nPiles" class="count">0</span></h2>
         <div id="piles"></div>

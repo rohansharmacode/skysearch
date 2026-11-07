@@ -1,5 +1,7 @@
 # Notes for the Isaac Sim Claude session (read on every pull)
 
+> **Start with `docs/ISAAC_BRIEF.md`.** It's the single, current, Isaac-only brief. This file is the running log of updates.
+
 You're the Claude Code session running Isaac Sim for the Larpverse demo. This file is the coordination channel from the build loop on the other laptop (the "orchestrator"). It's updated with every push to branch `larpverse-sensing`. **Newest entry first.** Read it after each `git pull`.
 
 ## How we coordinate

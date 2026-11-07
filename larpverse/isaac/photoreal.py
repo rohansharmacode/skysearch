@@ -54,6 +54,12 @@ def add_args(ap):
     g.add_argument("--urban-look", type=int, default=1,
                    help="collapse map: real materials instead of the scan photo on rubble/towers/slabs, 3D facade and "
                         "debris (isaac/urban_look.py); 0 = the map as shipped")
+    g.add_argument("--urban-terrain", choices=["scan", "mdl"], default="scan",
+                   help="collapse map ground: scan = the scan photo (AI-refined with --scan-ai), mdl = procedural "
+                        "concrete/gravel materials (licence-clean variant for public showings)")
+    g.add_argument("--scan-ai", default="", help="folder of AI-refined scan textures (isaac/tools/ai_textures.py)")
+    g.add_argument("--rt-quality", type=int, default=0,
+                   help="1 = DLAA/DLSS quality + ray-reconstruction real-time mode + motion blur (live take)")
     g.add_argument("--urban-debris", type=int, default=32000, help="3D debris pieces on the core rubble (+28%% outside)")
     g.add_argument("--crew", type=int, default=1, help="collapse map: rescue crew models at the staging area")
     g.add_argument("--clean-overlay", type=int, default=-1,
@@ -492,6 +498,11 @@ def dress(stage, sc, a, log=print):
         s.set_float("/rtx/fog/fogColor/0", 0.78); s.set_float("/rtx/fog/fogColor/1", 0.70); s.set_float("/rtx/fog/fogColor/2", 0.60)
     except Exception:
         pass
+    if urban_map and getattr(a, "urban_look", 1):
+        from isaac import urban_look
+        urban_look.grade(a, log)
+        if getattr(a, "rt_quality", 0):
+            urban_look.rt_quality(a, log)
 
 
 def set_renderer(a, log=print):

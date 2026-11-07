@@ -35,6 +35,28 @@ CREW = (                                    # (character, dx, dy, yaw) around th
     ("male_adult_construction_01_new/male_adult_construction_01_new.usd", 9.0, 0.6, 120.0),
     ("male_adult_construction_05_new/male_adult_construction_05_new.usd", 11.2, 3.4, 215.0),
 )
+FACE_MAT = "concrete3"                     # fallen-tower faces: smooth grey concrete (plaster read too white)
+# The map's own grade (collapse_site/apply_look.py), with less haze: fixed ACES exposure, AO, film grain.
+GRADE = {
+    "/rtx/post/tonemap/op": 6, "/rtx/post/tonemap/filmIso": 100.0, "/rtx/post/tonemap/cameraShutter": 50.0,
+    "/rtx/post/tonemap/fNumber": 5.0, "/rtx/post/histogram/enabled": False,
+    "/rtx/ambientOcclusion/enabled": True, "/rtx/ambientOcclusion/rayLength": 3.0,
+    "/rtx/indirectDiffuse/enabled": True, "/rtx/shadows/enabled": True, "/rtx/reflections/enabled": True,
+    "/rtx/post/colorcorr/enabled": True, "/rtx/post/colorcorr/saturation": [1.0, 1.0, 1.0],
+    "/rtx/post/colorcorr/contrast": [1.15, 1.15, 1.15], "/rtx/post/colorcorr/gamma": [1.0, 1.0, 1.0],
+    "/rtx/post/colorcorr/gain": [1.0, 1.0, 1.0], "/rtx/post/colorcorr/offset": [0.0, 0.0, 0.0],
+    "/rtx/post/tvNoise/enabled": True, "/rtx/post/tvNoise/enableVignetting": True,
+    "/rtx/post/tvNoise/vignettingSize": 107.0, "/rtx/post/tvNoise/vignettingStrength": 0.45,
+    "/rtx/post/tvNoise/enableFilmGrain": True, "/rtx/post/tvNoise/grainAmount": 0.02,
+    "/rtx/post/tvNoise/grainSize": 1.4, "/rtx/post/tvNoise/enableScanlines": False,
+    "/rtx/post/tvNoise/enableScrollBug": False, "/rtx/post/tvNoise/enableVignettingFlickering": False,
+    "/rtx/post/tvNoise/enableGhostFlickering": False, "/rtx/post/tvNoise/enableWaveDistortion": False,
+    "/rtx/post/tvNoise/enableVerticalLines": False, "/rtx/post/tvNoise/enableRandomSplotches": False,
+    "/rtx/fog/enabled": True, "/rtx/fog/fogZup/enabled": True, "/rtx/fog/fogColor": [0.78, 0.74, 0.68],
+    "/rtx/fog/fogColorIntensity": 1.0, "/rtx/fog/fogStartDist": 90.0, "/rtx/fog/fogEndDist": 1200.0,
+    "/rtx/fog/fogDistanceDensity": 0.2, "/rtx/fog/fogStartHeight": 0.0, "/rtx/fog/fogEndHeight": 60.0,
+    "/rtx/fog/fogHeightDensity": 0.15,
+}
 EXTRA_MDL = {"stucco": "Masonry/Stucco.mdl", "soil": "Natural/Soil_Rocky.mdl",
              "concrete3": "Masonry/Concrete_Smooth.mdl"}
 
@@ -143,9 +165,9 @@ def _q_on_surface(rng, nrm, max_tilt_deg):
 
 
 # ------------------------------------------------------------------------------------------------ terrain
-def terrain(stage, mats, log, seed=0):
-    """Rubble/flat material patches on the map's terrain tiles. Returns the rubble faces (centroid, normal,
-    area) for the debris scatter."""
+def terrain(stage, mats, log, seed=0, rematerial=True):
+    """Rubble/flat material patches on the map's terrain tiles (rematerial=False keeps the scan photo, e.g. the
+    AI-refined one). Returns the rubble faces (centroid, normal, area, triangles) for the debris scatter."""
     from pxr import Usd, UsdGeom, UsdShade, Vt
     root = stage.GetPrimAtPath(f"{SITE}/Terrain")
     if not root.IsValid():
@@ -173,7 +195,7 @@ def terrain(stage, mats, log, seed=0):
         groups = {"concrete": rub & (n1 < 0.52), "gravel": rub & (n1 >= 0.52) & (n2 < 0.62),
                   "soil": rub & (n1 >= 0.52) & (n2 >= 0.62),
                   "concrete3": flat & (n2 < 0.55), "dirt": flat & (n2 >= 0.55)}
-        for name, sel in groups.items():
+        for name, sel in (groups.items() if rematerial else ()):
             faces = np.nonzero(sel)[0].astype(np.int32)
             if not len(faces) or name not in mats:
                 continue
@@ -181,15 +203,19 @@ def terrain(stage, mats, log, seed=0):
                                                   familyName=UsdShade.Tokens.materialBind)
             UsdShade.MaterialBindingAPI.Apply(sub.GetPrim()).Bind(mats[name], UsdShade.Tokens.strongerThanDescendants)
             nsel += len(faces)
-        UsdGeom.Subset.SetFamilyType(m, UsdShade.Tokens.materialBind, UsdGeom.Tokens.nonOverlapping)
+        if rematerial:
+            UsdGeom.Subset.SetFamilyType(m, UsdShade.Tokens.materialBind, UsdGeom.Tokens.nonOverlapping)
         ntot += len(C)
         k = np.nonzero(rub)[0]
         pool.append((C[k], nrm[k], area[k], T[k]))
     if not pool:
         return None
     C, N, A, T = (np.concatenate([p[i] for p in pool]) for i in range(4))
-    log(f"[urban] terrain: {nsel} of {ntot} faces re-materialled (rubble: concrete/gravel/rocky soil; core streets: "
-        f"concrete/dirt); {len(C)} rubble faces, {A.sum():.0f} m2")
+    if rematerial:
+        log(f"[urban] terrain: {nsel} of {ntot} faces re-materialled (rubble: concrete/gravel/rocky soil; core "
+            f"streets: concrete/dirt); {len(C)} rubble faces, {A.sum():.0f} m2")
+    else:
+        log(f"[urban] terrain: scan photo kept; {len(C)} rubble faces ({A.sum():.0f} m2) take the 3D debris")
     return C, N, A, T
 
 
@@ -225,7 +251,7 @@ def _frame(Q, n, centre):
     return A0, A1, B0, B1, U, V, N
 
 
-def facade(stage, mats, looks, log, seed=0):
+def facade(stage, mats, looks, log, seed=0, slabs=True):
     """Plaster/concrete on the fallen towers and a 3D facade: storey slab edges, columns, framed windows
     (glass or dark broken openings), balconies with parapets on the upper west faces, and broken column stubs
     with bent rebar at both breaks."""
@@ -237,7 +263,7 @@ def facade(stage, mats, looks, log, seed=0):
         base = f"{SITE}/Buildings/Scanned/{t}"
         if not stage.GetPrimAtPath(base).IsValid():
             continue
-        for part, key in (("scanfaces", "stucco"), ("facades", "stucco"), ("breaks", "concrete")):
+        for part, key in (("scanfaces", FACE_MAT), ("facades", FACE_MAT), ("breaks", "concrete")):
             if key in mats:
                 PR.bind(stage, f"{base}/{part}", mats[key])
         quads = []
@@ -310,11 +336,11 @@ def facade(stage, mats, looks, log, seed=0):
                         bins["rebar"] += [RB._bar(mid, p0, r=0.014), RB._bar(mid, tip, r=0.014)]
         out = f"{ROOT}/Facade/{t}"
         for k, parts in bins.items():
-            mat = {"band": mats.get("concrete2"), "balcony": mats.get("stucco"), "stub": mats.get("concrete2"),
+            mat = {"band": mats.get("concrete2"), "balcony": mats.get(FACE_MAT), "stub": mats.get("concrete2"),
                    "rebar": mats.get("rust")}.get(k, looks.get(k))
             tot += _emit(stage, f"{out}/{k}", parts, mat)
     for s in SLABS:
-        for part in ("top", "edges"):
+        for part in (("top", "edges") if slabs else ("edges",)):
             if "concrete2" in mats:
                 PR.bind(stage, f"{SITE}/Buildings/Scanned/{s}/{part}", mats["concrete2"])
     log(f"[urban] fallen towers: plaster and concrete instead of the scan photo, {tot} facade/break pieces "
@@ -461,6 +487,89 @@ def crew(stage, sc, isa, log):
     return n
 
 
+# ------------------------------------------------------------------------------------------------ scan AI
+def scan_ai(stage, folder, log):
+    """Point the map's scan-photo materials (terrain tiles, scan roofs) at the AI-refined textures in
+    ``folder`` (isaac/tools/ai_textures.py): same layout and colours, re-drawn fine detail."""
+    import os
+    from pxr import Sdf
+    n = 0
+    looks = stage.GetPrimAtPath(f"{SITE}/Looks")
+    if not looks.IsValid() or not folder or not os.path.isdir(folder):
+        log(f"[urban] scan AI textures: none ({folder or 'no --scan-ai folder'}); scan photo as shipped")
+        return 0
+    for mat in looks.GetChildren():
+        name = mat.GetName()
+        alb, nrm = (os.path.join(folder, f"{name}_{k}.png") for k in ("albedo", "normal"))
+        if not os.path.exists(alb):
+            continue
+        for sh, attr, path in (("OmniPBR", "inputs:diffuse_texture", alb), ("OmniPBR", "inputs:normalmap_texture", nrm),
+                               ("albedoTex", "inputs:file", alb), ("normalTex", "inputs:file", nrm)):
+            p = stage.GetPrimAtPath(f"{mat.GetPath()}/{sh}")
+            if p.IsValid() and os.path.exists(path):
+                a = p.GetAttribute(attr)
+                if a and a.IsValid():
+                    a.Set(Sdf.AssetPath(os.path.abspath(path)))
+        n += 1
+    log(f"[urban] scan AI textures: {n} map materials now use the AI-refined scan photos from {folder}")
+    return n
+
+
+# Real-time quality for the live take: DLSS family. Keys differ between Kit versions; unknown keys are harmless.
+RT_QUALITY = {
+    "/rtx/post/aa/op": 4,                       # 3 = DLSS super resolution, 4 = DLAA (AI anti-aliasing at native res)
+    "/rtx/post/dlss/execMode": 2,               # quality
+    "/rtx/rendermode": "RealTimePathTracing",   # "RTX Real-Time 2.0": DLSS ray reconstruction (AI denoiser)
+    "/rtx/post/motionblur/enabled": True, "/rtx/post/motionblur/exposureFraction": 0.5,
+}
+
+
+def rt_quality(a=None, log=print):
+    """DLAA/DLSS and ray reconstruction for the live real-time renderer (--rt-quality 1)."""
+    try:
+        import carb
+        s = carb.settings.get_settings()
+        modes = s.get("/rtx/rendermode")
+        for k, v in RT_QUALITY.items():
+            if k == "/rtx/rendermode" and getattr(a, "rtx", "realtime") == "pathtracing":
+                continue
+            if isinstance(v, bool):
+                s.set_bool(k, v)
+            elif isinstance(v, int):
+                s.set_int(k, v)
+            elif isinstance(v, float):
+                s.set_float(k, v)
+            else:
+                s.set_string(k, v)
+        log(f"[urban] real-time quality: DLAA/DLSS quality, ray reconstruction mode (was {modes!r}), motion blur")
+    except Exception as e:
+        log(f"[urban] real-time quality skipped ({type(e).__name__}: {e})")
+
+
+def grade(a=None, log=print):
+    """The map's photographic grade (fixed exposure, ACES, AO, grain), replacing photoreal's generic haze."""
+    try:
+        import carb
+        s = carb.settings.get_settings()
+        ok = 0
+        for k, v in GRADE.items():
+            try:
+                if isinstance(v, bool):
+                    s.set_bool(k, v)
+                elif isinstance(v, int):
+                    s.set_int(k, v)
+                elif isinstance(v, float):
+                    s.set_float(k, v)
+                else:
+                    s.set(k, v)
+                ok += 1
+            except Exception:
+                pass
+        log(f"[urban] grade: {ok}/{len(GRADE)} render settings (fixed ACES exposure, contrast 1.15, light z-up haze)")
+    except Exception as e:
+        log(f"[urban] grade skipped ({type(e).__name__}: {e})")
+
+
 # ------------------------------------------------------------------------------------------------ entry
 def dress(stage, sc, a, mats, nv, isa, log=print):
     """Called by photoreal.dress on the collapse map (after the map is referenced, before PhysX loads)."""
@@ -477,8 +586,11 @@ def dress(stage, sc, a, mats, nv, isa, log=print):
              "void": _pv(stage, f"{ROOT}/Looks/void", (0.012, 0.011, 0.010), 0.95),
              "frame": _pv(stage, f"{ROOT}/Looks/frame", (0.62, 0.63, 0.64), 0.35, 0.8),
              "tile": _pv(stage, f"{ROOT}/Looks/tile", (0.80, 0.78, 0.72), 0.3, 0.0, 0.5)}
-    faces = terrain(stage, mats, log, seed)
-    facade(stage, mats, looks, log, seed)
+    scan = str(getattr(a, "urban_terrain", "scan")) == "scan"
+    if scan:
+        scan_ai(stage, getattr(a, "scan_ai", ""), log)
+    faces = terrain(stage, mats, log, seed, rematerial=not scan)
+    facade(stage, mats, looks, log, seed, slabs=not scan)
     debris(stage, mats, looks, faces, log, seed, n_core=int(getattr(a, "urban_debris", 32000)),
            n_outer=int(getattr(a, "urban_debris", 32000) * 0.28))
     if getattr(a, "crew", 1):

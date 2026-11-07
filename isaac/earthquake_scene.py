@@ -42,6 +42,11 @@ ap.add_argument("--stop_t", type=float, default=0.0, help="--record: stop at thi
 ap.add_argument("--drone_light", type=float, default=12000.0, help="intensity of the small search light on each scout/crevice drone (0 = off)")
 ap.add_argument("--look", type=int, default=1, help="1 = photoreal materials/sky/models/cinematic camera (isaac/look.py)")
 ap.add_argument("--hdri", type=float, default=900.0, help="HDRI sky dome intensity when --look 1")
+ap.add_argument("--jagged", type=int, default=0, help="--look 1: visual-only jagged meshes over box rubble (fallback; rubble.py does real shapes)")
+ap.add_argument("--greenery", type=int, default=1, help="--look 1: trees, shrubs, lawn, paving")
+ap.add_argument("--flow", type=int, default=1, help="--look 1: Omni Flow volumetric dust (collapse) and fire")
+ap.add_argument("--rtx", default="realtime", choices=["realtime", "pathtracing"], help="renderer for recorded frames")
+ap.add_argument("--spp", type=int, default=16, help="--rtx pathtracing: samples per pixel per frame")
 ap.add_argument("--wall_mdl", default="concrete_smooth", help="--look 1: wall material key in look.MDL (concrete_smooth, concrete_formed, plaster)")
 ap.add_argument("--probe_frames", type=int, default=0, help="record this many ticks, print brightness, exit (lighting check)")
 
@@ -209,6 +214,14 @@ EXTRA_CAMS = []          # --rec_cams rigs: dict(mode, who, cam, path, tag, eye,
 def build_stage(scen, cfg, Q=None):
     b, f = scen.b, scen.fleet
     sim = sim_utils.SimulationContext(sim_utils.SimulationCfg(dt=1 / FPS, device=a.device, enable_scene_query_support=True))
+    if a.rtx == "pathtracing":                  # final-quality frames: RTX path tracing + denoiser
+        import carb
+        cs = carb.settings.get_settings()
+        cs.set_string("/rtx/rendermode", "PathTracing")
+        cs.set_int("/rtx/pathtracing/spp", a.spp)
+        cs.set_int("/rtx/pathtracing/totalSpp", a.spp)
+        cs.set_bool("/rtx/pathtracing/optixDenoiser/enabled", True)
+        print(f"[skysearch] renderer: path tracing, {a.spp} spp, denoiser on", flush=True)
     # measured on the L40S: dome 1200 + overhead sun 3000 blows every surface out to white at building scale.
     # Dimmer sky, and a low, tilted sun so walls, rubble and slabs get shading and shadows.
     dome = sim_utils.DomeLightCfg(intensity=a.sky, color=(0.80, 0.85, 1.0))
@@ -474,6 +487,9 @@ def main():
             if b.fires:
                 P.XformPrim("/World/Fire").set_world_poses(positions=[W3(b.fires[0]["xy"], 0.5)])
             overlays(scen, pos3, Q.dust_points(f.t) if Q is not None else None)
+            if a.look and a.flow:
+                import look
+                look.flow_update(k / FPS, scen, Q, W3)
             # the confirmer camera: looks along the drone's heading, slightly down
             focus = next((d for d in f.alive("micro") if d.role == "confirmer" and d.state.startswith("HOVER")), None) \
                 or next((d for d in f.alive("micro") if d.role == "confirmer"), None)
@@ -518,6 +534,11 @@ def main():
             rec.update(dt=sim.get_physics_dt())
             img = rec.data.output["rgb"][0].cpu().numpy()[..., :3]
             plt.imsave(os.path.join(rec_dir, "isaac", f"f{n_rec:05d}.png"), img)
+            _now = time.time()
+            if n_rec % 10 == 0:
+                print(f"[skysearch] rec frame {n_rec}: {(_now - getattr(main, '_t10', _now)) / 10:.2f} s per recorded frame "
+                      f"({1 + len(EXTRA_CAMS)} cameras, {a.rtx})", flush=True)
+                main._t10 = _now
             live.r.rgb_img = rgb
             live.r.save(os.path.join(rec_dir, "dash", f"f{n_rec:05d}.png"), dpi=67)
             for rc in EXTRA_CAMS:

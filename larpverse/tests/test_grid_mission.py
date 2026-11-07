@@ -399,3 +399,28 @@ def test_too_few_sites_and_tall_site_ceiling():
     assign, _ = pl.initial_sites(loc, [site], drones, lambda d, s: 10.0)
     assert len(assign) == 1
     assert pl.initial_sites(loc, [], drones, lambda d, s: 10.0)[0] == []
+
+
+def test_decider_context_has_delivery_and_placements():
+    seen = []
+
+    def spy(ctx, options):
+        seen.append((ctx, options))
+        return {"choice": options[0]["id"], "rationale": "test", "by": "test"}
+
+    GridMission(seed=7, verbose=False, acoustic="stub", decider=spy, pile_budget=2, mission_scans=12).run()
+    ctx, opts = seen[0]
+    assert ctx["delivery"] == "pod" and "zone_proposals" in ctx
+    assert all("placements" in o for o in opts if o["action"] != "stop")
+
+
+def test_pointcloud_preview_and_tiles(tmp_path):
+    m = GridMission(seed=7, verbose=False, acoustic="stub", pile_budget=1, out_dir=str(tmp_path), n_points=20000)
+    assert not m.pc_tiles and m.build_state()["pointcloud"]["count"] == 20000      # small cloud: preview only
+    m.LOD0_MAX = 5000
+    m._write_pointcloud(m.world.sample_pointcloud(40000))
+    pc = m.build_state()["pointcloud"]
+    assert pc["count"] <= 5000 and pc["full_count"] == 40000 and pc["lod"] == 0
+    assert sum(t["count"] for t in pc["tiles"]) == 40000
+    t = pc["tiles"][0]
+    assert os.path.getsize(tmp_path / t["url"]) == 12 * t["count"] and t["bounds"][2] - t["bounds"][0] == 16.0

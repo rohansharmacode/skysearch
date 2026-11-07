@@ -6,6 +6,7 @@ out/*
 !out/demo_t110.png
 !out/usar_benchmark.json
 !out/usar_benchmark_story.json
+!out/skysearch_story.mp4
 
 # secrets (Gemini hackathon key etc.) - never commit
 .env

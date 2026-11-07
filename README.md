@@ -19,7 +19,7 @@ Every flight and search decision is made on the drones, with no cloud in the loo
 6. A knock comes from a room already cleared (room 7). The room is re-opened, and radar finds breathing behind a collapsed shelf. Victim B is marked medium confidence, radar only.
 7. Hand map to crew: pins with confidence, unsearched area hatched, safe route, and a radio briefing written by Gemini from the swarm's findings.
 
-Video: `out/skysearch_story.mp4` (rendered with `scripts/render_story.py`). Isaac Sim version: `media/isaac_story.mp4`, once recorded.
+Videos: `out/skysearch_story.mp4` (mission control, `scripts/render_story.py`), `media/isaac_story.mp4` (Isaac Sim + dashboard), `media/drafts/` (physics earthquake, drone chase / first-person clips).
 
 ## Quick start (CPU, any laptop)
 ```bash
@@ -38,10 +38,14 @@ hand the map to the crew, pause, restart. The swarm is never told in advance; it
 cd /workspace/isaaclab
 ./isaaclab.sh -p ~/skysearch/isaac/earthquake_scene.py --story --livestream 2 --enable_cameras      # live
 ./isaaclab.sh -p ~/skysearch/isaac/earthquake_scene.py --story --headless --enable_cameras --record out/isaac
+# physics earthquake before launch + drone cameras (chase = 3rd person, fpv = 1st person, collapse = corridor eye level)
+./isaaclab.sh -p ~/skysearch/isaac/earthquake_scene.py --story --headless --enable_cameras --collapse \
+    --record out/quake --rec_cams fpv:C1,chase:C1,collapse --stop_t 75
 ```
-The building is built from the same search grid (walls, rubble heaps, voids under slabs), with PhysX debris that
-falls during the quake and aftershocks. The same swarm code drives the drones; the confirmer's RGB camera feed comes
-from Isaac. Dashboard at `<VS Code URL>/proxy/8090/`. See [docs/BREV_SETUP.md](docs/BREV_SETUP.md) and
+The building is built from the same search grid the swarm uses (walls, rubble heaps, voids under slabs).
+- **`--collapse` (`isaac/quake.py`).** The earthquake is simulated in PhysX. Ground acceleration is applied as a gravity tilt, which is physically equivalent in the building's frame. Upper-floor slab panels, wall tops and concrete blocks are rigid bodies released in stages, and unanchored furniture slides and topples. Slabs come to rest at the void heights the swarm's map has.
+- **`--look` (`isaac/look.py`, on by default).** MDL concrete and plaster, an HDRI sky, Crazyflie and quadcopter models, people models, and office furniture.
+- **The drones.** They are moved by the swarm code, not by a flight controller. The confirmer's RGB camera feed comes from Isaac. Dashboard at `<VS Code URL>/proxy/8090/`. See [docs/BREV_SETUP.md](docs/BREV_SETUP.md) and
 [docs/ISAAC6_API.md](docs/ISAAC6_API.md).
 
 ## Layout
@@ -53,7 +57,7 @@ from Isaac. Dashboard at `<VS Code URL>/proxy/8090/`. See [docs/BREV_SETUP.md](d
 | `skysearch/usar/render.py`, `live.py` | video renderer and live mission control |
 | `scripts/briefing.py` | Gemini crew briefing (one call at handoff, facts only, template fallback) |
 | `eval/usar_benchmark.py` | fleet-mix ablations |
-| `isaac/earthquake_scene.py` | Isaac Sim 6 scene driven by the same swarm |
+| `isaac/earthquake_scene.py`, `quake.py`, `look.py` | Isaac Sim 6 scene driven by the same swarm; physics earthquake; photoreal look |
 | `skysearch/*.py`, `eval/benchmark.py`, `isaac/isaac_bridge.py` | the earlier forest scenario (v1) |
 
 ## Honesty notes

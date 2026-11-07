@@ -19,7 +19,7 @@ Heavy-lift drones (agricultural or industrial class) search the **real collapse 
 1. **Recon:** with no zones tasked yet, the drones fly a coverage path and build a fresh LiDAR map, because satellite imagery predates the collapse. They perch to listen with rotors off, and the system proposes rubble outlines.
 2. **Operator tasking:** the operator accepts or circles search zones on the dashboard. Zones already searched aren't re-searched without new evidence.
 3. **Land and scan:** the drones land on flat cells (larger cells for the big drones). Radar looks for breathing: a ping marks a candidate position with depth, and the radar's reliable reach is about 3 m.
-4. **Vital-sign triage:** the breathing pattern gives a triage hint. Rapid shallow breathing means possible distress; irregular breathing with pauses also scores high; calm, regular breathing scores lower; fast and small means possibly a child, at low confidence. The agent ranks the dig order from this.
+4. **Survivor condition from breathing:** the radar breathing pattern gives a condition hint. Rapid shallow breathing means possible injury or distress; irregular breathing with pauses and slow deep breathing (possibly unconscious) score highest; calm, regular breathing means stable and waiting. The agent ranks the dig order from this. It doesn't guess age.
 5. **Listen and call out:** a speaker says "if you can hear me, knock three times" in several languages, then the drones listen. An open-model filter forwards unusual sounds to Gemini for multilingual analysis, and the results rank the zones. The drones dispatch to the top zone and the loop repeats.
 6. **Operator view:** the operator sees pings, dig order, transcripts, zones and the LiDAR model with the depth marker.
 

@@ -36,10 +36,10 @@ PHYSIO_STATES = {
     "distressed_tachypnea": {"rate_bpm": (26, 36), "depth_rel": (0.3, 0.5), "cv": (0.12, 0.25), "apnea_per_min": (0, 0)},
     "unconscious_slow":     {"rate_bpm": (6, 10),  "depth_rel": (1.1, 1.5), "cv": (0.05, 0.12), "apnea_per_min": (0, 0.3)},
     "irregular_apneic":     {"rate_bpm": (8, 14),  "depth_rel": (0.6, 1.2), "cv": (0.25, 0.45), "apnea_per_min": (0.5, 1.5)},
-    "child_calm":           {"rate_bpm": (20, 28), "depth_rel": (0.35, 0.55), "cv": (0.04, 0.10), "apnea_per_min": (0, 0)},
 }
-# Demo seed: one of each triage-relevant pattern so the priority list has something to decide.
-DEMO_PHYSIO = {7: {"A2": "distressed_tachypnea", "A3": "calm", "B1": "irregular_apneic", "B2": "child_calm"}}
+# Demo seed: one of each condition pattern so the priority list has something to decide.
+# (No age/child class: the user decided triage reads the survivor's condition only.)
+DEMO_PHYSIO = {7: {"A2": "distressed_tachypnea", "A3": "calm", "B1": "irregular_apneic", "B2": "unconscious_slow"}}
 SOUND_KINDS = ["voice", "weak_voice", "knock", "dog", "generator", "settling"]
 TRANSCRIPTS = {   # what a TTS voice says for the synthetic human sources (truth; the pipeline must recover it)
     "voice": "Help! Can anyone hear me? My leg is trapped.",

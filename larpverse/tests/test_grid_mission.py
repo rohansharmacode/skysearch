@@ -316,3 +316,24 @@ def test_acoustic_cache_is_versioned(tmp_path, monkeypatch):
         json.dump(dict(r, _cache_version=acoustic_grid.ACOUSTIC_VERSION), f)
     assert acoustic_grid._cache_lookup(sc, drones, ["A2"], 3) is not None
     assert not hasattr(acoustic_grid, "LEGACY_CACHE_DIR")
+
+
+def test_weiguan_site_smoke():
+    """Scenario-driven layout: bounds, staging, pads, geo and sector names come from the site (not the grid)."""
+    from sim.scenario import make_scenario
+    try:
+        make_scenario(7, site="weiguan")
+    except Exception as e:                                 # site module still in flux on another branch
+        pytest.skip(f"weiguan site unavailable: {e}")
+    m = GridMission(seed=7, site="weiguan", verbose=False, acoustic="stub", pile_budget=1, n_points=5000)
+    pd = m.scenario.public_dict()
+    s = m.build_state()
+    assert s["site"]["bounds"] == list(pd["bounds"]) and s["site"]["kind"] == "weiguan"
+    assert s["staging"]["pads"] == [list(p) for p in pd["drone_pads"]]
+    assert "Rubble grid" not in s["site"]["name"]
+    while not m.done and m.t < 900:
+        m.step()
+        for d in m.flight.poses():                         # never inside mapped terrain / buildings
+            x, y, z = d["pose"][:3]
+            assert z >= m.grid.height_at(x, y) - 0.05
+    assert {p["id"] for p in s["piles"]} == {p.name for p in m.scenario.piles}

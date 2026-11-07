@@ -465,3 +465,85 @@ def operator_drafts(log: BroadcastLog, *, t, drone_id, text, src_lang="en", lang
             made.append(log.add(t=t, drone_id=drone_id, kind="operator", lang=lng, text=r["text"], text_en=text,
                                 target=target, source="llm_translation", group=group))
     return made, tr
+
+
+# ----------------------------------------------------------------------------- operator queue (ops server <-> mission)
+QUEUE_SCHEMA = "larpverse.broadcast_queue/v1"
+
+
+def queue_load(path):
+    try:
+        with open(path) as f:
+            doc = json.load(f)
+        if isinstance(doc, dict) and isinstance(doc.get("items"), list):
+            return doc
+    except (OSError, ValueError):
+        pass
+    return {"schema": QUEUE_SCHEMA, "revision": 0, "items": []}
+
+
+def _queue_save(path, doc):
+    import os
+    doc["revision"] = int(doc.get("revision") or 0) + 1
+    doc["updated_at"] = time.strftime("%Y-%m-%dT%H:%M:%S")
+    os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+    with open(path + ".tmp", "w", encoding="utf-8") as f:
+        json.dump(doc, f, ensure_ascii=False, indent=1)
+    os.replace(path + ".tmp", path)
+    return doc
+
+
+def queue_post(path, body, llm_call=None):
+    """POST /api/broadcast. body: {drone_id | zone, kind: operator|callout|reassure, text?, src_lang?, langs?,
+    translate?, operator}. callout / reassure play the vetted templates (text ignored, no approval needed);
+    operator: the typed text is queued at once, machine translations as pending_approval. Returns the new items."""
+    if not isinstance(body, dict):
+        raise BroadcastError("body must be an object")
+    kind = body.get("kind", "operator")
+    if kind not in ("operator", "callout", "reassure"):
+        raise BroadcastError("kind must be operator, callout or reassure (guidance is computed by the mission)")
+    drone, zone = body.get("drone_id"), body.get("zone")
+    if not drone and not zone:
+        raise BroadcastError("give drone_id or zone")
+    operator = str(body.get("operator") or "").strip()[:40]
+    if not operator:
+        raise BroadcastError("operator name required (every broadcast is attributed)")
+    langs = tuple(x for x in (body.get("langs") or LANGS) if x in LANGS) or LANGS
+    target = {"type": "zone", "id": str(zone)[:24]} if zone else {"type": "drone", "id": str(drone)[:8]}
+    log = BroadcastLog()
+    if kind in MESSAGES:
+        made = [log.add(t=0, drone_id=drone, kind=kind, lang=lng, text=MESSAGES[kind][lng],
+                        text_en=MESSAGES[kind]["en"], target=target, template=kind, approved_by=operator)
+                for lng in langs]
+        tr = None
+    else:
+        made, tr = operator_drafts(log, t=0, drone_id=drone, text=str(body.get("text") or "").strip(),
+                                   src_lang=body.get("src_lang", "en"), langs=langs, target=target,
+                                   operator=operator, translate=bool(body.get("translate", True)), llm_call=llm_call)
+    doc = queue_load(path)
+    stamp = time.strftime("%H%M%S")
+    for b in made:
+        b["id"] = f"op{stamp}-{len(doc['items']) + 1}"
+        b["requested_by"] = operator
+        b["t"] = None                                  # the mission stamps sim time when it plays the item
+        doc["items"].append(b)
+    _queue_save(path, doc)
+    return {"items": made, "translation_problems": {k: v["problems"] for k, v in (tr or {}).items() if v["problems"]}}
+
+
+def queue_decide(path, bid, operator, approve=True):
+    """POST /api/broadcast/approve {id, operator, approve}: release or reject a pending item."""
+    if not operator:
+        raise BroadcastError("operator name required")
+    doc = queue_load(path)
+    b = next((x for x in doc["items"] if x["id"] == bid), None)
+    if b is None:
+        raise BroadcastError(f"unknown id {bid}")
+    if b["status"] != "pending_approval":
+        raise BroadcastError(f"{bid} is {b['status']}")
+    if approve:
+        b.update(status="scheduled", approved_by=str(operator)[:40])
+    else:
+        b.update(status="rejected", rejected_by=str(operator)[:40])
+    _queue_save(path, doc)
+    return b

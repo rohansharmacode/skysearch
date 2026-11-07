@@ -34,6 +34,8 @@ class PileWorld:
 
     def target_position(self, tgt, t=0.0):
         x, y = tgt["xy"]
+        if tgt.get("z") is not None:              # explicit victim height (multi-storey sites)
+            return np.array([x, y, float(tgt["z"])])
         return np.array([x, y, self.grid.height_at(x, y) - tgt["depth"]])
 
 
@@ -48,7 +50,8 @@ class GridWorld:
         # ---- hidden truth (PRIVATE: generators / evaluators only)
         self.targets = [{"id": v["id"], "kind": "buried", "pile": v["pile"], "xy": list(v["xy"]),
                          "depth": float(v["depth"]), "breathing_hz": float(v["breathing_hz"]),
-                         "emits_sound": v.get("sound") is not None}
+                         "emits_sound": v.get("sound") is not None,
+                         "z": None if v.get("z") is None else float(v["z"])}
                         for v in scenario.truth.get("victims", [])]
 
     # ---- public (non-truth) API ------------------------------------------------
@@ -81,6 +84,8 @@ class GridWorld:
 
     def target_position(self, tgt, t=0.0):
         x, y = tgt["xy"]
+        if tgt.get("z") is not None:              # explicit victim height (multi-storey sites)
+            return np.array([x, y, float(tgt["z"])])
         return np.array([x, y, self.grid.height_at(x, y) - tgt["depth"]])
 
     def sample_pointcloud(self, n: int, seed: int | None = None, pile_frac: float = 0.62,

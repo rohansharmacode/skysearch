@@ -62,6 +62,8 @@ class KinematicFlight(FlightBackend):
         self.grid = grid
         self.starts = dict(starts)
         self.cruise, self.speed, self.climb, self.descend = cruise_alt, speed, climb, descend
+        self.clear_m = 3.0                 # vertical clearance over the highest cell along a leg
+        self.max_alt = max(25.0, float(np.max(grid.z)) + 15.0)   # tall structures raise the ceiling
         self.drones = {d: _Drone(d, xy, grid.height_at(*xy) + LAND_HEIGHT) for d, xy in starts.items()}
         self.stagger = {d: 1.0 * i for i, d in enumerate(starts)}
 
@@ -74,8 +76,9 @@ class KinematicFlight(FlightBackend):
 
     def plan(self, d, dest, land=True):
         p = d.pos
-        alt = max(self.cruise + self.stagger[d.id], self._terrain_max(p, dest) + 3.0)
-        if alt > 25.0:
+        # cruise above the tallest mapped terrain along the leg (standing buildings on large sites) + margin
+        alt = max(self.cruise + self.stagger[d.id], self._terrain_max(p, dest) + self.clear_m + self.stagger[d.id])
+        if alt > self.max_alt:
             return None
         route = []
         if p[2] < alt - 0.5:

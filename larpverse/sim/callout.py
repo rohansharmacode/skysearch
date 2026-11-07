@@ -45,7 +45,8 @@ RUBBLE_DB_PER_M = 3.0
 EARSHOT_M = 40.0             # sectors farther than this from the speaker drone are not reported
 HUMAN = ("voice", "shout", "knocking", "crying")
 RESP_MAX_LATENCY_S = 10.0    # an onset this soon after a message segment counts as time-locked
-SECTOR_RADIUS_M = 9.0        # a source farther than this from every pile centre is on open ground
+SECTOR_RADIUS_M = 9.0        # a source farther than this (+ 2 sigma) from every pile centre is on open ground
+FIX_SIGMA_MAX_M = 3.0  # triangulated position used only when its major-axis std is below this
 
 # Hidden response model (PART 1 only): state -> (P respond | heard, modes [(kind, weight)], latency range s
 # after the first message segment the person understands, P stop after each bout). People keep knocking /
@@ -99,15 +100,23 @@ def walking_wounded(scenario, seed):
     if getattr(scenario, "bystanders", True) is False:
         return []
     rng = np.random.default_rng([int(seed), 31])
-    n = int(rng.integers(0, 3)) if int(seed) != 7 else 1
     piles = [(p.x, p.y) for p in scenario.piles]
     x0, y0, x1, y1 = getattr(scenario, "bounds", None) or (-36.0, -54.0, 36.0, 36.0)
+    start = (scenario.truth or {}).get("start_pile")
+    sxy = next(((p.x, p.y) for p in scenario.piles if p.name == start), None)
     out = []
-    for k in range(200):
-        if len(out) >= n:
+    want = 1 + int(rng.uniform() < 0.4)       # one who walked out of the reported collapse (+ maybe one elsewhere)
+    for k in range(400):
+        if len(out) >= want:
             break
-        x, y = rng.uniform(x0 + 4, x1 - 4), rng.uniform(y0 + 12, y1 - 4)
-        if min(math.hypot(x - a, y - b) for a, b in piles) < 13.0 or math.hypot(x, y + 47) < 15:
+        if not out and sxy is not None and k < 300:
+            a, r = rng.uniform(0, 2 * np.pi), rng.uniform(13.0, 20.0)
+            x, y = sxy[0] + r * np.cos(a), sxy[1] + r * np.sin(a)
+        else:
+            x, y = rng.uniform(x0 + 4, x1 - 4), rng.uniform(y0 + 12, y1 - 4)
+        if not (x0 + 3 < x < x1 - 3 and y0 + 3 < y < y1 - 3):
+            continue
+        if min(math.hypot(x - a, y - b) for a, b in piles) < 12.5 or math.hypot(x, y + 47) < 15:
             continue
         out.append({"id": f"W{len(out) + 1}", "xy": [float(x), float(y)], "depth": 0.0,
                     "state": "ambulatory", "lang": _pick_lang(rng)})
@@ -263,8 +272,9 @@ def _group(dets, drones, sectors, tol=0.6):
     return groups
 
 
-def triangulate(rays):
-    """Least-squares intersection of bearing rays [(origin_xy, bearing_deg)]; None if < 2 or near-parallel."""
+def triangulate(rays, sigma_deg=None):
+    """Least-squares intersection of bearing rays [(origin_xy, bearing_deg)]; None if < 2 or near-parallel.
+    With ``sigma_deg`` returns (xy, sigma_m): sigma_m = major-axis std of the position for that bearing noise."""
     if len(rays) < 2:
         return None
     A, b = np.zeros((2, 2)), np.zeros(2)
@@ -279,7 +289,19 @@ def triangulate(rays):
     for (ox, oy), brg in rays:                       # must lie in front of every drone
         if (x[0] - ox) * math.cos(math.radians(brg)) + (x[1] - oy) * math.sin(math.radians(brg)) < 0:
             return None
-    return [float(x[0]), float(x[1])]
+    xy = [float(x[0]), float(x[1])]
+    if sigma_deg is None:
+        return xy
+    F = np.zeros((2, 2))                             # Fisher information of bearings-only fixing
+    for (ox, oy), brg in rays:
+        r = max(1.0, math.hypot(xy[0] - ox, xy[1] - oy))
+        u = np.array([math.cos(math.radians(brg)), math.sin(math.radians(brg))])
+        F += (np.eye(2) - np.outer(u, u)) / (r * math.radians(sigma_deg)) ** 2
+    try:
+        sig = float(math.sqrt(max(np.linalg.eigvalsh(np.linalg.inv(F)))))
+    except np.linalg.LinAlgError:
+        return None
+    return xy, sig
 
 
 def _ang(a, b):
@@ -290,13 +312,12 @@ def _associate(g, plan, sectors):
     """Best sector for an event group from bearings (all drones that heard it): (sector, err_deg, xy)."""
     drones = plan["drones"]
     rays = [(drones[d["drone_id"]], d["bearing_deg"]) for d in g["dets"]]
-    xy = triangulate(rays)
-    if xy is not None:                              # far-field / near-parallel rays: position unusable
-        cx = np.mean([o[0] for o, _ in rays])
-        cy = np.mean([o[1] for o, _ in rays])
-        span = max(math.hypot(a[0][0] - b[0][0], a[0][1] - b[0][1]) for a in rays for b in rays)
-        if math.hypot(xy[0] - cx, xy[1] - cy) > min(EARSHOT_M, 2.5 * max(span, 1.0)):
-            xy = None
+    snr = min((d.get("snr_db") or 10.0) for d in g["dets"])
+    fix = triangulate(rays, sigma_deg=3.0 + 30.0 / max(snr, 3.0))
+    xy = None
+    if fix is not None and fix[1] <= FIX_SIGMA_MAX_M:  # far-field / near-parallel rays: position unusable
+        xy = fix[0]
+        g["fix_sigma_m"] = round(fix[1], 2)
     errs = []
     for sid, (sx, sy) in sectors.items():
         e = []
@@ -339,7 +360,7 @@ def _describe(g):
 
 def analyse_callout(plan, detections, sectors, pings=(), open_ground=None):
     """PART 2 (measurements only). ``sectors``: {pile_id: (x, y)} public pile centres; ``pings``: radar
-    candidates [{id, xy, pile_id}]; ``open_ground(xy) -> bool`` (default: > SECTOR_RADIUS_M from every
+    candidates [{id, xy, pile_id}]; ``open_ground(xy, sigma_m) -> bool`` (default: > SECTOR_RADIUS_M + 2 sigma from every
     sector). Returns {sectors: {id: responsiveness}, pings: {id: responsiveness}, tracks: [...], events}."""
     spk = plan["drones"][plan["speaker_drone"]]
     seg_ends = [s["t1"] for s in plan["segments"]]
@@ -348,8 +369,8 @@ def analyse_callout(plan, detections, sectors, pings=(), open_ground=None):
     t_end = plan["t_end"]
     resp_dur = t_end - t_first - sum(s["t1"] - s["t0"] for s in plan["segments"][1:])
     if open_ground is None:
-        def open_ground(xy):
-            return min(math.hypot(xy[0] - x, xy[1] - y) for x, y in sectors.values()) > SECTOR_RADIUS_M
+        def open_ground(xy, sigma=0.0):
+            return min(math.hypot(xy[0] - x, xy[1] - y) for x, y in sectors.values()) > SECTOR_RADIUS_M + 2 * sigma
     groups = _group(detections, plan["drones"], sectors)
     events, per_sector, off = [], {}, []
     for g in groups:
@@ -365,7 +386,7 @@ def analyse_callout(plan, detections, sectors, pings=(), open_ground=None):
         prev = [e for e in seg_ends if e <= g["t0"]]
         ev["latency_s"] = round(g["t0"] - prev[-1], 2) if prev else None
         ev["after_lang"] = plan["segments"][len(prev) - 1]["lang"] if prev else None
-        if xy is not None and len(g["by"]) >= 2 and g["human"] and open_ground(xy):
+        if xy is not None and len(g["by"]) >= 2 and g["human"] and open_ground(xy, g.get("fix_sigma_m", 0.0)):
             ev["sector"] = None
             ev["open_ground"] = True
             off.append(ev)
@@ -418,9 +439,11 @@ def analyse_callout(plan, detections, sectors, pings=(), open_ground=None):
                             + ("this sector was already making such sounds before the call-out" if base else
                                "weak or single-drone evidence") + ". Treat as unconfirmed.")
         elif nonh:
+            dog = any(e["class"] == "dog" for e in nonh)
             res.update(status="nonhuman_only", kind=nonh[0]["kind"], avpu="unknown",
-                       text=f"Only {nonh[0]['words']} followed the call-out (dogs react to loudspeakers); "
-                            "no human response. Not cleared.")
+                       text=f"Only non-human sounds ({', '.join(sorted({e['words'] for e in nonh}))}) followed the "
+                            "call-out" + (" (dogs often bark at loudspeakers)" if dog else "")
+                            + "; no human response. Not cleared.")
         else:
             res.update(status="no_response", kind=None, avpu="not V (A/V not shown)",
                        text=("No response to the call-out. This does not rule out an unconscious person "
@@ -442,12 +465,17 @@ def analyse_callout(plan, detections, sectors, pings=(), open_ground=None):
     for e in off:
         near = next((t for t in tracks if math.hypot(t["xy"][0] - e["xy"][0], t["xy"][1] - e["xy"][1]) < 6.0), None)
         if near:
+            k = len(near["evidence"])
+            near["xy"] = [round((near["xy"][i] * k + e["xy"][i]) / (k + 1), 1) for i in (0, 1)]
             near["evidence"].append(e["t"])
             continue
         tracks.append({"id": f"T{len(tracks) + 1}", "xy": e["xy"], "source": "callout_voice_open_ground",
                        "t": e["t"], "class": e["class"], "evidence": [e["t"]],
                        "why": f"{e['words']} heard by {', '.join(e['drones'])} triangulates to open ground "
                               f"({e['xy'][0]:.0f}, {e['xy'][1]:.0f}), away from the rubble: probably able to walk"})
+    tracks = [t for t in tracks if len(t["evidence"]) >= 2]      # a person on open ground calls more than once
+    for k, t in enumerate(tracks):
+        t["id"] = f"T{k + 1}"
     return {"sectors": out, "pings": ping_res, "tracks": tracks, "events": events}
 
 
@@ -627,6 +655,37 @@ class Speaker:
         self.callouts.append(rec)
         return plan["t_end"] - t_callout, rec
 
+    def ingest_operator(self, path, t, drones):
+        """Pick up operator broadcasts from the ops server queue (dashboard/data/broadcast_queue.json): items
+        that are scheduled (operator-typed or approved) and not yet played are logged at sim time t, on their
+        drone (or, for a zone target, the drone nearest the zone's first point / the first drone). Pending and
+        rejected items are mirrored for display only; nothing pending is ever played."""
+        from .guidance import queue_load
+        doc = queue_load(path)
+        if doc.get("revision") == getattr(self, "_queue_rev", None):
+            return 0
+        self._queue_rev = doc.get("revision")
+        seen = {b.get("queue_id"): b for b in self.log.items if b.get("queue_id")}
+        n = 0
+        for q in doc["items"]:
+            have = seen.get(q["id"])
+            if have is not None:
+                if have["status"] == "pending_approval" and q["status"] in ("scheduled", "rejected"):
+                    have.update(status=q["status"], approved_by=q.get("approved_by"), t=round(float(t), 1))
+                    n += q["status"] == "scheduled"
+                continue
+            drone = q.get("drone_id") if q.get("drone_id") in drones else (sorted(drones)[0] if drones else None)
+            st = q["status"] if q["status"] in ("scheduled", "pending_approval", "rejected") else "pending_approval"
+            if q.get("source") == "llm_translation" and not q.get("approved_by"):
+                st = "pending_approval" if st == "scheduled" else st
+            b = self.log.add(t=t, drone_id=drone, kind=q["kind"], lang=q["lang"], text=q["text"],
+                             text_en=q.get("text_en") or q["text"], target=q.get("target"), source=q["source"],
+                             template=q.get("template"), approved_by=q.get("approved_by"), status=st,
+                             group=q.get("group"))
+            b["queue_id"] = q["id"]
+            n += st == "scheduled"
+        return n
+
     def active(self, t):
         """{drone_id: {kind, lang, id}} for broadcasts playing at time t (dashboard: speaker icon on the drone)."""
         out = {}
@@ -651,7 +710,9 @@ class Speaker:
                     resp[sid]["callout_id"] = c["id"]
         live = [c for c in self.callouts if c["listen_ends"] > t]
         return {"broadcasts": self.log.state(t),
-                "callouts": [dict(c, guided=[{k: g[k] for k in ("track", "xy", "source", "why", "text_en")}
+                "callouts": [dict({k: v for k, v in c.items() if k not in ("events", "applied")},
+                                  n_events=len(c["events"]),
+                                  guided=[{k: g[k] for k in ("track", "xy", "source", "why", "text_en")}
                                              | {"path": g["route"]["path"], "legs": g["route"]["legs"]}
                                              for g in c["guided"]]) for c in done]
                 + [{"id": c["id"], "t_start": c["t_start"], "listen_ends": c["listen_ends"], "status": "in_progress",

@@ -51,7 +51,7 @@ SNAP_M = 1.0                 # drone positions are snapped to this grid in the c
 SCHEMA = "larpverse.acoustic/v1"
 HUMAN_LEAD = 0.4             # same constants as acoustic/agent.py
 SILENT_PRIORITY = 8
-PILE_NAMES = [f"{c}{r}" for r in (1, 2, 3) for c in "ABC"]
+PILE_NAMES = [f"{c}{r}" for r in (1, 2, 3) for c in "ABC"]   # grid site only; listen_and_rank uses the scenario
 
 # kind -> (sound_class, human, urgency, class score) for the fixed-scoring stub
 _KIND = {
@@ -87,7 +87,8 @@ def _degrade(text, keep, rng):
 def listen_and_rank(scenario, drone_positions: dict, exclude_piles=(), seed: int = 0) -> dict:
     """Synthetic stand-in for acoustic.run.listen_and_rank (same signature and output schema)."""
     exclude = set(exclude_piles or ())
-    rng = np.random.default_rng([int(seed), 17] + sorted(PILE_NAMES.index(p) for p in exclude if p in PILE_NAMES))
+    names = [p.name for p in scenario.piles]             # sector names come from the scenario (any site)
+    rng = np.random.default_rng([int(seed), 17] + sorted(names.index(p) for p in exclude if p in names))
     drones = {k: (float(v[0]), float(v[1])) for k, v in drone_positions.items()}
     pile_xy = {p.name: (float(p.x), float(p.y)) for p in scenario.piles}
     clips = []

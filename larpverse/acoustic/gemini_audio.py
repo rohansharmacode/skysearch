@@ -38,7 +38,7 @@ from . import novelty
 
 FS = 16000
 MAX_CLIP_S = 15.0
-PROMPT_VERSION = "gemini-audio-v4"
+PROMPT_VERSION = "gemini-audio-v5"
 HERE = os.path.dirname(os.path.abspath(__file__))
 WHISPER_DIR = os.path.join(HERE, "models", "whisper")
 MULTI_WHISPER = ("small", "base", "tiny")         # preferred multilingual faster-whisper models, if on disk
@@ -48,38 +48,35 @@ SOUND_TYPES = ["speech", "call_for_help", "scream", "crying", "moaning", "coughi
 DISTRESS = ["call_for_help", "trapped", "injured", "cant_breathe", "child", "multiple_people", "elderly",
             "water_request", "weak_or_fading", "location_hint"]
 
-SYSTEM = """You are the acoustic analyst for an urban search-and-rescue team at a collapsed building.
-A drone landed on the rubble with its rotors off and recorded this clip with a microphone array. The clip
-was denoised and was flagged by an anomaly detector as different from the background. It may contain a
-buried person, an animal, machinery, debris or just noise. Speech can be in any language (residents,
-migrant workers, caregivers and visitors) and is often faint, muffled or partial.
+SYSTEM = """You are a careful audio analyst. Listen to this short clip, recorded outdoors by a microphone
+on the ground, and describe only what is actually audible. The clip was flagged by a detector as
+different from the background noise; most such clips contain noise, wind, falling debris, animals,
+machinery or a radio rather than a person speaking. Speech can be in any language.
 
-Report only what is audible:
+Fields:
 - human_vocal: true only if a human voice or human body sound (speech, shouting, screaming, crying,
-  moaning, coughing, breathing) is audible.
-- sound_type: the dominant sound. knocking_tapping = deliberate knocks or taps (note any repeating pattern).
-- languages: every language heard, as BCP-47 code and English name (e.g. cmn Mandarin, nan Taiwanese
+  moaning, coughing, breathing) is clearly audible.
+- sound_type: the dominant sound. knocking_tapping = deliberate knocks or taps.
+- languages: each language actually spoken, as BCP-47 code and English name (e.g. cmn Mandarin, nan
   Hokkien, yue Cantonese, en English, id Indonesian, vi Vietnamese, fil Filipino, th Thai, ja Japanese,
-  ko Korean). Identify the language from the sounds themselves; if the transcript is written in a
-  language's own script or spelling (e.g. Vietnamese diacritics), the code must match it. Empty if there
-  is no intelligible speech.
-- transcript: verbatim, in the original language and its usual script (never a translation). Mark unclear words with [...]. Never invent
-  words; "" if no intelligible speech.
-- translation_en: faithful English translation of the transcript ("" if none).
-- distress: only indicators supported by the audio: call_for_help, trapped, injured, cant_breathe, child,
-  multiple_people, elderly, water_request, weak_or_fading, location_hint.
-- people_count: number of distinct people you can hear (0 if none or unclear).
-- location_hints: short English phrases about where the person is ("under the stairs", "third floor").
-- confidence: 0-1 probability that a living person made the sound.
-- rationale: one line, at most 25 words, citing what you heard.
-Most flagged clips are NOT people: wind, debris, animals, machinery, radio or noise. Do not let the
-rescue context make you hear calls for help: transcribe only words you can actually make out, leave the
-transcript empty and the confidence low when the clip is short, muffled or unclear, and never fill in
-plausible distress phrases. Detector notes below are hints from cheap models and may be wrong.
-This is a candidate lead for responders, never a confirmation: do not say a person is confirmed."""
+  ko Korean, es Spanish). Decide from the sounds; the code must match the language and script of your
+  transcript. Empty if no words are intelligible.
+- transcript: the words you can clearly make out, verbatim, in the original language and its usual
+  script (never a translation). Mark unclear stretches with [...]. If you cannot make out words with
+  confidence, return "" rather than guessing. Never produce a plausible sentence from noise.
+- translation_en: faithful English translation of the transcript ("" if none). Do not add words.
+- distress: only cues that the speaker explicitly says (e.g. "I'm trapped", "help", "my child") or that
+  are unmistakable in the voice (screaming, sobbing, groaning, gasping): call_for_help, trapped, injured,
+  cant_breathe, child, multiple_people, elderly, water_request, weak_or_fading, location_hint.
+  Ordinary speech (news, conversation, a radio) has none: [].
+- people_count: distinct voices heard (0 if none or unclear).
+- location_hints: short English phrases the speaker says about where they are, else [].
+- confidence: 0-1 probability that a living person is producing the sound right now (low for noise,
+  animals, machinery, or speech that sounds like a broadcast or recording).
+- rationale: one line, at most 25 words, citing what you heard. Do not call anything confirmed."""
 
-PROMPT = ("Analyse this rubble-field audio clip ({dur:.1f} s, 16 kHz mono, denoised). Stage-1 detector "
-          "notes (cheap open models, may be wrong): {hint}. Return the JSON object.")
+PROMPT = ("Analyse this audio clip ({dur:.1f} s, 16 kHz mono, denoised). Detector notes (cheap open "
+          "models, often wrong): {hint}. Return the JSON object.")
 
 SCHEMA = {
     "type": "object",
@@ -329,6 +326,53 @@ def audio_model():
     return os.environ.get("GEMINI_AUDIO_MODEL") or None
 
 
+VERIFY_PROMPT = ("Transcribe exactly the words spoken in this audio clip, in the original language and its usual "
+                 "script. If no words are clearly intelligible, return an empty transcript. Do not guess, do not "
+                 "translate, do not complete sentences.")
+VERIFY_SCHEMA = {"type": "object", "properties": {"transcript": {"type": "string"}, "language": {"type": "string"}},
+                 "required": ["transcript", "language"], "additionalProperties": False}
+VERIFY_MIN_SIM = 0.5
+
+
+def _sim(a, b):
+    import difflib
+    n = lambda t: re.sub(r"[\s\W_]+", "", (t or "").lower().replace("[...]", ""))      # noqa: E731
+    a, b = n(a), n(b)
+    if not a and not b:
+        return 1.0
+    return difflib.SequenceMatcher(None, a, b).ratio()
+
+
+def verify_distress(a, wb, mode, cache_path=None):
+    """Second, independent, neutral transcription of the same audio. Distress cues survive only if the words
+    are reproduced (similarity >= 0.5) and the language agrees; otherwise they move to distress_unverified,
+    confidence is capped at 0.5 and the reason is noted. In place. Skipped on non-distress answers."""
+    if not (a["distress"] or a["sound_type"] in ("call_for_help", "scream")):
+        return a
+    meta = {}
+    v = llm.call_json_audio(VERIFY_PROMPT, wb, VERIFY_SCHEMA, provider="gemini" if mode in ("live", "replay") else None,
+                            cache_path=cache_path, meta=meta, thinking=_thinking(), model=audio_model(),
+                            validate=lambda o: isinstance(o.get("transcript"), str))
+    if not isinstance(v, dict) or not isinstance(v.get("transcript"), str):
+        a["verify"] = {"ok": None, "error": meta.get("error")}
+        return a
+    sim = _sim(a["transcript"], v["transcript"])
+    lang_a = (a["languages"][0]["code"] if a["languages"] else "").lower().split("-")[0]
+    lang_v = str(v.get("language") or "").lower().split("-")[0]
+    same_lang = not lang_a or not lang_v or lang_a == lang_v or {lang_a, lang_v} <= {"zh", "cmn"}
+    ok = (sim >= VERIFY_MIN_SIM and same_lang) if a["transcript"] else True      # wordless cues (screams) pass
+    a["verify"] = {"ok": ok, "similarity": round(sim, 2), "transcript": v["transcript"][:300], "language": lang_v,
+                   "cached": meta.get("cached", False), "latency_ms": meta.get("latency_ms", 0.0)}
+    if not ok:
+        a["distress_unverified"], a["distress"] = a["distress"], []
+        if a["sound_type"] == "call_for_help":
+            a["sound_type"] = "speech"
+        a["confidence"] = min(a["confidence"], 0.5)
+        note = f"distress not reproduced by a second transcription (similarity {sim:.2f})"
+        a["cross_check"] = f"{a['cross_check']}; {note}" if a.get("cross_check") else note
+    return a
+
+
 def _thinking():
     """GEMINI_AUDIO_THINKING = low (default: ~2-3 s/clip, no thinking tokens) | high | off (model default)."""
     lv = os.environ.get("GEMINI_AUDIO_THINKING", "low").strip().lower()
@@ -353,9 +397,10 @@ def analyse_clip(clip, *, cand=None, mode="auto", whisper=None, cache_path=None,
         prev = os.environ.get("LLM_REPLAY")
         if mode == "replay":
             os.environ["LLM_REPLAY"] = "1"
+        wb = wav_bytes(clip)
         try:
             raw = llm.call_json_audio(PROMPT.format(dur=min(len(clip) / FS, MAX_CLIP_S), hint=_hint(cand)),
-                                      wav_bytes(clip), SCHEMA, system=SYSTEM + f"\n[{PROMPT_VERSION}]",
+                                      wb, SCHEMA, system=SYSTEM + f"\n[{PROMPT_VERSION}]",
                                       provider="gemini" if mode in ("live", "replay") else None,
                                       cache_path=cache_path, meta=meta, validate=validate_analysis,
                                       thinking=_thinking(), model=audio_model())
@@ -369,6 +414,15 @@ def analyse_clip(clip, *, cand=None, mode="auto", whisper=None, cache_path=None,
             _breaker_note(meta.get("error") if out is None else None)
         if out is not None:
             cross_check(out, cand)
+            if os.environ.get("GEMINI_AUDIO_VERIFY", "1") != "0":
+                prev2 = os.environ.get("LLM_REPLAY")
+                if mode == "replay":
+                    os.environ["LLM_REPLAY"] = "1"
+                try:
+                    verify_distress(out, wb, mode, cache_path)
+                finally:
+                    if mode == "replay" and prev2 is None:
+                        os.environ.pop("LLM_REPLAY", None)
             out.update(by="gemini", model=meta.get("model"), cached=meta.get("cached", False),
                        latency_ms=meta.get("latency_ms", 0.0), throttled_ms=meta.get("throttled_ms", 0.0), usage=meta.get("usage") or {},
                        audio_s=round(min(len(clip) / FS, MAX_CLIP_S), 2), error=None)
@@ -567,7 +621,7 @@ def sector_rationale(tasks, mode="auto", cache_path=None):
     replay) and checked by code: known pile ids only, no other sector named, no banned claims, <= 300
     chars. Missing/invalid -> template from the reasons. Sets t["rationale"], t["rationale_by"] in place."""
     for t in tasks:
-        t["rationale"] = "; ".join(t["reasons"]) + "."
+        t["rationale"] = "; ".join(t["reasons"]).rstrip(".") + "."
         t["rationale_by"] = "template"
     use = [t for t in tasks if t["status"] in ("lead", "uncertain_sound")]
     if not use or mode == "fallback":
@@ -629,7 +683,9 @@ def _clip_fields(units, evs, r):
         "distress": a["distress"] if a else [],
         "audio_analysis": ({**{k: a.get(k) for k in ("by", "by_note", "sound_type", "human_vocal", "confidence", "people_count",
                                                  "location_hints", "rationale", "model", "error")},
-                            "cross_check": a.get("cross_check"), "t0": best["t0"], "t1": best["t1"]} if a else None),
+                            "cross_check": a.get("cross_check"), "verify": a.get("verify"),
+                            "distress_unverified": a.get("distress_unverified", []),
+                            "t0": best["t0"], "t1": best["t1"]} if a else None),
         "stage1": {"denoise": r["denoise"], "profile": r["profile"],
                    "events": [{**{k: e[k] for k in ("cand_id", "t0", "t1", "novelty_peak", "label", "reason",
                                                     "forwarded", "dismissed")}, "group": e.get("group")} for e in evs],
@@ -660,7 +716,7 @@ def merge_into_state(state, res, reprioritise=True):
         p["languages"] = [lg["code"] for lg in t["languages"]]
         if reprioritise and t["status"] == "lead" and t["priority"] > p["priority"]:
             p["priority"] = t["priority"]
-            p["why"] = "Audio analysis: " + t.get("rationale", "; ".join(t["reasons"]) + ".")
+            p["why"] = "Audio analysis: " + t.get("rationale", "; ".join(t["reasons"]).rstrip(".") + ".")
             if p["status"] in ("no_signal_not_cleared", "dismissed_nonhuman"):
                 p["status"] = "lead"
     if reprioritise and state.get("piles"):

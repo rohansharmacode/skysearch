@@ -183,6 +183,26 @@ def test_cross_check_caps_hallucination(monkeypatch):
     assert a["confidence"] <= 0.6 and "VAD" in a["cross_check"] and "1.0 s clip" in a["cross_check"]
 
 
+def test_distress_needs_a_second_transcription(monkeypatch):
+    _key(monkeypatch)
+    calls = []
+
+    def fake(url, headers, body, timeout):
+        txt = body["contents"][0]["parts"][-1]["text"]
+        calls.append(txt)
+        out = {"transcript": "Por favor ayúdame", "language": "es"} if txt.startswith("Transcribe exactly") else ANSWER
+        return {"candidates": [{"finishReason": "STOP", "content": {"parts": [{"text": json.dumps(out)}]}}]}
+    monkeypatch.setattr(llm, "_http_post", fake)
+    a = ga.analyse_clip(_speech(), cand=CAND)
+    assert len(calls) == 2 and a["verify"]["ok"] is False and a["distress"] == []
+    assert "trapped" in a["distress_unverified"] and a["confidence"] <= 0.5 and a["sound_type"] == "speech"
+    assert "second transcription" in a["cross_check"]
+    monkeypatch.setenv("GEMINI_AUDIO_VERIFY", "0")                        # can be switched off
+    calls.clear()
+    b = ga.analyse_clip(_speech(f=260.0), cand=CAND)
+    assert len(calls) == 1 and b["distress"] and "verify" not in b
+
+
 def test_429_falls_back_with_busy_note_and_breaker(monkeypatch):
     _key(monkeypatch)
     monkeypatch.setenv("LLM_RETRIES", "0")
@@ -245,6 +265,9 @@ def test_sector_ranking_distress_and_association(monkeypatch):
                 {"pile_id": "A1", "rationale": "Mandarin call for help; child can't breathe; send the radar drone to A1."},
                 {"pile_id": "B2", "rationale": "Calm speech; survivor confirmed at B2."}]})}]}}]}
         assert "truth" not in txt
+        if txt.startswith("Transcribe exactly"):                          # distress verification pass
+            v = {"transcript": ANSWER["transcript"], "language": "cmn"}
+            return {"candidates": [{"finishReason": "STOP", "content": {"parts": [{"text": json.dumps(v)}]}}]}
         return {"candidates": [{"finishReason": "STOP", "content": {"parts": [{"text": json.dumps(next(answers))}]}}]}
     monkeypatch.setattr(llm, "_http_post", fake)
     clf = _clf_for("speech")

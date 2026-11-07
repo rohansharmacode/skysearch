@@ -54,9 +54,9 @@ Updated 2026-11-07 ~22:15. Repo: /home/peroxide/Downloads/UCL/agentverse (local 
 | a1dbd08c7726451da | **Acoustic fix** (acoustic/dsp, run, scene, models, eval_assign; tests/test_acoustic) | Top blocker: B1 missed, A3 cross-talk, knock-vs-engine, wire the novelty→Gemini stage into run.py, final eval table |
 | a162587dbfaffdc2e | **Gemini audio** (acoustic/novelty, gemini_audio, eval_gemini; agents/llm.py audio, backoff and throttle; FLEURS data; docs/ACOUSTIC_GEMINI.md) | Live multilingual evaluation, replay cache |
 | a2b76615bba793384 | **Real-audio validation + pipeline verdict** (acoustic/validate_real.py, docs/ACOUSTIC_VALIDATION.md, data/audio_real) | Head-to-head with Frances's pipeline |
-| a1a856ada8463193a | **Vitals** (sim/physio.py, sim/vitals.py, scripts/validate_vitals.py, tests/test_vitals, docs/VITALS.md) | Integration hooks go to the mission agent |
+| a1a856ada8463193a | **Vitals** (sim/physio.py, sim/vitals.py, scripts/validate_vitals.py, tests/test_vitals, docs/VITALS.md) | RESUMED 22:50: remove child/age class, condition-only, fix slow-breather over-triage. Hooks 1-2 ok for mission, 3-5 held. Known: over-triages calm slow breathers (5-8 bpm) |
 | add66c0cd95d1fed8 | **Site** (sim/site_weiguan, site_mesh, `site="collapse"` from the teammate's USD, isaac/scene.py, photoreal.py, run_mission.py `--site`, isaac/site.py, mapping/slam per-scenario, usd-core in .venv) | **Top: collapse site as primary** |
-| a5c508c060aa20b94 | **Dashboard** (dashboard/*) | Batch 2 R2 items, `?data` alias, Dig-order panel and vitals, clip language/translation, coverage hatch, tasking Plan-search mode, recon display and proposals, scaling to the collapse site |
+| a5c508c060aa20b94 | **Dashboard** (dashboard/*) — DONE (fbe7e43, 9eeb709, 64ed989); questions answered in INTERFACES v1.2.1 | Batch 2 R2 items, `?data` alias, Dig-order panel and vitals, clip language/translation, coverage hatch, tasking Plan-search mode, recon display and proposals, scaling to the collapse site |
 | a9d09919957c913a4 | **Visual consistency** (animation/grid-search.html, index.html fixes, scenario_seed7.js via exporter, scripts/export_scenario_js.py, isaac/overlay.py) | Overlay merged with the teammate's ribbons (6a0e0ed); animation recon/tasking beats; MP4 re-record |
 | a793a6498850fe65e | **Tasking + recon** (sim/tasking.py, sim/recon.py, tests, docs/TASKING_INTEGRATION.md integration diff) | Scale to the collapse site |
 | ac3d7a7f1dc704099 | **Platform** (sim/platform.py, mapping/raycast_lidar.py, isaac/lidar.py, isaac/drone_viz.py, docs/PLATFORM.md) | Heavy drones and dense LiDAR |
@@ -76,7 +76,7 @@ Done: tech report a56b6a6dcfe7aacab (`docs/TECHNICAL_REPORT.md`, about 11k words
 4. After the acoustic fix, the A2 fix and vitals land, run the **rehearsal**: `scripts/demo.sh` with live Gemini.
 5. Then **reviewer pass 3**, focused on the new site, zones/recon, vitals and speaker.
 6. Then post **"READY TO RE-RECORD"** in `FOR_ISAAC_CLAUDE.md`, and resume the video-cut agent.
-7. **Technical report:** re-run the report agent (a56b6a6dcfe7aacab via SendMessage) to fill the placeholders once the evaluation docs exist. Publish the final report (artifact or doc) for the user.
+7. **Technical report:** (also strip child/age vitals wording; condition-only per user 22:50) re-run the report agent (a56b6a6dcfe7aacab via SendMessage) to fill the placeholders once the evaluation docs exist. Publish the final report (artifact or doc) for the user.
 8. **Slides deck** at the end (Artifact quickstart, slides).
 
 ## Pending user decisions / asks

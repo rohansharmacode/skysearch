@@ -482,7 +482,7 @@ def run_live(which, mode="auto", langs=None, start=0, limit=None, whisper=None):
         os.environ.setdefault("GEMINI_RPM", "8")           # leave headroom for a demo on the same key
     items = stage2_items(which, langs)[start: (start + limit) if limit else None]
     tag = _model_tag(mode)
-    path = os.path.join(OUT_DIR, f"live_{which}_{tag}.json")
+    path = os.path.join(OUT_DIR, f"live_{which}_{tag}_{ga.PROMPT_VERSION}.json")
     os.makedirs(OUT_DIR, exist_ok=True)
     rows = {(r["item"], r["cond"]): r for r in (json.load(open(path)) if os.path.exists(path) else [])}
     t_all = time.time()
@@ -518,7 +518,8 @@ def run_live(which, mode="auto", langs=None, start=0, limit=None, whisper=None):
                        translation=a["translation_en"], sound_type=a["sound_type"], human_vocal=a["human_vocal"],
                        confidence=a["confidence"], distress=a["distress"], people_count=a.get("people_count", 0),
                        location_hints=a.get("location_hints", []), rationale=a["rationale"],
-                       cross_check=a.get("cross_check"), latency_ms=a["latency_ms"], usage=a.get("usage") or {},
+                       cross_check=a.get("cross_check"), verify=a.get("verify"),
+                       distress_unverified=a.get("distress_unverified", []), latency_ms=a["latency_ms"], usage=a.get("usage") or {},
                        audio_s=a["audio_s"])
             if it.get("code"):
                 row["lang_ok"] = _lang_ok(a["languages"], it["code"])
@@ -572,6 +573,13 @@ def report_live(path):
                     print(f"  {code:5} {cg:8} {len(rr):>3} {sum(r.get('lang_ok', False) for r in rr):>3}/{len(rr):<3} "
                           f"{_med([r.get('cer') for r in rr]):>5} {_med([r.get('wer') for r in rr]):>5} "
                           f"{_mean([r.get('translation_f1') for r in rr]):>5}")
+        fl = [r for r in done if r["set"] == "fleurs"]
+        if fl:                               # FLEURS is read news: any distress cue or call for help is invented
+            fab = [r for r in fl if r["distress"] or r["sound_type"] in ("call_for_help", "scream")]
+            wrong = [r for r in fl if r.get("transcript") and not r.get("lang_ok")]
+            print(f"  hallucination on FLEURS news speech: distress invented in {len(fab)}/{len(fl)} "
+                  f"(clean {sum(r['cond'] == 'clean' for r in fab)}, noisy {sum(r['cond'] != 'clean' for r in fab)}); "
+                  f"transcript in the wrong language {len(wrong)}/{len(fl)}")
         tg = [r for r in done if r.get("tags") and r["set"] == "distress"]
         if tg:
             print(f"  distress cues: recall {_mean([r['tag_recall'] for r in tg])}, precision "
@@ -650,6 +658,42 @@ def run_scene(seeds):
         print(f"  {kind:11} events x drones {len(rr):3}  detected {_pct(rr, 'detected'):>10}  forwarded {_pct(rr, 'forwarded'):>10}")
 
 
+def run_e2e(seed, mode="auto", agent_mode="fallback"):
+    """Full chain on scene.py's synthetic listen: the existing pipeline (acoustic.run.analyse, unchanged)
+    separates one clip per pile; analyse_sector_audio runs stage 1/2/3 on those clips (background = the
+    drone's own first mic over the whole listen) and merge_into_state adds the fields. Truth is printed
+    for us only, after the analysis."""
+    from acoustic import gemini_audio as ga
+    from acoustic import run
+    from acoustic.scene import DATA_DIR, build_scene
+    from sim.scenario import make_scenario
+    sc = make_scenario(seed, None)
+    scene, truth = build_scene(sc, None, seed)
+    state = run.analyse(scene, [], agent_mode, "base.en", save_clips=True, timing={})
+    items = []
+    for c in state["clips"]:
+        wav = os.path.join(DATA_DIR, "clips", f"seed{scene.seed}_{c['pile_id']}.wav")
+        items.append({"clip_id": c["clip_id"], "pile_id": c["pile_id"], "drone_id": c["drone_id"], "audio": _read(wav),
+                      "background": scene.signals[c["drone_id"]][0].astype(float),
+                      "reliability": c.get("reliability", 0.5), "association": c.get("association")})
+    t0 = time.time()
+    res = ga.analyse_sector_audio(items, mode=mode)
+    ga.merge_into_state(state, res)
+    state["timing_s"]["gemini_audio"] = round(time.time() - t0, 2)
+    os.makedirs(OUT_DIR, exist_ok=True)
+    path = os.path.join(OUT_DIR, f"e2e_seed{seed}.json")
+    json.dump(state, open(path, "w"), indent=1, ensure_ascii=False)
+    print(f"seed {seed}: {len(items)} clips; stage 1 {res['stage1']}; stage 2 {json.dumps(res['stage2'], default=str)[:300]}")
+    for t in res["sector_tasks"]:
+        print(f"  #{t['rank']} {t['pile_id']} pri {t['priority']:3} {t['status']:22} h {t['human']:.2f} u {t['urgency']:.2f} "
+              f"r {t['reliability']:.2f} {[lg['code'] for lg in t['languages']]} {t['distress']} [{t.get('rationale_by')}] "
+              f"{t.get('rationale', '')[:150]}")
+    print(f"  dispatch -> {state['dispatch']}")
+    print("  truth (evaluator only): " + ", ".join(f"{p}={v['kind']}" + (f" '{v['text']}'" if v.get("text") else "")
+                                                   for p, v in sorted(truth.items())))
+    print(f"-> {path}")
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -670,6 +714,9 @@ def main(argv=None):
     s2.add_argument("--whisper", default=None, help="force a faster-whisper model name (fallback)")
     sc = sub.add_parser("scene")
     sc.add_argument("--seeds", default="3")
+    e2 = sub.add_parser("e2e", help="existing pipeline + stage 1/2/3 on scene.py's listen")
+    e2.add_argument("--seed", type=int, default=3)
+    e2.add_argument("--mode", default="auto", choices=["auto", "live", "replay", "fallback"])
     sub.add_parser("report")
     a = ap.parse_args(argv)
     if a.cmd == "fetch":
@@ -683,6 +730,8 @@ def main(argv=None):
         run_live(a.set, a.mode, [x for x in a.langs.split(",") if x] or None, a.start, a.limit, a.whisper)
     elif a.cmd == "scene":
         run_scene([int(s) for s in a.seeds.split(",")])
+    elif a.cmd == "e2e":
+        run_e2e(a.seed, a.mode)
     elif a.cmd == "report":
         ps = sorted(glob.glob(os.path.join(OUT_DIR, "stage1_*.json")))
         report_stage1(ps)

@@ -220,3 +220,22 @@ def test_speaker_facade_seed7_logs_broadcasts_and_reveals_by_time():
     g = [b for b in spk.log.items if b["kind"] == "guidance"]
     if g:                                                    # W1 (synthetic bystander) heard on open ground
         assert g[0]["heading_deg"] is not None and g[0]["target"]["type"] == "track"
+
+
+def test_operator_queue_roundtrip(tmp_path):
+    q = str(tmp_path / "broadcast_queue.json")
+    llm = lambda *a, **k: {"translations": [{"lang": "id", "text": "Tetap di tempat."}]}   # noqa: E731
+    out = gd.queue_post(q, {"drone_id": "d2", "kind": "operator", "text": "Stay where you are.",
+                            "langs": ["en", "id"], "operator": "op1"}, llm_call=llm)
+    ids = {b["lang"]: b["id"] for b in out["items"]}
+    with pytest.raises(gd.BroadcastError):
+        gd.queue_post(q, {"drone_id": "d2", "text": "x"})                       # no operator name
+    sc = make_scenario(7)
+    spk = co.Speaker({p.name: (p.x, p.y) for p in sc.piles}, sc.heightmap(0.5), BASE_XY, asset_dir="/nonexistent")
+    assert spk.ingest_operator(q, 50.0, {"d1": (0, 0), "d2": (1, 1)}) == 1   # only the operator's own text
+    assert [b["lang"] for b in spk.log.playable()] == ["en"]
+    gd.queue_decide(q, ids["id"], "op1")
+    assert spk.ingest_operator(q, 60.0, {"d1": (0, 0), "d2": (1, 1)}) == 1
+    assert {b["lang"] for b in spk.log.playable()} == {"en", "id"} and spk.log.playable()[1]["t"] == 60.0
+    out = gd.queue_post(q, {"zone": "Z1", "kind": "callout", "operator": "op1", "langs": ["vi"]})
+    assert out["items"][0]["text"] == gd.MESSAGES["callout"]["vi"] and out["items"][0]["status"] == "scheduled"

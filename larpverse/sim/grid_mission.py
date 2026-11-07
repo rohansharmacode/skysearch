@@ -91,7 +91,7 @@ class GridMission:
                  world=None, flight=None, sensor_factory=None, acoustic_fn=None, decider=None,
                  slam=False, slam_scans=SLAM_SCANS, slam_kw=None, slam_cache=SLAM_CACHE,
                  autonomous=True, mission_scans=None, dispatch_policy="acoustic", reserve=RESERVE, swap_s=SWAP_S,
-                 listen_s=None, revisit_max=2, penetration=None, launch_pile=None):
+                 listen_s=None, revisit_max=2, penetration=None, launch_pile=None, site="grid"):
         """``autonomous`` (default): keep searching until the mission scan budget (``mission_scans``, default
         24), the time limit or the open leads run out; battery swaps at the pads; open leads without a firm
         ping are revisited once. ``pile_budget`` caps pile visits (None = no cap; legacy mode uses 3).
@@ -112,13 +112,22 @@ class GridMission:
         self.realtime, self.speed, self.dt, self.max_t = realtime, speed, dt, max_t
         self.pile_budget, self.priority_min, self.acoustic_mode = pile_budget, priority_min, acoustic
         # --- backends (Isaac swap points)
-        self.scenario = make_scenario(seed, start_pile)
+        self.site = site
+        self.scenario = make_scenario(seed, start_pile, site=site) if site != "grid" else make_scenario(seed, start_pile)
+        pd = self.scenario.public_dict()         # site layout is scenario data, not module constants
+        self.bounds = list(pd.get("bounds") or SITE_BOUNDS)
+        self.base_xy = list(pd.get("base_xy") or BASE_XY)
+        self.pads = [list(p) for p in (pd.get("drone_pads") or DRONE_PADS)]
+        self.geo = pd.get("geo") or SITE_GEO
+        meta = pd.get("site")
+        self.site_name = (meta.get("name") if isinstance(meta, dict) else None) or \
+            (self.geo or {}).get("name") if site != "grid" else "Rubble grid 3x3"
         # operator input; when not given, the scenario's suggested start (reported collapse) is used
         # ``launch_pile`` (evaluation): start somewhere chosen independently of where the scenario put people
         self.start_pile = launch_pile or start_pile or self.scenario.public_dict()["start_pile"]
         self.world = world if world is not None else GridWorld(self.scenario)
         self.grid = self.world.grid
-        pads = {f"d{i + 1}": tuple(xy) for i, xy in enumerate(DRONE_PADS)}
+        pads = {f"d{i + 1}": tuple(xy) for i, xy in enumerate(self.pads[:3])}
         self.flight = flight if flight is not None else KinematicFlight(self.grid, starts=pads)
         self.sensor_factory = sensor_factory or (lambda pw, s: make_generator(pw, s, radar))
         self.acoustic_fn = acoustic_fn
@@ -132,9 +141,12 @@ class GridMission:
         self.stage = "pile"            # pile | listen | return | done
         self.phase = "deploy"
         self.log = []
+        polys = {getattr(p, "name", None): getattr(p, "polygon", None) for p in getattr(self.scenario, "piles", [])}
         self.piles = {name: {"id": name, "xy": [round(x, 2), round(y, 2)], "status": "unvisited", "priority": None,
+                             "polygon": self._polygon(polys.get(name), x, y),
                              "radar_candidate_ids": [], "why": "Not visited, nothing heard yet. Not cleared."}
                       for name, (x, y) in self.world.pile_xy.items()}
+        self._tracks = {}              # drone id -> last <= 200 [x, y, z, t] samples (drones[].track)
         self.visited = []
         self.done_scans, self.done_cands, self.done_sites = [], [], []
         self.clips, self.acoustic_obs, self.dispatch = [], [], []
@@ -671,7 +683,7 @@ class GridMission:
                 bat_after = None if ts is None else round(bat_min - self.FLY_RATE * ts - self.PILE_BATTERY, 2)
                 flags = []
                 if self.autonomous and (bat_after is None or bat_after < self.reserve):
-                    pads = list(getattr(self.flight, "starts", {}).values()) or [BASE_XY]
+                    pads = list(getattr(self.flight, "starts", {}).values()) or [self.base_xy]
                     back = max(self._leg_s(xy, pads[0]) for xy in self._drone_xy().values())
                     out = self._leg_s(pads[0], self.world.pile_xy[pid])
                     ts, bat_after = round(back + self.swap_s + out, 1), round(1.0 - self.FLY_RATE * out - self.PILE_BATTERY, 2)
@@ -806,10 +818,25 @@ class GridMission:
             self._hm_cache = (z, json.dumps(z, separators=(",", ":")))
         return self._hm_cache
 
+    @staticmethod
+    def _polygon(poly, x, y, r=9.0, n=16):
+        """Sector outline, CCW [[x, y], ...] in site metres: the scenario's own polygon, else a 9 m circle."""
+        if poly is not None and len(poly) >= 3:
+            pts = [[round(float(a), 2), round(float(b), 2)] for a, b in poly]
+            area = sum(pts[i][0] * pts[i - 1][1] - pts[i - 1][0] * pts[i][1] for i in range(len(pts)))
+            return pts[::-1] if area > 0 else pts          # shoelace > 0 here means clockwise
+        return [[round(x + r * np.cos(a), 2), round(y + r * np.sin(a), 2)]
+                for a in np.linspace(0, 2 * np.pi, n, endpoint=False)]
+
     def _drones_out(self):
         out = []
         for d in self.flight.poses():
             d = dict(d)
+            tr = self._tracks.setdefault(d["id"], [])
+            if not tr or self.t - tr[-1][3] >= 2.0:
+                tr.append([d["pose"][0], d["pose"][1], d["pose"][2], round(self.t, 1)])
+                del tr[:-200]
+            d["track"] = list(tr)
             if self.stage == "listen" and d["state"] in ("landed", "scanning"):
                 d["state"] = "listening"
             out.append(d)
@@ -839,8 +866,8 @@ class GridMission:
             upcoming = self.dispatch[-1]
         return {
             "schema": "larpverse.state/v1", "t": round(self.t, 1), "phase": self.phase,
-            "site": {"name": f"Rubble grid 3x3 · seed {self.seed}", "bounds": list(SITE_BOUNDS),
-                     **({"geo": dict(SITE_GEO)} if SITE_GEO else {})},
+            "site": {"name": f"{self.site_name} · seed {self.seed}", "bounds": list(self.bounds), "kind": self.site,
+                     **({"geo": dict(self.geo)} if self.geo else {})},
             "heightmap": {"origin": list(g.origin), "res": g.res, "w": g.w, "h": g.h,
                           "z": "__HM__" if hm_placeholder else self._hm_list()[0]},
             "pointcloud": {"url": "pointcloud.bin", "count": self.pc_count},
@@ -848,6 +875,7 @@ class GridMission:
             "landing_sites": sites,
             "scans": scans,
             "radar_candidates": cands,
+            "pings": [c for c in cands if c["status"] == "candidate" and c.get("kind") == "stationary"],
             "acoustic": self.acoustic_obs,
             "belief": belief,
             "next_scan": next_scan,
@@ -867,7 +895,7 @@ class GridMission:
                         "battery_swap": None if self.swap is None else
                         {"to_pile": self.swap["to_pile"], "ends": self.swap["ends"], "since": self.swap["t"]},
                         "summary": self.final_summary() if self.stage == "done" else None},
-            "staging": {"xy": list(BASE_XY), "pads": [list(p) for p in DRONE_PADS]},
+            "staging": {"xy": list(self.base_xy), "pads": [list(p) for p in self.pads]},
             "piles": [dict(p) for p in self.piles.values()],
             "acoustic_clips": self.clips,
             "acoustic_agent": (self.last_acoustic or {}).get("agent"),
@@ -922,6 +950,8 @@ def main(argv=None):
                     help="dsp (default): synthetic IF through the real DSP chain; model: direct noise model")
     ap.add_argument("--acoustic", choices=["auto", "stub", "real"], default="auto",
                     help="auto: acoustic/ pipeline if importable or via .venv-audio, else the synthetic stub")
+    ap.add_argument("--site", default="grid",
+                    help="grid | weiguan | collapse | mesh:<path> (sim/scenario.make_scenario)")
     ap.add_argument("--penetration", choices=list(radar_dsp.PENETRATION_MODELS), default=PENETRATION_DEFAULT,
                     help="radar through-rubble model: literature (~3 m beneath) or legacy (optimistic 0.7 dB/m)")
     ap.add_argument("--piles", type=int, default=None, help="cap on pile visits (legacy loop default 3; autonomous: none)")
@@ -952,7 +982,7 @@ def main(argv=None):
     m = GridMission(a.seed, a.start_pile, a.radar, a.out, a.frames, not a.quiet, a.realtime, a.speed,
                     pile_budget=a.piles, priority_min=a.priority_min, acoustic=a.acoustic, decider=decider,
                     slam=a.slam, slam_scans=a.slam_scans, autonomous=a.autonomous, mission_scans=a.scans,
-                    dispatch_policy=a.dispatch, penetration=a.penetration)
+                    dispatch_policy=a.dispatch, penetration=a.penetration, site=a.site)
     m.run()
     s = m.summary()
     print(f"done in {time.time() - t0:.1f} s wall, {m.t:.0f} s sim; visited {' -> '.join(s['visited'])}; "

@@ -247,12 +247,20 @@ def _post_retry(url, headers, body, timeout):
         raise
 
 
+def _safe_validate(fn, out):
+    try:
+        return bool(fn(out))
+    except Exception:                                           # noqa: BLE001
+        return False
+
+
 # --------------------------------------------------------------------------- public
 def call_json(prompt, schema=None, *, system=None, provider=None, timeout=25, max_tokens=2048,
-              temperature=0.2, cache=True, cache_path=None, meta=None) -> dict | None:
+              temperature=0.2, cache=True, cache_path=None, meta=None, validate=None) -> dict | None:
     """One structured-JSON call. Returns the parsed dict, or None (no provider, replay miss, network,
     HTTP, parse or timeout failure). Never raises. ``meta`` (a dict) is filled with
-    provider, model, cached, latency_ms and error."""
+    provider, model, cached, latency_ms and error. ``validate(out) -> bool``: only answers it accepts
+    are recorded, so a rejected answer is never replayed (it is still returned for the caller to reject)."""
     m = meta if meta is not None else {}
     p, model = resolve(provider)
     m.update(provider=p, model=model, cached=False, latency_ms=0.0, error=None)
@@ -287,6 +295,7 @@ def call_json(prompt, schema=None, *, system=None, provider=None, timeout=25, ma
     m["latency_ms"] = round((time.time() - t0) * 1000, 1)
     if out is not None and not isinstance(out, dict):
         m["error"], out = "response is not a JSON object", None
-    if out is not None and cache:
+    ok = out is not None and (validate is None or _safe_validate(validate, out))
+    if ok and cache:
         cache_put(key, p, model, out, cache_path)
     return out

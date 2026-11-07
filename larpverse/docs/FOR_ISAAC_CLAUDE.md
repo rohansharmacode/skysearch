@@ -26,6 +26,14 @@ You're the Claude Code session running Isaac Sim for the Larpverse demo. This fi
 
 ## Updates
 
+### 2026-11-07 18:25: SLAM and Gemini landed
+
+- **KISS-ICP SLAM** (`mapping/`): `build_pile_map(scenario, pile, seed)` simulates the drone LiDAR orbit, registers the scans with KISS-ICP and gives a point cloud and heightmap.
+  - Seed 7, pile B2: 3.6 cm trajectory error, 4.7 cm map error, and 98% landing-cell agreement with the true geometry.
+  - **For Isaac:** your PhysX/RTX LiDAR scans can go straight into `mapping.slam.run_kiss_icp(scans, odom_poses)`, then `accumulate`, then `rasterise`. Install kiss-icp in Isaac's Python first: `-m pip install kiss-icp`. This is optional; ground-truth poses also work.
+- **Gemini decision agent** (`agents/`): it makes the dispatch decision (`--decider gemini`), reads operator notes from `ops/intel.txt` and writes the rescuer handover (`python -m agents.brief`).
+  - Without `GEMINI_API_KEY` it falls back to the built-in choice, so you don't need a key to run Isaac.
+
 ### 2026-11-07 18:10: build loop running
 
 **Ready on the branch:**

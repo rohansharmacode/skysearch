@@ -140,13 +140,15 @@ Give each session one workstream and point it at this file plus `contracts/INTER
 | BL-1 | P0 | Reviewer pass 1 over the whole product (dashboard live run, animations, handoff, code honesty/ground-truth) | reviewer — running |
 | BL-2 | P0 | Isaac adapter cross-check against the team's verified Isaac 6.0.1 / Isaac Lab 3.0 API notes (skysearch `isaac6-port` branch) and their Brev launch flow; fix isaac/compat.py etc. | builder — running |
 | BL-3 | P0 | Acoustic pile assignment: voices attributed to wrong piles (B3/C3 in seed 7); triangulate across drones, reject inconsistent bearings | builder — running |
-| BL-4 | P1 | Gemini decider + provider layer + intake + handover brief (agents/) | builder — running |
-| BL-5 | P1 | KISS-ICP SLAM (mapping/) then wire into grid mission landing maps | builder — running |
+| BL-4 | P1 | Gemini decider + provider layer + intake + handover brief (agents/) | DONE 1ed9bae (fallback-tested; real API untested until key) |
+| BL-5 | P1 | KISS-ICP SLAM (mapping/) then wire into grid mission landing maps | DONE 110fdd2 (ATE 3.6 cm B2, landing IoU 0.98); wiring → mission agent |
 | BL-6 | P1 | Animation v2 driven by the seed-7 scenario (same map as Isaac + dashboard), re-record MP4, republish | queued |
-| BL-7 | P1 | Grid evaluation: acoustic-priority order vs nearest-first vs fixed order; victims pinged within budget, time to first ping, false leads; N seeds | queued |
-| BL-8 | P1 | A3 never pings with the model radar after 8 scans — make `--radar dsp` default for the grid demo or tune; explain in log | queued |
+| BL-7 | P1 | Grid evaluation: acoustic-priority order vs nearest-first vs fixed order; victims pinged within budget, time to first ping, false leads; N seeds | builder — running (with BL-8 + autonomy loop) |
+| BL-8 | P0 | A3 never pings with the model radar after 8 scans — make `--radar dsp` default for the grid demo or tune; explain in log | queued |
 | BL-9 | P2 | Pitch pack: one-page technical summary, 1-minute video script, deck (after BL-7 numbers) | queued |
 | BL-10 | P2 | Dashboard polish from review findings | queued |
+| BL-12 | P1 | Acoustic real-data validation (DroneAudioSet / ESC-50): detection P/R, Whisper under drone noise, vs SNR | builder — running |
+| BL-11 | P1 | Once GEMINI_API_KEY exists: record a seed-7 Gemini run and commit its replay cache (un-ignore one curated file) so the demo replays offline | blocked on key |
 
 ## Decisions log
 
@@ -157,3 +159,5 @@ Give each session one workstream and point it at this file plus `contracts/INTER
 | 2026-11-07 | Our code lives in larpverse/ on branch larpverse-sensing of the team repo | team repo already has SkySearch; avoid clobbering | orchestrator |
 | 2026-11-07 | Gemini (REST, GEMINI_API_KEY, gemini-3.5-flash) is the decision LLM | user request; matches team's v2-earthquake briefing | user |
 | 2026-11-07 | Radar returns stay a labelled synthetic generator; DSP validated on Schellenberger 2020 real data (0.39 bpm MAE) | Isaac RF doesn't model breathing through rubble | orchestrator |
+| 2026-11-07 | LLM answers cached in agents/cache (gitignored); a curated demo replay file will be committed once recorded | demo must run offline and reproducibly | orchestrator |
+| 2026-11-07 | kiss-icp 1.3.0 + open3d 0.20 accepted in .venv | SLAM agent installed before rules; numpy unchanged, tests pass | orchestrator |

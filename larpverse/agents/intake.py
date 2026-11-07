@@ -115,7 +115,8 @@ def intake(notes, provider=None, valid=PILES):
     if not notes:
         return empty()
     meta = {}
-    raw = llm.call_json(PROMPT + notes, SCHEMA, provider=provider, max_tokens=1024, meta=meta)
+    raw = llm.call_json(PROMPT + notes, SCHEMA, provider=provider, max_tokens=1024, meta=meta,
+                        validate=lambda o: all(k in o for k in SCHEMA["required"]))
     if isinstance(raw, dict) and all(k in raw for k in ("pile_priors", "ignore_sound_piles", "no_go_piles")):
         by = meta.get("provider") or "llm"
         return clamp(raw, notes, by + ("-replay" if meta.get("cached") else ""), valid)

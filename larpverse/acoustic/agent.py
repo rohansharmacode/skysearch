@@ -4,7 +4,8 @@ Per clip it sees only observable measurements (transcript, class scores, VAD, SN
 agreement, pile assignment), never scene ground truth, and returns
 {human, urgency, reliability} in [0, 1] plus a short rationale.
 
-  * Claude (claude-opus-5-5, structured JSON output) when ANTHROPIC_API_KEY is set.
+  * An LLM via agents.llm (stdlib REST, structured JSON): Gemini when GEMINI_API_KEY is set,
+    else Claude when ANTHROPIC_API_KEY is set (LLM_PROVIDER overrides; keys may live in .env).
   * Deterministic fallback scorer otherwise, or when the LLM output fails validation.
   * Record/replay cache (acoustic/cache/decisions.jsonl) keyed by a hash of the features,
     so a demo replays the same LLM decisions offline.
@@ -18,9 +19,16 @@ import hashlib
 import json
 import os
 import re
+import sys
 import time
 
-MODEL = "claude-opus-5-5"
+try:
+    from agents import llm
+except ImportError:                       # run from acoustic/ without the repo root on sys.path
+    sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    from agents import llm
+
+MODEL = "claude-opus-5-5"         # legacy default; the active model comes from agents.llm.resolve()
 PROMPT_VERSION = "acoustic-judge-v1"
 CACHE_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "cache", "decisions.jsonl")
 HUMAN_LEAD = 0.4            # below this a detected source is dismissed as non-human
@@ -141,7 +149,8 @@ def fallback_judge(f: dict) -> dict:
 
 # --------------------------------------------------------------------------- LLM + cache
 def feature_key(f: dict) -> str:
-    blob = json.dumps({"v": PROMPT_VERSION, "model": MODEL, "f": f}, sort_keys=True)
+    """Provider-agnostic: a recorded LLM judgment replays whichever provider produced it."""
+    blob = json.dumps({"v": PROMPT_VERSION, "f": f}, sort_keys=True)
     return hashlib.sha256(blob.encode()).hexdigest()[:24]
 
 
@@ -184,36 +193,11 @@ def validate_judgment(j) -> dict | None:
 
 def llm_judge(features: list[dict]) -> tuple[dict, str | None]:
     """One structured-output call for all clips. Returns ({clip_id: judgment}, error)."""
-    import anthropic
-
-    client = anthropic.Anthropic(timeout=90.0, max_retries=2)
-    try:
-        resp = client.beta.messages.create(
-            model=MODEL,
-            max_tokens=8000,
-            betas=["server-side-fallback-2026-07-01"],
-            fallbacks="default",
-            output_config={"effort": "low", "format": {"type": "json_schema", "schema": SCHEMA}},
-            system=SYSTEM,
-            messages=[{"role": "user", "content": json.dumps({"clips": features}, sort_keys=True)}],
-        )
-    except anthropic.AuthenticationError:
-        return {}, "authentication failed"
-    except anthropic.RateLimitError:
-        return {}, "rate limited"
-    except anthropic.APIStatusError as e:
-        return {}, f"API error {e.status_code}"
-    except anthropic.APIConnectionError:
-        return {}, "network error"
-    if resp.stop_reason == "refusal":
-        return {}, "refused"
-    if resp.stop_reason == "max_tokens":
-        return {}, "truncated"
-    text = next((b.text for b in resp.content if b.type == "text"), "")
-    try:
-        data = json.loads(text)
-    except ValueError:
-        return {}, "invalid JSON"
+    meta = {}
+    data = llm.call_json(json.dumps({"clips": features}, sort_keys=True), SCHEMA, system=SYSTEM,
+                         max_tokens=8000, timeout=90, cache=False, meta=meta)
+    if data is None:
+        return {}, meta.get("error") or "LLM call failed"
     ids = {f["clip_id"] for f in features}
     out = {}
     for j in data.get("judgments", []) if isinstance(data, dict) else []:
@@ -228,7 +212,8 @@ def judge_clips(features: list[dict], mode="auto", cache_path=CACHE_PATH):
     """mode: auto (cache, then LLM if key, else fallback) | llm | replay (cache only) | fallback."""
     for f in features:
         assert not (FORBIDDEN_KEYS & set(f)), "ground truth must never reach the agent"
-    meta = {"mode": mode, "model": MODEL, "llm_calls": 0, "cache_hits": 0, "fallback": 0, "error": None}
+    provider, model = llm.resolve()
+    meta = {"mode": mode, "provider": provider, "model": model, "llm_calls": 0, "cache_hits": 0, "fallback": 0, "error": None}
     out = {}
     cache = load_cache(cache_path) if mode in ("auto", "llm", "replay") else {}
     todo = []
@@ -239,7 +224,7 @@ def judge_clips(features: list[dict], mode="auto", cache_path=CACHE_PATH):
             meta["cache_hits"] += 1
         else:
             todo.append(f)
-    use_llm = mode == "llm" or (mode == "auto" and os.environ.get("ANTHROPIC_API_KEY"))
+    use_llm = mode == "llm" or (mode == "auto" and llm.available() and not llm.replay_only())
     if todo and use_llm:
         meta["llm_calls"] += 1
         got, err = llm_judge(todo)
@@ -248,8 +233,8 @@ def judge_clips(features: list[dict], mode="auto", cache_path=CACHE_PATH):
         for f in todo:
             if f["clip_id"] in got:
                 out[f["clip_id"]] = dict(got[f["clip_id"]], by="llm")
-                rows.append({"key": feature_key(f), "clip_id": f["clip_id"], "model": MODEL,
-                             "prompt": PROMPT_VERSION, "t": int(time.time()), "judgment": got[f["clip_id"]]})
+                rows.append({"key": feature_key(f), "clip_id": f["clip_id"], "model": model,
+                             "provider": provider, "prompt": PROMPT_VERSION, "t": int(time.time()), "judgment": got[f["clip_id"]]})
         if rows:
             append_cache(rows, cache_path)
     for f in features:

@@ -25,8 +25,8 @@ Read this first after a context compaction or restart.
 
 | Slot | Area / owned files | Started |
 |---|---|---|
-| 1 | SLAM: mapping/, tests/test_mapping.py, docs/slam.png | 17:40 |
-| 2 | Gemini/agents: agents/, acoustic/agent.py, tests/test_agents.py, docs/AGENTS.md | 17:58 |
+| 1 | Acoustic real-data validation: acoustic/validate_real.py, docs/ACOUSTIC_VALIDATION.md, data/audio_real/ | 18:25 |
+| 2 | Mission autonomy + eval (BL-7/8): sim/* except scenario.py, tests/test_grid_mission.py, tests/test_radar_dsp.py, tests/test_localise.py, docs/EVAL_GRID.md | 18:20 |
 | 3 | Reviewer pass 1: docs/review/2026-11-07-pass-1.md | 18:08 |
 | 4 | Isaac vs verified APIs: isaac/*, tests/test_isaac_dryrun.py, docs/ISAAC_VERIFIED_APIS.md | 18:08 |
 | 5 | Acoustic pile assignment: acoustic/{dsp,run,scene,models,eval_assign}.py, tests/test_acoustic.py, acoustic/README.md | 18:08 |

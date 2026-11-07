@@ -9,17 +9,27 @@ Read this first after a context compaction or restart.
 - Gemini is the LLM for agent decisions (GEMINI_API_KEY in local .env, model gemini-3.5-flash). User will provide the key.
 - Keep animation/index.html (v1) working as-is (bug fixes OK). v2 = animation/grid-search.html.
 
+## Coordination with the Isaac teammate's Claude
+- We post instructions in docs/FOR_ISAAC_CLAUDE.md (newest first) with every push.
+- They push to branch `larpverse-isaac` and report in larpverse/docs/FROM_ISAAC.md. Each heartbeat: `git -C ~/Downloads/UCL/skysearch fetch -q origin && git -C ~/Downloads/UCL/skysearch log --oneline -3 origin/larpverse-isaac` and read FROM_ISAAC.md; merge their isaac/ fixes into our tree (they come back on the next push).
+- User (2026-11-07 18:08): keep-awake ON; keep building; make models work with data and run autonomously; dashboard; working demo ASAP; don't worry about the computer.
+
 ## Infrastructure
 - Local git in repo root (init 2026-11-07). Team clone at ~/Downloads/UCL/skysearch (push.sh mirrors `git archive HEAD`).
 - Dev server: preview "static" (python http.server :8765, repo root).
 - Watchdog: scripts/watchdog.sh under Monitor (WARN|HARD), re-arm every 30 min. Heartbeat cron every ~30 min.
-- Keep-awake was refused (user setting) — machine may sleep while user is away.
+- Keep-awake: user turned it on (18:08).
 
 ## Running agents
 (see table below, kept current)
 
 | Slot | Area / owned files | Started |
 |---|---|---|
+| 1 | SLAM: mapping/, tests/test_mapping.py, docs/slam.png | 17:40 |
+| 2 | Gemini/agents: agents/, acoustic/agent.py, tests/test_agents.py, docs/AGENTS.md | 17:58 |
+| 3 | Reviewer pass 1: docs/review/2026-11-07-pass-1.md | 18:08 |
+| 4 | Isaac vs verified APIs: isaac/*, tests/test_isaac_dryrun.py, docs/ISAAC_VERIFIED_APIS.md | 18:08 |
+| 5 | Acoustic pile assignment: acoustic/{dsp,run,scene,models,eval_assign}.py, tests/test_acoustic.py, acoustic/README.md | 18:08 |
 
 ## Done (high level)
 - Concept animation v1 + grid-search v2 (published artifacts), MP4s in media/ (not pushed: >100 MB).

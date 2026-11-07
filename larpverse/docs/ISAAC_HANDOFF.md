@@ -4,6 +4,8 @@ You own the Isaac Sim part of our AgentVerse 2026 robotics demo. This file has e
 
 **Your job: get a presentable, recorded Isaac Sim run of the mission below, as fast as possible.** The decision-making code (localisation, planning, acoustic agent) already runs without Isaac. Isaac provides the 3D world, the drone bodies, the LiDAR sensing and the footage.
 
+> **Coordination:** the orchestrator posts updates and next steps in `docs/FOR_ISAAC_CLAUDE.md`, which changes on every push, so read it after each pull. Report back in `docs/FROM_ISAAC.md` on your own branch `larpverse-isaac`, never on `larpverse-sensing`.
+>
 > Start your Claude Code session with: *"Read docs/ISAAC_HANDOFF.md and isaac/README.md, then do the bring-up checklist step by step, verifying each step before the next."* There is a fuller paste-ready prompt at the end.
 
 ---

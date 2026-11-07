@@ -355,8 +355,11 @@ def main(argv=None):
         from isaac import photoreal
         photoreal.set_renderer(a, say)
         specs = [c.strip() for c in a.rec_cams.split(",") if c.strip()]
+        from isaac.site import bounds as site_bounds
+        rw, rh = (int(v) for v in a.rec_res.split("x"))
         rigs = photoreal.Rigs(stage, [c for c in specs if c != "director"], surface,
-                             fpv_tilt=a.fpv_tilt, chase_back=a.chase_back, chase_up=a.chase_up)
+                             fpv_tilt=a.fpv_tilt, chase_back=a.chase_back, chase_up=a.chase_up,
+                             piles=pile_xy, bounds=site_bounds(sc), aspect=rw / rh)
         cams = ([("director", cam.path)] if "director" in specs else []) + [(r["name"], r["path"]) for r in rigs.rigs]
         rec = photoreal.Recorder(a.record, cams, a.rec_res, say, windows=photoreal.Recorder.parse_windows(a.rec_windows))
         if a.rec_windows and a.headless:        # nothing needs the viewport: render only the windowed cameras

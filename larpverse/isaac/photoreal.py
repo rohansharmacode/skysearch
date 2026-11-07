@@ -55,7 +55,10 @@ def add_args(ap):
     g.add_argument("--rec-res", default="1920x1080")
     g.add_argument("--rec-fps", type=float, default=30.0, help="video frames per second")
     g.add_argument("--rec-speed", type=float, default=6.0, help="sim seconds per video second when recording")
-    g.add_argument("--rec-cams", default="director", help="comma list: director, wide, chase:d1, fpv:d2, top")
+    g.add_argument("--rec-cams", default="director",
+                   help="comma list: director, wide, chase:d1, fpv:d2, top (26 m over the active pile), "
+                        "mid (30-40 m out, 25 deg down, 35 mm lens, on the active pile; mid:A2 stays on A2), "
+                        "map (80 m straight down, north up, whole site: mirrors the dashboard map)")
     g.add_argument("--rec-stop-t", type=float, default=0.0, help="stop recording at this mission time (s)")
     g.add_argument("--rec-warp", type=float, default=1.0,
                    help="recording: speed up the long radar/rescan/relocate phases by this factor (e.g. 4)")
@@ -401,7 +404,8 @@ def sky_and_sun(stage, a, nv, log):
 def dress(stage, sc, a, log=print):
     try:                                              # thin glowing lines and fine points, not tubes and balls
         from isaac import overlay as _ov
-        _ov.LINE_W, _ov.POINT_W, _ov.MAX_SCANS = 0.006, 0.035, 3
+        # flat ribbon meshes 6-12 cm wide: BasisCurves render as ~0.5 m tubes in RTX and path tracing (pt1 vs pt2)
+        _ov.LINE_MESH, _ov.LINE_W, _ov.POINT_W, _ov.MAX_SCANS = True, 0.03, 0.025, 3
     except Exception as e:
         log(f"[photoreal] overlay scale unchanged ({type(e).__name__}: {e})")
     """Call right after scene.build(stage, sc) and before PhysX loads the stage."""
@@ -481,33 +485,86 @@ def _look_at(eye, target, up=(0, 0, 1)):
 
 
 class Rigs:
-    """Extra recording cameras that follow drones: chase:<id> (behind and above) and fpv:<id> (nose camera),
-    plus top (straight down on the active pile) and wide (slow high orbit of the whole grid and staging)."""
+    """Extra recording cameras.
 
-    def __init__(self, stage, specs, surface, fpv_tilt=40.0, chase_back=6.0, chase_up=3.0):
+      chase:<id>   behind and above a drone (6 m back, 3 m up)       fpv:<id>  nose camera, tilted 40 deg down
+      top          26 m straight down on the active pile               wide      slow high orbit of the whole site
+      mid[:<pile>] 30-40 m out, 25 deg down, 35 mm lens, on the active pile (or one fixed pile), slow drift:
+                   the drones are large enough to read during landing and radar (review T4)
+      map          80 m straight down, north up, lens fitted to the site bounds: mirrors the dashboard map
+
+    piles {name: (x, y)} and bounds (xmin, ymin, xmax, ymax) are optional: mid:<pile> needs piles, and
+    with bounds the wide orbit and the map camera fit any site (without them: the 3x3 grid's numbers)."""
+
+    MID_DIST, MID_ELEV, MID_AZ, MID_FOCAL = 36.0, 25.0, 200.0, 35.0   # m, deg down, bearing pile->camera, mm
+    MAP_H, APERTURE = 80.0, 20.955
+    GRID_BOUNDS = (-36.0, -54.0, 36.0, 36.0)
+
+    def __init__(self, stage, specs, surface, fpv_tilt=40.0, chase_back=6.0, chase_up=3.0, piles=None, bounds=None,
+                 aspect=16 / 9):
         from pxr import Gf, UsdGeom
         self.Gf, self.surface, self.rigs = Gf, surface, []
         self.fpv_drop = math.tan(math.radians(fpv_tilt))   # metres down per metre forward
         self.chase_back, self.chase_up = chase_back, chase_up
+        self.piles = dict(piles or {})
+        self.bounds = tuple(float(v) for v in bounds) if bounds else None
+        self.map_h, map_f = self.map_geometry(self.bounds or self.GRID_BOUNDS, aspect)
         for spec in specs:
             mode, _, who = spec.partition(":")
-            if mode not in ("chase", "fpv", "top", "wide"):
+            if mode not in ("chase", "fpv", "top", "wide", "mid", "map"):
                 continue
             path = f"/World/RecCams/{mode}_{who or 'x'}"
             cam = UsdGeom.Camera.Define(stage, path)
-            cam.CreateFocalLengthAttr(9.0 if mode == "fpv" else 16.0)
-            cam.CreateHorizontalApertureAttr(20.955)
+            cam.CreateFocalLengthAttr({"fpv": 9.0, "mid": self.MID_FOCAL, "map": map_f}.get(mode, 16.0))
+            cam.CreateHorizontalApertureAttr(self.APERTURE)
             cam.CreateClippingRangeAttr(Gf.Vec2f(0.03, 3000.0))
             xf = UsdGeom.Xformable(cam); xf.ClearXformOpOrder()
-            self.rigs.append(dict(mode=mode, who=who or "d1", path=path, op=xf.AddTransformOp(UsdGeom.XformOp.PrecisionDouble),
+            if mode in ("chase", "fpv"):
+                who = who or "d1"
+            self.rigs.append(dict(mode=mode, who=who, path=path, op=xf.AddTransformOp(UsdGeom.XformOp.PrecisionDouble),
                                   eye=None, tgt=None, name=spec.replace(":", "_")))
+
+    @classmethod
+    def map_geometry(cls, bounds, aspect=16 / 9, margin=1.08, min_focal=7.0):
+        """Height (m) and focal length (mm) for a straight-down view that shows all of bounds at MAP_H; a site
+        too big for a min_focal lens at MAP_H gets a higher camera instead of a fisheye-like lens."""
+        x0, y0, x1, y1 = bounds
+        w, h = (x1 - x0) * margin, (y1 - y0) * margin
+        f = min(cls.MAP_H * cls.APERTURE / w, cls.MAP_H * cls.APERTURE / aspect / h)
+        return (cls.MAP_H, f) if f >= min_focal else (cls.MAP_H * min_focal / f, min_focal)
+
+    def _centre(self):
+        x0, y0, x1, y1 = self.bounds or self.GRID_BOUNDS
+        return 0.5 * (x0 + x1), 0.5 * (y0 + y1), max(x1 - x0, y1 - y0)
 
     def update(self, poses, focus, dt):
         for r in self.rigs:
-            if r["mode"] == "wide":                       # establishing / pull-back: whole grid at dusk
+            if r["mode"] == "wide":                       # establishing / pull-back: whole site at dusk
                 r["th"] = r.get("th", -math.pi / 2 - 0.45) + dt * 2 * math.pi / 140.0
-                eye = np.array([64 * math.cos(r["th"]), 64 * math.sin(r["th"]) - 10.0, 36.0])
-                tgt = np.array([0.0, -10.0, 0.0])
+                if self.bounds is None or self.bounds == self.GRID_BOUNDS:     # the grid: as recorded in lv2/pt2
+                    cx, cy, R, H = 0.0, -10.0, 64.0, 36.0
+                else:
+                    cx, cy, span = self._centre()
+                    R, H = 0.62 * span, 0.32 * span
+                eye = np.array([cx + R * math.cos(r["th"]), cy + R * math.sin(r["th"]), H])
+                tgt = np.array([cx, cy, 0.0])
+            elif r["mode"] == "map":                      # static, north up (the 1 cm south offset sets "up")
+                cx, cy, _ = self._centre()
+                eye = np.array([cx, cy - 0.01, self.map_h]); tgt = np.array([cx, cy, 0.0])
+            elif r["mode"] == "mid":
+                if r["who"] and r["who"] in self.piles:
+                    px, py = self.piles[r["who"]][:2]
+                    c = np.array([px, py, 0.5 + 0.5 * float(self.surface(px, py))])
+                elif focus is not None:
+                    c = np.array(focus, float)
+                else:
+                    continue
+                r["clock"] = r.get("clock", 0.0) + dt
+                az = math.radians(self.MID_AZ + 6.0 * math.sin(r["clock"] * 2 * math.pi / 50.0))   # slow parallax
+                el = math.radians(self.MID_ELEV)
+                eye = c + self.MID_DIST * np.array([math.cos(el) * math.cos(az), math.cos(el) * math.sin(az), math.sin(el)])
+                eye[2] = max(eye[2], float(self.surface(eye[0], eye[1])) + 2.0)
+                tgt = c
             elif r["mode"] == "top":
                 if focus is None:
                     continue
@@ -526,11 +583,28 @@ class Rigs:
                     eye = pos - self.chase_back * fwd + [0, 0, self.chase_up]
                     eye[2] = max(eye[2], float(self.surface(eye[0], eye[1])) + 1.2)
                     tgt = pos + 2.0 * fwd
-            k = 1.0 - math.exp(-dt / (0.25 if r["mode"] == "fpv" else 0.6))
+            k = 1.0 - math.exp(-dt / {"fpv": 0.25, "mid": 1.5, "map": 1e-6}.get(r["mode"], 0.6))
             r["eye"] = eye if r["eye"] is None else r["eye"] + (eye - r["eye"]) * k
             r["tgt"] = tgt if r["tgt"] is None else r["tgt"] + (tgt - r["tgt"]) * k
             M = _look_at(r["eye"], r["tgt"])
             r["op"].Set(self.Gf.Matrix4d(*M.flatten().tolist()))
+
+
+def project(row, P):
+    """Pixel coordinates of world points P (N, 3) in one cameras.jsonl row (numpy only, for post/burn-in).
+
+    Returns (uv (N, 2), depth (N,)); depth <= 0 means behind the camera. Pinhole with square pixels and the
+    horizontal aperture fitted to the image width (how Kit renders a USD camera); principal point at the centre.
+    `world` is USD row-major (p_world = p_cam @ M), the camera looks down its local -Z with +Y up."""
+    M = np.asarray(row["world"], float).reshape(4, 4)
+    P = np.atleast_2d(np.asarray(P, float))[:, :3]
+    pc = np.c_[P, np.ones(len(P))] @ np.linalg.inv(M)
+    d = -pc[:, 2]
+    W, H = float(row["width"]), float(row["height"])
+    f = float(row["focal_mm"]) / float(row["h_aperture_mm"]) * W
+    with np.errstate(divide="ignore", invalid="ignore"):
+        uv = np.c_[W / 2 + f * pc[:, 0] / d, H / 2 - f * pc[:, 1] / d]
+    return uv, d
 
 
 class Recorder:

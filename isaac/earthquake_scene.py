@@ -291,6 +291,7 @@ def build_stage(scen, cfg, Q=None):
     if a.look:                                  # photoreal look (isaac/look.py); visual only
         sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
         import look
+        a._quake = Q                           # look.py places Flow dust at the quake epicentre
         look.apply(scen, cfg, a, W3, OUT, log=lambda m: print(m, flush=True))
     sim.reset()
     if Q is not None:

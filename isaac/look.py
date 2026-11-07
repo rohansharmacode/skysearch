@@ -236,8 +236,7 @@ def apply(scen, cfg, a, W3, OUT, log=print):
         except Exception as e:
             log(f"[look] greenery failed: {type(e).__name__}: {e}")
     if getattr(a, "flow", 1):
-        import sys as _s
-        flow_setup(getattr(_s.modules.get("__main__"), "Q", None), W3, log=log)
+        flow_setup(getattr(a, "_quake", None), W3, log=log)
     if getattr(a, "jagged", 0):
         try:
             chunkify(seed=cfg.seed, log=log)

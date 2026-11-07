@@ -49,6 +49,7 @@ ap.add_argument("--greenery", type=int, default=1, help="--look 1: trees, shrubs
 ap.add_argument("--flow", type=int, default=1, help="--look 1: Omni Flow volumetric dust (collapse) and fire")
 ap.add_argument("--rtx", default="realtime", choices=["realtime", "pathtracing"], help="renderer for recorded frames")
 ap.add_argument("--spp", type=int, default=16, help="--rtx pathtracing: samples per pixel per frame")
+ap.add_argument("--quake_every", type=int, default=5, help="--record: save every Nth physics frame during the quake (1 = 30 fps)")
 ap.add_argument("--wall_mdl", default="concrete_smooth", help="--look 1: wall material key in look.MDL (concrete_smooth, concrete_formed, plaster)")
 ap.add_argument("--probe_frames", type=int, default=0, help="record this many ticks, print brightness, exit (lighting check)")
 
@@ -535,7 +536,7 @@ def main():
         if focus is not None:
             dcam.update(dt=sim.get_physics_dt())
             rgb = dcam.data.output["rgb"][0].cpu().numpy()[..., :3]
-        if rec_dir and (stepped or (quaking and k % 5 == 0)):
+        if rec_dir and (stepped or (quaking and k % a.quake_every == 0)):
             import matplotlib.pyplot as plt
             rec.update(dt=sim.get_physics_dt())
             img = rec.data.output["rgb"][0].cpu().numpy()[..., :3]

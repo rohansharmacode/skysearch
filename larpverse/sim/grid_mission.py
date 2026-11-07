@@ -42,6 +42,8 @@ PRIORITY_MIN = 20              # dispatch only to piles at or above this acousti
 SURVEY_RADIUS = 13.0
 LANDING_RADIUS = 12.5
 PILE_MAX_T = 600.0
+SLAM_SCANS = 120               # LiDAR sweeps per pile under --slam (~50 s, ~0.2 m ATE)
+SLAM_CACHE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "dashboard", "data", "slam_cache")
 V1_CLASS = {"voice": "voice", "shout": "shout", "knocking": "knocking", "tapping": "tapping"}
 
 
@@ -70,7 +72,8 @@ class GridMission:
     def __init__(self, seed=7, start_pile=None, radar="model", out_dir=None, frames=False, verbose=True,
                  realtime=False, speed=1.0, dt=1.0, pile_budget=3, priority_min=PRIORITY_MIN, scan_budget=8,
                  policy="adaptive", acoustic="auto", n_points=360000, max_t=3000.0,
-                 world=None, flight=None, sensor_factory=None, acoustic_fn=None, decider=None):
+                 world=None, flight=None, sensor_factory=None, acoustic_fn=None, decider=None,
+                 slam=False, slam_scans=SLAM_SCANS, slam_kw=None, slam_cache=SLAM_CACHE):
         self.seed, self.radar, self.policy, self.scan_budget = seed, radar, policy, scan_budget
         self.out_dir, self.frames, self.verbose = out_dir, frames, verbose
         self.realtime, self.speed, self.dt, self.max_t = realtime, speed, dt, max_t
@@ -85,6 +88,9 @@ class GridMission:
         self.sensor_factory = sensor_factory or (lambda pw, s: make_generator(pw, s, radar))
         self.acoustic_fn = acoustic_fn
         self.decider = decider         # optional (context, options) -> {"choice", "rationale", "by"}
+        self.slam, self.slam_scans, self.slam_kw, self.slam_cache = slam, slam_scans, dict(slam_kw or {}), slam_cache
+        self.slam_metrics = {}         # pile -> metrics line (ATE, map error) for the log / state
+        self._terrain = self.grid.z.copy()   # sim-diagnostic reference for the SLAM map-error line only
         self.decisions = []
         # --- mission state (never touches truth)
         self.t, self.k = 0.0, 0
@@ -139,6 +145,8 @@ class GridMission:
                               centre=(cx, cy), survey_radius=SURVEY_RADIUS, scan_offset=self.n_scans, t0=self.t,
                               log=self.log, pile=name, owner=self)
         self.pm_t0 = self.t
+        if self.slam:
+            self._slam_ingest(name)
         p = self.piles[name]
         p["status"] = "surveying"
         p["why"] = f"Fleet dispatched here ({reason}); LiDAR survey and landing search under way."
@@ -163,6 +171,54 @@ class GridMission:
         self._ingested = [pts]
         return pts
 
+    def _slam_map(self, name):
+        """(points, metrics) of a LiDAR-SLAM orbit of pile ``name`` (mapping.slam), cached per (seed, pile, n)."""
+        kw = self.slam_kw
+        path = None
+        if self.slam_cache and not kw:
+            path = os.path.join(self.slam_cache, f"seed{self.seed}-{name}-n{self.slam_scans}.npz")
+            if os.path.exists(path):
+                try:
+                    z = np.load(path)
+                    return z["points"], dict(json.loads(str(z["metrics"])), cached=True)
+                except (OSError, ValueError, KeyError):
+                    pass
+        from mapping.slam import ate, height_error, run_pile_slam   # lazy: kiss-icp / open3d
+        r = run_pile_slam(self.scenario, name, seed=self.seed, n_scans=self.slam_scans, evaluate=False, **kw)
+        pts, g = r["cloud"], r["grid"]
+        rmse, _, end = ate(r["est_poses"], r["gt_poses"])
+        # sim diagnostic: SLAM heightmap vs the simulated terrain on the observed cells near the pile
+        ref = g.__class__(g.origin, g.res, g.w, g.h, np.zeros((g.h, g.w), np.float32))
+        X, Y = ref.mesh()
+        site = self.grid.__class__(self.grid.origin, self.grid.res, self.grid.w, self.grid.h, self._terrain)
+        ref.z = site.height_at(X, Y).astype(np.float32)
+        he = height_error(g, ref, g.observed, r["centre"])
+        m = {"pile": name, "method": r["method"], "n_scans": self.slam_scans, "map_points": int(len(pts)),
+             "ate_rmse_m": round(rmse, 3), "final_drift_m": round(end, 3),
+             "map_mae_m": he.get("mae_m"), "map_p95_m": he.get("p95_abs_m"), "coverage": he.get("coverage"),
+             "runtime_s": r["metrics"]["runtime"].get("total_s"), "note": r.get("note")}
+        if path:
+            try:
+                os.makedirs(self.slam_cache, exist_ok=True)
+                np.savez_compressed(path + ".tmp.npz", points=pts.astype(np.float32), metrics=json.dumps(m))
+                os.replace(path + ".tmp.npz", path)
+            except OSError:
+                pass
+        return pts, m
+
+    def _slam_ingest(self, name):
+        try:
+            pts, m = self._slam_map(name)
+        except Exception as e:                       # noqa: BLE001  (missing kiss-icp etc.: keep the mission going)
+            self._say(f"[{name}] LiDAR SLAM unavailable ({type(e).__name__}: {str(e)[:120]}); using the prior map")
+            return
+        self.slam_metrics[name] = m
+        self.ingest_pointcloud(pts)
+        mae = "n/a" if m.get("map_mae_m") is None else f"{100 * m['map_mae_m']:.0f} cm"
+        self._say(f"[{name}] LiDAR SLAM ({m['method']}, {m['n_scans']} sweeps{', cached' if m.get('cached') else ''}): "
+                  f"{m['map_points']} map points, ATE {100 * m['ate_rmse_m']:.0f} cm, final drift "
+                  f"{100 * m['final_drift_m']:.0f} cm, map height error {mae} MAE (sim diagnostic vs scenario terrain)")
+
     def _on_survey_done(self, pm):
         pts = self._ingested_points()
         if pts is None:
@@ -180,11 +236,16 @@ class GridMission:
         iy = np.clip(((sub[:, 1] - g.origin[1]) / g.res).astype(int), 0, g.h - 1)
         hit[iy, ix] = True
         covered = maximum_filter(hit, size=7)
-        g.z[:] = np.where(covered, new.z, g.z)
+        # the window keeps neighbouring piles flattened (GridWorld.window); only this pile's cells take the map
+        X, Y = g.mesh()
+        cx, cy = self.world.pile_xy[pm.pile]
+        d_own = np.hypot(X - cx, Y - cy)
+        d_other = np.min([np.hypot(X - x, Y - y) for n, (x, y) in self.world.pile_xy.items() if n != pm.pile], axis=0)
+        g.z[:] = np.where(covered & (d_own <= d_other), new.z, g.z)
         # write back into the site map (flight + dashboard) and restart the brain on the new map
         i0 = int(round((g.origin[0] - self.grid.origin[0]) / g.res))
         j0 = int(round((g.origin[1] - self.grid.origin[1]) / g.res))
-        self.grid.z[j0:j0 + g.h, i0:i0 + g.w] = np.where(covered, g.z, self.grid.z[j0:j0 + g.h, i0:i0 + g.w])
+        self.grid.z[j0:j0 + g.h, i0:i0 + g.w] = np.where(covered, new.z, self.grid.z[j0:j0 + g.h, i0:i0 + g.w])
         self._hm_cache = None
         from .localise import Localiser
         from .planner import Planner
@@ -518,6 +579,7 @@ class GridMission:
             "acoustic_agent": (self.last_acoustic or {}).get("agent"),
             "dispatch": self.dispatch,
             "decisions": self.decisions,
+            "slam": list(self.slam_metrics.values()) if self.slam else None,
         }
 
     def build_state(self):
@@ -568,6 +630,9 @@ def main(argv=None):
     ap.add_argument("--speed", type=float, default=1.0)
     ap.add_argument("--decider", choices=["none", "gemini"], default="none",
                     help="dispatch-gate agent (agents.gemini_decider.make_decider); falls back to argmax")
+    ap.add_argument("--slam", action="store_true",
+                    help="build each pile's map with LiDAR SLAM (mapping.slam, KISS-ICP); cached in dashboard/data/slam_cache")
+    ap.add_argument("--slam-scans", type=int, default=SLAM_SCANS)
     ap.add_argument("--quiet", action="store_true")
     a = ap.parse_args(argv)
     t0 = time.time()
@@ -579,7 +644,8 @@ def main(argv=None):
         except Exception as e:                           # noqa: BLE001
             print(f"gemini decider unavailable ({type(e).__name__}: {e}); using argmax", file=sys.stderr)
     m = GridMission(a.seed, a.start_pile, a.radar, a.out, a.frames, not a.quiet, a.realtime, a.speed,
-                    pile_budget=a.piles, priority_min=a.priority_min, acoustic=a.acoustic, decider=decider)
+                    pile_budget=a.piles, priority_min=a.priority_min, acoustic=a.acoustic, decider=decider,
+                    slam=a.slam, slam_scans=a.slam_scans)
     m.run()
     s = m.summary()
     print(f"done in {time.time() - t0:.1f} s wall, {m.t:.0f} s sim; visited {' -> '.join(s['visited'])}; "

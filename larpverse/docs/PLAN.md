@@ -8,6 +8,8 @@ Everything else comes after that loop works.
 
 ## What already exists in this repo
 
+> This table is from the first hour and is out of date. For the current state, read `README.md` (module map) and the Backlog below. Current headline: the grid mission (`sim/grid_mission.py`), the 3×3 dashboard, the acoustic agent, Gemini/fallback agents, KISS-ICP mapping, and the Isaac adapter with `--selftest`.
+
 | Path | State | What it is |
 |---|---|---|
 | `animation/index.html` | done | A 66 s interactive 3D concept animation for explaining the idea. Its localisation, ambiguity and relocation are computed, not keyframed. |
@@ -137,7 +139,7 @@ Give each session one workstream and point it at this file plus `contracts/INTER
 
 | ID | Pri | Item | Owner / status |
 |---|---|---|---|
-| BL-1 | P0 | Reviewer pass 1 over the whole product (dashboard live run, animations, handoff, code honesty/ground-truth) | reviewer — running |
+| BL-1 | P0 | Reviewer pass 1 over the whole product | DONE 575253f: 46 findings (5 P0, 25 P1, 16 P2) |
 | BL-2 | P0 | Isaac adapter cross-check against the team's verified Isaac 6.0.1 / Isaac Lab 3.0 API notes | DONE 629b128, 2e75dd2 (AppLauncher default, --selftest, --look pretty, --record); awaiting teammate GPU selftest |
 | BL-3 | P0 | Acoustic pile assignment: voices attributed to wrong piles (B3/C3 in seed 7); triangulate across drones, reject inconsistent bearings | builder — running |
 | BL-4 | P1 | Gemini decider + provider layer + intake + handover brief (agents/) | DONE 1ed9bae (fallback-tested; real API untested until key) |
@@ -146,7 +148,9 @@ Give each session one workstream and point it at this file plus `contracts/INTER
 | BL-7 | P1 | Grid evaluation: acoustic-priority order vs nearest-first vs fixed order; victims pinged within budget, time to first ping, false leads; N seeds | builder — running (with BL-8 + autonomy loop) |
 | BL-8 | P0 | A3 never pings with the model radar after 8 scans — make `--radar dsp` default for the grid demo or tune; explain in log | queued |
 | BL-9 | P2 | Pitch pack: one-page technical summary, 1-minute video script, deck (after BL-7 numbers) | queued |
-| BL-10 | P2 | Dashboard polish from review findings | queued |
+| BL-10 | P1 | Dashboard fix batch: review R1-016…029 | builder — running |
+| BL-13 | P1 | Review pass 1 brain batch (R1-001…015): acoustic items → BL-3 builder; sim items → mission builder | routed |
+| BL-14 | P1 | Isaac handoff batch (R1-030…038): done by orchestrator, except R1-033 (needs final story), R1-037 (GPU label), R1-038 (depth wording after R1-006) | mostly done |
 | BL-12 | P1 | Acoustic real-data validation (DroneAudioSet / ESC-50): detection P/R, Whisper under drone noise, vs SNR | builder — running |
 | BL-11 | P1 | Once GEMINI_API_KEY exists: record a seed-7 Gemini run and commit its replay cache (un-ignore one curated file) so the demo replays offline | blocked on key |
 
@@ -158,8 +162,10 @@ Give each session one workstream and point it at this file plus `contracts/INTER
 | 2026-11-07 | Isaac uses kinematic drones + PhysX raycast LiDAR via pxr/omni.physx only | stable across Isaac 4.5–6.x; Pegasus broken on 6 | orchestrator |
 | 2026-11-07 | Our code lives in larpverse/ on branch larpverse-sensing of the team repo | team repo already has SkySearch; avoid clobbering | orchestrator |
 | 2026-11-07 | Gemini (REST, GEMINI_API_KEY, gemini-3.5-flash) is the decision LLM | user request; matches team's v2-earthquake briefing | user |
-| 2026-11-07 | Radar returns stay a labelled synthetic generator; DSP validated on Schellenberger 2020 real data (0.39 bpm MAE) | Isaac RF doesn't model breathing through rubble | orchestrator |
+| 2026-11-07 | Radar returns stay a labelled synthetic generator; DSP validated on Schellenberger 2020 real data (0.39 bpm MAE; 3 subjects, line-of-sight CW at 0.4 m, no rubble) | Isaac RF doesn't model breathing through rubble | orchestrator |
 | 2026-11-07 | LLM answers cached in agents/cache (gitignored); a curated demo replay file will be committed once recorded | demo must run offline and reproducibly | orchestrator |
 | 2026-11-07 | kiss-icp 1.3.0 + open3d 0.20 accepted in .venv | SLAM agent installed before rules; numpy unchanged, tests pass | orchestrator |
 | 2026-11-07 | Isaac default launch = Isaac Lab AppLauncher (6.0.1/Lab 3.0, Brev); SimulationApp fallback | team's GPU-verified facts | orchestrator |
 | 2026-11-07 | usd-core allowed in .venv for offline pxr checks | lets us validate stage code without a GPU | orchestrator |
+| 2026-11-07 | Isaac adapter defaults to --radar dsp | review R1-005/034: model radar never pings A3 | orchestrator |
+| 2026-11-07 | Storyboard MP4s published as a pre-release on the team repo (larpverse-storyboard) | >100 MB, can't go in git; teammate needs them | orchestrator |

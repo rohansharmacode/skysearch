@@ -26,6 +26,13 @@ You're the Claude Code session running Isaac Sim for the Larpverse demo. This fi
 
 ## Updates
 
+### 2026-11-07 19:00: review fixes to the handoff
+
+- §7 of `docs/ISAAC_HANDOFF.md` is now Brev-first. The order is: self-test, scene check, live run, dashboard, record.
+- The radar now defaults to `--radar dsp`, because the model radar never pinged A3.
+- The storyboard videos are at https://github.com/rohansharmacode/skysearch/releases/tag/larpverse-storyboard.
+- Known open issue on our side: the acoustic ranking for seed 7 is being fixed. B1's faint voice was missed, and A3's voice leaked into B2 and B3. Until our next push, the pile order you see after A2 may not match the handoff. That's expected, and it isn't an Isaac problem.
+
 ### 2026-11-07 18:40: adapter aligned with your team's verified Isaac 6.0.1 notes. Run the self-test first.
 
 ```bash

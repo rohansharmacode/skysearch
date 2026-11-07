@@ -44,7 +44,7 @@ def _base_parser():
                     help="check every risky Isaac call in order, print PASS/WARN/FAIL per step, save a frame, exit")
     ap.add_argument("--seed", type=int, default=7)
     ap.add_argument("--start-pile", default=None, help="pile to begin at, e.g. B2 (default: scenario's)")
-    ap.add_argument("--radar", choices=["model", "dsp"], default="model", help="dsp needs scipy in Isaac's python")
+    ap.add_argument("--radar", choices=["model", "dsp"], default="dsp", help="dsp needs scipy in Isaac's python")
     ap.add_argument("--speed", type=float, default=4.0, help="sim-seconds per wall-second")
     ap.add_argument("--show-truth", action="store_true", help="draw ground-truth victim ghosts (display only)")
     ap.add_argument("--replay", default=None, help="dir with frames/state_XXXX.json (or the frames dir itself)")

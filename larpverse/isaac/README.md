@@ -66,7 +66,7 @@ If `--viz kit` is rejected by your Isaac Lab version, drop it (unknown flags are
 **(b) Isaac Sim workstation install (zip / launcher, e.g. `~/isaacsim`, 4.5 / 5.x):**
 
 ```bash
-cd ~/agentverse
+cd skysearch/larpverse        # repo root of our code (branch larpverse-sensing)
 ~/isaacsim/python.sh -m pip install scipy          # only needed for --radar dsp and the LiDAR window rebuild
 ~/isaacsim/python.sh isaac/run_mission.py --selftest --out /tmp/selftest
 ~/isaacsim/python.sh isaac/run_mission.py --seed 7 --speed 4 --out dashboard/data
@@ -82,7 +82,7 @@ Windows: `C:\isaacsim\python.bat isaac\run_mission.py --seed 7 --speed 4`.
 python3.11 -m venv ~/isaac-venv && source ~/isaac-venv/bin/activate
 pip install "isaacsim[all,extscache]==5.1.0" --extra-index-url https://pypi.nvidia.com
 pip install scipy
-cd ~/agentverse && python isaac/run_mission.py --selftest --out /tmp/selftest && python isaac/run_mission.py --seed 7 --speed 4
+cd skysearch/larpverse && python isaac/run_mission.py --selftest --out /tmp/selftest && python isaac/run_mission.py --seed 7 --speed 4
 ```
 
 The first launch asks you to accept the EULA (or set `OMNI_KIT_ACCEPT_EULA=YES`) and spends several

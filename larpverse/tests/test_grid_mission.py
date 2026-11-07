@@ -124,3 +124,16 @@ def test_decider_hook_choice_and_fallback():
     assert bad.visited == ref.visited
     assert all(x["by"] == "fallback" for x in bad.decisions if len(x["options"]) > 1)
     assert all(x["by"] == "argmax" for x in ref.decisions)
+
+
+def test_slam_hook_ingests_pile_map(tmp_path):
+    pytest.importorskip("mapping.slam")
+    from mapping.raycast_lidar import LidarConfig
+    kw = {"cfg": LidarConfig(channels=16, az_step_deg=1.0), "revs": 0.05, "method": "gt_noise"}
+    m = GridMission(seed=7, verbose=False, acoustic="stub", pile_budget=1, slam=True, slam_scans=6, slam_kw=kw)
+    m.run()
+    s = m.build_state()
+    assert s["slam"] and s["slam"][0]["pile"] == m.start_pile
+    assert s["slam"][0]["map_points"] > 1000 and s["slam"][0]["ate_rmse_m"] < 1.0
+    assert any("LiDAR SLAM" in e["msg"] for e in s["log"])
+    assert any("Heightmap window rebuilt" in e["msg"] for e in s["log"])

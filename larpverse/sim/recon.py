@@ -25,11 +25,13 @@ Ground-truth boundary: recon sees the heightmap (sensor stand-in), flight poses 
 """
 from __future__ import annotations
 
+from collections import Counter
+
 import numpy as np
 
 from .landing import LIM_ROUGH, LIM_SLOPE, LIM_STEP, patch_fields
-from .tasking import (Tasking, Zone, as_poly, buffer_convex, clip_human, clip_position, convex_hull,
-                      points_in_polygon, polygon_area, rasterise)
+from .tasking import (Tasking, Zone, as_poly, buffer_convex, ccw, clip_human, clip_position, convex_hull,
+                      points_in_polygon, polygon_area, rasterise, rasterise_box)
 from .world import Grid
 
 LIDAR_RADIUS_M = 12.0          # ground swath radius of the down-looking LiDAR at recon altitude (small sites)
@@ -50,6 +52,11 @@ MERGE_GAP_M = 3.0              # fragments (< 60 m2) within this gap join their 
 MAX_PROPOSAL_M2 = 1200.0       # still larger after core splitting -> k-means parts (collapse-site heaps)
 GROUND_WINDOW_M = 60.0         # local ground: grey opening window (wider than the widest wreck footprint)
 STANDING_MIN_H = 8.0           # standing-building test: roof at least this high above ground
+ROOF_MIN_H = 3.0               # roof cue: planar patch at least this high ...
+ROOF_LEVEL_DEG = 0.5           # ... and level (standing roof), or tilted as one rigid plane (leaning building):
+ROOF_RECT_MIN = 0.55            # roof fill of its min-area rectangle (damaged / stepped roofs are not perfect)
+ROOF_TILT_DEG = (4.0, 16.0)    # pancaked slabs sit at 0.6-2.5 deg and loose rubble is rough -> neither
+ROOF_MIN_M2 = 15.0             # ... and this large, rectangular, with facades dropping around it
 OUTLINE_MARGIN_M = 1.0
 
 
@@ -209,6 +216,49 @@ def standing_core(hc, m, res, min_h=STANDING_MIN_H):
     return core if (flat and rect >= 0.7 and steep) else None
 
 
+def roof_buildings(hgt, seen, res, min_h=ROOF_MIN_H, min_m2=ROOF_MIN_M2):
+    """Standing / tilted buildings from LiDAR geometry alone (no prior footprints): planar roof patches at
+    least ``min_h`` above the ground that are either LEVEL (median slope < ROOF_LEVEL_DEG: an intact roof) or
+    one rigid TILTED plane (ROOF_TILT_DEG, residual < 0.15 m: a leaning block), rectangular (>= 0.65 of their
+    min-area rectangle) and ringed by facades (the ground 1.5 m outside the roof edge sits at most half the
+    roof height). Pancaked lots are flat but not level (slabs settle at 0.6-2.5 deg on the collapse site) and
+    rubble is rough, so both stay search zones. Returns [(j0, i0, roof mask)] in cropped coordinates."""
+    from scipy import ndimage as ndi
+    g = Grid((0.0, 0.0), res, hgt.shape[1], hgt.shape[0], hgt.astype(np.float32))
+    slope, rough, *_ = patch_fields(g)
+    roof = seen & (hgt >= min_h) & (rough < 0.06) & (slope < 35.0)
+    roof = ndi.binary_opening(roof, iterations=1)
+    lab, n = ndi.label(roof)
+    ring_px = max(1, int(round(1.5 / res)))
+    out = []
+    for k, sl in enumerate(ndi.find_objects(lab), 1):
+        if sl is None:
+            continue
+        j0, j1 = max(0, sl[0].start - ring_px - 1), min(hgt.shape[0], sl[0].stop + ring_px + 1)
+        i0, i1 = max(0, sl[1].start - ring_px - 1), min(hgt.shape[1], sl[1].stop + ring_px + 1)
+        m = lab[j0:j1, i0:i1] == k
+        a = float(m.sum()) * res * res
+        if a < min_m2:
+            continue
+        hc = hgt[j0:j1, i0:i1]
+        jj, ii = np.nonzero(m)
+        A = np.stack([ii * res, jj * res, np.ones(len(ii))], 1)
+        coef, *_ = np.linalg.lstsq(A, hc[jj, ii], rcond=None)
+        resid = float(np.std(hc[jj, ii] - A @ coef))
+        tilt = float(np.median(slope[j0:j1, i0:i1][m]))
+        level = tilt < ROOF_LEVEL_DEG and resid < 0.3
+        leaning = ROOF_TILT_DEG[0] <= tilt <= ROOF_TILT_DEG[1] and resid < 0.15
+        if not (level or leaning):
+            continue
+        if a / max(min_rect_area(np.stack([ii * res, jj * res], 1), pad=res), 1e-9) < ROOF_RECT_MIN:
+            continue
+        ring = ndi.binary_dilation(m, iterations=ring_px) & ~ndi.binary_dilation(m, iterations=max(1, ring_px - 1))
+        if not ring.any() or float(np.median(hc[ring])) > 0.5 * float(np.median(hc[m])):
+            continue
+        out.append((j0, i0, m))
+    return out
+
+
 def _outline(m, x0, y0, res, margin_m):
     from scipy import ndimage as ndi
     edge = m & ~ndi.binary_erosion(m)
@@ -220,20 +270,66 @@ def _outline(m, x0, y0, res, margin_m):
 
 def segment_mounds(z, seen, origin, res, area=None, above_m=STREET_ABOVE_M, min_m2=MIN_MOUND_M2,
                    min_h=MIN_MOUND_H, split_m2=SPLIT_M2, max_m2=MAX_PROPOSAL_M2, merge_gap_m=MERGE_GAP_M,
-                   margin_m=OUTLINE_MARGIN_M, standing=None):
+                   margin_m=OUTLINE_MARGIN_M, standing=None, obstacles=None, roof_cue=True):
     """Rubble mounds / collapsed lots in a (partly) mapped heightmap: [{polygon, area_m2, height_max_m,
     peak_xy, cells}]. Cells rising ``above_m`` over the local ground (``ground_level``) form components;
     standing buildings (``standing_core``) are cut out (their footprints appended to ``standing`` if a list
     is given: obstacles, not zones) leaving their debris skirt; large components are split at their height
     cores, still-oversized ones (> ``max_m2``) by k-means; fragments < 60 m2 join a neighbour within
-    ``merge_gap_m`` or are dropped if smaller than ``min_m2`` / lower than ``min_h``."""
+    ``merge_gap_m`` or are dropped if smaller than ``min_m2`` / lower than ``min_h``.
+    Buildings are removed BEFORE the components are formed: known ``obstacles`` (prior footprints, e.g. the
+    scenario's ``site_info.obstacles``: [{polygon, height}]) and, with ``roof_cue``, ``roof_buildings`` found
+    from the map geometry alone; both are appended to ``standing``."""
     from scipy import ndimage as ndi
     ground = ground_level(z, seen, res, area)
     hgt = np.where(seen, z - ground, 0.0)
+    slope_all = patch_fields(Grid((0.0, 0.0), res, z.shape[1], z.shape[0], hgt.astype(np.float32)))[0]
     hi = seen & (hgt > above_m)
     if area is not None:
         hi &= area
-    hi = ndi.binary_closing(ndi.binary_opening(hi, iterations=1), iterations=2) & seen & (hgt > 0.3)
+    cut = np.zeros_like(hi)
+    cell = res * res
+    grow = max(1, int(round(1.0 / res)))
+    for o in obstacles or []:
+        j0, j1, i0, i1, sub = rasterise_box(o["polygon"], origin, res, z.shape[1], z.shape[0], dilate_m=1.0)
+        if sub.size and (sub & seen[j0:j1, i0:i1]).any():
+            cut[j0:j1, i0:i1] |= sub
+            if standing is not None:
+                standing.append({"polygon": ccw(o["polygon"]), "height_m": round(float(o.get("height", 0.0)), 1),
+                                 "source": "prior"})
+    if roof_cue:
+        for j0, i0, m in roof_buildings(hgt, seen, res):
+            mm = ndi.binary_dilation(np.pad(m, grow), iterations=grow)
+            jj, ii = np.nonzero(mm)
+            jj, ii = jj - grow + j0, ii - grow + i0
+            ok = (jj >= 0) & (jj < z.shape[0]) & (ii >= 0) & (ii < z.shape[1])
+            if cut[jj[ok], ii[ok]].mean() > 0.5:
+                continue                               # already a known obstacle
+            cut[jj[ok], ii[ok]] = True
+            if standing is not None:
+                standing.append({"polygon": _outline(m, origin[0] + i0 * res, origin[1] + j0 * res, res, 0.0),
+                                 "height_m": round(float(hgt[j0:j0 + m.shape[0], i0:i0 + m.shape[1]][m].max()), 1),
+                                 "source": "roof_cue"})
+    if roof_cue:                            # any sizeable LEVEL surface >= ROOF_MIN_H up is a roof (pancaked
+        lvl = seen & (hgt >= ROOF_MIN_H) & (slope_all < ROOF_LEVEL_DEG)     # slabs and rubble are never level)
+        lvl = ndi.binary_opening(ndi.binary_closing(lvl, iterations=2) & (hgt >= ROOF_MIN_H), iterations=1)
+        lab_l, n_l = ndi.label(lvl & ~cut)
+        for k, sl in enumerate(ndi.find_objects(lab_l), 1):
+            if sl is None:
+                continue
+            m = lab_l[sl] == k
+            if m.sum() * cell < ROOF_MIN_M2:
+                continue
+            j0, i0 = sl[0].start, sl[1].start
+            mm = ndi.binary_dilation(np.pad(m, grow), iterations=grow)
+            jj, ii = np.nonzero(mm)
+            jj, ii = jj - grow + j0, ii - grow + i0
+            ok = (jj >= 0) & (jj < z.shape[0]) & (ii >= 0) & (ii < z.shape[1])
+            cut[jj[ok], ii[ok]] = True
+            if standing is not None:
+                standing.append({"polygon": _outline(m, origin[0] + i0 * res, origin[1] + j0 * res, res, 0.0),
+                                 "height_m": round(float(hgt[sl][m].max()), 1), "source": "level_roof"})
+    hi = ndi.binary_closing(ndi.binary_opening(hi & ~cut, iterations=1), iterations=2) & seen & (hgt > 0.3) & ~cut
     lab, n = ndi.label(hi, structure=np.ones((3, 3)))
     cell = res * res
     pad = max(2, int(round((merge_gap_m + 2.0) / res)))
@@ -247,10 +343,15 @@ def segment_mounds(z, seen, origin, res, area=None, above_m=STREET_ABOVE_M, min_
         hc = hgt[j0:j1, i0:i1]
         pieces = [m]
         core = standing_core(hc, m, res) if m.sum() * cell >= 60.0 else None
+        if core is None:                    # level roof cells dominate the tall part: a (damaged) standing block
+            tall = m & (hc >= ROOF_MIN_H)
+            lvl = ndi.binary_closing(tall & (slope_all[j0:j1, i0:i1] < ROOF_LEVEL_DEG), iterations=2) & tall
+            if lvl.sum() * cell >= ROOF_MIN_M2 and lvl.sum() >= 0.6 * max(tall.sum(), 1):
+                core = lvl
         if core is not None:
             if standing is not None:
                 standing.append({"polygon": _outline(core, origin[0] + i0 * res, origin[1] + j0 * res, res, 0.0),
-                                 "height_m": round(float(hc[core].max()), 1)})
+                                 "height_m": round(float(hc[core].max()), 1), "source": "core"})
             skirt = m & ~ndi.binary_dilation(core, iterations=max(1, int(round(1.5 / res))))
             a = skirt.sum() * cell
             pieces = []
@@ -311,22 +412,35 @@ def segment_mounds(z, seen, origin, res, area=None, above_m=STREET_ABOVE_M, min_
         else:
             groups[hit].append(sm)
     mounds = []
-    for grp in groups:
-        jj = np.concatenate([full_idx(p)[0] for p in grp])
-        ii = np.concatenate([full_idx(p)[1] for p in grp])
+
+    def emit(jj, ii, depth=0):
+        """Outline cells (convex hull + margin); if the hull swallows a building that was cut out (> 15% of
+        its area on cut cells), split the cells in two (k-means) and outline each part, up to 4 levels."""
         a = float(len(jj) * cell)
+        if a < min_m2:
+            return
         hv = hgt[jj, ii]
         h = float(hv.max())
-        if a < min_m2 or h < min_h:
-            continue
+        if h < min_h:
+            return
         j0, i0 = jj.min(), ii.min()
         m = np.zeros((jj.max() - j0 + 1, ii.max() - i0 + 1), bool)
         m[jj - j0, ii - i0] = True
         poly = _outline(m, origin[0] + i0 * res, origin[1] + j0 * res, res, margin_m)
+        if cut.any() and depth < 4 and len(jj) >= 2 * min_m2 / cell:
+            b0, b1, c0, c1, sub = rasterise_box(poly, origin, res, z.shape[1], z.shape[0])
+            if sub.any() and (cut[b0:b1, c0:c1] & sub).sum() > 0.15 * sub.sum():
+                lab2 = kmeans_split(np.stack([ii, jj], 1).astype(float), 2)
+                for q in (0, 1):
+                    emit(jj[lab2 == q], ii[lab2 == q], depth + 1)
+                return
         k = int(np.argmax(hv))
         mounds.append({"polygon": poly, "area_m2": polygon_area(poly), "height_max_m": h,
                        "peak_xy": (float(origin[0] + (ii[k] + 0.5) * res), float(origin[1] + (jj[k] + 0.5) * res)),
                        "cells": int(len(jj))})
+
+    for grp in groups:
+        emit(np.concatenate([full_idx(p)[0] for p in grp]), np.concatenate([full_idx(p)[1] for p in grp]))
     return sorted(mounds, key=lambda d: (-d["peak_xy"][1], d["peak_xy"][0]))
 
 
@@ -378,7 +492,7 @@ class Recon:
 
     def __init__(self, source_grid, flight, bounds=None, aoi=None, pile_xy=None, lidar_radius_m=None,
                  alt_margin_m=ALT_MARGIN_M, perch_every_m=None, listen_s=RECON_LISTEN_S, say=None, t0=0.0,
-                 reserve=RECON_RESERVE, swap_s=RECON_SWAP_S):
+                 reserve=RECON_RESERVE, swap_s=RECON_SWAP_S, obstacles=None):
         self.src = source_grid                      # LiDAR stand-in: heightmap revealed within sensor range
         self.flight = flight
         g = source_grid
@@ -395,6 +509,7 @@ class Recon:
         self.z = np.zeros((self.h, self.w), np.float32)
         self.seen = np.zeros((self.h, self.w), bool)
         self.pile_xy = dict(pile_xy or {})
+        self.obstacles = list(obstacles or [])         # optional prior building footprints [{polygon, height}]
         if lidar_radius_m is None:                 # auto: ~12 m on the 72 x 90 m grid, 25 m on a 320 m site
             lidar_radius_m = float(np.clip(np.sqrt(self.area.sum() * self.res ** 2) / 7.0, LIDAR_RADIUS_M,
                                            LIDAR_RADIUS_MAX_M))
@@ -696,10 +811,13 @@ class Recon:
 
     def propose(self):
         self.standing = []
-        mounds = segment_mounds(self.z, self.seen, self.origin, self.res, area=self.area, standing=self.standing)
+        mounds = segment_mounds(self.z, self.seen, self.origin, self.res, area=self.area, standing=self.standing,
+                                obstacles=self.obstacles)
         if self.standing:
-            self.say(f"RECON: {len(self.standing)} standing building(s) (tall, roof-flat, rectangular, steep walls) "
-                     "kept as flight obstacles, not search zones")
+            src = Counter(s_.get("source") for s_ in self.standing)
+            self.say(f"RECON: {len(self.standing)} standing building(s) kept as flight obstacles, not search zones "
+                     f"({src.get('prior', 0)} from prior footprints, {len(self.standing) - src.get('prior', 0)} "
+                     "found from the map: planar roof, rectangular, facades)")
         self.proposals = score_proposals(mounds, self.clips, self.pile_xy)
         return self.proposals
 

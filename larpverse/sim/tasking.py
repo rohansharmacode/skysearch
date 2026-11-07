@@ -265,9 +265,13 @@ def piles_in_zone(poly, piles, min_frac=0.2):
     """[(pile name, fraction of its pieces' centres inside the zone)] for piles with fraction >= ``min_frac``
     (or whose centre is inside), largest fraction first. A zone may cover part of a pile or several piles."""
     out = []
+    q = as_poly(poly)
+    (bx0, by0), (bx1, by1) = q.min(0) - 15.0, q.max(0) + 15.0      # cheap prefilter (hundreds of sectors)
     for p in piles:
         pcs = _pile_attr(p, "pieces") or []
         cx, cy = float(_pile_attr(p, "x")), float(_pile_attr(p, "y"))
+        if not (bx0 <= cx <= bx1 and by0 <= cy <= by1):
+            continue
         if pcs:
             c = np.array([(pc["center"] if isinstance(pc, dict) else pc.center)[:2] for pc in pcs], float)
             frac = float(points_in_polygon(c[:, 0], c[:, 1], poly).mean())

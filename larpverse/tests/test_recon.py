@@ -98,3 +98,34 @@ def test_large_site_path_and_standing_buildings():
     assert len(standing) == 1 and standing[0]["height_m"] == pytest.approx(22.0, abs=0.5)
     assert len(mounds) == 1 and points_in_polygon(85, 80, mounds[0]["polygon"])
     assert not points_in_polygon(30, 30, mounds[0]["polygon"])
+
+
+def test_collapse_site_zones_and_recon():
+    """320 m collapse site: default zones = rubble sectors only; recon maps it with 3 drones (battery swaps),
+    proposals cover the sectors and leave the standing buildings (site_info.obstacles prior) out."""
+    try:
+        sc = make_scenario(7, site="collapse")
+    except Exception as e:                                         # noqa: BLE001  (site cache not built here)
+        pytest.skip(f"collapse site unavailable: {e}")
+    from sim.tasking import ZoneTracker, default_tasking
+    pd = sc.public_dict()
+    tk = default_tasking(sc)
+    assert len(tk.zones) == len(sc.piles) >= 100
+    tr = ZoneTracker(tk, piles=sc.piles, bounds=pd["bounds"])
+    assert all(tr.zone_piles(z) for z in tr.zone_ids())
+    g = sc.heightmap(0.5)
+    fl = KinematicFlight(g, starts={f"d{i + 1}": tuple(xy) for i, xy in enumerate(pd["drone_pads"][:3])})
+    obs = pd["site_info"]["obstacles"]
+    rc = Recon(g, fl, bounds=pd["bounds"], obstacles=obs)
+    t = 0
+    while rc.status in ("mapping", "listening") and t < 4000:
+        t += 1
+        rc.step(t, fl.step(1.0, t))
+        if rc.wants_listen:
+            rc.add_listen([], t)
+    assert rc.status == "proposing" and rc.mapped_fraction >= 0.9
+    props = rc.proposals
+    inside = sum(any(points_in_polygon(p.x, p.y, q["polygon"]) for q in props) for p in sc.piles)
+    assert inside >= 0.85 * len(sc.piles)
+    swallowed = [o for o in obs if any(points_in_polygon(*np.mean(o["polygon"], 0), q["polygon"]) for q in props)]
+    assert len(swallowed) <= 5

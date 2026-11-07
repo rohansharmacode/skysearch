@@ -49,13 +49,18 @@ class ObservationGenerator:
     @staticmethod
     def _landing_quality(rng, site: dict, dwell: float) -> float:
         """Scan quality in [0.03, 0.97] from the actual touchdown (planned patch x what happened)."""
-        true_rough = site["roughness"] * (radar_dsp.PERCH_ROUGH_FACTOR if site.get("perch") else 1.0) \
-            * float(np.exp(rng.normal(0, 0.3)))
+        pod = bool(site.get("pod"))
+        factor = radar_dsp.POD_ROUGH_FACTOR if pod else (radar_dsp.PERCH_ROUGH_FACTOR if site.get("perch") else 1.0)
+        true_rough = site["roughness"] * factor * float(np.exp(rng.normal(0, 0.3)))
         # the 0.5 m heightmap hides loose debris: sometimes the touchdown is much rougher than mapped
         p_upset = 0.08 + (0.17 if site["z"] > 0.8 else 0.0)
-        if rng.uniform() < p_upset:
+        upset = rng.uniform() < p_upset
+        if upset and pod:                # the pod's IMU sees a rocking seat: lift 0.3 m and set it down once more
+            upset = rng.uniform() < p_upset
+        if upset:
             true_rough = max(true_rough, 0.02) * float(rng.uniform(2.0, 4.0))
-        true_slope = max(0.0, site["slope_deg"] * float(np.exp(rng.normal(0, 0.2))) - radar_dsp.LEVEL_DEG)  # levelled mount
+        true_slope = max(0.0, site["slope_deg"] * float(np.exp(rng.normal(0, 0.2)))
+                         - (radar_dsp.POD_MAX_SLOPE if pod else radar_dsp.LEVEL_DEG))   # pod seated / levelled mount
         quality = scan_quality(true_rough, true_slope, dwell) * float(rng.uniform(0.9, 1.05))
         if rng.uniform() < 0.06:  # gust / interference during the dwell
             quality *= float(rng.uniform(0.3, 0.6))

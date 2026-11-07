@@ -35,6 +35,7 @@ from .coordinator import KinematicFlight, Mission
 from .grid_world import GridWorld
 from . import radar_dsp
 from .radar_dsp import REACH_REF_RANGE_M, reach_path_m
+from .landing import detect_landing_sites, detect_pod_sites
 from .radar_model import make_generator
 from .sensor_model import rubble_path
 from .scenario import BASE_XY, DRONE_PADS, SITE_BOUNDS, make_scenario
@@ -51,7 +52,8 @@ LANDING_RADIUS = 12.5
 PILE_MAX_T = 600.0
 SLAM_SCANS = 120               # LiDAR sweeps per pile under --slam (~50 s, ~0.2 m ATE)
 SLAM_CACHE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "dashboard", "data", "slam_cache")
-MISSION_SCANS = 24             # autonomous: radar scans for the whole mission (all piles, all drones)
+MISSION_SCANS = 24             # autonomous: radar scans for the whole mission (all piles, all drones), landing ring
+MISSION_SCANS_POD = 36         # winch pod: a re-placement is ~20 s + a 36 s winch/scan cycle instead of a re-land
 RESERVE = 0.25                 # every drone keeps this battery fraction; below it the fleet swaps packs
 SWAP_S = 60.0                  # battery swap time at the pads once all drones are docked
 VITALS_LOOK_S = 0.0            # 60 s in-place dwell per firm ping once the vitals hook is live (on hold)
@@ -59,7 +61,8 @@ REVISIT_MIN_COVERAGE = 0.5     # revisit an open lead only if the radar can reac
 REVISIT_DISCOUNT = 0.5         # an open lead already scanned ranks at half its acoustic priority
 # radar_dsp presets: literature | legacy (docs/RADAR_PENETRATION.md). Default stays "legacy" so the seed-7
 # demo keeps its pings; with "literature" the landing ring is out of radar reach (product decision pending).
-PENETRATION_DEFAULT = "legacy"
+PENETRATION_DEFAULT = "literature"   # realistic (~3 m beneath); "legacy" only for comparison
+DELIVERY_DEFAULT = "pod"             # winch-lowered sensor pod on the pile surface; "land" = the old landing ring
 RASTER = ["A1", "B1", "C1", "C2", "B2", "A2", "A3", "B3", "C3"]   # fixed lawnmower baseline (row by row)
 V1_CLASS = {"voice": "voice", "shout": "shout", "knocking": "knocking", "tapping": "tapping"}
 
@@ -92,7 +95,8 @@ class GridMission:
                  world=None, flight=None, sensor_factory=None, acoustic_fn=None, decider=None,
                  slam=False, slam_scans=SLAM_SCANS, slam_kw=None, slam_cache=SLAM_CACHE,
                  autonomous=True, mission_scans=None, dispatch_policy="acoustic", reserve=RESERVE, swap_s=SWAP_S,
-                 listen_s=None, revisit_max=2, penetration=None, launch_pile=None, site="grid", platform=None):
+                 listen_s=None, revisit_max=2, penetration=None, launch_pile=None, site="grid", platform=None,
+                 delivery=None):
         """``autonomous`` (default): keep searching until the mission scan budget (``mission_scans``, default
         24), the time limit or the open leads run out; battery swaps at the pads; open leads without a firm
         ping are revisited once. ``pile_budget`` caps pile visits (None = no cap; legacy mode uses 3).
@@ -100,7 +104,13 @@ class GridMission:
         not listen unless ``listen_s`` is given)."""
         if dispatch_policy not in ("acoustic", "nearest", "raster"):
             raise ValueError(f"dispatch_policy {dispatch_policy!r}")
-        self.penetration = penetration or PENETRATION_DEFAULT
+        self.delivery = delivery or DELIVERY_DEFAULT
+        if self.delivery not in ("pod", "land"):
+            raise ValueError(f"delivery {self.delivery!r}")
+        if platform is None and self.delivery == "pod":
+            platform = "heavy_sar"                     # the winch pod rides on the heavy drone
+        self.penetration = "literature" if (penetration or PENETRATION_DEFAULT) == "realistic" \
+            else (penetration or PENETRATION_DEFAULT)
         radar_dsp.use_penetration(self.penetration)     # process-wide: generator, planner and coverage agree
         rx = 0.0
         if platform not in (None, "legacy_small"):
@@ -111,7 +121,8 @@ class GridMission:
         self.out_dir, self.frames, self.verbose = out_dir, frames, verbose
         self.autonomous, self.dispatch_policy, self.reserve, self.swap_s = autonomous, dispatch_policy, reserve, swap_s
         self.revisit_max = revisit_max
-        self.mission_scans = mission_scans if mission_scans is not None else (MISSION_SCANS if autonomous else None)
+        self.mission_scans = mission_scans if mission_scans is not None else (
+            (MISSION_SCANS_POD if self.delivery == "pod" else MISSION_SCANS) if autonomous else None)
         self.listen_s = float(listen_s) if listen_s is not None else (LISTEN_S if dispatch_policy == "acoustic" else 0.0)
         max_t = max_t if max_t is not None else (3600.0 if autonomous else 3000.0)
         pile_budget = pile_budget if pile_budget is not None else (None if autonomous else 3)
@@ -224,6 +235,12 @@ class GridMission:
         self.pm.vitals_look_s = VITALS_LOOK_S
         if self.platform_spec is not None:
             self.pm.landing_kw["limits"] = self.platform_spec.landing_limits()
+        if self.delivery == "pod":
+            pod = getattr(self.platform_spec, "pod", None)
+            lead = self._lead_xy(name)
+            self.pm.site_detector = lambda g, c: detect_pod_sites(
+                g, c, lead_xy=lead, max_slope=getattr(pod, "max_slope_deg", 30.0), winch_m=getattr(pod, "winch_m", 20.0),
+                hover_clear=getattr(pod, "hover_clear_m", 5.0))
         self.pm.prior_obs = [o for o in self.done_scans if o.get("pile_id") == name] if revisit else []
         self._preload(self.pm)
         if self.slam:
@@ -235,6 +252,32 @@ class GridMission:
         verb = "Revisit" if revisit else "Dispatch" if prev else "Deploy"
         self._say(f"{verb} d1-d3 -> pile {name} at ({cx:.1f}, {cy:.1f}): {reason}"
                   + (f" [{len(self.pm.prior_obs)} earlier scans kept in the belief; up to {budget} new scans]" if revisit else ""))
+
+    def _placement(self, pod):
+        """1-based index of this pod's placement among the active pile's scans (contract: placement / of)."""
+        if not self.pm:
+            return None
+        ids = [s["id"] for s in self.pm.sites if s.get("status") == "used"]
+        return ids.index(pod["site"]) + 1 if pod.get("site") in ids else None
+
+    def _lead_xy(self, name):
+        """Acoustic lead posterior centre for pile ``name``: least-squares crossing of the human-like bearing
+        cones assigned to it (>= 2 origins >= 3 m apart, crossing within 8 m of the pile), else the pile centre."""
+        cx, cy = self.world.pile_xy[name]
+        obs = [o for o in self.acoustic_obs if o.get("pile_id") == name and o.get("bearing_deg") is not None]
+        if len(obs) >= 2:
+            A, b = np.zeros((2, 2)), np.zeros(2)
+            for o in obs:
+                th = np.radians(o["bearing_deg"])
+                n = np.array([-np.sin(th), np.cos(th)])                 # normal to the bearing line
+                w = float(o.get("confidence") or 0.5)
+                A += w * np.outer(n, n)
+                b += w * n * (n @ np.asarray(o["origin"], float))
+            if np.linalg.cond(A) < 1e3:
+                x = np.linalg.solve(A, b)
+                if np.hypot(x[0] - cx, x[1] - cy) <= 8.0:
+                    return (float(x[0]), float(x[1]))
+        return (cx, cy)
 
     def _preload(self, pm):
         """Revisit: fold the pile's earlier radar observations into the (new) localiser."""
@@ -355,7 +398,11 @@ class GridMission:
             self.k += 1
             self.flight.step(self.dt, self.t)
             docked = all(p["state"] == "docked" for p in self.flight.poses())
-            if self.stage == "listen" and self.t >= self.listen_end:
+            if self.stage == "listen" and self.listen_end is None and all(
+                    p["state"] in ("landed", "docked") and not self.flight.drone_state(p["id"])[2] for p in self.flight.poses()):
+                self.listen_end = self.t + self.listen_s
+                self._say(f"All drones down, rotors off: listening for {self.listen_s:.0f} s")
+            if self.stage == "listen" and self.listen_end is not None and self.t >= self.listen_end:
                 self._finish_listen()
             elif self.stage == "swap":
                 if self.swap["ends"] is None and docked:
@@ -455,7 +502,8 @@ class GridMission:
         cov = self._radar_coverage(pm)
         p.update(cov)
         reach_txt = (f"Radar reached {100 * cov['radar_coverage']:.0f}% of the pile volume "
-                     f"({100 * cov['radar_coverage_shallow']:.0f}% of its top 2 m) from the landing sites used; "
+                     f"({100 * cov['radar_coverage_shallow']:.0f}% of its top 2 m) from the "
+                     f"{'pod placements' if self.delivery == 'pod' else 'landing sites'} used; "
                      f"per-scan reach ≈{cov['radar_reach_m']:.1f} m of rubble directly beneath")
         res = pm.result
         for c in firm:
@@ -482,9 +530,14 @@ class GridMission:
                           else "; its acoustic lead stays open for a revisit") if lead else ""))
         if self.listen_s > 0:
             self.stage = "listen"
-            self.listen_end = self.t + self.listen_s
-            self._say(f"Radar phase at {name} over; landed drones listen to the other piles for {self.listen_s:.0f} s "
-                      "and stream clips to the acoustic agent")
+            if self.delivery == "pod" and self._land_for_listen(pm):
+                self.listen_end = None          # starts once all drones are down with rotors off
+                self._say(f"Radar phase at {name} over; drones land off the pile (rotors off) to listen to the other "
+                          f"piles for {self.listen_s:.0f} s")
+            else:
+                self.listen_end = self.t + self.listen_s
+                self._say(f"Radar phase at {name} over; landed drones listen to the other piles for {self.listen_s:.0f} s "
+                          "and stream clips to the acoustic agent")
         else:
             self._gate(None)
 
@@ -522,6 +575,29 @@ class GridMission:
         self._say(f"Vitals at {c['id']} from {o['scan_id']}{' (60 s look)' if o.get('vitals_look') else ''}: "
                   f"pattern {v.get('pattern')}, rate {v.get('rate_bpm')}/min, hint {v.get('triage_hint')} "
                   f"(confidence {v.get('pattern_conf')}); dig score {c['dig_score']}. A triage aid for rescuers to check")
+
+    def _land_for_listen(self, pm):
+        """Pod delivery: the drones hover while the pods scan, but listening needs rotors off, so each drone lands
+        on the nearest free flat patch around the pile (landing-ring detector, platform limits)."""
+        kw = {"search_radius": 14.0}
+        if self.platform_spec is not None:
+            kw["limits"] = self.platform_spec.landing_limits()
+        sites = [s for s in detect_landing_sites(pm.grid, centre=self.world.pile_xy[pm.pile], **kw)
+                 if s["status"] == "candidate" and not s.get("perch")
+                 and abs(float(self.grid.height_at(*s["xy"])) - s["z"]) < 0.3]   # the window flattens other piles
+        poses = {p["id"]: p["pose"] for p in self.flight.poses()}
+        if len(sites) < len(poses):
+            self._say("WARNING: not enough flat patches to land for the listen; listening while hovering (rotor noise)")
+            return False
+        taken = set()
+        for did, pose in poses.items():
+            s = min((s for s in sites if s["id"] not in taken),
+                    key=lambda s: np.hypot(s["xy"][0] - pose[0], s["xy"][1] - pose[1]))
+            taken.add(s["id"])
+            z = max(float(s["z"]), float(self.grid.height_at(*s["xy"])))     # skids on the highest point of the patch
+            self.flight.command({"drone_id": did, "type": "goto_land_scan", "destination": [s["xy"][0], s["xy"][1], z],
+                                 "landing_site_id": f"listen-{s['id']}", "scan_duration": 0.5})
+        return True
 
     def _radar_coverage(self, pm):
         """Share of the pile's rubble volume within radar reach of the landing sites actually scanned from.
@@ -932,6 +1008,8 @@ class GridMission:
             "landing_sites": sites,
             "scans": scans,
             "radar_candidates": cands,
+            "pods": [dict(p, placement=self._placement(p), of=(self.pm.budget if self.pm else None),
+                          lead=(self.pm.pile if self.pm else None)) for p in getattr(self.flight, "pods", lambda: [])()],
             "pings": [c for c in cands if c["status"] == "candidate" and c.get("kind") == "stationary"],
             "acoustic": self.acoustic_obs,
             "belief": belief,
@@ -942,9 +1020,10 @@ class GridMission:
                         "pile_budget": self.pile_budget, "priority_min": self.priority_min,
                         "visited": list(self.visited), "active_pile": self.visited[-1] if self.stage in ("pile", "listen") else None,
                         "stage": self.stage, "acoustic_source": self.acoustic_source,
-                        "listen_ends": round(self.listen_end, 1) if self.stage == "listen" else None,
+                        "listen_ends": round(self.listen_end, 1) if self.stage == "listen" and self.listen_end else None,
                         "in_transit": upcoming,
-                        "radar_penetration": self.penetration,
+                        "radar_penetration": self.penetration, "delivery": self.delivery,
+                        "platform": self.platform or "legacy_small",
                         "radar_reach_beneath_m": round(reach_path_m(REACH_REF_RANGE_M, 0.9), 2),
                         "autonomous": self.autonomous, "dispatch_policy": self.dispatch_policy, "radar": self.radar,
                         "scan_budget": self.mission_scans, "scans_used": self.scans_used,
@@ -1009,9 +1088,11 @@ def main(argv=None):
                     help="auto: acoustic/ pipeline if importable or via .venv-audio, else the synthetic stub")
     ap.add_argument("--site", default="grid",
                     help="grid | weiguan | collapse | mesh:<path> (sim/scenario.make_scenario)")
-    ap.add_argument("--platform", default="legacy_small",
+    ap.add_argument("--delivery", choices=["pod", "land"], default=DELIVERY_DEFAULT,
+                    help="pod: winch-lowered sensor pod on the pile surface (default); land: the old landing ring")
+    ap.add_argument("--platform", default=None,
                     help="sim/platform.py preset: legacy_small (today) | heavy_sar | industrial_sar")
-    ap.add_argument("--penetration", choices=list(radar_dsp.PENETRATION_MODELS), default=PENETRATION_DEFAULT,
+    ap.add_argument("--penetration", choices=list(radar_dsp.PENETRATION_MODELS) + ["realistic"], default=PENETRATION_DEFAULT,
                     help="radar through-rubble model: literature (~3 m beneath) or legacy (optimistic 0.7 dB/m)")
     ap.add_argument("--piles", type=int, default=None, help="cap on pile visits (legacy loop default 3; autonomous: none)")
     ap.add_argument("--no-autonomous", dest="autonomous", action="store_false",
@@ -1042,7 +1123,7 @@ def main(argv=None):
                     pile_budget=a.piles, priority_min=a.priority_min, acoustic=a.acoustic, decider=decider,
                     slam=a.slam, slam_scans=a.slam_scans, autonomous=a.autonomous, mission_scans=a.scans,
                     dispatch_policy=a.dispatch, penetration=a.penetration, site=a.site,
-                    platform=a.platform)
+                    platform=a.platform, delivery=a.delivery)
     m.run()
     s = m.summary()
     print(f"done in {time.time() - t0:.1f} s wall, {m.t:.0f} s sim; visited {' -> '.join(s['visited'])}; "

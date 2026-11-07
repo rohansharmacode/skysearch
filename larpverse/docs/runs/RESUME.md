@@ -26,7 +26,7 @@ Paused by the user at about 23:15 and resumed at about 23:20. All 11 agents were
 **Gemini**
 - The key is saved in `.env` (gitignored). It's a temporary hackathon key, so use it freely.
 - It is rate-limited (HTTP 429), so backoff and throttling live in `agents/llm.py`.
-- Model `gemini-3.5-flash` (GEMINI_MODEL).
+- Model `gemini-3.5-flash` (GEMINI_MODEL). **23:55: the key hit its DAILY quota (429)**; all agents fall back cleanly. Re-run the live decider pass and the Gemini audio eval when it resets.
 
 **Product decisions by the user**
 - **Audio:** an open-model novelty filter runs first; only outliers go to Gemini (multilingual), which feeds prioritisation.
@@ -60,11 +60,12 @@ Paused by the user at about 23:15 and resumed at about 23:20. All 11 agents were
 | a2b76615bba793384 | **Real-audio validation + pipeline verdict** (acoustic/validate_real.py, docs/ACOUSTIC_VALIDATION.md, data/audio_real) | DONE: verdict ours; DREGON real DoA (dd8ab8a, data is academic-use only, kept local) |
 | a1a856ada8463193a | **Vitals** (sim/physio.py, sim/vitals.py, scripts/validate_vitals.py, tests/test_vitals, docs/VITALS.md) | DONE 4da97d0: condition-only, 86% synthetic, distressed 100%, over-triage fixed (49→5 of 57). Hooks 3-5 unblocked. Callout fix → speaker. Known: over-triages calm slow breathers (5-8 bpm) |
 | add66c0cd95d1fed8 | **Site** (sim/site_weiguan, site_mesh, `site="collapse"` from the teammate's USD, isaac/scene.py, photoreal.py, run_mission.py `--site`, isaac/site.py, mapping/slam per-scenario, usd-core in .venv) | DONE: collapse site (07d9ec7), pod visual + passthrough (75ea9b2). Brief 🟡→✅ pushed. Open: isaac/selftest.py still grid-only; licence: core geometry is also scan-derived |
-| a5c508c060aa20b94 | **Dashboard** (dashboard/*) — DONE again: age removed (bde9d44), tile viewer (a1c85f0). Idle. | Batch 2 R2 items, `?data` alias, Dig-order panel and vitals, clip language/translation, coverage hatch, tasking Plan-search mode, recon display and proposals, scaling to the collapse site |
+| a5c508c060aa20b94 | **Dashboard** (dashboard/*) | RESUMED: comms/hotspot panel (blue), live /api/portal feed | Batch 2 R2 items, `?data` alias, Dig-order panel and vitals, clip language/translation, coverage hatch, tasking Plan-search mode, recon display and proposals, scaling to the collapse site |
 | a9d09919957c913a4 | **Visual consistency** (animation/grid-search.html, index.html fixes, scenario_seed7.js via exporter, scripts/export_scenario_js.py, isaac/overlay.py) | DONE batch 4 (87f0ff8 etc.). Grid MP4 re-recorded 93 s (media/, not yet uploaded to release). Idle |
 | a793a6498850fe65e | **Tasking + recon** (sim/tasking.py, sim/recon.py, tests, docs/TASKING_INTEGRATION.md integration diff) | Scale to the collapse site |
 | ac3d7a7f1dc704099 | **Platform** (sim/platform.py, mapping/raycast_lidar.py, isaac/lidar.py, isaac/drone_viz.py, docs/PLATFORM.md) | DONE (84b9dd9, 337db98). R-PLAT-1/2/5 → mission, R-PLAT-3 → site, R-PLAT-4 → dashboard (producer of 16 m tiles still unassigned) |
-| ad524ba6da89b83ed | **Decider** (agents/gemini_decider, brief, intake; tests/test_agents) | revisit/battery flags, pods, vitals dig order (no age), zone suggestions, brief |
+| ad524ba6da89b83ed | **Decider** — DONE (9730a11, 0958562); requests 1-3 → mission. Idle |
+| a02bd98e325a265bc | **Comms / rescue hotspot** (sim/comms.py, tests/test_comms.py, docs/HOTSPOT.md, dashboard/portal/) | NEW 00:05: Wi-Fi AP + captive portal + mesh backhaul + RSSI phone localisation; serve.py /api/portal patch → orchestrator applies |
 | a5e7bdb232aa15f7b | **Speaker** (sim/callout.py, sim/guidance.py, acoustic/speaker_assets.py, docs/SPEAKER.md, tests/test_callout) | serve.py patch and mission diff via Requests |
 
 Paused: a946c57cc57fd5b2b (video cut, `scripts/cut_video.py`). Resume it when the Isaac re-record exists.

@@ -358,3 +358,24 @@ def test_heavy_platform_landing_battery_and_rx_gain():
     finally:
         radar_dsp.use_rx_gain_db(0.0)
     assert r_heavy > radar_dsp.reach_path_m(6.0, 0.95)
+
+
+def test_winch_pod_cycle_and_state():
+    """Pod delivery: hover, winch the pod onto the pile surface, scan from the surface, winch up; state shows it."""
+    m = GridMission(seed=7, verbose=False, acoustic="stub", pile_budget=1, mission_scans=6)
+    assert m.delivery == "pod" and m.penetration == "literature" and m.platform == "heavy_sar"
+    statuses, winch = set(), 0.0
+    while not m.done:
+        m.step()
+        st = m.build_state()
+        for p in st["pods"]:
+            statuses.add(p["status"])
+            assert set(p) >= {"drone_id", "xy", "z", "status", "placement", "of", "lead", "t"}
+        winch = max([winch] + [d["winch_len_m"] for d in st["drones"]])
+    assert {"lowering", "scanning", "raising"} <= statuses and 2.0 < winch <= 20.0
+    pod_scans = [o for o in m.done_scans if o.get("delivery") == "pod"]
+    assert len(pod_scans) >= 3
+    for o in pod_scans:                                   # scan origin = pod on the surface, no air gap
+        x, y, z = o["sensor_pose"][:3]
+        assert abs(z - (m.grid.height_at(x, y) + 0.05)) < 0.6
+    assert m.build_state()["mission"]["delivery"] == "pod"

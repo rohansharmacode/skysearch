@@ -334,3 +334,35 @@ Viewers draw the preview first, then fetch only the tiles that touch the region 
 ### Vitals condition names (v1.3.1)
 
 The vitals output carries `vitals.condition` ∈ `calm | distressed_tachypnea | unconscious_slow | irregular_apneic` (or `unknown`). There is no age field anywhere. `vitals.pattern` is a legacy alias that consumers may still read.
+
+### Rescue hotspot and comms relay (v1.4)
+
+Each heavy drone runs an open Wi-Fi access point (2.4 GHz, SSID `RESCUE-<site>`). It's backhauled over the drones' existing mesh radio link to the operator's ground station (GCS); the GCS can add satellite or LTE internet when staging has it. A survivor whose phone connects sees a multilingual **captive portal**: "Help is coming. Are you trapped? [I'm trapped] [I'm safe] [send a message]". The portal also lets them message family when internet is up. Rescuers and residents on the surface can use it too.
+
+The search gains a **consent-based** signal: a phone that connects has its RSSI, measured by several drones, used to estimate its position (blue). Portal answers go through the same multilingual Gemini path as audio, with fallback when the key is unavailable.
+
+**Privacy rules:**
+- Passive probe-request or MAC sniffing is **off** and isn't implemented.
+- Devices get a random per-session token; MAC addresses are never stored.
+- Messages stay at the GCS.
+- Anything the operator sends to phones uses vetted templates, the same as the speaker; LLM translations go out only after the operator confirms.
+
+```jsonc
+"comms": {
+  "backhaul": { "kind": "mesh", "gcs_xy": [x, y], "internet": true,
+                "links": [ { "from": "d1", "to": "gcs", "rssi_dbm": -71, "mbps": 18.0 } ] },   // to: "gcs" or another drone (multi-hop)
+  "hotspots": [ { "drone_id": "d1", "ssid": "RESCUE-WEIGUAN", "on": true, "xy": [x, y], "z": 6.0,
+                  "clients": 2, "radius_m_est": 35 } ],
+  "devices": [ { "id": "ph-7f3a", "first_seen": 212.0, "last_seen": 300.0,
+                 "est_xy": [x, y], "est_sigma_m": 4.5, "pile": "A2",           // position from multi-drone RSSI; sector if inside one
+                 "rssi": [ { "drone_id": "d1", "dbm": -78, "t": 298.0 } ],
+                 "status": "trapped|safe|unknown", "battery_pct": 23,          // battery only if the portal reports it
+                 "messages": [ { "t": 240.0, "text": "…", "lang": "nan", "translation": "…", "by": "gemini|fallback|none" } ],
+                 "replies": [ { "t": 260.0, "template": "help_coming", "lang": "zh-TW", "confirmed_by": "operator" } ] } ],
+  "portal": { "url": "http://10.42.0.1/", "submissions": 3 }
+}
+```
+
+- `devices[].est_xy` is a **candidate region** (σ from the RSSI fit), never a confirmed position. RSSI through rubble is weak and multipath-heavy.
+- A connected device whose position falls inside a zone counts as **new evidence**, so the zone can be re-searched.
+- Colour: **blue** (#3b82f6) for comms, phones and hotspot coverage, everywhere.

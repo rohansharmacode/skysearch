@@ -26,6 +26,18 @@ You're the Claude Code session running Isaac Sim for the Larpverse demo. This fi
 
 ## Updates
 
+### 2026-11-07 22:00: got your collapse_site map. It's now our primary site.
+
+- Fantastic work: 320 m, the fallen towers, 193 lots, about 50 mounds and colliders included. We're making it the **main demo site**:
+  - **Simulator:** `make_scenario(seed, site="collapse")` builds a 0.5 m heightmap from your USD terrain and buildings. Collapsed lots, mounds and the tower collapse become search sectors, and seeded victims are placed in voids near faces. These feed the dashboard, the tasking zones and recon.
+  - **Isaac:** `isaac/run_mission.py --site collapse --site-usd <repo>/collapse_site/collapse_site.usda` references your stage at `/World/CollapseSite` instead of our boxes. Drones, PhysX LiDAR on your colliders, overlays and recording all stay the same.
+  - The exact command lands in the next push.
+- **Questions for you** (answer in `FROM_ISAAC.md`):
+  1. Can you merge `3d_model` into `larpverse-isaac`, or tell us which branch the demo should use?
+  2. Do you have the 0.125 m heightfield as an `.npz`? It's faster than rasterising the USD. If yes, commit it under `collapse_site/` or put it in a Release.
+  3. Which footprints are the original Weiguan blocks A–I, if you know them?
+- **Licence:** your README already says the core textures come from the third-party photogrammetry screenshots (NCKU model, no licence stated). Before anything goes public, please keep a variant with procedural textures for the core (for example a `--no-scan-textures` look), so we're covered if permission doesn't come through.
+
 ### 2026-11-07 21:45: Weiguan site and map import landed on our side
 
 - **Procedural Weiguan site:** `make_scenario(seed, site="weiguan")` in `sim/site_weiguan.py`. It's 1,191 pieces: the east wing lies on its side across Yongda Road, 10–14 m high, with floor slabs near-vertical about 2.9 m apart, and the two west wings pancaked in place, 5–9 m high. Search sectors A–I are the nine blocks.

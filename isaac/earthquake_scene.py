@@ -34,6 +34,12 @@ ap.add_argument("--rec_res", default="1280x720")
 ap.add_argument("--debris", type=int, default=60, help="falling concrete chunks at start (PhysX)")
 ap.add_argument("--sky", type=float, default=350.0, help="dome light intensity")
 ap.add_argument("--sun", type=float, default=1800.0, help="sun (distant light) intensity")
+ap.add_argument("--collapse", action="store_true", help="physically simulated earthquake before launch (isaac/quake.py)")
+ap.add_argument("--pga", type=float, default=0.45, help="--collapse: peak ground acceleration in g")
+ap.add_argument("--rec_cams", default="", help="extra recording cameras, comma list: chase:C1, fpv:C1, fpv:S1, collapse "
+                "(collapse = a person's eye height in the corridor, looking at the damage). Saved to <record>/isaac_<name>/")
+ap.add_argument("--stop_t", type=float, default=0.0, help="--record: stop at this mission time (s) instead of at handoff")
+ap.add_argument("--drone_light", type=float, default=12000.0, help="intensity of the small search light on each scout/crevice drone (0 = off)")
 ap.add_argument("--probe_frames", type=int, default=0, help="record this many ticks, print brightness, exit (lighting check)")
 
 from isaaclab.app import AppLauncher  # noqa: E402
@@ -108,25 +114,38 @@ def runs(mask):
     return out
 
 
-def boxes(name, mask, z0, z1, rgb, cell):
-    """One batched set of boxes for all runs in a mask, from height z0 to z1 (arrays or scalars per cell)."""
-    rr = runs(mask)
+def boxes(name, mask, z0, z1, rgb, cell, per_cell=False, thin=None):
+    """One batched set of boxes for all runs in a mask, from height z0 to z1 (arrays or scalars per cell).
+    per_cell: one box per cell (jagged heights); thin: box footprint in metres (e.g. desk legs). Returns prim paths."""
+    rr = [(r, c, c + 1) for r, c in np.argwhere(mask)] if per_cell else runs(mask)
     if not rr:
-        return None
+        return []
     pos, scl = [], []
     for r, c0, c1 in rr:
         lo = float(np.mean(np.broadcast_to(z0, mask.shape)[r, c0:c1]))
         hi = float(np.mean(np.broadcast_to(z1, mask.shape)[r, c0:c1]))
         pos.append(W3(((c0 + c1) / 2 * cell, (r + 0.5) * cell), (lo + hi) / 2))
-        scl.append([(c1 - c0) * cell, cell, max(hi - lo, 0.02)])
-    prims = O.Cube([f"/World/Building/{name}/b{i}" for i in range(len(pos))], sizes=[1.0] * len(pos),
-                   positions=np.array(pos), scales=np.array(scl))
+        scl.append([thin or (c1 - c0) * cell, thin or cell, max(hi - lo, 0.02)])
+    paths = [f"/World/Building/{name}/b{i}" for i in range(len(pos))]
+    prims = O.Cube(paths, sizes=[1.0] * len(pos), positions=np.array(pos), scales=np.array(scl))
     prims.apply_visual_materials(material(f"/World/Looks/{name}", rgb))
-    return prims
+    return paths
 
 
-def build_building(b, cfg):
+def collide(paths):
+    """Static colliders on visual boxes, so falling debris hits walls, heaps and desks (--collapse)."""
+    try:
+        P.GeomPrim(paths, apply_collision_apis=True)
+    except Exception as e:
+        print(f"[skysearch] colliders failed for {paths[0].rsplit('/', 1)[0]}: {type(e).__name__}: {e}", flush=True)
+
+
+def build_building(b, cfg, Q=None):
     """Walls, rubble, collapsed slabs over voids, desks: all from the grid the swarm searches."""
+    if Q is not None:          # --collapse: static parts with colliders; slabs and debris are rigid bodies (quake.py)
+        Q.build_static(lambda name, mask, z0, z1, rgb, **kw: boxes(name, mask, z0, z1, rgb, cfg.cell, **kw), collide)
+        _floor(b, cfg)
+        return
     c = b.clear
     inside = (c < OUT)
     solid = inside & (c < 0.12)
@@ -144,6 +163,10 @@ def build_building(b, cfg):
     # a collapsed slab lies on top of each void: you see concrete, the drones see the gap below it
     boxes("slab_void", void, np.clip(c, 0.25, 0.9), np.clip(c, 0.25, 0.9) + 0.18, (0.55, 0.53, 0.50), cfg.cell)
     boxes("slab_low", low, np.clip(c, 0.9, 2.0), np.clip(c, 0.9, 2.0) + 0.15, (0.58, 0.57, 0.55), cfg.cell)
+    _floor(b, cfg)
+
+
+def _floor(b, cfg):
     floor = sim_utils.CuboidCfg(size=((b.x1 - b.x0) * cfg.cell, (b.y1 - b.y0) * cfg.cell, 0.1),
                                 visual_material=sim_utils.PreviewSurfaceCfg(diffuse_color=(0.30, 0.29, 0.28)),
                                 collision_props=sim_utils.CollisionPropertiesCfg())
@@ -177,7 +200,10 @@ def drop_debris(cfg, b, n, center=None, radius=None, tag="d"):
     return paths
 
 
-def build_stage(scen, cfg):
+EXTRA_CAMS = []          # --rec_cams rigs: dict(mode, who, cam, path, tag, eye, h)
+
+
+def build_stage(scen, cfg, Q=None):
     b, f = scen.b, scen.fleet
     sim = sim_utils.SimulationContext(sim_utils.SimulationCfg(dt=1 / FPS, device=a.device, enable_scene_query_support=True))
     # measured on the L40S: dome 1200 + overhead sun 3000 blows every surface out to white at building scale.
@@ -190,7 +216,7 @@ def build_stage(scen, cfg):
     ground = sim_utils.CuboidCfg(size=(Wm + 30, Hm + 30, 0.2), visual_material=sim_utils.PreviewSurfaceCfg(diffuse_color=(0.16, 0.17, 0.18)),
                                  collision_props=sim_utils.CollisionPropertiesCfg())
     spawn(ground, "/World/Ground", W3((Wm / 2, Hm / 2), -0.15))
-    build_building(b, cfg)
+    build_building(b, cfg, Q)
     # people (semantic label "person") and look-alike decoys (mannequins / clothes)
     person = sim_utils.CapsuleCfg(radius=0.18, height=1.3, axis="X", semantic_tags=[("class", "person")],
                                   visual_material=sim_utils.PreviewSurfaceCfg(diffuse_color=(0.85, 0.55, 0.35)))
@@ -221,8 +247,34 @@ def build_stage(scen, cfg):
     rw, rh = (int(v) for v in a.rec_res.split("x"))
     rec = Camera(CameraCfg(prim_path="/World/Cams/rec", update_period=0, height=rh, width=rw, data_types=["rgb"],
                            spawn=sim_utils.PinholeCameraCfg(focal_length=18.0, clipping_range=(0.1, 1.0e4)))) if a.record else None
-    debris = drop_debris(cfg, b, a.debris)
+    for spec in [x.strip() for x in a.rec_cams.split(",") if x.strip()]:
+        mode, _, who = spec.partition(":")
+        path = f"/World/Cams/x{len(EXTRA_CAMS)}"
+        focal = 8.5 if mode == "fpv" else 13.0              # FPV: wide (~100 deg), like a real FPV camera
+        cam = Camera(CameraCfg(prim_path=path, update_period=0, height=rh, width=rw, data_types=["rgb"],
+                               spawn=sim_utils.PinholeCameraCfg(focal_length=focal, clipping_range=(0.02, 1.0e4))))
+        EXTRA_CAMS.append(dict(mode=mode, who=who or "C1", cam=cam, path=path, tag=spec.replace(":", "_"), eye=None, h=None))
+    if a.drone_light > 0:           # small search lights: crevice voids are dark
+        for d in f.drones:
+            if d.kind == "mother":
+                continue
+            try:
+                lc = sim_utils.SphereLightCfg(intensity=a.drone_light * (2.0 if d.kind == "scout" else 1.0), radius=0.03,
+                                              color=(1.0, 0.97, 0.92))
+                lc.func(f"/World/Drones/{d.name}/light", lc, translation=(0.0, 0.0, -0.06))
+            except Exception as e:
+                print(f"[skysearch] drone light off ({type(e).__name__}: {e})", flush=True)
+                break
+    if Q is not None:
+        from isaaclab.assets import RigidObject, RigidObjectCfg
+        Q.build_dynamic(RigidObject, RigidObjectCfg)
+        Q.posts_boxes(lambda name, xys, zs, rgb: _posts(name, xys, zs, rgb))
+        debris = []
+    else:
+        debris = drop_debris(cfg, b, a.debris)
     sim.reset()
+    if Q is not None:
+        Q.after_reset(sim)
     return sim, P.XformPrim(people), P.XformPrim(decoys), P.XformPrim(dpaths), dcam, rec, debris
 
 
@@ -251,7 +303,47 @@ def view_pose(t, b, cfg):
     return eye, [cx, -cy, 0.0]
 
 
-def overlays(scen, pos3):
+def _posts(name, xys, zs, rgb):
+    pos = [W3(xy, z / 2) for xy, z in zip(xys, zs)]
+    scl = [[0.16, 0.16, max(z, 0.05)] for z in zs]
+    prims = O.Cube([f"/World/Building/{name}/b{i}" for i in range(len(pos))], sizes=[1.0] * len(pos),
+                   positions=np.array(pos), scales=np.array(scl))
+    prims.apply_visual_materials(material(f"/World/Looks/{name}", rgb))
+
+
+def rig_pose(rc, scen, pos3, Q):
+    """Eye/target for an extra recording camera: chase (3rd person), fpv (1st person) or collapse (corridor)."""
+    f, b = scen.fleet, scen.b
+    quaking = Q is not None and not Q.done
+    d = next((x for x in f.drones if x.name == rc["who"]), None)
+    if rc["mode"] == "collapse" or quaking or d is None:
+        ex = Q.epi[0] if Q is not None else (b.x0 + b.x1) / 2 * scen.cfg.cell
+        ey = Q.epi[1] if Q is not None else b.entrance[1]
+        tq = Q.t if quaking else 12.0
+        eye = np.array(W3((ex - 7.5 + 0.12 * tq, b.entrance[1] + 0.3), 1.65))
+        tgt = np.array(W3((ex, ey), 1.2))
+    else:
+        i = f.drones.index(d)
+        h = d.heading if rc["h"] is None else rc["h"] + ((d.heading - rc["h"] + math.pi) % (2 * math.pi) - math.pi) * 0.12
+        rc["h"] = h
+        fwd = np.array([math.cos(h), -math.sin(h), 0.0])
+        p = pos3[i]
+        if rc["mode"] == "fpv":
+            eye = p + 0.12 * fwd + np.array([0, 0, 0.03])
+            tgt = eye + 3.0 * fwd - np.array([0, 0, 0.5])
+        else:
+            back, up = (0.9, 0.22) if d.kind == "micro" else (2.2, 0.9)
+            eye = p - back * fwd + np.array([0, 0, up])
+            tgt = p + 2.0 * fwd - np.array([0, 0, 0.1])
+    if rc["eye"] is not None and rc["mode"] != "fpv":
+        eye = 0.8 * rc["eye"] + 0.2 * eye                  # camera operator smoothing
+    rc["eye"] = eye
+    if quaking:
+        eye = eye + Q.camera_offset(Q.t) * 0.6
+    return list(map(float, eye)), list(map(float, tgt))
+
+
+def overlays(scen, pos3, extra_pts=None):
     if draw is None:
         return
     draw.clear_lines(); draw.clear_points()
@@ -293,6 +385,8 @@ def overlays(scen, pos3):
         for _ in range(12):
             j = np.random.normal(0, 0.25, 3)
             pts.append(tuple(np.array(W3(fr["xy"], 0.6)) + j)); pc.append((1.0, 0.5 + 0.4 * np.random.rand(), 0.0, 0.9)); ps.append(14)
+    if extra_pts and extra_pts[0]:
+        pts += list(extra_pts[0]); pc += list(extra_pts[1]); ps += list(extra_pts[2])
     if pts:
         draw.draw_points(pts, pc, ps)
 
@@ -301,18 +395,25 @@ def main():
     cfg = USARConfig(seed=a.seed, story=a.story)
     live = USARLive(cfg, port=a.port, speed=a.speed)
     scen = live.scen
-    sim, people, decoys, drones, dcam, rec, debris = build_stage(scen, cfg)
+    Q = None
+    if a.collapse:
+        sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+        import quake as quake_mod
+        Q = quake_mod.Quake(scen, cfg, sim_utils, W3, WALL_H, pga=a.pga, seed=a.seed, log=lambda m: print(m, flush=True))
+    sim, people, decoys, drones, dcam, rec, debris = build_stage(scen, cfg, Q)
     live.serve()
     sub = max(1, int(round(cfg.dt * FPS / a.speed)))           # render frames per mission tick
     prev = np.array([d.pos for d in scen.fleet.drones], float)
     cur = prev.copy()
     zs = np.zeros(len(scen.fleet.drones))
-    k, n_tick, last_pub, last_shock_t, shocks = 0, 0, 0.0, None, 0
+    k, n_tick, n_rec, last_pub, last_shock_t, shocks = 0, 0, 0, 0.0, None, 0
     built_clear = scen.b.clear.copy()
     rec_dir = a.record
     if rec_dir:
         os.makedirs(os.path.join(rec_dir, "isaac"), exist_ok=True)
         os.makedirs(os.path.join(rec_dir, "dash"), exist_ok=True)
+        for rc in EXTRA_CAMS:
+            os.makedirs(os.path.join(rec_dir, f"isaac_{rc['tag']}"), exist_ok=True)
     print(f"[skysearch] earthquake scene ready: {len(scen.fleet.drones)} drones, {len(debris)} debris chunks, "
           f"{sub} render frames per 0.5 s mission tick", flush=True)
     while simulation_app.is_running():
@@ -320,7 +421,10 @@ def main():
             if live.drain():
                 scen = live.scen
                 prev = cur = np.array([d.pos for d in scen.fleet.drones], float)
-            if k % sub == 0 and not live.paused:
+            quaking = Q is not None and not Q.done          # --collapse: physics earthquake first, then launch
+            stepped = False
+            if k % sub == 0 and not live.paused and not quaking:
+                stepped = True
                 prev = np.array([d.pos for d in scen.fleet.drones], float)
                 scen.step(); live.r.note_radar()
                 cur = np.array([d.pos for d in scen.fleet.drones], float)
@@ -331,8 +435,9 @@ def main():
             b, f = scen.b, scen.fleet
             # earthquake: building shakes at start and during aftershocks (camera + drones jitter)
             shake = 0.0
-            if f.t < 3.0 or b.shaking(f.t):
+            if (Q is None and f.t < 3.0) or b.shaking(f.t):
                 shake = 0.06
+            live.r.banner = Q.banner() if quaking else None
             if b.last_shock is not None and b.last_shock["t"] != last_shock_t:
                 # aftershock: show the new collapse (visual boxes; rigid bodies can't be added after sim.reset())
                 last_shock_t = b.last_shock["t"]; shocks += 1
@@ -352,7 +457,7 @@ def main():
             people.set_world_poses(positions=np.array([W3(s["pos"], 0.18) for s in b.survivors]))
             if b.fires:
                 P.XformPrim("/World/Fire").set_world_poses(positions=[W3(b.fires[0]["xy"], 0.5)])
-            overlays(scen, pos3)
+            overlays(scen, pos3, Q.dust_points(f.t) if Q is not None else None)
             # the confirmer camera: looks along the drone's heading, slightly down
             focus = next((d for d in f.alive("micro") if d.role == "confirmer" and d.state.startswith("HOVER")), None) \
                 or next((d for d in f.alive("micro") if d.role == "confirmer"), None)
@@ -365,6 +470,8 @@ def main():
             eye, tgt = view_pose(k / FPS, b, cfg)
             if shake:
                 eye = list(np.array(eye) + np.random.normal(0, shake * 2, 3))
+            if quaking:                      # the ground (and so the building and the camera crew) moves
+                eye = list(np.array(eye) + Q.camera_offset(Q.t))
             q = look_at_quat(eye, tgt)
             try:
                 P.XformPrim("/OmniverseKit_Persp", reset_xform_op_properties=(k == 0)).set_world_poses(positions=[eye], orientations=[q])
@@ -373,32 +480,48 @@ def main():
                     print(f"[skysearch] no viewport camera ({type(e).__name__}); recording camera only", flush=True)
             if rec is not None:
                 P.XformPrim("/World/Cams/rec").set_world_poses(positions=[eye], orientations=[q])
+            for rc in EXTRA_CAMS:
+                e2, t2 = rig_pose(rc, scen, pos3, Q)
+                P.XformPrim(rc["path"]).set_world_poses(positions=[e2], orientations=[look_at_quat(e2, t2)])
+        if quaking:
+            Q.pre_step(1.0 / FPS)
         sim.step()
+        if quaking:
+            Q.post_step(1.0 / FPS)
         k += 1
         rgb = None
         if focus is not None:
             dcam.update(dt=sim.get_physics_dt())
             rgb = dcam.data.output["rgb"][0].cpu().numpy()[..., :3]
-        if rec_dir and k % sub == 0:
+        if rec_dir and (stepped or (quaking and k % 5 == 0)):
             import matplotlib.pyplot as plt
             rec.update(dt=sim.get_physics_dt())
             img = rec.data.output["rgb"][0].cpu().numpy()[..., :3]
-            plt.imsave(os.path.join(rec_dir, "isaac", f"f{n_tick:05d}.png"), img)
+            plt.imsave(os.path.join(rec_dir, "isaac", f"f{n_rec:05d}.png"), img)
             live.r.rgb_img = rgb
-            live.r.save(os.path.join(rec_dir, "dash", f"f{n_tick:05d}.png"), dpi=67)
+            live.r.save(os.path.join(rec_dir, "dash", f"f{n_rec:05d}.png"), dpi=67)
+            for rc in EXTRA_CAMS:
+                rc["cam"].update(dt=sim.get_physics_dt())
+                plt.imsave(os.path.join(rec_dir, f"isaac_{rc['tag']}", f"f{n_rec:05d}.png"),
+                           rc["cam"].data.output["rgb"][0].cpu().numpy()[..., :3])
+            n_rec += 1
+            if a.stop_t and scen.fleet.t >= a.stop_t:
+                print(f"[skysearch] --stop_t: recorded {n_rec} frames to {rec_dir}", flush=True)
+                break
             if a.probe_frames and n_tick >= a.probe_frames:
                 print(f"[skysearch] probe: isaac frame mean={img.mean() * (255 if img.max() <= 1.0 else 1):.1f} "
                       f"p5={np.percentile(img, 5):.3f} p95={np.percentile(img, 95):.3f}", flush=True)
                 break
             if scen.fleet.handoff_t is not None and scen.fleet.t > scen.fleet.handoff_t + 4:
-                print(f"[skysearch] recorded {n_tick} ticks to {rec_dir}. Make the video with:\n"
+                print(f"[skysearch] recorded {n_rec} frames ({n_tick} mission ticks) to {rec_dir}. Make the video with:\n"
                       f"  ffmpeg -framerate 6 -i {rec_dir}/isaac/f%05d.png -framerate 6 -i {rec_dir}/dash/f%05d.png "
                       f"-filter_complex \"[0:v]scale=1280:720[a];[1:v]scale=1280:720[b];[a][b]hstack\" -c:v libx264 -pix_fmt yuv420p {rec_dir}/isaac_story.mp4",
                       flush=True)
                 break
         elif time.time() - last_pub > 1.0:
-            live.publish_async({"rgb": rgb}); last_pub = time.time()
-            if n_tick % 20 == 0:
+            live.publish_async({"rgb": rgb, "banner": live.r.banner}); last_pub = time.time()
+            if n_tick % 20 == 0 and n_tick != getattr(main, "_printed", -1):
+                main._printed = n_tick
                 print(f"[skysearch] t={scen.fleet.t:.0f}s found={len(scen.fleet.found)} "
                       f"captions={scen.fleet.captions[-1][1] if scen.fleet.captions else ''}", flush=True)
     simulation_app.close()

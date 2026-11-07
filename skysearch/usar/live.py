@@ -83,6 +83,7 @@ class USARLive:
                 self._r2 = r
                 r.s, r.breath, r.pos, r._last_note = snap, breath, pos, snap.fleet.t
                 r.rgb_img = None if extra is None else extra.get("rgb")
+                r.banner = None if extra is None else extra.get("banner")
                 buf = io.BytesIO()
                 r.frame().savefig(buf, format="png", dpi=72, facecolor="#0E1117")
                 self.png = buf.getvalue()

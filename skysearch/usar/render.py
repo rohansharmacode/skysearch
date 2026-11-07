@@ -596,9 +596,11 @@ class USARRenderer:
     def draw_caption(self, fig):
         caps = self.latest_captions()
         n, lab = self.scene()
+        if getattr(self, "banner", None):            # e.g. the physics earthquake before launch (Isaac --collapse)
+            caps, n, lab = [(self.s.fleet.t, self.banner)], 0, "earthquake"
         fig.patches.append(FancyBboxPatch((0.012, 0.852), 0.592, 0.062, boxstyle="round,pad=0.003", fc="#0A0D12",
                                           ec="#37474F", lw=1, transform=fig.transFigure, figure=fig))
-        fig.text(0.02, 0.898, f"SCENE {n}/7 · {lab.upper()}", color="#78909C", fontsize=9.5, weight="bold")
+        fig.text(0.02, 0.898, f"SCENE {n}/7 · {lab.upper()}" if n else lab.upper(), color="#78909C", fontsize=9.5, weight="bold")
         if caps:
             txt = "   ·   ".join(m for _, m in caps)
             age = self.s.fleet.t - caps[-1][0]

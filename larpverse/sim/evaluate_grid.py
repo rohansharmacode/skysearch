@@ -27,7 +27,7 @@ import time
 
 import numpy as np
 
-from .grid_mission import MISSION_SCANS, GridMission
+from .grid_mission import MISSION_SCANS, MISSION_SCANS_POD, GridMission
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 POLICIES = ["acoustic", "nearest", "raster"]
@@ -93,18 +93,19 @@ def independent_start(seed):
     return PILES[int(np.random.default_rng([int(seed), 4242]).integers(0, 9))]
 
 
-def run_one(seed, policy, radar, acoustic, scans, penetration="legacy", start="reported"):
+def run_one(seed, policy, radar, acoustic, scans, penetration="literature", start="reported", delivery="pod"):
     t0 = time.time()
     m = GridMission(seed=seed, radar=radar, acoustic=acoustic, verbose=False, dispatch_policy=policy,
-                    mission_scans=scans, penetration=penetration,
+                    mission_scans=scans, penetration=penetration, delivery=delivery,
                     launch_pile=independent_start(seed) if start == "independent" else None).run()
     r = score_run(m)
     r["wall_s"] = round(time.time() - t0, 2)
     return r
 
 
-def _row_path(rows_dir, seed, policy, radar, acoustic, scans, penetration, start):
-    sub = f"{radar}-{penetration}-{acoustic}-s{scans}" + ("-indep" if start == "independent" else "")
+def _row_path(rows_dir, seed, policy, radar, acoustic, scans, penetration, start, delivery="land"):
+    sub = (f"{radar}-{penetration}-{acoustic}-s{scans}" + ("-indep" if start == "independent" else "")
+           + ("-pod" if delivery == "pod" else ""))
     return os.path.join(rows_dir, sub, f"seed{seed:03d}-{policy}.json")
 
 
@@ -166,11 +167,14 @@ def _fmt_ci(t, fmt="{:.2f}", scale=1.0):
 
 
 def section(cfg, summary, pair, rows, per_seed=False):
-    """Markdown for one (penetration, start) configuration."""
+    """Markdown for one (penetration, start, delivery) configuration."""
     start_txt = ("the scenario's reported start pile (it always holds a victim, so that ping is by construction)"
                  if cfg["start"] == "reported" else "a start pile drawn from the seed alone, independent of the victims")
-    L = [f"## Radar `{cfg['penetration']}` propagation, {cfg['start']} start", "",
-         f"Start: {start_txt}. Propagation: " + (
+    dtxt = ("winch-lowered sensor pod on the pile surface (heavy_sar, hover + 20 m winch)" if cfg.get("delivery") == "pod"
+            else "drones land on flat patches around the pile (the old landing ring)")
+    L = [f"## {'Pod' if cfg.get('delivery') == 'pod' else 'Landing ring'}, radar `{cfg['penetration']}` propagation, "
+         f"{cfg['start']} start", "",
+         f"Delivery: {dtxt}; {cfg['scans']} radar scans per mission. Start: {start_txt}. Propagation: " + (
              "optimistic flat 0.7 dB/m (NOT literature-backed; lets the radar see through 10+ m)."
              if cfg["penetration"] == "legacy" else
              "literature-grade (~3 m of rubble beneath a good scan, < 1 m from an 11 m stand-off)."), "",
@@ -219,7 +223,7 @@ def markdown(common, sections):
             f"radar `{common['radar']}` (synthetic IF through the real DSP chain); acoustic `{common['acoustic']}`"
             + (" (**synthetic clips generated from the hidden truth**, cleaner than the real acoustic pipeline: "
                "treat the acoustic policy's numbers as an upper bound)" if common["acoustic"] == "stub" else "")
-            + f"; mission budget {common['scans']} radar scans, 3 drones, battery reserve 25% with 60 s swaps at the "
+            + "; 3 drones, battery reserve 25% with 60 s swaps at the "
             "pads, 8 scans max per pile visit, 3600 s limit. Brackets are bootstrap 95% CIs over seeds.", "",
             "Policies: **acoustic** (ours: listen after each pile, go to the highest acoustic priority, revisit open "
             "leads), **nearest** (nearest unvisited pile, radar only, no listening), **raster** (fixed lawnmower "
@@ -246,13 +250,16 @@ def main(argv=None):
     ap.add_argument("--radar", choices=["model", "dsp"], default="dsp")
     ap.add_argument("--acoustic", choices=["stub", "auto"], default="stub",
                     help="stub: synthetic clips from truth (fast); auto: real pipeline / cache (slow on a miss)")
-    ap.add_argument("--scans", type=int, default=MISSION_SCANS, help="mission radar-scan budget")
+    ap.add_argument("--scans", type=int, default=None,
+                    help=f"mission radar-scan budget (default {MISSION_SCANS_POD} pod, {MISSION_SCANS} land)")
+    ap.add_argument("--delivery", choices=["pod", "land"], default="pod")
     ap.add_argument("--start", choices=["reported", "independent"], default="reported",
                     help="reported: the scenario's start pile (always holds a victim); independent: drawn from the "
                          "seed alone (R1-007)")
-    ap.add_argument("--penetration", choices=["legacy", "literature"], default="legacy",
+    ap.add_argument("--penetration", choices=["legacy", "literature"], default="literature",
                     help="radar through-rubble preset (sim/radar_dsp.py)")
-    ap.add_argument("--combos", default="legacy:reported,legacy:independent,literature:reported,literature:independent",
+    ap.add_argument("--combos", default="literature:reported:pod,literature:independent:pod,literature:reported:land,"
+                                        "legacy:reported:land",
                     help="report: penetration:start configurations to include (those with all rows)")
     ap.add_argument("--rows-dir", default=os.path.join(ROOT, "eval", "grid_rows"))
     ap.add_argument("--rerun", action="store_true", help="ignore cached rows")
@@ -261,18 +268,20 @@ def main(argv=None):
     ap.add_argument("--md", default=os.path.join(ROOT, "docs", "EVAL_GRID.md"))
     a = ap.parse_args(argv)
     seeds = parse_seeds(a.seeds)
+    scans_for = lambda d: a.scans if a.scans is not None else (MISSION_SCANS_POD if d == "pod" else MISSION_SCANS)
     pols = [p for p in a.policies.split(",") if p]
     rows = []
     for seed in seeds:
         for pol in pols:
-            path = _row_path(a.rows_dir, seed, pol, a.radar, a.acoustic, a.scans, a.penetration, a.start)
+            path = _row_path(a.rows_dir, seed, pol, a.radar, a.acoustic, scans_for(a.delivery), a.penetration, a.start,
+                             a.delivery)
             if os.path.exists(path) and not a.rerun:
                 with open(path) as f:
                     rows.append(json.load(f))
                 continue
             if a.report:
                 continue
-            r = run_one(seed, pol, a.radar, a.acoustic, a.scans, a.penetration, a.start)
+            r = run_one(seed, pol, a.radar, a.acoustic, scans_for(a.delivery), a.penetration, a.start, a.delivery)
             os.makedirs(os.path.dirname(path), exist_ok=True)
             with open(path, "w") as f:
                 json.dump(r, f, indent=1)
@@ -287,11 +296,12 @@ def main(argv=None):
     sections, results = [], {}
     common = {"seeds": a.seeds, "seed_list": seeds, "n_seeds": len(seeds), "radar": a.radar, "acoustic": a.acoustic,
               "scans": a.scans, "hit_m": HIT_M}
-    for k, (pen, start) in enumerate(combos):
+    for k, combo in enumerate(combos):
+        pen, start, delivery = (combo + ["land"])[:3]
         rows = []
         for seed in seeds:
             for pol in POLICIES:
-                path = _row_path(a.rows_dir, seed, pol, a.radar, a.acoustic, a.scans, pen, start)
+                path = _row_path(a.rows_dir, seed, pol, a.radar, a.acoustic, scans_for(delivery), pen, start, delivery)
                 if os.path.exists(path):
                     with open(path) as f:
                         rows.append(json.load(f))
@@ -301,9 +311,9 @@ def main(argv=None):
         by_pol = {p: [r for r in rows if r["policy"] == p] for p in POLICIES}
         summary = {p: summarise(by_pol[p]) for p in POLICIES}
         pair = {b: paired(by_pol["acoustic"], by_pol[b], "pinged_non_start") for b in POLICIES[1:]}
-        cfg = dict(common, penetration=pen, start=start)
+        cfg = dict(common, penetration=pen, start=start, delivery=delivery, scans=scans_for(delivery))
         sections.append(section(cfg, summary, pair, rows, per_seed=(k == 0)))
-        results[f"{pen}:{start}"] = {"config": cfg, "summary": summary, "paired_non_start": pair, "rows": rows}
+        results[f"{pen}:{start}:{delivery}"] = {"config": cfg, "summary": summary, "paired_non_start": pair, "rows": rows}
     if not sections:
         return
     os.makedirs(os.path.dirname(a.out) or ".", exist_ok=True)

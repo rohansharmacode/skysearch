@@ -1,6 +1,6 @@
 # RESUME: Larpverse build loop (read first after compaction)
 
-Updated 2026-11-07 ~22:15. Repo: /home/peroxide/Downloads/UCL/agentverse (local git, ~79 commits). The orchestrator mirrors committed HEAD into the team repo with `scripts/push.sh`:
+Updated 2026-11-07 22:53 (real clock; earlier 23:xx/00:xx stamps in this file were estimates and run ~1 h fast).
 - remote github.com/rohansharmacode/skysearch, branch `larpverse-sensing`, folder `larpverse/`;
 - local clone of the team repo at ~/Downloads/UCL/skysearch.
 
@@ -61,7 +61,7 @@ Paused by the user at about 23:15 and resumed at about 23:20. All 11 agents were
 | a1a856ada8463193a | **Vitals** (sim/physio.py, sim/vitals.py, scripts/validate_vitals.py, tests/test_vitals, docs/VITALS.md) | DONE 4da97d0: condition-only, 86% synthetic, distressed 100%, over-triage fixed (49→5 of 57). Hooks 3-5 unblocked. Callout fix → speaker. Known: over-triages calm slow breathers (5-8 bpm) |
 | add66c0cd95d1fed8 | **Site** (sim/site_weiguan, site_mesh, `site="collapse"` from the teammate's USD, isaac/scene.py, photoreal.py, run_mission.py `--site`, isaac/site.py, mapping/slam per-scenario, usd-core in .venv) | DONE: collapse site (07d9ec7), pod visual + passthrough (75ea9b2). Brief 🟡→✅ pushed. Open: isaac/selftest.py still grid-only; licence: core geometry is also scan-derived |
 | a5c508c060aa20b94 | **Dashboard** (dashboard/*) | RESUMED: comms/hotspot panel (blue), live /api/portal feed | Batch 2 R2 items, `?data` alias, Dig-order panel and vitals, clip language/translation, coverage hatch, tasking Plan-search mode, recon display and proposals, scaling to the collapse site |
-| a9d09919957c913a4 | **Visual consistency** (animation/grid-search.html, index.html fixes, scenario_seed7.js via exporter, scripts/export_scenario_js.py, isaac/overlay.py) | DONE batch 4 (87f0ff8 etc.). Grid MP4 re-recorded 93 s (media/, not yet uploaded to release). Idle |
+| a9d09919957c913a4 | **Visual consistency** (animation/grid-search.html, index.html fixes, scenario_seed7.js via exporter, scripts/export_scenario_js.py, isaac/overlay.py) | DONE batch 4 + seed-7 physio story (3ae56b8). Grid MP4 re-recorded and uploaded to release 22:52; grid artifact republished (v5). Idle |
 | a793a6498850fe65e | **Tasking + recon** (sim/tasking.py, sim/recon.py, tests, docs/TASKING_INTEGRATION.md integration diff) | DONE (7f7d904, 646a8ff, 2c1dced, 41231c4): diff in TASKING_INTEGRATION.md → mission. Idle. If the mission agent is the bottleneck, it can take grid_mission integrations once the pod work is committed |
 | ac3d7a7f1dc704099 | **Platform** (sim/platform.py, mapping/raycast_lidar.py, isaac/lidar.py, isaac/drone_viz.py, docs/PLATFORM.md) | DONE (84b9dd9, 337db98). R-PLAT-1/2/5 → mission, R-PLAT-3 → site, R-PLAT-4 → dashboard (producer of 16 m tiles still unassigned) |
 | ad524ba6da89b83ed | **Decider** — DONE (9730a11, 0958562); requests 1-3 → mission. Idle |

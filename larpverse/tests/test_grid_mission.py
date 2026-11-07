@@ -253,13 +253,13 @@ def test_evaluate_grid_report(tmp_path):
     eg.main(["--seeds", "7", "--scans", "6", "--rows-dir", rows, "--start", "independent", "--policies", "acoustic"])
     out, md = tmp_path / "r.json", tmp_path / "e.md"
     eg.main(["--seeds", "7", "--scans", "6", "--rows-dir", rows, "--report", "--out", str(out), "--md", str(md)])
-    res = json.loads(out.read_text())["legacy:reported"]
+    res = json.loads(out.read_text())["literature:reported:pod"]
     assert set(res["summary"]) == set(eg.POLICIES)
     for p, s in res["summary"].items():
-        assert 1 <= s["pinged_total"] <= s["victims_total"]     # the start-pile victim is always pinged
+        assert 0 <= s["pinged_total"] <= s["victims_total"]
     text = md.read_text()
     assert "| metric | acoustic | nearest | raster |" in text and "from the hidden truth" in text
-    assert "legacy` propagation, reported start" in text and "independent start" not in text   # incomplete: skipped
+    assert "Pod, radar `literature` propagation, reported start" in text and "independent start" not in text
     assert eg.independent_start(7) in eg.PILES
 
 

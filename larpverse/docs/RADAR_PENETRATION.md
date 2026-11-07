@@ -36,7 +36,7 @@ Not modelled: scattering, multipath inside the pile, moisture, layering and the 
 
 | preset | loss | reach beneath | reach at 11 m | 10 m of rubble |
 |---|---|---|---|---|
-| `literature` | as above | ~3.0 m | ~0.7 m | ~130 dB, nothing |
+| `literature` (default) | as above | ~3.0 m (3.6 m heavy_sar) | ~0.7 m (1.3 m) | ~130 dB, nothing |
 | `legacy` | flat 0.7 dB/m one-way | ~30 m | ~8.5 m | 14 dB, still visible (**not credible**) |
 
 The grid demo lands the drones on flat cells in a ring 9–12 m from the pile centres. Seed 7's victims sit 0.9–1.9 m deep, but the slant path from the ring to them crosses 1–3 m of pile flank. A3's is 2.9 m from the best ring cell.
@@ -45,15 +45,23 @@ The grid demo lands the drones on flat cells in a ring 9–12 m from the pile ce
 - Perching on the pile (patches up to 20° with a self-levelling radar mount, a vertical final descent, and adaptive legs settling on slabs) is implemented. On the 0.5 m heightmap it finds only 2–4 perches per pile, and their scan quality is low. That is not enough for three independent strong ranges.
 - Under `legacy`, the demo pings A2, A3 and B2 as before. The mission log then states on its first line that the model is optimistic and not literature-backed.
 
-**Default today: `legacy`** (`sim/grid_mission.py` `PENETRATION_DEFAULT`). The default stays there so the seed-7 demo and its tests keep working. `--penetration literature` shows the realistic limits.
+## Why a pod
 
-Making `literature` the default needs one of the following:
+The radar now rides on a 5 kg sensor pod that a heavy drone (heavy_sar, FlyCart 30 class) lowers on a 20 m winch onto the rubble surface (`--delivery pod`, now the default). The pod sits in contact with the rubble, so the scan starts at the surface and there is no air gap.
 
-- the radar placed on the pile: better perch detection (a finer LiDAR heightmap for slab tops) and a less punishing landing-quality model for perches;
-- a scenario whose victims sit within about 1 m of rubble from the reachable landing cells;
-- a scan rule that accepts fewer than three ranges with an honest uncertainty.
+The pod is placed on the pile within about 3 m of the acoustic lead. Seed-7 placements sit 1.2–2.6 m slant range from each victim, through 1.1–2.5 m of rubble. The realistic reach at those ranges is about 3.0–3.6 m (heavy_sar's receive aperture adds 8.8 dB, giving 3.6 m beneath and 1.3 m at 11.5 m).
 
-This is a product decision for the orchestrator.
+The landing ring stood 9–12 m away, behind 2–3 m of pile flank, where reach is 0.7–1.3 m. A re-placement costs about 20 s plus an 8 s lower, a 20 s scan and an 8 s raise, instead of a re-land. The drones still land off the pile, with rotors off, to listen.
+
+The attenuation above was **not** changed for the pod. Only the scan geometry changed, plus a seating model for the pod:
+
+- roughness is measured at the pod's 0.5 m footprint, about 0.35 × the 1.5 m plane fit;
+- slope up to 30° does not matter;
+- one IMU-checked re-seat is allowed when the pod rocks.
+
+**Default today:** `--penetration literature --radar dsp --delivery pod`. `legacy` and `--delivery land` are kept for comparison only.
+
+Seed 7 (stub acoustics) now pings A2, A3 (on a revisit) and B2. Over 20 seeds, the acoustic policy pings 31/60 non-start victims with the pod, against 0/60 from the landing ring (docs/EVAL_GRID.md). Pod depth estimates stay `nominal`: the posterior sigma is 0.5–0.7 m, above the 0.45 m bar.
 
 ## Reproduce the calibration
 

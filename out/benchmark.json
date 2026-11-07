@@ -1,0 +1,30 @@
+{
+  "skysearch": {
+    "runs": 60,
+    "people_found_pct": 87.5,
+    "all_found_pct": 76.7,
+    "median_time_to_find_s": 106.25,
+    "median_ci95": [
+      91.23125,
+      141.0
+    ],
+    "median_time_all_found_s": 248.75,
+    "operator_msgs_per_run": 1.8,
+    "false_alarms_to_operator_per_run": 0.0,
+    "brain_ms_per_tick": 0.26
+  },
+  "lawnmower": {
+    "runs": 60,
+    "people_found_pct": 83.3,
+    "all_found_pct": 71.7,
+    "median_time_to_find_s": 175.5,
+    "median_ci95": [
+      154.0,
+      222.25
+    ],
+    "median_time_all_found_s": 319.75,
+    "operator_msgs_per_run": 19.3,
+    "false_alarms_to_operator_per_run": 17.43,
+    "brain_ms_per_tick": 0.19
+  }
+}

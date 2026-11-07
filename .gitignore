@@ -1,0 +1,6 @@
+__pycache__/
+*.pyc
+out/*
+!out/demo.mp4
+!out/benchmark.json
+!out/demo_t110.png

@@ -108,7 +108,8 @@ def slab(rng, sx, sy, T=0.18, step=0.12):
             depth = min(depth, 0.35 * min(sx, sy))
             pts.append((x0 + f * (x1 - x0) - nx * depth, y0 + f * (y1 - y0) - ny * depth))
     outline = np.array(pts)
-    z_top = T / 2 + rng.normal(0, 0.012, len(outline))
+    rng.normal(0, 0.012, len(outline))            # drawn and dropped, so the rest of the layout stays as tested
+    z_top = np.full(len(outline), T / 2)          # flat faces: noise on a fan-triangulated top reads as creases
     return _poly_mesh(outline, z_top, -T / 2)
 
 

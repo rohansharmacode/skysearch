@@ -310,6 +310,14 @@ class Quake:
                     runs.append(("v", [(k, x) for k in range(r0, r)]))
                 else:
                     r += 1
+        self.wall_dir = {}                                     # cell -> "h" (wall runs along map x) or "v" (along map y)
+        for kind, cells in runs:
+            for (r, x) in cells:
+                if len(cells) == 1:                            # lone cell: follow whichever neighbour wall it joins
+                    nb_h = any(0 <= x + d < c.shape[1] and self.walls[r, x + d] for d in (-1, 1))
+                    nb_v = any(0 <= r + d < c.shape[0] and self.walls[r + d, x] for d in (-1, 1))
+                    kind = "h" if nb_h and not nb_v else "v"
+                self.wall_dir[(r, x)] = kind
         for i, (kind, cells) in enumerate(runs):
             n = len(cells)
             L = n * cell
@@ -486,9 +494,13 @@ class Quake:
             if hh < 0.12:
                 continue
             px, py = (x + 0.5) * cell, (r + 0.5) * cell
-            away = np.array([px - self.epi[0], py - self.epi[1]])
-            away = -away / (np.linalg.norm(away) + 1e-6)            # wall tops fall towards the collapse
-            rel = self.PRE + rng.uniform(0.8, 3.8)
+            # Push across the wall (along its normal), to the side facing the collapse. Pushing straight at
+            # the epicentre jammed the tops of walls that run towards it into their neighbours.
+            if self.wall_dir.get((int(r), int(x)), "v") == "h":
+                away = np.array([0.0, 1.0 if self.epi[1] >= py else -1.0])
+            else:
+                away = np.array([1.0 if self.epi[0] >= px else -1.0, 0.0])
+            rel = self.PRE + rng.uniform(0.8, 3.8) + 0.3 * ((r + x) % 2)     # neighbours never leave together
             parts = [hh] if hh < 0.55 else [hh * (u := rng.uniform(0.4, 0.6)), hh * (1 - u) - 0.01]
             zb = h0
             for j, ph in enumerate(parts):
@@ -496,7 +508,7 @@ class Quake:
                 # Shaking alone can't slide them off: the tilt (0.45 g) is below concrete friction. So the
                 # top is pushed off the wall towards the collapse and tipped over the edge.
                 v = rng.uniform(2.4, 3.4)
-                tip = np.array([away[1], away[0], 0.0]) * rng.uniform(2.5, 4.0)    # world axis to topple about
+                tip = np.array([away[1], away[0], 0.0]) * rng.uniform(2.5, 4.0)    # world axis to topple about (the wall's own axis)
                 tops.append(dict(mesh=mesh, pos=put(mesh, px, py, zb), rgb=grey((0.60, 0.59, 0.56), 0.015),
                                  mass=2000 * cell * cell * ph, release=rel - 0.25 * j,
                                  kick=np.r_[v * away[0], -v * away[1], 0.6, tip + rng.normal(0, 0.8, 3)]))

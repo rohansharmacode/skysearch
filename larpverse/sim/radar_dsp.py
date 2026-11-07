@@ -105,6 +105,8 @@ CONCRETE_DB_PER_M_HIGH = 20.0    # ... and above ~2 GHz; linear in between
 SOLID_FRACTION = 0.65            # share of a slant path through a collapse pile that is solid (rest: voids)
 REBAR_DB_PER_M = 0.0             # extra one-way loss per metre for dense rebar mesh (0: plain / mixed rubble)
 PERCH_ROUGH_FACTOR = 0.6         # adaptive legs settle on a slab: effective roughness of a perch
+POD_ROUGH_FACTOR = 0.35         # pod base 0.5 m vs the 1.5 m plane fit: roughness it actually seats on
+POD_MAX_SLOPE = 30.0             # winch pod seats on surfaces up to this slope (sim/platform.PodSpec)
 LEVEL_DEG = 12.0                 # self-levelling radar mount: perch tilt up to this does not tilt the beam
 REACH_BENEATH_M = 3.0            # design point: rubble a good scan sees through at 2 m slant range
 REACH_REF_RANGE_M = 2.0
@@ -124,7 +126,9 @@ def use_rx_gain_db(db: float):
 
 
 def use_penetration(model: str):
-    """Select the propagation preset for this process (generators, planner, coverage use the same one)."""
+    """Select the propagation preset for this process (generators, planner, coverage use the same one).
+    ``realistic`` is an alias of ``literature``."""
+    model = "literature" if model == "realistic" else model
     if model not in PENETRATION_MODELS:
         raise ValueError(f"penetration model {model!r}; choose {PENETRATION_MODELS}")
     _PEN["model"] = model

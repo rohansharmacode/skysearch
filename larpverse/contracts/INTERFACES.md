@@ -180,7 +180,7 @@ Written by `acoustic/run.py` (`ALGO_VERSION` in `acoustic/dsp.py`); every v1 fie
 
 ```jsonc
 {
-  "algo": "assoc-v8",                          // localisation/association version (cache keys should include it)
+  "algo": "assoc-v11",                          // localisation/association version (cache keys should include it)
   "clips": [ {
     "association": "confident",                // confident | ambiguous
     "association_conf": 0.97,                  // 0-1: bearing likelihood of this pile over all nine piles
@@ -189,7 +189,9 @@ Written by `acoustic/run.py` (`ALGO_VERSION` in `acoustic/dsp.py`); every v1 fie
     "reliability": 0.81,                       // agent reliability x (0.5 + 0.5 x association_conf); <= 0.45 if ambiguous
     "reliability_agent": 0.84,                 // the agent's own value before the association factor
     "doa_agree": "2/3",                        // drones whose bearing is within min(15 deg, gate) of the pile centre
-    "heuristics": { "knock_periodicity": 0.62, "hum_harmonicity": 0.2 },
+    "heuristics": { "knock_periodicity": 0.62, "hum_harmonicity": 0.2, "human_minus_animal": 0.31 },
+    "bearings": [ { "drone_id": "d1", "bearing_deg": 288.4, "sigma_deg": 1.6,   // per landed drone; sigma = bearing
+                    "snr_db": 21.3, "measured": true } ],                         //  noise (gate width if not measured)
     "notes": [ "suppressed cross-talk from A3 (2 blocks)", "transcript dropped: dog clip with VAD 0.26" ]
   } ],
   "piles": [ { "association": "ambiguous",     // association of the top clip (absent for silent piles)
@@ -278,25 +280,25 @@ Breathing-pattern features measured from the slow-time signal of a radar candida
 ```jsonc
 "vitals": {
   "version": "vitals-v1",
-  "rate_bpm": 31.6, "rate_ci": [29.8, 33.6],      // breaths/min (breath count if >= 3 clean intervals, else spectrum)
-  "cv": 0.21,                                    // robust breath-interval CV; null if < 3 intervals
-  "depth_rel": 0.6, "depth_rel_conf": 0.12,      // 1.0 = 5 mm p-p chest excursion; conf <= 0.3 ALWAYS (amplitude unreliable)
-  "apnea_events_per_min": 0.0,                   // pauses >= 10 s (also apnea_events, apnea_longest_s)
-  "movement": 0.03,                              // fraction of the window flagged movement / artefact
-  "sqi": 0.81, "duration_s": 60.0,               // signal quality 0-1; analysed window
-  "pattern": "rapid_shallow",                    // regular_calm | rapid_shallow | slow_deep | irregular_with_pauses | fast_small | unclear
+  "condition": "distressed_tachypnea",           // calm | distressed_tachypnea | unconscious_slow | irregular_apneic | unknown
+  "condition_text": "rapid shallow breathing, 32/min -> possible injury, pain or distress, check",
+  "pattern": "rapid_shallow",                    // legacy alias: regular_calm | rapid_shallow | slow_regular | irregular_with_pauses | unclear
   "pattern_conf": 0.72, "pattern_reason": "rate 32/min > 30",
-  "triage_hint": "immediate",                    // immediate | immediate (check) | delayed (re-check) | delayed | assess
+  "triage_hint": "immediate",                    // immediate | immediate (check) | urgent | delayed | assess
   "triage_reason": "breathing over 30/min (START respiratory criterion for IMMEDIATE)",
   "priority_weight": 0.88,                       // hint rank shrunk toward 'assess' (0.55) as pattern_conf falls
+  "rate_bpm": 31.6, "rate_ci": [29.8, 33.6], "rate_spectral_bpm": 31.2, "rate_count_bpm": 31.6,
+  "cv": 0.21, "amp_cv": 0.3, "ie_ratio": 0.72,   // timing / depth variability (robust); shorter/longer half-cycle
+  "depth_rel": 0.6, "depth_rel_conf": 0.12,      // 1.0 = 5 mm p-p; conf <= 0.3 ALWAYS; not used for the condition
+  "apnea_events": 0, "apnea_events_per_min": 0.0, "apnea_longest_s": 0.0,
+  "movement": 0.03, "snr_db": 18.4, "sqi": 0.81, "n_breaths": 31, "duration_s": 60.0, "demod": "linear+pathloss",
   "caveats": ["aid for rescuers, not a diagnosis: ...", "..."]
-  // also: rate_spectral_bpm, rate_count_bpm, ie_ratio, apnea_events, apnea_longest_s, snr_db, n_breaths, demod
 }
 ```
 
 - Dig order: `vitals.dig_score(v, p_mass, depth_m)` = `priority_weight x p_mass x clip(1 - depth_m / 4, 0.2, 1)`; no vitals -> the "assess" weight.
 - Pattern/hint claims need a >= 45-60 s dwell; a 20 s scan is rate-only (a caveat says so).
-- Wording rule (UI, decider, brief): "possible", "check", "aid"; never "diagnosis", "confirmed", or "injured" / "unconscious" / "child" as fact. `fast_small` = "fast, regular breathing (possible child, weak)".
+- Wording rule (UI, decider, brief): "possible", "check", "aid"; never "diagnosis", "confirmed", or "injured" / "unconscious" as fact. **No age or child wording anywhere** (user decision). Show `condition_text`; `slow_regular` means "deep rest or reduced consciousness — the radar cannot tell which; call out and check responsiveness" (hint `urgent`).
 
 ### Mission state fields (v1.3, from the mission builder; additive)
 
@@ -320,3 +322,145 @@ The heavy drone delivers the radar and a 4-mic array on a pod lowered by winch o
             "lead": "a7", "t": 312.0 } ]
 ```
 Scans made from a pod carry `scans[].delivery = "pod"` and have their origin at the pod's surface position (no air-gap path).
+
+### Point cloud LOD and tiles (v1.3.1, R-PLAT-4)
+
+```jsonc
+"pointcloud": { "url": "pointcloud.bin",          // preview, ≤ 300k points (always written)
+                "count": 300000, "lod": 0, "full_count": 2470000,
+                "tiles": [ { "url": "pc_tiles/x+016_y-032.bin", "count": 144000,
+                             "bounds": [xmin, ymin, xmax, ymax] } ] }   // 16 m square tiles, full resolution; optional
+```
+Viewers draw the preview first, then fetch only the tiles that touch the region around a clicked ping. With no `tiles`, they use the preview.
+
+### Vitals condition names (v1.3.1)
+
+The vitals output carries `vitals.condition` ∈ `calm | distressed_tachypnea | unconscious_slow | irregular_apneic` (or `unknown`). There is no age field anywhere. `vitals.pattern` is a legacy alias that consumers may still read.
+
+### Rescue hotspot and comms relay (v1.4)
+
+Each heavy drone runs an open Wi-Fi access point (2.4 GHz, SSID `RESCUE-<site>`). It's backhauled over the drones' existing mesh radio link to the operator's ground station (GCS); the GCS can add satellite or LTE internet when staging has it. A survivor whose phone connects sees a multilingual **captive portal**: "Help is coming. Are you trapped? [I'm trapped] [I'm safe] [send a message]". The portal also lets them message family when internet is up. Rescuers and residents on the surface can use it too.
+
+The search gains a **consent-based** signal: a phone that connects has its RSSI, measured by several drones, used to estimate its position (blue). Portal answers go through the same multilingual Gemini path as audio, with fallback when the key is unavailable.
+
+**Privacy rules:**
+- Passive probe-request or MAC sniffing is **off** and isn't implemented.
+- Devices get a random per-session token; MAC addresses are never stored.
+- Messages stay at the GCS.
+- Anything the operator sends to phones uses vetted templates, the same as the speaker; LLM translations go out only after the operator confirms.
+
+```jsonc
+"comms": {
+  "backhaul": { "kind": "mesh", "gcs_xy": [x, y], "internet": true,
+                "links": [ { "from": "d1", "to": "gcs", "rssi_dbm": -71, "mbps": 18.0 } ] },   // to: "gcs" or another drone (multi-hop)
+  "hotspots": [ { "drone_id": "d1", "ssid": "RESCUE-WEIGUAN", "on": true, "xy": [x, y], "z": 6.0,
+                  "clients": 2, "radius_m_est": 35 } ],
+  "devices": [ { "id": "ph-7f3a", "first_seen": 212.0, "last_seen": 300.0,
+                 "est_xy": [x, y], "est_sigma_m": 4.5, "pile": "A2",           // position from multi-drone RSSI; sector if inside one
+                 "rssi": [ { "drone_id": "d1", "dbm": -78, "t": 298.0 } ],
+                 "status": "trapped|safe|unknown", "battery_pct": 23,          // battery only if the portal reports it
+                 "messages": [ { "t": 240.0, "text": "…", "lang": "nan", "translation": "…", "by": "gemini|fallback|none" } ],
+                 "replies": [ { "t": 260.0, "template": "help_coming", "lang": "zh-TW", "confirmed_by": "operator" } ] } ],
+  "portal": { "url": "http://10.42.0.1/", "submissions": 3 }
+}
+```
+
+- `devices[].est_xy` is a **candidate region** (σ from the RSSI fit), never a confirmed position. RSSI through rubble is weak and multipath-heavy.
+- A connected device whose position falls inside a zone counts as **new evidence**, so the zone can be re-searched.
+- Colour: **blue** (#3b82f6) for comms, phones and hotspot coverage, everywhere.
+
+### Speaker: call-out, reassurance and guidance (v1.3, from docs/SPEAKER.md §4)
+
+```markdown
+#### Speaker (v1.3, additive): loudspeaker broadcasts, call-out responsiveness, operator API
+
+Heavy-lift drones carry a loudspeaker. Every played string is a vetted template (sim/guidance.py) or text an
+operator typed; machine translations are `pending_approval` until an operator approves them. Never "confirmed".
+
+state.json additions (sim/callout.Speaker.state; written by sim/grid_mission.py):
+
+"broadcasts": [ { "id": "b23", "t": 600.1, "drone_id": "d3",
+    "kind": "callout|reassure|guidance|operator", "lang": "zh-TW|nan-TW|en|id|vi",
+    "text": "...", "text_en": "...", "audio_url": "acoustic/data/speaker/<key>.<lang>.wav" | null,
+    "audio_status": "rendered|unvetted (...)|missing: record a native speaker|no audio yet ...",
+    "target": { "type": "sector|ping|sectors|track|zone|drone", "id": "A3-R1", "xy": [x, y]? },
+    "heading_deg": 271.6,            // guidance only: first leg, CCW from east (contract convention)
+    "source": "template|operator|llm_translation", "template": "callout|reassure|guidance" | null,
+    "status": "played|pending_approval|rejected", "approved_by": "op1" | null,
+    "duration_s": 4.7, "review": "pending native-speaker review" | null, "group": "callout-2" } ],
+    // scheduled items appear as "played" once t <= state.t; pending / rejected operator items are listed for the UI
+"callouts": [ { "id": "C2", "t_start": 466.0, "listen_ends": 523.0, "t_end": 644.5, "speaker_drone": "d2",
+    "target": { "type": "ping", "id": "A3-R1", "xy": [x, y] }, "langs": [...],
+    "steps": [ { "step": "silence|message|listen", "lang"?, "t0", "t1" } ],
+    "sectors": { "A3": <responsiveness> }, "pings": { "A3-R1": <responsiveness + ping_id, note> },
+    "tracks": [ { "id": "T1", "xy": [x, y], "source": "callout_voice_open_ground", "evidence": [t...], "why": "..." } ],
+    "guided": [ { "track": "2-T1", "xy", "source", "why", "text_en", "path": [[x, y]...], "legs": [{bearing_deg, dist_m, compass}] } ],
+    "reassured": ["A3-R1"], "n_events": 41, "synthetic": true } ],   // results only after listen_ends; before: status "in_progress"
+"responsiveness": { "A3": <responsiveness> },   // per pile: the call-out heard from closest (then latest)
+<responsiveness> = { "status": "responded|possible_response|nonhuman_only|no_response", "kind": "knock_x3|knock_fast|knock|voice|shout|crying|..." | null,
+    "avpu": "V|unknown|not V (A/V not shown)", "confidence": 0-1, "text": "...", "callout_t": 466.0,
+    "range_m": 11.4, "message_reached": true, "events": [...]? , "lang_hint": "zh-TW"? }
+piles[].responsiveness, radar_candidates[].responsiveness (same object); radar_candidates[].triage_fused
+    { triage_hint, condition, avpu, reason, changed_from, rank } when the candidate has vitals
+    (hints / ranks from sim/vitals.TRIAGE_RANK; no response raises, never lowers).
+drones[].speaker = { kind, lang, id } while that drone is playing.
+
+Rules: "no_response" never clears a pile and its text says it does not rule out an unconscious person; a
+"responded" sector is a candidate, not a confirmed person; guidance routes use the LiDAR heightmap (rubble
+> 0.4 m above local ground, +2 m margin) and tasked zones, never truth.
+
+Operator API (scripts/serve.py, queue file dashboard/data/broadcast_queue.json, read by the mission each step):
+GET  /api/broadcast                 -> { schema: "larpverse.broadcast_queue/v1", revision, items: [broadcast...] }
+POST /api/broadcast                 { "drone_id": "d2" | "zone": "Z1", "kind": "operator|callout|reassure",
+                                      "text": "...", "src_lang": "en", "langs": [...], "translate": true,
+                                      "operator": "name" }
+     -> { items, translation_problems }; operator text: scheduled; translations: pending_approval;
+        callout / reassure: the vetted templates (text ignored)
+POST /api/broadcast/approve         { "id": "op203011-2", "operator": "name", "approve": true|false }
+```
+
+
+### Gemini audio fields (acoustic/v1 additions, from docs/ACOUSTIC_GEMINI.md)
+
+All additive: a v1 reader keeps working.
+
+```jsonc
+"clips": [ { /* v1 fields */,
+  "novelty": 14.5,                      // stage-1 peak novelty (background ≈ 1-2, threshold 4)
+  "forwarded": true,                    // something in this clip went to stage 2
+  "dismissed": ["dismissed: dog"],      // stage-1 dismissals in this clip (kept visible)
+  "language": "cmn", "languages": [{"code": "cmn", "name": "Mandarin"}],
+  "transcript_original": "救命！我被困在樓梯下面…", "translation": "Help! I'm trapped under the stairs…",
+  "distress": ["call_for_help", "trapped", "location_hint"],
+  "audio_analysis": { "by": "gemini", "by_note": null, "sound_type": "call_for_help", "human_vocal": true,
+                      "confidence": 0.95, "people_count": 1, "location_hints": ["under the stairs"],
+                      "rationale": "...", "model": "gemini-3.5-flash-lite", "error": null,
+                      "cross_check": null, "verify": {"ok": true, "similarity": 0.93, "...": "..."},
+                      "distress_unverified": [], "t0": 7.3, "t1": 11.9 },
+  "stage1": { "denoise": "noisereduce", "profile": "background 26.0 s (quietest 70%)",
+              "events": [ {"cand_id": "d1-n1", "t0": 7.5, "t1": 11.7, "novelty_peak": 14.5,
+                           "label": "likely_human", "reason": "Speech 0.92, VAD 1.00", "forwarded": true,
+                           "dismissed": null, "group": "d1-g1"} ],
+              "stage2_clips": [ {"cand_id": "d1-g1", "t0": 7.0, "t1": 12.2, "members": ["d1-n1"]} ] } } ],
+"piles": [ { /* v1 */, "audio_priority": 83, "distress": ["trapped"], "languages": ["en"] } ],
+"sector_tasks": [ { "rank": 1, "pile_id": "B1", "priority": 83,
+                    "status": "lead",           // lead | uncertain_sound | dismissed_nonhuman | no_signal_not_cleared
+                    "human": 0.9, "urgency": 1.0, "reliability": 0.85,
+                    "languages": [{"code": "en", "name": "English"}], "distress": ["call_for_help", "trapped"],
+                    "reasons": ["..."], "rationale": "...", "rationale_by": "gemini",   // or "template"
+                    "top_event": "d1-g1", "events": 2, "forwarded": 1, "dismissed": [], "by": "gemini" } ],
+"gemini_audio": { "prompt": "gemini-audio-v5", "mode": "auto",
+                  "stage1": {"candidates": 5, "forwarded": 3, "dismissed": {"dog": 1}},
+                  "stage2": {"calls": 3, "cached": 0, "fallback": 0, "errors": [], "latency_ms": 4500,
+                             "audio_s": 13.5, "usage": {...}, "rationale": {"by": "gemini", ...}} }
+```
+
+With `reprioritise=True` (the default), `merge_into_state` raises a pile's `priority`/`why` to the stage-3 value
+when that value is higher and the task is a `lead`, then re-picks `radar_ping` and `dispatch` from the top lead.
+
+
+### Tasking and recon defaults (v1.4.1, settled)
+
+- **No `tasking.json`, or no active zones: the mission runs recon** (the user's decision). The scenario's default sector zones are opt-in with `--tasking default`.
+- `tasking.json` may carry `aoi` (one polygon, site metres), which restricts the recon coverage flight. `scripts/serve.py` validates it and passes it through.
+- Mission `stage` adds `recon`. `phase` uses `recon_mapping` and `recon_listening` (above) while it's active.

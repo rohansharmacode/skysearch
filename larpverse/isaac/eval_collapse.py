@@ -78,7 +78,7 @@ def run_one(seed, policy, penetration="legacy", start="reported", radar="dsp", a
               penetration=penetration)
     if start == "independent":
         kw["launch_pile"] = independent_start(seed)
-    m = site.mission_for_site("collapse", **kw).run()
+    m = site.mission_for_site("collapse-core", **kw).run()
     r = score_run(m)
     truth = m.scenario.truth                                  # hidden truth: evaluator only
     occupied = {v["pile"] for v in truth["victims"]}

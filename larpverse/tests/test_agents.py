@@ -259,3 +259,149 @@ def test_acoustic_agent_uses_llm_layer(monkeypatch, tmp_path):
     monkeypatch.setattr(llm, "_http_post", _no_network)
     j, meta = agent.judge_clips([f], mode="auto", cache_path=str(cache))   # replayed from its own cache
     assert j["a"]["by"] == "llm" and meta["cache_hits"] == 1
+
+
+# --------------------------------------------------------------------------- v1.3: revisit, swap, pods, vitals, zones
+import copy
+import os
+
+FIX = os.path.join(os.path.dirname(__file__), "fixtures", "decider_state_v13.json")
+
+
+def _v13():
+    with open(FIX) as fh:
+        return json.load(fh)
+
+
+def test_fallback_revisit_swap_and_pod_wording():
+    s = _v13()
+    ctx, opts = s["decision"]["context"], s["decision"]["options"]
+    out = gemini_decider.make_decider(constraints=intake.empty())(ctx, opts)
+    # C3 dispatch scores 41, A3 revisit is discounted to 32: argmax-style fallback dispatches C3
+    assert out["by"] == "fallback" and out["choice"] == "o1" and out["battery_swap"]
+    r = out["rationale"]
+    assert "Battery swap at the pads first" in r and "Pod lowered onto rubble at 3 placements" in r
+    assert gemini_decider.wording_problem(r.split(": ", 1)[1], pod=True) is None
+    # C3 no-go -> the open lead A3 gets its one revisit
+    c = intake.clamp({"pile_priors": {}, "no_go_piles": ["C3"], "ignore_sound_piles": []}, "n")
+    out = gemini_decider.make_decider(constraints=c)(ctx, opts)
+    assert out["choice"] == "o2" and "revisit A3" in out["rationale"] and "swap" in out["rationale"]
+
+
+def test_fallback_budget_stop_wording():
+    s = _v13()
+    opts = s["decision"]["budget_stop_options"] + [
+        {"id": "o2", "action": "dispatch", "pile_id": "C3", "priority": 41, "battery_after_min": 0.6, "flags": []}]
+    cid, why = gemini_decider.fallback_choice(gemini_decider.annotate(opts[:1], intake.empty()))
+    assert cid == "o1" and why.startswith("scan budget used") and "not cleared" in why
+
+
+@pytest.mark.parametrize("rationale,why", [
+    ("Go to C3 and skip the battery swap to save time.", "battery swap"),
+    ("C3 knocking; irregular breathing at A2-R1 suggests a child.", "age"),
+    ("C3 knocking; diagnosis at A2-R1 is apnoea.", "banned"),
+    ("C3 knocking; the person at A2-R1 is unconscious.", "fact"),
+    ("C3 knocking (41). The drone landed on C3 last time.", "landed"),
+    ("C3 knocking (41). I have tasked P2 for the next search.", "zone"),
+])
+def test_decider_wording_verifier(monkeypatch, rationale, why):
+    _with_key(monkeypatch)
+    monkeypatch.setattr(llm, "_http_post", FakeGemini({"choice": "o1", "rationale": rationale}))
+    s = _v13()
+    out = gemini_decider.make_decider(constraints=intake.empty())(s["decision"]["context"], s["decision"]["options"])
+    assert out["by"] == "fallback" and why in out["fallback_reason"], out
+
+
+def test_decider_accepts_and_appends_forced_notes(monkeypatch):
+    _with_key(monkeypatch)
+    fake = FakeGemini({"choice": "o2", "rationale": "A3 voice 'help' (64) is still open after 3 scans; revisit it once."})
+    monkeypatch.setattr(llm, "_http_post", fake)
+    s = _v13()
+    out = gemini_decider.make_decider(constraints=intake.empty())(s["decision"]["context"], s["decision"]["options"])
+    assert out["choice"] == "o2" and out["by"] == "gemini" and out["battery_swap"]
+    assert "Battery swap at the pads first" in out["rationale"] and "Pod lowered onto rubble at 2" in out["rationale"]
+    p = fake.prompt()
+    assert "physio" not in p and "long caveat prose" not in p                  # truth stripped, vitals compacted
+    assert '"delivery": "pod"' in p and "irregular breathing with pauses" in p and "dig_order" in p
+    assert "revisit = go back once" in p and "never skip or override it" in p
+
+
+def test_dig_order_and_condition_phrases():
+    rows = gemini_decider.dig_order(_v13()["radar_candidates"])
+    assert [r["ping"] for r in rows] == ["A2-R1", "B2-R1"]                      # by dig_score, firm pings only
+    assert rows[0]["condition"] == "irregular breathing with pauses (~12/min) — check first"
+    assert rows[1]["condition"] == "calm, regular breathing, 14/min — stable for now (breathing only), re-check later"
+    # missing vitals / dig_score: 'assess' weight x p_mass x accessibility, phrase still says check
+    r = gemini_decider.dig_order([{"id": "X-R1", "status": "candidate", "p_mass": 0.8, "depth_m": 2.0}])[0]
+    assert r["dig_score"] == round(0.55 * 0.8 * 0.5, 3) and "check" in r["condition"]
+    for pat in ("rapid_shallow", "slow_regular", "slow_deep", "fast_small", "unclear", "regular_calm"):
+        t = gemini_decider.condition_phrase({"pattern": pat, "rate_bpm": 24, "triage_hint": "urgent", "duration_s": 20})
+        assert "check" in t and gemini_decider.wording_problem(t) is None, t
+        assert not gemini_decider.AGE_WORDS.search(t)
+
+
+def test_condition_text_final_fields():
+    """vitals 4da97d0: category ``condition`` (never shown) + ``condition_text`` (shown if it passes the rules)."""
+    v = {"condition": "irregular_apneic", "triage_hint": "immediate (check)", "rate_bpm": 12.0, "pattern_conf": 0.7,
+         "duration_s": 60, "condition_text": "irregular breathing with 1 pause(s) over 10 s, 12/min -> possible "
+                                              "airway problem or reduced consciousness, check"}
+    t = gemini_decider.condition_phrase(v, first=True)
+    assert t.endswith("reduced consciousness, check first") and "—" in t and "->" not in t
+    slow = {"condition": "unconscious_slow", "triage_hint": "urgent", "rate_bpm": 8.0, "pattern_conf": 0.6,
+            "duration_s": 60}                                                 # no text: built from the category
+    t = gemini_decider.condition_phrase(slow)
+    assert "deep rest or reduced consciousness" in t and "check responsiveness" in t and "unconscious" not in t
+    for bad in ("slow breathing, possible child, check", "patient is unconscious, check", "diagnosis: apnoea, check",
+                "unconscious_slow"):
+        t = gemini_decider.condition_phrase(dict(slow, condition_text=bad))
+        assert t.startswith("slow, regular breathing (~8/min)"), (bad, t)
+    rows = gemini_decider.dig_order([{"id": "B-R1", "status": "candidate", "p_mass": 0.9, "dig_score": 0.4, "vitals": slow},
+                                     {"id": "A-R1", "status": "candidate", "p_mass": 0.8, "dig_score": 0.6, "vitals": v}])
+    assert [r["ping"] for r in rows] == ["A-R1", "B-R1"] and rows[1]["pattern"] == "slow_regular"
+    s = gemini_decider.compact_context({"pings": [{"id": "B-R1", "pile_id": "B", "status": "candidate",
+                                                   "p_mass": 0.9, "dig_score": 0.4, "vitals": slow}]})
+    assert "unconscious" not in json.dumps(s)
+
+
+def test_zone_suggestion_is_a_suggestion(monkeypatch):
+    s = _v13()
+    z = gemini_decider.suggest_zone(s)
+    assert z["by"] == "fallback" and z["proposal"] == "P2"                      # P1 tasked; P2 has an acoustic lead
+    assert z["text"].startswith("suggest tasking P2: ")
+    _with_key(monkeypatch)
+    monkeypatch.setattr(llm, "_http_post", FakeGemini({"proposal": "P2", "text": "P2 is now tasked."}))
+    assert gemini_decider.suggest_zone(s)["by"] == "fallback"
+    monkeypatch.setattr(llm, "_http_post", FakeGemini({"proposal": "S1", "text": "suggest tasking S1: knocking heard by two drones."}))
+    z = gemini_decider.suggest_zone(s)
+    assert z["by"] == "gemini" and z["proposal"] == "S1"
+    assert gemini_decider.suggest_zone({"zone_proposals": []}) is None
+
+
+def test_brief_v13_pods_vitals_zones_swaps():
+    r = brief.brief(_v13())
+    t, f = r["brief"], r["facts"]
+    assert r["by"] == "template" and f["delivery"] == "pod"
+    assert t.index("1. A2-R1") < t.index("2. B2-R1")                            # dig order, not p_mass order
+    assert "irregular breathing with pauses (~12/min) — check first" in t
+    assert "pod lowered onto rubble" in t and "landed" not in t
+    assert "A2 3 placements" in t and "battery swaps: 1" in t and "25% reserve" in t
+    assert "searched — not cleared" in t and "Z2 A3 mound: searched — not cleared" in t
+    assert "A3 (searched twice by drone radar (revisit), no ping" in t and "A3 (revisited)" in t
+    assert "suggest tasking P2" in t and "radar scans used: 24 of 24" in t
+    assert gemini_decider.wording_problem(t, pod=True) is None and not brief.BANNED.search(t)
+    for w in ("child", "infant", "elderly", "diagnos", "physio"):
+        assert w not in t.lower()
+
+
+def test_brief_v13_llm_guard(monkeypatch):
+    _with_key(monkeypatch)
+    good = ("Dig A2-R1 on A2 first: irregular breathing with pauses — check first. Then B2-R1 on B2. "
+            "A3 and C3 are open leads, searched — not cleared. Pod lowered onto rubble at A2.")
+    for bad in (good.replace("Then B2-R1 on B2. ", "").replace("Dig A2-R1", "Dig B2-R1 then A2-R1"),   # order
+                good.replace("— check first", "possible child, check first"),                         # age
+                good.replace("Pod lowered onto rubble at A2.", "Drone landed on A2."),                 # pod
+                good.replace("searched — not cleared", "searched and clear")):                         # not cleared
+        monkeypatch.setattr(llm, "_http_post", FakeGemini({"brief": bad}))
+        assert brief.brief(_v13())["by"] == "template", bad
+    monkeypatch.setattr(llm, "_http_post", FakeGemini({"brief": good}))
+    assert brief.brief(_v13())["by"] == "gemini"

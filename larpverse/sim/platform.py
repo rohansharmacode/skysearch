@@ -102,6 +102,23 @@ class ThermalSpec:
 
 # --------------------------------------------------------------------------- platform
 @dataclass(frozen=True)
+class PodSpec:
+    """Winch-lowered sensor pod (radar + 4-mic array) set down on the rubble surface from a hovering drone."""
+    mass_kg: float = 5.0
+    footprint_m: float = 0.5           # pod base edge
+    winch_m: float = 20.0              # usable line length
+    lower_s: float = 8.0               # lowering time (hover to contact)
+    raise_s: float = 8.0
+    max_slope_deg: float = 30.0        # pod stays seated up to this surface slope
+    contact_coupling: bool = True      # antenna face in contact: no air-gap / stand-off path
+    hover_clear_m: float = 5.0         # hover height over the tallest cell under the rotor disc
+    n_mics: int = 4
+
+
+POD = PodSpec()
+
+
+@dataclass(frozen=True)
 class PlatformSpec:
     name: str
     airframe: str
@@ -129,6 +146,7 @@ class PlatformSpec:
     mics: MicArraySpec
     speaker: SpeakerSpec | None = None
     thermal: ThermalSpec | None = None
+    pod: PodSpec | None = None             # winch-lowered sensor pod (heavy drone only)
     sources: dict = field(default_factory=dict)
     estimates: tuple = ()
     notes: tuple = ()
@@ -235,6 +253,7 @@ HEAVY_SAR = PlatformSpec(
     mics=MicArraySpec(n_mics=8, aperture_m=1.0, weight_kg=1.0),
     speaker=SpeakerSpec("DJI Zenmuse V1", spl_db_1m=129.0, band_hz=(800, 8000), weight_kg=0.69),
     thermal=ThermalSpec("DJI Zenmuse H30T (thermal channel)", (1280, 1024), 0.92),
+    pod=POD,
     sources={"airframe dims, wheelbase, 54-in props, 8 rotors, 42.5 kg w/o battery, MTOW 95 kg, DB2000 1984.4 Wh x2, "
              "hover 29 min empty / 18 min at 30 kg, 12 m/s wind, IP55": _SRC["flycart30"],
              "same 2.2 m wheelbase / 54-in X8 frame (Agras T50: 2800x3085 mm unfolded)": _SRC["t50"],

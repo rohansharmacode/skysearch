@@ -48,11 +48,10 @@ def test_calm_usually_responds():
     assert st.count("responded") >= 28, st
 
 
-def test_child_and_distressed_respond_less_than_calm_but_sometimes():
+def test_distressed_responds_less_than_calm_but_sometimes():
     calm = sum(run_state("calm", s)["status"] == "responded" for s in range(30))
-    child = sum(run_state("child_calm", s)["status"] == "responded" for s in range(30))
     dis = sum(run_state("distressed_tachypnea", s)["status"] == "responded" for s in range(30))
-    assert 0 < dis < calm and 0 < child <= calm
+    assert 0 < dis < calm
 
 
 def test_empty_sectors_never_marked_responded_seed_sweep():
@@ -93,19 +92,37 @@ def test_knock_x3_is_recognised_and_time_locked():
     assert "knock pattern x3" in r["text"] and r["events"][0]["latency_s"] == pytest.approx(1.5, abs=0.01)
 
 
-def test_triage_fusion_and_boost():
+def test_triage_fusion_uses_vitals_conditions_and_ranks():
+    from sim.vitals import TRIAGE_RANK
     no = {"status": "no_response", "message_reached": True, "avpu": "not V"}
     yes = {"status": "responded", "confidence": 0.8, "sector": "B2", "avpu": "V", "kind": "knock_x3"}
-    f = co.fuse_triage({"pattern": "irregular_with_pauses", "triage_hint": "immediate (check)"}, no)
-    assert f["triage_hint"] == "immediate" and f["changed_from"] == "immediate (check)"
-    f = co.fuse_triage({"pattern": "regular_calm", "triage_hint": "delayed"}, yes)
-    assert f["triage_hint"] == "delayed"
-    f = co.fuse_triage({"pattern": "regular_calm", "triage_hint": "delayed"}, no)
-    assert f["triage_hint"] == "immediate (check)"
+    slow = {"condition": "unconscious_slow", "triage_hint": "urgent", "condition_text": "slow, regular breathing"}
+    f = co.fuse_triage(slow, no)                                # the AVPU check the radar asks for
+    assert f["triage_hint"] == "immediate" and f["changed_from"] == "urgent" and f["rank"] == TRIAGE_RANK["immediate"]
+    assert co.fuse_triage(slow, yes)["triage_hint"] == "urgent"   # a response never lowers an abnormal condition
+    f = co.fuse_triage({"condition": "irregular_apneic", "triage_hint": "immediate (check)"}, no)
+    assert f["triage_hint"] == "immediate"
+    assert co.fuse_triage({"condition": "calm", "triage_hint": "delayed"}, yes)["triage_hint"] == "delayed"
+    assert co.fuse_triage({"condition": "calm", "triage_hint": "delayed"}, no)["triage_hint"] == "immediate (check)"
+    assert co.fuse_triage({"condition": "unknown", "triage_hint": "assess"}, no)["triage_hint"] == "assess"
     assert co.fuse_triage({"triage_hint": "assess"}, {"status": "possible_response"})["changed_from"] is None
+    assert co.fuse_triage(slow, dict(no, message_reached=False))["triage_hint"] == "urgent"
+    for cond in ("calm", "distressed_tachypnea", "unconscious_slow", "irregular_apneic", "unknown"):
+        for hint in TRIAGE_RANK:
+            for r in (no, yes, None):
+                out = co.fuse_triage({"condition": cond, "triage_hint": hint}, r)
+                assert out["triage_hint"] in TRIAGE_RANK and TRIAGE_RANK[out["triage_hint"]] == out["rank"]
+                if r is no:
+                    assert out["rank"] >= TRIAGE_RANK[hint]          # no response never lowers priority
+    import inspect
+    assert "child" not in inspect.getsource(co).lower()
+
+
+def test_association_boost():
+    yes = {"status": "responded", "confidence": 0.8, "sector": "B2", "avpu": "V", "kind": "knock_x3"}
     r, why = co.association_boost(0.45, yes)
     assert r > 0.45 and "call-and-response" in why
-    assert co.association_boost(0.45, no) == (0.45, None)
+    assert co.association_boost(0.45, {"status": "no_response"}) == (0.45, None)
     assert co.response_priority(yes) >= 20
 
 
@@ -209,7 +226,8 @@ def test_speaker_facade_seed7_logs_broadcasts_and_reveals_by_time():
     cx, cy = sectors["B1"]
     off, rec = spk.begin_listen(sc, 200.0, ring(cx, cy), {"type": "ping", "id": "B1-R1", "xy": (cx, cy)},
                                 pings=[{"id": "B1-R1", "xy": [cx, cy], "pile_id": "B1"}])
-    assert 40 < off < 80
+    assert rec["listen_ends"] - 200.0 > 40                     # 5 languages + 20 s listen
+    assert all(b["t"] + b["duration_s"] <= 200.0 + off + 1e-6 for b in spk.log.items)   # all played while landed
     kinds = [b["kind"] for b in spk.log.items]
     assert kinds[:5] == ["callout"] * 5 and "reassure" in kinds
     assert all(set(b) >= {"t", "drone_id", "kind", "lang", "text", "text_en", "audio_url", "target"} for b in spk.log.items)

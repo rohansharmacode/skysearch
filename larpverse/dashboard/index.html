@@ -48,6 +48,8 @@
         <button class="tog" data-k="acoustic" aria-pressed="true">Acoustic cones</button>
         <button class="tog" data-k="sites" aria-pressed="true">Landing sites</button>
         <button class="tog" data-k="reach" aria-pressed="true">Radar reach</button>
+        <button class="tog" data-k="comms" aria-pressed="true">Rescue Wi-Fi</button>
+        <button class="tog" data-k="speaker" aria-pressed="true">Speaker &amp; guidance</button>
         <button class="tog" data-k="piles" aria-pressed="true" id="togPiles" hidden>Piles &amp; dispatch</button>
       </div>
     </div>
@@ -71,6 +73,7 @@
       <span><i class="dot red"></i>Radar ping (candidate region)</span>
       <span class="lx"><i class="ring"></i>Insufficient evidence</span>
       <span class="lx"><i class="tring"></i>Triage ring (dig order)</span>
+      <span><i class="phone"></i>Phone / Wi-Fi</span>
       <span><i class="wedge"></i>Heard a human-like sound</span>
       <span class="lx"><i class="tri"></i>Drone</span>
       <span class="lx"><i class="sq"></i>Landing site</span>
@@ -88,13 +91,15 @@
         <li><i class="k-chip" style="color:#8a9caa">NON-HUMAN</i><div><b>Non-human sound · not cleared</b>: only a dog, engine or debris was heard. Dismissed as an acoustic lead, but the pile is <b>not cleared</b>.</div></li>
         <li><i class="k-chip" style="color:#8a9caa">NOT CLEARED</i><div>Nothing heard. Silence is not absence.</div></li>
         <li><i class="k-dot"></i><div><b>Radar ping</b>: red dot, pulsing, with its 95% region. Its <b>belief share</b> is the share of this pile's radar belief at that spot, not the chance that someone is there. Click it for the 3D LiDAR view.</div></li>
-        <li><i class="k-tri-rings"><i class="r2"></i><i class="r1"></i><i class="rd"></i><i class="ro"></i></i><div><b>Triage ring</b> around a ping (dig order, from its breathing pattern): <b>double</b> = immediate, <b>solid</b> = urgent, <b>dashed</b> = delayed, <b>dotted</b> = assess (no usable pattern). <b>#1</b> is dug first. An aid for rescuers, not a diagnosis.</div></li>
+        <li><i class="k-tri-rings"><i class="r2"></i><i class="r1"></i><i class="ru"></i><i class="rd"></i><i class="ro"></i></i><div><b>Triage ring</b> around a ping (dig order, from the breathing condition): <b>double</b> = immediate, <b>thick</b> = immediate · check, <b>thin pair</b> = urgent (check responsiveness), <b>dashed</b> = delayed, <b>dotted</b> = assess (no usable pattern). <b>#1</b> is dug first. An aid for rescuers, not a diagnosis.</div></li>
         <li><i class="k-hatch"></i><div><b>Hatched part of a searched pile</b>: beyond radar reach from the sites the drones scanned from (≈3 m of rubble). Only acoustic leads cover it: not cleared.</div></li>
         <li><i class="k-weak"></i><div><b>Insufficient evidence</b>: hollow orange, dashed. Too few radar ranges agree (e.g. 2 of 3): rescan before acting on it.</div></li>
         <li><i class="k-cone"></i><div><b>Yellow cone</b>: direction a landed drone heard a human-like sound from (its apex is the drone). Grey short cones are non-human sounds. Pick a listen in the Acoustic agent panel to see its cones.</div></li>
         <li><i class="k-tri"></i><div><b>Drone</b> (white; hollow with a small "ear" ring while landed and listening, rotors off). <i class="k-sq-inline"></i> green squares are landing sites the drones chose from the LiDAR map.</div></li>
         <li><i class="k-arrow"></i><div><b>Dispatch</b>: where the coordinator sent the fleet next, and why (see Dispatch decisions).</div></li>
         <li><i class="k-zone"></i><div><b>Search zones</b> the operator tasked (✎ Plan search): white outline. Dashed = not searched yet; grey hatch = <b>searched — not cleared</b>; red = ping inside; teal = acoustic lead. <b>Proposed</b> zones from recon are dashed with a "proposed" tag until you accept them; <b>suggested</b> circles are sounds heard outside every zone.</div></li>
+        <li><i class="k-phone"></i><div><b>Blue = rescue Wi-Fi</b>: each drone's open hotspot (faint disc), the mesh links back to the GCS (thin lines, Mbps), and phones that joined it with their RSSI candidate region (dashed circle). A ringed, brighter phone says it is <b>trapped</b>. Consent-based: no passive phone sniffing.</div></li>
+        <li><i class="k-guide"></i><div><b>Guidance arrow</b> (white, dashed): the route the loudspeaker read to a person heard on open ground, around the rubble, to the rescue tent. A speaker icon marks a drone that is playing.</div></li>
         <li><i class="k-stage"></i><div><b>Staging</b>: the operator's console and the drone pads.</div></li>
         <li><i class="k-geo">N</i><div><b>Basemap</b>: by default the drones' LiDAR relief of the (synthetic) rubble. <i>Map</i> and <i>Satellite</i> show the real case-study site (OpenStreetMap or imagery, dimmed) with the site frame anchored at the building (the N arrow, top right, shows true north). The pile layout is synthetic: nothing here marks where real victims were. Without network the map falls back to the LiDAR relief.</div></li>
       </ul>
@@ -104,6 +109,12 @@
 
   <aside id="side">
     <div class="col colA">
+      <section id="secComms" hidden>
+        <h2>Connected · rescue Wi-Fi <span id="nComms" class="count"></span></h2>
+        <div id="commsMeta"></div>
+        <div id="comms"></div>
+        <p class="caveat0">Phones that chose to join the rescue Wi-Fi. Positions are RSSI candidate regions, not confirmed. Replies use vetted templates; free text waits for an operator.</p>
+      </section>
       <section id="secZones" hidden>
         <h2>Search zones <span id="nZones" class="count"></span></h2>
         <div id="zones"></div>
@@ -129,6 +140,11 @@
         <div id="listens" role="tablist" aria-label="Listen"></div>
         <div id="clips"></div>
       </section>
+      <section id="secSpeaker" hidden>
+        <h2>Speaker <span id="nSpk" class="count"></span></h2>
+        <div id="speaker"></div>
+        <p class="caveat0">Only vetted templates or an operator's own words play. Machine translations wait for approval. A response to the call-out marks a candidate, not a confirmed person; no response does not rule out an unconscious person.</p>
+      </section>
       <section id="secAc">
         <h2>Acoustic directions <span id="nAc" class="count">0</span></h2>
         <div id="acList"></div>
@@ -147,10 +163,13 @@
   </aside>
 </div>
 
+<div id="toast" role="status" aria-live="polite" hidden></div>
+
 <div id="detail" hidden>
   <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="dTitle">
     <div class="viewer"><div id="v3d"></div>
       <div class="vhint mono" id="vhint">Drag to orbit · scroll to zoom</div>
+      <div class="vinfo mono" id="vinfo" role="status"></div>
     </div>
     <div class="facts">
       <div class="dhead"><h3 id="dTitle">R1</h3><button class="btn" id="dClose" aria-label="Close">Close</button></div>

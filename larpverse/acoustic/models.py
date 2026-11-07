@@ -104,42 +104,91 @@ def yamnet_scores(x):
 
 
 # --------------------------------------------------------------------------- heuristics
-def knock_periodicity(x) -> float:
-    """Patterned-knock score in [0, 1]: impulsive onsets whose inter-onset intervals repeat.
-
-    Onsets are peaks of a 10 ms envelope (>150 Hz) rising 4x above the median. The score
-    counts intervals within +-10 % of the most common interval: it needs >= 3 such repeats
-    to rise above 0 and saturates at 5, scaled by their share of all intervals and by the share
-    of onsets in knock-like groups (2-5 evenly spaced onsets 0.12-0.6 s apart, groups split at
-    0.5 s gaps). Debris bursts
-    (many dense irregular ticks) or speech give low scores."""
+def onset_times(x):
+    """Impulsive onsets (s): peaks of a 10 ms envelope (>150 Hz) rising 4x above its median, >= 80 ms
+    apart. None for clips shorter than 0.6 s."""
     from scipy.signal import find_peaks
     b, a = sps.butter(2, 150 / (FS / 2), "high")
-    e = np.abs(sps.lfilter(b, a, x))
+    e = np.abs(sps.lfilter(b, a, np.asarray(x, float)))
+    hop = FS // 100
+    env = e[: len(e) // hop * hop].reshape(-1, hop).max(axis=1)
+    if len(env) < 60:
+        return None
+    pk, _ = find_peaks(env, height=4 * np.median(env), distance=8)
+    return pk / 100.0
+
+
+def _knock_runs(t):
+    """Evenly spaced runs of onsets (knock groups) inside 0.5 s-gap groups of onset times t (s).
+
+    A run is >= 3 consecutive onsets (or a whole 2-onset group) whose spacings are 0.12-0.6 s and
+    within a factor 1.4 of each other. A run is `dense` when its group also holds ticks < 0.1 s apart
+    or more than 5 onsets (a debris burst). Returns ([(spacings, dense)], onsets in multi-onset groups)."""
+    groups = np.split(t, np.where(np.diff(t) > 0.5)[0] + 1)
+    runs, n_multi = [], 0
+    for g in groups:
+        if len(g) < 2:
+            continue                     # stray single onsets are neutral
+        n_multi += len(g)
+        d = np.diff(g)
+        dense = bool(d.min() < 0.1 or len(g) > 5)
+        i = 0
+        while i < len(d):
+            j = i
+            while (j + 1 < len(d) and 0.12 <= d[j + 1] <= 0.6 and 0.12 <= d[i] <= 0.6
+                   and max(d[i:j + 2]) <= 1.4 * min(d[i:j + 2])):
+                j += 1
+            if 0.12 <= d[i] <= 0.6 and (j > i or len(g) == 2):
+                runs.append((list(d[i:j + 1]), dense))
+            i = j + 1
+    return runs, n_multi
+
+
+def knock_rhythm(x, lo=0.12, hi=0.45) -> float:
+    """Rapping-rhythm score: peak of the normalised autocorrelation of the onset-strength curve
+    (log envelope >150 Hz, 10 ms hop, half-wave rectified flux) at 0.12-0.45 s lags. Door knocks
+    (ESC-50: 9/12 clips > 0.25) repeat at a steady rate; debris, fire, rain, creaks and footsteps
+    do not (0-2/12 > 0.25), and the synthetic rubble debris stays < 0.15."""
+    b, a = sps.butter(2, 150 / (FS / 2), "high")
+    e = np.abs(sps.lfilter(b, a, np.asarray(x, float)))
     hop = FS // 100
     env = e[: len(e) // hop * hop].reshape(-1, hop).max(axis=1)
     if len(env) < 60:
         return 0.0
-    pk, _ = find_peaks(env, height=4 * np.median(env), distance=8)
-    if len(pk) < 4:
-        return 0.0
-    ioi = np.diff(pk) / 100.0
-    ioi = ioi[(ioi > 0.1) & (ioi < 3.0)]
-    if len(ioi) < 3:
-        return 0.0
-    count = max(int(np.sum(np.abs(ioi - c) <= 0.1 * c)) for c in ioi)
-    # deliberate knocking comes in short groups (2-5 knocks); settling debris is a dense burst of
-    # many irregular ticks. Weight by the share of onsets that sit in knock-sized groups.
-    t = pk / 100.0
-    groups = np.split(t, np.where(np.diff(t) > 0.5)[0] + 1)
+    flux = np.maximum(np.diff(np.log(env + 1e-9 * env.max() + 1e-12)), 0)
+    flux = flux - flux.mean()
+    r = np.correlate(flux, flux, "full")[len(flux) - 1:]
+    r = r / (r[0] + 1e-12)
+    lags = np.arange(len(r)) / 100.0
+    w = (lags >= lo) & (lags <= hi)
+    return round(float(max(0.0, r[w].max())), 3) if w.any() else 0.0
 
 
-    def knock_group(g):          # 2-5 onsets, evenly spaced 0.12-0.6 s apart
-        d = np.diff(g)
-        return 2 <= len(g) <= 5 and d.min() >= 0.12 and d.max() <= 0.6 and d.max() <= 1.4 * d.min()
+def knock_periodicity(x, rhythm_ok=True) -> float:
+    """Patterned-knock score in [0, 1]: the larger of a group score and a rhythm score.
 
-    share = sum(len(g) for g in groups if knock_group(g)) / len(t)
-    return round(float(np.clip((count - 2) / 3, 0, 1) * count / len(ioi) * share), 3)
+    Group score (deliberate signalling, e.g. "knock three times"): onsets (onset_times) form short
+    groups of evenly spaced knocks repeated with the same spacing (here 3 knocks 0.22 s apart every
+    ~2 s). At least one group must stand clear of any debris burst; it sets the spacing. 0 below
+    two groups within +-15 % of that spacing, 0.7 for two, 1.0 for three or more, times the share
+    of grouped onsets in those groups. Rhythm score (continuous rapping, real door knocks):
+    knock_rhythm mapped 0.2 -> 0, 0.4 -> 1. Settling debris (dense bursts of irregular ticks)
+    scores low on both. rhythm_ok=False (an engine-like clip) uses the group score only: idling
+    engines and rotors are rhythmic too."""
+    rhythm = float(np.clip((knock_rhythm(x) - 0.2) / 0.2, 0, 1)) if rhythm_ok else 0.0
+    t = onset_times(x)
+    if t is None or len(t) < 4:
+        return round(rhythm, 3)
+    runs, n_multi = _knock_runs(t)
+    clean = [r for r, dense in runs if not dense]
+    group = 0.0
+    if clean:                            # knock groups must show up at least once on their own
+        med = float(np.median([np.median(r) for r in clean]))
+        runs = [r for r, _ in runs if abs(np.median(r) - med) <= 0.15 * med]
+        if len(runs) >= 2:
+            share = sum(len(r) + 1 for r in runs) / max(n_multi, 1)
+            group = (0.7 if len(runs) == 2 else 1.0) * min(1.0, share)
+    return round(float(max(group, rhythm)), 3)
 
 
 def hum_harmonicity(x) -> float:
@@ -157,21 +206,49 @@ def hum_harmonicity(x) -> float:
     return round(float(best), 3)
 
 
+# Teammate (F. Valisalo, branch acoustic-voice-detection) human-minus-animal YAMNet score: per
+# 0.975 s frame max(human classes) - max(animal classes), max over frames. On real audio under rotor
+# noise it ranks speech better than the VAD-scaled evidence (docs/ACOUSTIC_VALIDATION.md).
+HMA_HUMAN = {"Speech", "Child speech, kid speaking", "Conversation", "Narration, monologue", "Babbling", "Shout",
+             "Bellow", "Whoop", "Yell", "Children shouting", "Screaming", "Crying, sobbing",
+             "Baby cry, infant cry", "Whimper", "Wail, moan", "Groan", "Hubbub, speech noise, speech babble"}
+HMA_ANIMAL = {"Animal", "Domestic animals, pets", "Dog", "Bark", "Yip", "Howl", "Bow-wow", "Growling",
+              "Whimper (dog)", "Livestock, farm animals, working animals", "Wild animals"}
+HMA_MIN = 0.2
+
+
+def human_minus_animal(fr, labels) -> float:
+    if "hma_idx" not in _cache:
+        _cache["hma_idx"] = ([i for i, n in enumerate(labels) if n in HMA_HUMAN],
+                             [i for i, n in enumerate(labels) if n in HMA_ANIMAL])
+    h, a = _cache["hma_idx"]
+    if not len(fr):
+        return 0.0
+    return round(float(np.max(fr[:, h].max(axis=1) - fr[:, a].max(axis=1))), 3)
+
+
 def classify(x, vad=None):
     fr, labels = yamnet_scores(x)
     agg = 0.5 * fr.mean(axis=0) + 0.5 * fr.max(axis=0)
     g = {c: float(agg[idx].max()) for c, idx in GROUPS.items()}
-    heur = {"knock_periodicity": knock_periodicity(x), "hum_harmonicity": hum_harmonicity(x)}
+    yam_engine = g["engine"]
+    hh = hum_harmonicity(x)
+    heur = {"knock_periodicity": knock_periodicity(x, rhythm_ok=yam_engine < 0.3 and hh < 0.3),
+            "hum_harmonicity": hh, "human_minus_animal": human_minus_animal(fr, labels)}
     g["knocking"] = max(g["knocking"], 0.8 * heur["knock_periodicity"])
     g["engine"] = max(g["engine"], float(np.clip((heur["hum_harmonicity"] - 0.15) / 0.35, 0, 1)))
+    if heur["knock_periodicity"] >= 0.5 and heur["hum_harmonicity"] < 0.35 and yam_engine < 0.5:
+        # a clear knock pattern without mains/engine harmonics: YAMNet's broadband "engine" guess
+        # (knocks through rubble are low-passed thuds) must not override it
+        g["engine"] = min(g["engine"], 0.5 * g["knocking"])
     tot = sum(g.values()) + 1e-9
     scores = {c: round(g[c] / tot, 3) for c in CLASSES}
     top = [(labels[i], round(float(agg[i]), 3)) for i in np.argsort(-agg)[:3]]
     fg = {c: v for c, v in scores.items() if c != "noise"}       # background only if nothing else
-    if vad is not None and vad < 0.1:      # VAD gate: YAMNet "speech" with no voice activity is weak
-        alt = {c: v for c, v in fg.items() if c not in ("voice", "shout")}
-        if max(alt.values()) >= 0.15:
-            fg = alt
+    if vad is not None and vad < 0.1 and heur["human_minus_animal"] < HMA_MIN:
+        # no voice activity and no human-over-animal YAMNet frame -> never a "voice" headline (R2-015);
+        # shouts that Silero misses (VAD ~0) keep it when YAMNet hears a human clearly
+        fg = {c: v for c, v in fg.items() if c not in ("voice", "shout")}
     cls = max(fg, key=fg.get) if max(fg.values()) >= 0.15 else "noise"
     return cls, scores, heur, top
 

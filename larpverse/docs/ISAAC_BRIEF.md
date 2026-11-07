@@ -25,6 +25,19 @@ Heavy-lift drones (agricultural or industrial class) search the **real collapse 
 
 Every radar return is a labelled synthetic generator (Isaac doesn't model breathing through rubble). Pings are **candidate search regions**, never "survivor found".
 
+### The collapse site, as our sim sees it
+
+- **Heightmap:** 640 × 640 cells at 0.5 m, rasterised from your terrain and buildings (`assets/maps/collapse_site_heightmap.npz`).
+- **157 search sectors:**
+  - T1a–c and T2a–c: the two fallen towers, in thirds north to south;
+  - CN/CS/RN/RS/RW/RE: rubble around the towers;
+  - L###: collapsed lots, numbered as in your USD;
+  - M01–M44: rubble mounds.
+- **Standing buildings:** the 93 standing or tilted buildings are obstacles, not sectors. The tallest is 24 m.
+- **Staging:** a clear lot at the south edge, (−56, −152.5).
+- **Seed 7:** starts at T1a, with 22 synthetic victims mostly in the tower core.
+- **Radar delivery:** the heavy drone lowers a ~5 kg radar + mic **pod on its winch** onto the rubble. Realistic radar reach is about 3 m, so landing off-pile and scanning from 11 m away finds nothing.
+
 ## 2. Runtime (verified on your box)
 
 - Isaac Sim **6.0.1** + Isaac Lab **3.0** on Brev L40S, and a 2× RTX PRO 6000 box for path tracing.
@@ -41,8 +54,8 @@ Set `L=/workspace/skysearch/larpverse`, then run each command from `/workspace/i
 | Self-test | `./isaaclab.sh -p $L/isaac/run_mission.py --selftest --headless --enable_cameras --out /workspace/selftest` | ✅ |
 | Dry run (no omni) | `./isaaclab.sh -p $L/isaac/run_mission.py --dry-run --max-steps 60 --out /tmp/d` | ✅ |
 | Grid demo, photoreal, recorded | `./isaaclab.sh -p $L/isaac/run_mission.py --seed 7 --photoreal 1 --overlay usd --show-truth --record /workspace/frames --rec-cams director,wide,chase:d1,fpv:d2,top --rec-res 1920x1080 --rec-fps 30 --rec-speed 6 --rec-stop-t 380 --headless` | ✅ (story fix pending, §5) |
-| **Your collapse map** | `./isaaclab.sh -p $L/isaac/run_mission.py --site collapse --site-usd /workspace/skysearch/collapse_site/collapse_site.usda --seed 7 --photoreal 1 --overlay usd …` | 🟡 |
-| Heavy drones + dense LiDAR | add `--drone-model heavy --lidar-profile heavy`. Uses RTX LiDAR at an OS1-128 / Hesai-class density where available, otherwise more PhysX rays within a frame budget | 🟡 |
+| **Your collapse map** | `./isaaclab.sh -p $L/isaac/run_mission.py --site collapse --site-usd /workspace/skysearch/collapse_site/collapse_site.usda --headless --show-truth --speed 4` (add `--photoreal 1`, recording flags as above). The site is attached at `/World/CollapseSite`, and all 600 site meshes get colliders. Dry-run verified here: `python isaac/run_mission.py --dry-run --site collapse --lidar-profile heavy --max-steps 40` | ✅ dry-run / USD-checked (not yet on GPU) |
+| Heavy drones + dense LiDAR + winch pod | add `--platform heavy_sar --lidar-profile heavy --delivery pod`. The 8-rotor heavy model is now the default (`--drone-model heavy`). LiDAR tries RTX OS1-128, then XT32, then frame-budgeted PhysX rays (`--lidar-budget-ms`, 4 ms per drone). The **pod** is drawn as a box on a cable from the drone, resting on the rubble while it scans. Dry run: 120 steps, 109k points, 3 pods | ✅ dry-run (RTX LiDAR never run on 6.0.1: report which path you got) |
 | Replay a CPU run (same story as the dashboard) | on any machine `python -m sim.grid_mission --seed 7 --radar dsp --frames --out dashboard/data`, then `… run_mission.py --replay $L/dashboard/data …` | ✅ |
 | Path-traced hero shots | `--rtx pathtracing --spp 16` | ✅ |
 
@@ -56,7 +69,8 @@ Set `L=/workspace/skysearch/larpverse`, then run each command from `/workspace/i
 - `--selftest`
 - `--look pretty`, which is an alias for `--photoreal 1` plus Flow dust
 - `--radar dsp`, the default
-- `--site` 🟡
+- `--site grid|weiguan|collapse|mesh:<path>`, `--site-usd`, `--site-lights auto|site|ours|both`, `--no-scan-textures`
+- `--platform`, `--penetration literature|legacy`, `--delivery pod|land`, `--no-autonomous`, `--lidar-profile small|heavy`, `--lidar-budget-ms`, `--drone-model heavy|small`
 
 ## 4. Overlay (`isaac/overlay.py`) ✅ merged with your ribbon lines (0f41c53)
 
@@ -90,7 +104,7 @@ Colour language everywhere, which must match the dashboard and animation:
    - Record with `--rec-stop-t 380`.
    - **Gate each take on `timeline.csv`:** an A2 ping before t 110, and at least one dispatch before the stop.
    - If your Isaac story differs from the CPU run (your landing sites come from your own LiDAR), use `--replay` from our CPU frames so the video matches the dashboard.
-3. **Collapse-site run** once `--site collapse` lands 🟡. Self-test it, then do one short run with `--max-steps 120`. Report:
+3. **Collapse-site run** (`--site collapse` has landed ✅). Self-test it, then do one short run with `--max-steps 120`. Report:
    - raycast hits on your colliders;
    - landing cells found, so we can check footprint and clearance on your terrain;
    - frame time with debris on and off.
@@ -110,7 +124,7 @@ Colour language everywhere, which must match the dashboard and animation:
    - Tilt `fpv_d2` down 35–45° and put chase at 6 m behind, 3 m up.
    - Use Flow dust only for touchdowns.
 6. **Identification overlays for post:** save each camera's pose and intrinsics per frame next to `timeline.csv`, so we can burn in pile/zone IDs, ping tags and a phase/clock lower-third with `scripts/cut_video.py`.
-7. **Heavy drone model** 🟡: if you have a better agri/industrial airframe USD (6–8 rotors), say so. Ours is primitive-based with a sensor gimbal, LiDAR puck, radar panel and speaker horn.
+7. **Heavy drone model** ✅ (default): if you have a better agri/industrial airframe USD (6–8 rotors), say so. Ours is primitive-based with a sensor gimbal, LiDAR puck, radar panel and speaker horn.
 8. **Licence:** keep a **procedural-texture variant** of the scanned core (no scan-photo albedo) for any public showing, unless NCKU grants permission for their model.
 
 ## 6. Answers we need in `FROM_ISAAC.md`

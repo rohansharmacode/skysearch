@@ -53,13 +53,14 @@ class _Drone:
         self.route = []
         self.job = None
         self.dwell_left = 0.0
+        self.winch = 0.0           # winch line paid out (m); 0 = pod stowed
 
 
 class KinematicFlight(FlightBackend):
     """Straight-line waypoint flight at cruise altitude with a heightmap collision check."""
 
     def __init__(self, grid, starts=STARTS, cruise_alt=8.0, speed=4.0, climb=2.0, descend=1.2,
-                 fly_rate=0.0016, idle_rate=0.0005, scan_rate=0.0006, terrain_clear=3.0, platform=None):
+                 fly_rate=0.0016, idle_rate=0.0005, scan_rate=0.0006, terrain_clear=3.0, platform=None, max_alt=None):
         if platform is not None:          # sim.platform preset name or PlatformSpec (docs/PLATFORM.md)
             from .platform import get_platform
             kw = (get_platform(platform) if isinstance(platform, str) else platform).flight_kwargs()
@@ -67,11 +68,18 @@ class KinematicFlight(FlightBackend):
             fly_rate, idle_rate, terrain_clear = kw["fly_rate"], kw["idle_rate"], kw["terrain_clear"]
             scan_rate = idle_rate         # perched scan: rotors off, radar + compute on
         self.fly_rate, self.idle_rate, self.scan_rate = fly_rate, idle_rate, scan_rate
+        pod = None
+        if platform is not None:
+            from .platform import get_platform
+            pod = getattr(get_platform(platform) if isinstance(platform, str) else platform, "pod", None)
+        self.pod_lower_s = getattr(pod, "lower_s", 8.0)
+        self.pod_raise_s = getattr(pod, "raise_s", 8.0)
         self.grid = grid
         self.starts = dict(starts)
         self.cruise, self.speed, self.climb, self.descend = cruise_alt, speed, climb, descend
         self.clear_m = terrain_clear       # vertical clearance over the highest cell along a leg
-        self.max_alt = max(25.0, self.cruise + 15.0, float(np.max(grid.z)) + 15.0)   # tall structures raise it
+        # ceiling: per site (tall standing structures raise it); a scenario may set it explicitly via max_alt
+        self.max_alt = float(max_alt) if max_alt else max(25.0, self.cruise + 15.0, float(np.max(grid.z)) + 15.0)
         self.drones = {d: _Drone(d, xy, grid.height_at(*xy) + LAND_HEIGHT) for d, xy in starts.items()}
         self.stagger = {d: 1.0 * i for i, d in enumerate(starts)}
 
@@ -142,6 +150,18 @@ class KinematicFlight(FlightBackend):
             home = np.array([*self.starts[d.id], self.grid.height_at(*self.starts[d.id]) + LAND_HEIGHT])
             d.route = self.plan(d, home) or []
             d.job = {"type": "return"}
+        elif typ == "goto_pod_scan":       # hover over the placement, winch the pod down, scan, winch it up
+            pod = np.array(cmd["destination"], float)
+            hover = np.array([pod[0], pod[1], float(cmd.get("hover_z", pod[2] + 8.0))])
+            route = self.plan(d, hover)
+            if route is None:
+                d.state = "hovering"
+                return False
+            d.route = route
+            d.state = "flying" if route else "hovering"
+            d.job = {"type": "pod", "site": cmd.get("landing_site_id"), "dwell": cmd.get("scan_duration", SCAN_DWELL_S),
+                     "pod": [float(pod[0]), float(pod[1]), float(pod[2])], "drop": float(hover[2] - pod[2]),
+                     "phase": "transit", "left": 0.0, "t": None}
         elif typ == "scan":                # scan in place: already landed at the site, rotors off
             if d.state not in ("landed", "scanning"):
                 return False
@@ -158,6 +178,25 @@ class KinematicFlight(FlightBackend):
     def step(self, dt, t):
         events = []
         for d in self.drones.values():
+            if d.job and d.job.get("type") == "pod" and not d.route and d.job["phase"] != "transit":
+                j = d.job
+                d.battery -= self.fly_rate * dt            # the drone hovers through the whole pod cycle
+                j["left"] -= dt
+                if j["phase"] == "lowering":
+                    d.winch = j["drop"] * min(1.0, 1.0 - j["left"] / self.pod_lower_s)
+                    if j["left"] <= 0:
+                        j["phase"], j["left"], d.state, d.winch = "scanning", j["dwell"], "scanning", j["drop"]
+                        j["t"] = t
+                elif j["phase"] == "scanning" and j["left"] <= 0:
+                    events.append({"type": "scan_complete", "drone_id": d.id, "site": j["site"], "dwell": j["dwell"],
+                                   "pose": [j["pod"][0], j["pod"][1], j["pod"][2], float(d.yaw)], "delivery": "pod"})
+                    j["phase"], j["left"], d.state = "raising", self.pod_raise_s, "hovering"
+                    j["t"] = t
+                elif j["phase"] == "raising":
+                    d.winch = j["drop"] * max(0.0, j["left"] / self.pod_raise_s)
+                    if j["left"] <= 0:
+                        d.winch, d.job = 0.0, None
+                continue
             if d.state == "scanning":
                 d.dwell_left -= dt
                 d.battery -= self.scan_rate * dt
@@ -201,6 +240,9 @@ class KinematicFlight(FlightBackend):
                 if typ == "goto_land_scan":
                     d.state = "scanning"
                     d.dwell_left = d.job["dwell"]
+                elif typ == "pod":
+                    d.state = "hovering"
+                    d.job.update(phase="lowering", left=self.pod_lower_s, t=t)
                 elif typ == "return":
                     d.state = "docked"
                     d.job = None
@@ -215,7 +257,19 @@ class KinematicFlight(FlightBackend):
 
     def poses(self):
         return [{"id": d.id, "pose": [round(float(v), 2) for v in self._pose(d)], "state": d.state,
-                 "battery": round(max(d.battery, 0.0), 3)} for d in self.drones.values()]
+                 "battery": round(max(d.battery, 0.0), 3), "winch_len_m": round(float(d.winch), 2)}
+                for d in self.drones.values()]
+
+    def pods(self):
+        """Pods in use: [{drone_id, xy, z, status, site, t}] (status lowering | scanning | raising)."""
+        out = []
+        for d in self.drones.values():
+            j = d.job
+            if j and j.get("type") == "pod" and j["phase"] != "transit":
+                z = j["pod"][2] if j["phase"] == "scanning" else float(d.pos[2] - d.winch)
+                out.append({"drone_id": d.id, "xy": [round(j["pod"][0], 2), round(j["pod"][1], 2)], "z": round(z, 2),
+                            "status": j["phase"], "site": j["site"], "t": None if j["t"] is None else round(j["t"], 1)})
+        return out
 
     def drone_state(self, did):
         d = self.drones[did]
@@ -238,6 +292,7 @@ class Mission:
         self.verbose, self.max_t = verbose, max_t
         self.centre, self.survey_radius = centre, survey_radius
         self.landing_kw = {}           # extra detect_landing_sites() kwargs (e.g. search_radius per pile)
+        self.site_detector = None      # (grid, centre) -> sites; set for winch-pod delivery
         # --- backends (Isaac swap points)
         self.world = world if world is not None else World(seed)
         self.grid = self.world.grid
@@ -309,9 +364,14 @@ class Mission:
     def _issue_scan(self, did, sid, reason, score):
         s = self._site(sid)
         s["status"] = "used"
-        self.flight.command({"drone_id": did, "type": "goto_land_scan",
-                             "destination": [s["xy"][0], s["xy"][1], s["z"]],
-                             "landing_site_id": sid, "scan_duration": SCAN_DWELL_S})
+        if s.get("pod"):
+            self.flight.command({"drone_id": did, "type": "goto_pod_scan", "hover_z": s["hover_z"],
+                                 "destination": [s["xy"][0], s["xy"][1], s["z"]],
+                                 "landing_site_id": sid, "scan_duration": SCAN_DWELL_S})
+        else:
+            self.flight.command({"drone_id": did, "type": "goto_land_scan",
+                                 "destination": [s["xy"][0], s["xy"][1], s["z"]],
+                                 "landing_site_id": sid, "scan_duration": SCAN_DWELL_S})
         self.scans_cmd += 1
         self.pending[did] = {"drone_id": did, "site_id": sid, "reason": reason, "score": round(float(score), 2)}
 
@@ -362,12 +422,17 @@ class Mission:
             self.stage = "survey"
         elif self.stage == "survey" and self._all_hover() and not any(self.queue.values()):
             self._before_landing()
-            self.sites = detect_landing_sites(self.grid, centre=self.centre, **self.landing_kw)
-            n_c = sum(s["status"] == "candidate" for s in self.sites)
-            n_r = len(self.sites) - n_c
-            n_slab = sum(1 for s in self.sites if s["status"] == "candidate" and s["z"] > 0.8)
-            self._say(f"Survey complete: {n_c} landing patches found ({n_slab} on the rubble), {n_r} rejected "
-                      f"(slope/step/approach)")
+            if self.site_detector is not None:
+                self.sites = self.site_detector(self.grid, self.centre)
+                self._say(f"Survey complete: {len(self.sites)} pod placements on the pile surface from the fresh map "
+                          "(slope <= 30 deg, clear winch corridor, hover point within winch reach, near the lead)")
+            else:
+                self.sites = detect_landing_sites(self.grid, centre=self.centre, **self.landing_kw)
+                n_c = sum(s["status"] == "candidate" for s in self.sites)
+                n_r = len(self.sites) - n_c
+                n_slab = sum(1 for s in self.sites if s["status"] == "candidate" and s["z"] > 0.8)
+                self._say(f"Survey complete: {n_c} landing patches found ({n_slab} on the rubble), {n_r} rejected "
+                          f"(slope/step/approach)")
             self.stage = "decide"
         elif self.stage == "decide" and not self.pending:
             self._decide()
@@ -397,10 +462,14 @@ class Mission:
     # ---- decision logic (observation-driven, never scripted)
     def _decide(self):
         idle = self._idle()
+        if not idle and any(self.flight.drone_state(d)[2] is not None for d in self.flight.drones):
+            return                     # drones still busy (e.g. winching a pod back up): decide when one is free
         if self.scans_cmd == 0:
             assign, why = self.planner.initial_sites(self.loc, self.sites, idle, self.travel)
             if not assign:
-                self._say("No drone can reach any landing site; aborting")
+                what = "pod placement" if self.site_detector is not None else "landing site"
+                self._say(f"Sector unreachable: no safe {what} that a drone can reach on the fresh map; moving on "
+                          "(not cleared)")
                 return self._start_listen()
             self._say(f"Initial sites chosen: {why}")
             for did, sid in assign:
@@ -535,6 +604,7 @@ class Mission:
             for o in obs_list:
                 o["vitals_look"] = True
         for o in obs_list:
+            o["delivery"] = "pod" if site.get("pod") else "land"
             kind = self.loc.update_radar(o)
             o["used_weight"] = 0.0
             self.scans.append(o)

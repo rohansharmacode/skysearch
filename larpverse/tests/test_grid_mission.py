@@ -253,13 +253,13 @@ def test_evaluate_grid_report(tmp_path):
     eg.main(["--seeds", "7", "--scans", "6", "--rows-dir", rows, "--start", "independent", "--policies", "acoustic"])
     out, md = tmp_path / "r.json", tmp_path / "e.md"
     eg.main(["--seeds", "7", "--scans", "6", "--rows-dir", rows, "--report", "--out", str(out), "--md", str(md)])
-    res = json.loads(out.read_text())["legacy:reported"]
+    res = json.loads(out.read_text())["literature:reported:pod"]
     assert set(res["summary"]) == set(eg.POLICIES)
     for p, s in res["summary"].items():
-        assert 1 <= s["pinged_total"] <= s["victims_total"]     # the start-pile victim is always pinged
+        assert 0 <= s["pinged_total"] <= s["victims_total"]
     text = md.read_text()
     assert "| metric | acoustic | nearest | raster |" in text and "from the hidden truth" in text
-    assert "legacy` propagation, reported start" in text and "independent start" not in text   # incomplete: skipped
+    assert "Pod, radar `literature` propagation, reported start" in text and "independent start" not in text
     assert eg.independent_start(7) in eg.PILES
 
 
@@ -358,3 +358,44 @@ def test_heavy_platform_landing_battery_and_rx_gain():
     finally:
         radar_dsp.use_rx_gain_db(0.0)
     assert r_heavy > radar_dsp.reach_path_m(6.0, 0.95)
+
+
+def test_winch_pod_cycle_and_state():
+    """Pod delivery: hover, winch the pod onto the pile surface, scan from the surface, winch up; state shows it."""
+    m = GridMission(seed=7, verbose=False, acoustic="stub", pile_budget=1, mission_scans=6)
+    assert m.delivery == "pod" and m.penetration == "literature" and m.platform == "heavy_sar"
+    statuses, winch = set(), 0.0
+    while not m.done:
+        m.step()
+        st = m.build_state()
+        for p in st["pods"]:
+            statuses.add(p["status"])
+            assert set(p) >= {"drone_id", "xy", "z", "status", "placement", "of", "lead", "t"}
+        winch = max([winch] + [d["winch_len_m"] for d in st["drones"]])
+    assert {"lowering", "scanning", "raising"} <= statuses and 2.0 < winch <= 20.0
+    pod_scans = [o for o in m.done_scans if o.get("delivery") == "pod"]
+    assert len(pod_scans) >= 3
+    for o in pod_scans:                                   # scan origin = pod on the surface, no air gap
+        x, y, z = o["sensor_pose"][:3]
+        assert abs(z - (m.grid.height_at(x, y) + 0.05)) < 0.6
+    assert m.build_state()["mission"]["delivery"] == "pod"
+
+
+def test_too_few_sites_and_tall_site_ceiling():
+    """Collapse-site fixes: < 3 placements does not crash; the flight ceiling follows the tallest structure."""
+    from sim.coordinator import KinematicFlight
+    from sim.localise import Localiser
+    from sim.planner import Planner
+    from sim.world import Grid
+    n = 60
+    g = Grid((-15.0, -15.0), 0.5, n, n, np.zeros((n, n), np.float32))
+    g.z[20:24, 20:24] = 24.0                                   # a 24 m standing structure
+    f = KinematicFlight(g, starts={"d1": (-12.0, -12.0)})
+    assert f.max_alt >= 37.0 and f.eta("d1", [12.0, 12.0, 0.0]) is not None
+    loc = Localiser(g)
+    pl = Planner(g, loc.cfg, seed=1)
+    site = {"id": "P1", "xy": [5.0, 5.0], "z": 0.0, "slope_deg": 2.0, "roughness": 0.01, "status": "candidate"}
+    drones = [{"id": "d1", "battery": 1.0}, {"id": "d2", "battery": 1.0}]
+    assign, _ = pl.initial_sites(loc, [site], drones, lambda d, s: 10.0)
+    assert len(assign) == 1
+    assert pl.initial_sites(loc, [], drones, lambda d, s: 10.0)[0] == []

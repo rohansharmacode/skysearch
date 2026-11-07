@@ -26,7 +26,10 @@ import math
 import re
 import time
 
-import numpy as np
+try:                    # numpy is only needed for routing; templates, the log and the operator queue are stdlib-only
+    import numpy as np  # so scripts/serve.py (system python) can import this module
+except ImportError:     # pragma: no cover
+    np = None
 
 LANGS = ("zh-TW", "nan-TW", "en", "id", "vi")
 LANG_NAMES = {"zh-TW": "Mandarin (Taiwan)", "nan-TW": "Taiwanese Hokkien", "en": "English",

@@ -85,7 +85,9 @@ def add_args(ap):
     g.add_argument("--rec-windows", default="",
                    help='render/save only these frame ranges per camera, e.g. "director:120-250,560-700;wide:0-110" '
                         "(path-traced passes of just the shots the cut uses)")
-    g.add_argument("--rtx", choices=["realtime", "pathtracing"], default="realtime")
+    g.add_argument("--rtx", choices=["realtime", "pathtracing", "raytraced"], default="realtime",
+                   help="realtime = Kit's RTX Real-Time 2.0 (RealTimePathTracing, its default; DLSS ray reconstruction); "
+                        "pathtracing = offline-quality hero frames; raytraced = the older, cheaper RaytracedLighting")
     g.add_argument("--spp", type=int, default=16, help="--rtx pathtracing: samples per pixel per frame")
     return g
 
@@ -515,8 +517,10 @@ def set_renderer(a, log=print):
             s.set_int("/rtx/pathtracing/spp", int(a.spp))
             s.set_int("/rtx/pathtracing/totalSpp", int(a.spp))
             s.set_bool("/rtx/pathtracing/optixDenoiser/enabled", True)
-        else:
+        elif a.rtx == "raytraced":
             s.set_string("/rtx/rendermode", "RaytracedLighting")
+        else:                               # Kit 110's default real-time mode; RaytracedLighting is a downgrade
+            s.set_string("/rtx/rendermode", "RealTimePathTracing")
         log(f"[photoreal] renderer: {a.rtx}" + (f" ({a.spp} spp + denoiser)" if a.rtx == "pathtracing" else ""))
     except Exception as e:
         log(f"[photoreal] renderer settings skipped ({type(e).__name__}: {e})")

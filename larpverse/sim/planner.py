@@ -20,10 +20,11 @@ from itertools import combinations, permutations
 import numpy as np
 
 from .localise import LocConfig, loc_sigma_range, predicted_range_field
-from .radar_dsp import LEVEL_DEG, PERCH_ROUGH_FACTOR, reach_prob
+from .radar_dsp import LEVEL_DEG, PERCH_ROUGH_FACTOR, POD_MAX_SLOPE, POD_ROUGH_FACTOR, reach_prob
 from .sensor_model import SCAN_DWELL_S, detection_prob, range_sigma, rubble_path, scan_quality
 
 LANDED_SENSOR_HEIGHT = 0.25
+POD_SENSOR_HEIGHT = 0.05       # winch pod: antenna face resting on the rubble surface (contact, no air gap)
 
 
 @dataclass
@@ -37,7 +38,7 @@ class Choice:
 
 
 def sensor_pose_at(site):
-    return [site["xy"][0], site["xy"][1], site["z"] + LANDED_SENSOR_HEIGHT, 0.0]
+    return [site["xy"][0], site["xy"][1], site["z"] + (POD_SENSOR_HEIGHT if site.get("pod") else LANDED_SENSOR_HEIGHT), 0.0]
 
 
 def pdet(range_m, quality, path_m):
@@ -47,6 +48,8 @@ def pdet(range_m, quality, path_m):
 
 
 def site_quality(site, dwell=SCAN_DWELL_S):
+    if site.get("pod"):                # pod seated on the surface: tilt within its spec does not matter
+        return scan_quality(site["roughness"] * POD_ROUGH_FACTOR, max(0.0, site["slope_deg"] - POD_MAX_SLOPE), dwell)
     rough = site["roughness"] * (PERCH_ROUGH_FACTOR if site.get("perch") else 1.0)
     return scan_quality(rough, max(0.0, site["slope_deg"] - LEVEL_DEG), dwell)   # levelled mount
 
@@ -84,9 +87,12 @@ class Planner:
             w = pdet(r, q, path) / range_sigma(q, path) ** 2
             u = np.stack([dx / dh, dy / dh], 1)
             info.append(w[:, None, None] * u[:, :, None] * u[:, None, :])  # (K,2,2)
+        k = min(3, len(cand), len(drones))
+        if k == 0:                     # nothing safe to land or lower a pod on: the caller marks it unreachable
+            return [], "no safe landing site or pod placement"
         best, best_val = None, -np.inf
-        for combo in combinations(range(len(cand)), 3):
-            J = info[combo[0]] + info[combo[1]] + info[combo[2]] + 0.05 * np.eye(2)
+        for combo in combinations(range(len(cand)), k):
+            J = sum(info[c] for c in combo) + 0.05 * np.eye(2)
             val = float(np.mean(np.log(np.linalg.det(J))))
             if val > best_val:
                 best, best_val = combo, val

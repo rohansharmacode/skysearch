@@ -150,10 +150,53 @@ def sun_transform(elev_deg=35.0, azim_deg=205.0):
     return Gf.Matrix4d(*M.flatten().tolist())
 
 
+def reference_site(stage, usd_path, lights=True, scan_textures=True, root="/World/CollapseSite"):
+    """Reference an external site USD (the teammate's collapse_site.usda) at ``root``. Its terrain and
+    buildings carry triangle-mesh colliders, so the PhysX LiDAR hits them; debris is visual only.
+    ``lights=False`` deactivates its Sun/Sky (our lighting or --photoreal's is used instead);
+    ``scan_textures=False`` drops the albedo maps derived from the third-party photogrammetry screenshots."""
+    prim = stage.DefinePrim(root, "Xform")
+    prim.GetReferences().AddReference(usd_path)
+    if not lights:
+        lp = stage.GetPrimAtPath(root + "/Lights")
+        if lp.IsValid():
+            lp.SetActive(False)
+    if not scan_textures:
+        strip_scan_textures(stage, root)
+    return prim
+
+
+SCAN_TEXTURE_KEYS = ("scan_", "terrain_r1c1_albedo", "terrain_r1c2_albedo", "terrain_r2c1_albedo",
+                     "terrain_r2c2_albedo", "facade_tower")
+
+
+def strip_scan_textures(stage, root="/World/CollapseSite", keys=SCAN_TEXTURE_KEYS):
+    """Best effort: blank every texture file whose name comes from the scan screenshots (core terrain tiles,
+    scanned roofs, tower faces). OmniPBR then uses its constant colour; UsdUVTexture its (grey) fallback."""
+    n = 0
+    for prim in stage.Traverse():
+        if prim.GetTypeName() != "Shader" or not str(prim.GetPath()).startswith(root):
+            continue
+        sh = UsdShade.Shader(prim)
+        for inp in sh.GetInputs():
+            v = inp.Get()
+            if isinstance(v, Sdf.AssetPath) and any(k in v.path for k in keys):
+                inp.Set(Sdf.AssetPath(""))
+                if sh.GetIdAttr().Get() == "UsdUVTexture":
+                    sh.CreateInput("fallback", Sdf.ValueTypeNames.Float4).Set(Gf.Vec4f(0.5, 0.48, 0.45, 1.0))
+                n += 1
+    return n
+
+
 def build(stage, sc, show_truth=False, terrain_res=0.5, physics_scene=True, sun=1800.0, sky=350.0,
-          sun_elev=35.0, materials="preview"):
+          sun_elev=35.0, materials="preview", site_usd=None, site_lights="auto", scan_textures=True,
+          photoreal=False):
     """Returns the number of rubble pieces. ``physics_scene=False`` under Isaac Lab (SimulationContext owns
-    /physicsScene and already has scene queries on); the Kit route defines /World/physicsScene here."""
+    /physicsScene and already has scene queries on); the Kit route defines /World/physicsScene here.
+
+    ``site_usd`` (collapse site): reference that USD at /World/CollapseSite instead of building terrain and
+    boxes. ``site_lights``: site (its Sun/Sky only) | ours (ours only) | both | auto (ours with --photoreal,
+    whose sky/sun replace ours anyway, else the site's)."""
     UsdGeom.SetStageUpAxis(stage, UsdGeom.Tokens.z)
     UsdGeom.SetStageMetersPerUnit(stage, 1.0)
     world = UsdGeom.Xform.Define(stage, "/World")
@@ -165,53 +208,60 @@ def build(stage, sc, show_truth=False, terrain_res=0.5, physics_scene=True, sun=
         from isaac import compat
         compat.enable_scene_queries(ps.GetPrim())
     mats = Materials(stage, enabled=(materials != "none"))
+    if site_lights == "auto":
+        site_lights = "ours" if photoreal else "site"
+    if site_usd:
+        reference_site(stage, site_usd, lights=site_lights in ("site", "both"), scan_textures=scan_textures)
+    ours = not site_usd or site_lights in ("ours", "both")
 
     # low warm sun (long shadows) + dim cool sky: the L40S-measured values, dusk-ish
-    sunl = UsdLux.DistantLight.Define(stage, "/World/Sun")
-    sunl.CreateIntensityAttr(float(sun))
-    sunl.CreateAngleAttr(1.0)
-    sunl.CreateColorAttr(Gf.Vec3f(1.0, 0.9, 0.78))
-    sxf = UsdGeom.Xformable(sunl)
-    sxf.ClearXformOpOrder()
-    sxf.AddTransformOp(UsdGeom.XformOp.PrecisionDouble).Set(sun_transform(sun_elev))
-    dome = UsdLux.DomeLight.Define(stage, "/World/Sky")
-    dome.CreateIntensityAttr(float(sky))
-    dome.CreateColorAttr(Gf.Vec3f(0.80, 0.85, 1.0))
+    if ours:
+        sunl = UsdLux.DistantLight.Define(stage, "/World/Sun")
+        sunl.CreateIntensityAttr(float(sun))
+        sunl.CreateAngleAttr(1.0)
+        sunl.CreateColorAttr(Gf.Vec3f(1.0, 0.9, 0.78))
+        sxf = UsdGeom.Xformable(sunl)
+        sxf.ClearXformOpOrder()
+        sxf.AddTransformOp(UsdGeom.XformOp.PrecisionDouble).Set(sun_transform(sun_elev))
+        dome = UsdLux.DomeLight.Define(stage, "/World/Sky")
+        dome.CreateIntensityAttr(float(sky))
+        dome.CreateColorAttr(Gf.Vec3f(0.80, 0.85, 1.0))
 
-    # terrain (grid/Weiguan: sector mounds + undulation; mesh sites: the loaded surface) with a flat apron
-    x0, y0, x1, y1 = bounds(sc)
-    tb = (x0 - 6, y0 - 6, x1 + 6, y1 + 6)
-
-    def dust(z):
-        k = 0.36 + 0.02 * np.sin(z * 9.0) - 0.02 * np.clip(z, 0, 4)
-        return np.stack([k * 1.08, k, k * 0.9], 1)
-    terrain = heightfield_mesh(stage, "/World/Terrain", sc.ground_height, tb, terrain_res, dust)
-    mats.bind(terrain.GetPrim(), "terrain", (0.37, 0.34, 0.31), roughness=0.95, primvar_fallback=(0.37, 0.34, 0.31))
-    apron = UsdGeom.Mesh.Define(stage, "/World/Apron")
-    apron.CreatePointsAttr([Gf.Vec3f(-300, -300, -0.06), Gf.Vec3f(300, -300, -0.06), Gf.Vec3f(300, 300, -0.06), Gf.Vec3f(-300, 300, -0.06)])
-    apron.CreateFaceVertexCountsAttr([4])
-    apron.CreateFaceVertexIndicesAttr([0, 1, 2, 3])
-    apron.CreateExtentAttr([Gf.Vec3f(-300, -300, -0.06), Gf.Vec3f(300, 300, -0.06)])
-    apron.CreateSubdivisionSchemeAttr("none")
-    _color(apron, (0.33, 0.31, 0.28))
-    _collide(apron.GetPrim(), mesh=True)
-    mats.bind(apron.GetPrim(), "apron", (0.33, 0.31, 0.28), roughness=0.95)
-
-    # rubble pieces (one shared material per palette colour x brightness bucket)
-    rng = np.random.default_rng(sc.seed)
     n = 0
-    for p in sc.piles:
-        UsdGeom.Xform.Define(stage, f"/World/Rubble/{p.name}")
-        for k, pc in enumerate(p.pieces):
-            center, q, size, _ = piece_pose(pc)
-            pal = PALETTE[pc.material]
-            ci = int(rng.integers(0, len(pal)))
-            f = rng.uniform(0.9, 1.08)
-            bi = int(np.argmin([abs(f - b) for b in BRIGHT]))
-            rgb = np.array(pal[ci]) * f
-            box(stage, f"/World/Rubble/{p.name}/{pc.kind}_{k:03d}", center, size, rgb, q, mats=mats,
-                mat_name=f"{pc.material}_{ci}_{bi}", mat_rgb=np.array(pal[ci]) * BRIGHT[bi])
-            n += 1
+    if not site_usd:   # the referenced site brings its own terrain, buildings and colliders
+        # terrain (grid/Weiguan: sector mounds + undulation; mesh sites: the loaded surface) with a flat apron
+        x0, y0, x1, y1 = bounds(sc)
+        tb = (x0 - 6, y0 - 6, x1 + 6, y1 + 6)
+
+        def dust(z):
+            k = 0.36 + 0.02 * np.sin(z * 9.0) - 0.02 * np.clip(z, 0, 4)
+            return np.stack([k * 1.08, k, k * 0.9], 1)
+        terrain = heightfield_mesh(stage, "/World/Terrain", sc.ground_height, tb, terrain_res, dust)
+        mats.bind(terrain.GetPrim(), "terrain", (0.37, 0.34, 0.31), roughness=0.95, primvar_fallback=(0.37, 0.34, 0.31))
+        apron = UsdGeom.Mesh.Define(stage, "/World/Apron")
+        apron.CreatePointsAttr([Gf.Vec3f(-300, -300, -0.06), Gf.Vec3f(300, -300, -0.06), Gf.Vec3f(300, 300, -0.06), Gf.Vec3f(-300, 300, -0.06)])
+        apron.CreateFaceVertexCountsAttr([4])
+        apron.CreateFaceVertexIndicesAttr([0, 1, 2, 3])
+        apron.CreateExtentAttr([Gf.Vec3f(-300, -300, -0.06), Gf.Vec3f(300, 300, -0.06)])
+        apron.CreateSubdivisionSchemeAttr("none")
+        _color(apron, (0.33, 0.31, 0.28))
+        _collide(apron.GetPrim(), mesh=True)
+        mats.bind(apron.GetPrim(), "apron", (0.33, 0.31, 0.28), roughness=0.95)
+
+        # rubble pieces (one shared material per palette colour x brightness bucket)
+        rng = np.random.default_rng(sc.seed)
+        for p in sc.piles:
+            UsdGeom.Xform.Define(stage, f"/World/Rubble/{p.name}")
+            for k, pc in enumerate(p.pieces):
+                center, q, size, _ = piece_pose(pc)
+                pal = PALETTE[pc.material]
+                ci = int(rng.integers(0, len(pal)))
+                f = rng.uniform(0.9, 1.08)
+                bi = int(np.argmin([abs(f - b) for b in BRIGHT]))
+                rgb = np.array(pal[ci]) * f
+                box(stage, f"/World/Rubble/{p.name}/{pc.kind}_{k:03d}", center, size, rgb, q, mats=mats,
+                    mat_name=f"{pc.material}_{ci}_{bi}", mat_rgb=np.array(pal[ci]) * BRIGHT[bi])
+                n += 1
 
     # staging area: pad, truck, coordinator mast, operator dashboard table, acoustic-agent server
     bx, by = base_xy(sc)

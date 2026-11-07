@@ -111,8 +111,9 @@ body { background: var(--ink); color: var(--fg); font-family: var(--f-display); 
 #tabVital h4 { margin: 0 0 3px; font: 500 10px/1.2 var(--f-mono); letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); display: flex; justify-content: space-between; gap: 8px; }
 #tabVital .r1 b { color: #ffd0d0; font-weight: 500; }
 #tabVital .r2 { color: var(--muted); }
-#tabVital .tri { border: 1px solid #f0f4f8; border-radius: 2px; padding: 0 4px; color: #fff; box-shadow: 0 0 0 2px rgba(8, 12, 16, 0.9), 0 0 0 3px rgba(240, 244, 248, 0.6); }
-#tabVital .r2 .tri { box-shadow: none; border-style: dashed; color: var(--muted); border-color: var(--muted); }
+#tabVital .tri { border: 1px solid #f0f4f8; border-radius: 2px; padding: 0 4px; color: #fff; }
+#tabVital .r2 .tri { color: var(--fg); border-color: var(--muted); }
+#tabVital .here { color: #d2e7ff; }
 #tabAccept { position: absolute; right: 14px; bottom: 14px; font: 600 14px/1 var(--f-display); letter-spacing: 0.02em; background: var(--coord); color: var(--ink); border-radius: 4px; padding: 9px 16px; }
 #tabAccept.done { background: rgba(8, 12, 16, 0.85); color: var(--coord); border: 1px solid var(--coord); }
 #finger { position: absolute; width: 26px; height: 26px; border-radius: 50%; background: rgba(255, 255, 255, 0.35); border: 2px solid #fff; transform: translate(-50%, -50%); }
@@ -323,22 +324,27 @@ silentPiles.forEach(p => p.silent = true);
 const QUEUE = [...SOURCES].sort((a, b) => b.score - a.score);
 const P2 = QUEUE[0].pile, P3 = QUEUE[1].pile;
 const T2 = { x: P2.source.x, z: P2.source.z, depth: P2.source.depth };
-// Breathing pattern per victim: storyboard truth (scenario_seed7.js victims[].physio from sim/scenario.py), display only.
-// Wording = dashboard/vitals.js (pattern + triage hint): an aid for rescuers ordering the dig, never a diagnosis.
-const PHYSIO_VIEW = {
-  distressed_tachypnea: { pat: 'rapid, shallow', note: 'possible distress', tri: 'immediate' },
-  calm: { pat: 'calm, regular', note: '', tri: 'delayed' },
-  irregular_apneic: { pat: 'irregular, with pauses', note: 'possible airway problem', tri: 'urgent' },
-  unconscious_slow: { pat: 'slow, deep', note: 'possibly unconscious', tri: 'urgent · check' },
+// Breathing condition per victim: storyboard truth (scenario_seed7.js victims[].physio from sim/scenario.py), display only.
+// Wording = dashboard/vitals.js CONDITION / conditionLabel (condition only, no age class): an aid for rescuers ordering
+// the dig, never a diagnosis. Rank = dashboard TRIAGE rank (immediate 1.0 > immediate·check 0.85 > urgent 0.7 > delayed 0.35).
+const CONDITION = {
+  calm: { what: 'Calm, regular breathing', means: 'stable for now (breathing only)', act: 're-check later', tri: 'delayed', rank: 0.35 },
+  distressed_tachypnea: { what: 'Rapid shallow breathing', means: 'possible injury, pain or distress', act: 'check', tri: 'immediate · check', rank: 0.85 },
+  unconscious_slow: { what: 'Slow, regular breathing', means: 'deep rest or reduced consciousness', act: 'call out and check responsiveness', tri: 'urgent', rank: 0.7 },
+  irregular_apneic: { what: 'Irregular breathing with pauses', means: 'possible airway problem or reduced consciousness', act: 'check', tri: 'immediate · check', rank: 0.85 },
 };
-const DEMO_PHYSIO = { A2: ['distressed_tachypnea', 31.8], A3: ['calm', 14.9], B1: ['irregular_apneic', 9.8], B2: ['unconscious_slow', 7.1] };   // sim/scenario.py seed 7 (condition only: no age class)
+const DEMO_PHYSIO = { A2: ['unconscious_slow', 8.3], A3: ['distressed_tachypnea', 33.2], B1: ['irregular_apneic', 9.8], B2: ['calm', 13.1] };   // sim/scenario.py seed 7 (211f309)
 function physioOf(pile, k) {
   const v = SCN && SCN.story.victims.find(q => q.pile === pile.name);
   if (v && v.physio) return { state: v.physio.state, rate: v.physio.rate_bpm };
   if (SCN && SEED === 7 && DEMO_PHYSIO[pile.name]) return { state: DEMO_PHYSIO[pile.name][0], rate: DEMO_PHYSIO[pile.name][1] };
-  return k === 0 ? { state: 'distressed_tachypnea', rate: 28 + 6 * rnd2() } : { state: 'calm', rate: 12 + 4 * rnd2() };
+  return k === 0 ? { state: 'unconscious_slow', rate: 7 + 3 * rnd2() } : { state: 'distressed_tachypnea', rate: 28 + 6 * rnd2() };
 }
-const VIT = [physioOf(P1, 0), physioOf(P2, 1)].map(ph => ({ ...ph, ...(PHYSIO_VIEW[ph.state] || PHYSIO_VIEW.calm) }));
+const VIT = [physioOf(P1, 0), physioOf(P2, 1)].map(ph => {
+  const c = { ...(CONDITION[ph.state] || CONDITION.calm) };
+  if (ph.state === 'distressed_tachypnea' && ph.rate > 30) Object.assign(c, { tri: 'immediate', rank: 1.0 });   // START: over 30/min
+  return { ...ph, ...c, text: `${c.what}, ${Math.round(ph.rate)}/min — ${c.means} — ${c.act}` };
+});
 const DEPTH_NOM = 1.5;   // the live system's depth: nominal (depth_source "nominal"), assumed, not measured
 
 // ================= renderer / scene =================
@@ -875,9 +881,10 @@ const CAPS = [
   [40, `The scores become a priority list per pile. Non-human sounds are dismissed as leads. It is a priority, not proof: silent piles (${silentPiles.map(p => p.name).join(', ')}) are not cleared.`],
   [41.6, `Top priority is ${P2.name} (${QUEUE[0].cls}), then ${QUEUE[1].pile.name} and ${QUEUE[2].pile.name}. The coordinator sends the drones to ${P2.name}.`],
   [44, `At ${P2.name} the cycle repeats: LiDAR map, flat landing cells, radar scan.`],
-  [54, `The operator reaches ${P1.name} and taps the ping on the dashboard.`],
-  [59.4, 'The ping opens the LiDAR model of the pile with the candidate placed inside it: where on the pile, at a nominal depth of about 1.5 m (assumed, not measured yet).'],
-  [61.6, `Dig order: the radar's breathing pattern at ${RAD1.name} is ${VIT[0].pat} (~${Math.round(VIT[0].rate)}/min)${VIT[0].note ? ', ' + VIT[0].note : ''}, so triage says ${VIT[0].tri}. An aid for rescuers ordering the dig, not a diagnosis.`],
+  [54, `The operator reaches ${P1.name} and taps the ping. It opens the LiDAR model of the pile with the candidate inside it, at a nominal depth of about 1.5 m (assumed, not measured yet).`],
+  [59.6, VIT[0].rank < VIT[1].rank
+    ? `Dig order puts ${RAD2.name} first (${VIT[1].what.toLowerCase()}, ${Math.round(VIT[1].rate)}/min). Here ${RAD1.name} shows ${VIT[0].what.toLowerCase()}, ${Math.round(VIT[0].rate)}/min: deep rest or reduced consciousness. No response to the call-out, so it is checked first. An aid, not a diagnosis.`
+    : `Dig order: ${RAD1.name} ranks first: ${VIT[0].text}. An aid for rescuers ordering the dig, not a diagnosis.`],
   [64, 'The operator checks the spot on site, then digs at the candidate point.'],
   [72, `Whole system: audio sets the order, radar pins the spot, the operator digs. The drones move on to ${P3.name}, the next priority.`],
 ];
@@ -962,10 +969,11 @@ function drawMap(ctx, W, Hh, view, t, opts = {}) {
   const pulse = (t * 0.8) % 1;
   for (const [R2, tA, nm, k] of [[RAD1, 27.2, RAD1.name, 0], [RAD2, 61, RAD2.name, 1]]) {
     if (t < tA || !ui.radar) continue; const [x, y] = P(R2.est.x, R2.est.z), r = Math.max(5, s * 1.4);
-    if (t >= 60.2) { // dig-order triage ring (dashboard drawTriageRing): shape, not a new hue; double = immediate, dashed = delayed
-      const tri = VIT[k].tri; ctx.save(); ctx.strokeStyle = 'rgba(240,244,248,0.92)'; ctx.lineWidth = 2;
+    if (t >= 59.6) { // dig-order triage ring (dashboard drawTriageRing): shape, not a new hue; double = immediate, dashed = delayed
+      const tri = VIT[k].tri; ctx.save();   // immediate: double ring; urgent / immediate·check: single; delayed: dashed
+ ctx.strokeStyle = 'rgba(240,244,248,0.92)'; ctx.lineWidth = 2;
       const ring = (rr, dash) => { ctx.setLineDash(dash); ctx.beginPath(); ctx.arc(x, y, rr, 0, TAU); ctx.stroke(); };
-      if (tri === 'immediate') { ring(r + 5, []); ring(r + 8.5, []); } else if (tri.startsWith('urgent')) ring(r + 6, []); else ring(r + 6, [5, 4]);
+      if (tri === 'immediate') { ring(r + 5, []); ring(r + 8.5, []); } else if (tri !== 'delayed') ring(r + 6, []); else ring(r + 6, [5, 4]);
       ctx.restore();
     }
     ctx.strokeStyle = `rgba(255,69,69,${1 - pulse})`; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(x, y, r + pulse * r * 2.4, 0, TAU); ctx.stroke();
@@ -983,9 +991,9 @@ const TAB_TITLE = RAD1.name;
 const compass = (() => { const a = Math.atan2(-(RAD1.est.z - P1.z), RAD1.est.x - P1.x) / D2R; return ['east', 'north-east', 'north', 'north-west', 'west', 'south-west', 'south', 'south-east'][((Math.round(a / 45) % 8) + 8) % 8]; })();
 const TAB_FACTS = `<span>depth (nominal)<b>≈${RAD1.depth.toFixed(1)} m</b></span><span>flank<b>${compass}</b></span><span>95% region<b>${(2 * RAD1.ell.a).toFixed(1)}×${(2 * RAD1.ell.b).toFixed(1)} m</b></span><span>from you<b>${d2(STAND, RAD1.est).toFixed(1)} m</b></span>`;
 const RECON_FACTS = ok => `<span>mapped<b>whole site</b></span><span>proposed zones<b>${PILES.length}</b></span><span>perch listens<b>1 · d2</b></span><span>status<b>${ok ? 'tasked' : 'awaiting you'}</b></span>`;
-const vitRow = (k, nm) => `${nm} · ${VIT[k].pat} breathing (~${Math.round(VIT[k].rate)}/min)${VIT[k].note ? ' — ' + VIT[k].note : ''} · triage: <span class="tri">${VIT[k].tri}</span>`;
-document.getElementById('tabVital').innerHTML = `<h4><span>Dig order · radar breathing pattern</span><span>aid for rescuers</span></h4>
-  <div class="r1"><b>#1</b> ${vitRow(0, RAD1.name)} (aid, not diagnosis)</div><div class="r2">#2 ${vitRow(1, RAD2.name)}</div>`;
+const DIG_ORDER = [[0, RAD1.name], [1, RAD2.name]].sort((a, b) => VIT[b[0]].rank - VIT[a[0]].rank);
+document.getElementById('tabVital').innerHTML = `<h4><span>Dig order · breathing (radar)</span><span>aid, not a diagnosis</span></h4>` +
+  DIG_ORDER.map(([k, nm], i) => `<div class="${k === 0 ? 'r1' : 'r2'}"><b>#${i + 1}</b> ${nm} · ${VIT[k].text} · triage: <span class="tri">${VIT[k].tri}</span>${k === 0 ? ' · <span class="here">here: no response to call-out → check first</span>' : ''}</div>`).join('');
 const setTxt = (id, txt, html) => { const e = document.getElementById(id); if (html ? e.innerHTML !== txt : e.textContent !== txt) html ? (e.innerHTML = txt) : (e.textContent = txt); };
 const TAB0 = 56.6, TAP = 59.2, TAB1 = 64;
 const tabletOn = t => t >= TAB0 && t < TAB1;
@@ -1152,7 +1160,7 @@ function frame(now) {
     renderer.render(scene, cam2); scene.background = bg; scene.fog = fog; renderer.autoClear = true; renderer.setScissorTest(false); renderer.setViewport(0, 0, a.width, a.height);
     const proj = (p, el) => { const v = p.clone().project(cam2); el.style.left = ((v.x + 1) / 2 * r.width) + 'px'; el.style.top = ((1 - v.y) / 2 * r.height) + 'px'; };
     tabPing.textContent = `${RAD1.name} · depth ≈${RAD1.depth.toFixed(1)} m (nominal)`; proj(V(RAD1.est.x, RAD1.estY, RAD1.est.z), tabPing); proj(youMk.position, tabYou);
-    $('tabVital').hidden = ST < 60.2;
+    $('tabVital').hidden = ST < 59.6;
     tabPing.style.transform = parseFloat(tabPing.style.left) + 12 + tabPing.offsetWidth > r.width ? 'translate(calc(-100% - 12px), -50%)' : '';   // flip left at the edge
   }
   const _lp = new THREE.Vector3(), yMax = 1 - 2 * 78 / Math.max(1, app.clientHeight);

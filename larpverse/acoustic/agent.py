@@ -191,11 +191,14 @@ def validate_judgment(j) -> dict | None:
         return None
 
 
-def llm_judge(features: list[dict]) -> tuple[dict, str | None]:
-    """One structured-output call for all clips. Returns ({clip_id: judgment}, error)."""
+def llm_judge(features: list[dict], info: dict | None = None) -> tuple[dict, str | None]:
+    """One structured-output call for all clips. Returns ({clip_id: judgment}, error).
+    info (optional) receives {"busy": bool}: the provider was rate-limited / overloaded (429/5xx)."""
     meta = {}
     data = llm.call_json(json.dumps({"clips": features}, sort_keys=True), SCHEMA, system=SYSTEM,
                          max_tokens=8000, timeout=90, cache=False, meta=meta)
+    if info is not None:
+        info["busy"] = bool(meta.get("busy"))
     if data is None:
         return {}, meta.get("error") or "LLM call failed"
     ids = {f["clip_id"] for f in features}
@@ -227,8 +230,10 @@ def judge_clips(features: list[dict], mode="auto", cache_path=CACHE_PATH):
     use_llm = mode == "llm" or (mode == "auto" and llm.available() and not llm.replay_only())
     if todo and use_llm:
         meta["llm_calls"] += 1
-        got, err = llm_judge(todo)
+        info = {}
+        got, err = llm_judge(todo, info)
         meta["error"] = err
+        meta["busy"] = info.get("busy", False)
         rows = []
         for f in todo:
             if f["clip_id"] in got:
@@ -237,10 +242,15 @@ def judge_clips(features: list[dict], mode="auto", cache_path=CACHE_PATH):
                              "provider": provider, "prompt": PROMPT_VERSION, "t": int(time.time()), "judgment": got[f["clip_id"]]})
         if rows:
             append_cache(rows, cache_path)
+    note = "Gemini busy — using fallback" if meta.get("busy") else None
     for f in features:
         if f["clip_id"] not in out:
             out[f["clip_id"]] = dict(fallback_judge(f), by="fallback")
+            if note:
+                out[f["clip_id"]]["by_note"] = note
             meta["fallback"] += 1
+    if note:
+        meta["by_note"] = note
     return out, meta
 
 

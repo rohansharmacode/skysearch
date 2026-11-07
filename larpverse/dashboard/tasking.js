@@ -5,6 +5,8 @@
 // Mission side: state.zones (status styling + coverage), state.zone_suggestions ("Add as zone"), recon path / perches,
 // state.zone_proposals ("Accept", "Edit", "Accept all"). Nothing here is a confirmed person or a cleared area.
 
+import { devicesIn } from './comms.js';
+
 const API = '/api/tasking', LS = 'larpverse.tasking.draft.v1', PILE_R = 9;
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const pct = v => (v == null ? '—' : Math.round(100 * v) + '%');
@@ -40,6 +42,7 @@ const ZST = {
   beyond_radar_reach: ['beyond radar reach — acoustic leads only', '#b9c6cf', [3, 3], 'hatch'],
   cancelled: ['cancelled', 'rgba(138,156,170,0.5)', [1.5, 4], null],
 };
+const newEv = (S, z) => ['searched_no_ping', 'ping', 'beyond_radar_reach'].includes(z.status) && devicesIn(S, z).length > 0;
 const ZSHORT = { searched_no_ping: 'searched, not cleared', beyond_radar_reach: 'beyond radar reach', lead: 'lead', scanning: 'scanning' };
 export const zst = s => ZST[s] || [String(s || 'tasked').replace(/_/g, ' '), 'rgba(226,234,240,0.85)', [], null];
 
@@ -215,7 +218,8 @@ export function createTasking(app) {
       if (fill === 'hatch') hatch(ctx, z.polygon, z.status === 'searched_no_ping' ? 'rgba(138,156,170,0.45)' : 'rgba(205,218,228,0.4)');
       const cv = z.coverage || {}, short = ZSHORT[z.status] || lab;
       const chip = !small && cv.radar_reached != null && !['unsearched', 'cancelled'].includes(z.status) ? ` · radar ${pct(cv.radar_reached)}` : '';
-      label(z.polygon, small ? `${z.id} · ${short}` : `${z.name || z.id} · ${short}${chip}`, col === 'rgba(226,234,240,0.85)' ? '#e3eaef' : col, 4);
+      const ev = newEv(S, z) ? ' · new evidence — re-search?' : '';
+      label(z.polygon, small ? `${z.id} · ${short}${ev ? ' · new evidence' : ''}` : `${z.name || z.id} · ${short}${chip}${ev}`, col === 'rgba(226,234,240,0.85)' ? '#e3eaef' : col, 4);
     }
     // suggestions: dot-dash circles
     for (const sg of S.zone_suggestions || []) {
@@ -285,7 +289,7 @@ export function createTasking(app) {
     const zl = zs.length ? `<div class="sub">Tasked zones</div>` + zs.map(z => { const [lab, col] = zst(z.status), cv = z.coverage || {};
         return `<div class="zt"><b>${esc(z.name || z.id)}</b><span class="chip" style="color:${col};border-color:${col}">${esc(lab)}</span>
           <span class="cov">${cv.lidar_mapped != null ? `<span>LiDAR ${pct(cv.lidar_mapped)}</span>` : ''}${cv.radar_reached != null ? `<span>radar ${pct(cv.radar_reached)}</span>` : ''}${cv.listened != null ? `<span>${cv.listened ? 'listened' : 'not listened'}</span>` : ''}${(z.pings || []).length ? `<span class="pg">${esc(z.pings.join(', '))}</span>` : ''}</span>
-          ${z.retask_reason ? `<span class="zw">reopened: ${esc(z.retask_reason)}</span>` : ''}</div>`; }).join('') : '';
+          ${z.retask_reason ? `<span class="zw">reopened: ${esc(z.retask_reason)}</span>` : ''}${newEv(S, z) ? `<span class="zev">phone on rescue Wi-Fi inside: new evidence — re-search?</span>` : ''}</div>`; }).join('') : '';
     const sl = sg.length ? `<div class="sub">Suggested by the drones (outside every zone)</div>` + sg.map(s => `<div class="zp" data-s="${esc(s.id)}"><div class="zh"><span class="tag">suggested</span><b>${esc(s.id)}</b><span class="mut">${s.radius_m || 6} m radius</span></div>
         ${s.why ? `<div class="zw">${esc(s.why)}</div>` : ''}<div class="za">${tasked.has(`${s.id} suggested`) ? '<span class="mut">added ✓</span>' : '<button class="btn sm" data-act="addSug">Add as zone</button>'}</div></div>`).join('') : '';
     $('zones').innerHTML = rcTxt + prop + zl + sl + (T.msg && !T.planning ? `<p class="tmsg ${T.msgKind}">${esc(T.msg)}</p>` : '')

@@ -107,7 +107,8 @@ class WeiguanScenario(Scenario):
         d.update({"site": SITE, "spacing": SPACING, "bounds": list(BOUNDS), "geo": dict(GEO),
                   "base_xy": list(BASE_XY), "drone_pads": [list(p) for p in DRONE_PADS],
                   "site_info": site_info()})
-        return d
+        from .site_mesh import piles_with_polygons
+        return piles_with_polygons(d, self.piles)
 
 
 def site_info():
@@ -348,6 +349,12 @@ def _build_geometry_scenario(seed):
     by = {p.name: p for p in piles}
     for pc, o in zip(pieces, owner):
         by[str(o)].pieces.append(pc)
+    from .site_mesh import _hull, attach_polygons
+    polys = {}
+    for p in piles:                                   # sector outline: hull of its pieces' footprints (CCW)
+        xy = np.concatenate([np.asarray([f[:, :2] for f in _box_faces(pc)]).reshape(-1, 2) for pc in p.pieces])
+        polys[p.name] = _hull(xy[:, 0], xy[:, 1])
+    attach_polygons(piles, polys, {n: ("toppled_spine" if n in SPINE else "pancaked_wing") for n in SECTORS})
     return WeiguanScenario(seed, piles, {}, noise)
 
 
@@ -406,29 +413,35 @@ class TruthSupport:
         return None
 
 
-def make_truth(seed, start_pile, names, sup: TruthSupport, ground_fn, site=SITE, salt=2016):
+def make_truth(seed, start_pile, names, sup: TruthSupport, ground_fn, site=SITE, salt=2016,
+               role_sectors=None, start_choices=None, silent_victim_p=0.35):
     """Hidden truth for any site: start sector, one acoustic role per other sector, victims in voids, sounds.
 
     Separate RNG streams ([seed, salt, 1] placement/roles, [seed, salt, 99] physiology), so the geometry
     never depends on it. Deep emitters (knock x2, weak voice) go to sectors with real cover (> 5.5 m over
     >= 5 m^2) so they exist as radar-unreachable, acoustic-only finds. Sectors beyond the 8 roles are silent.
+    ``role_sectors`` limits the acoustic roles (and deep emitters) to those sectors (e.g. the collapse core);
+    ``start_choices`` the random start sector; silent sectors get a victim with ``silent_victim_p``.
     """
     trng = np.random.default_rng([seed, salt, 1])
     prng = np.random.default_rng([seed, salt, 99])
     names = list(names)
-    start = start_pile or names[int(trng.integers(0, len(names)))]
+    pool = list(start_choices or names)
+    start = start_pile or pool[int(trng.integers(0, len(pool)))]
     others = [n for n in names if n != start]
     trng.shuffle(others)
+    eligible = [n for n in others if role_sectors is None or n in role_sectors]
     min_cells = 5.0 / sup.hm.res ** 2
-    deep_ok = [n for n in others if ((sup.owner == n) & (sup.cover > 5.5)).sum() >= min_cells]
+    deep_ok = [n for n in eligible if ((sup.owner == n) & (sup.cover > 5.5)).sum() >= min_cells]
     deep_kinds = ["knock", "knock", "weak_voice"]
     roles = dict(zip(deep_ok[:3], deep_kinds))
     rest = list(ROLE_KINDS)
     for k in list(roles.values()):
         rest.remove(k)
     trng.shuffle(rest)
-    free = [n for n in others if n not in roles]
+    free = [n for n in eligible if n not in roles]
     roles.update(zip(free, rest + ["silent"] * max(0, len(free) - len(rest))))
+    roles.update({n: "silent" for n in others if n not in roles})
     roles = {n: roles[n] for n in others}
     langs = list(LANGS)
     trng.shuffle(langs)
@@ -449,7 +462,7 @@ def make_truth(seed, start_pile, names, sup: TruthSupport, ground_fn, site=SITE,
             plan.append((name, cls, (kind, lang)))
             if trng.uniform() < 0.5:
                 plan.append((name, "shallow" if trng.uniform() < 0.5 else "mid", None))
-        elif trng.uniform() < (0.5 if kind != "silent" else 0.35):
+        elif trng.uniform() < (0.5 if kind != "silent" else silent_victim_p):
             plan.append((name, "mid" if trng.uniform() < 0.5 else "shallow", None))
 
     victims, sounds, used = [], [], []

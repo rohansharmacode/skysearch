@@ -10,7 +10,7 @@ from sim.scenario import make_scenario
 from sim.site_weiguan import BOUNDS, SECTORS, _truth_support
 
 GRID7_PUBLIC_MD5 = "c4ad614af1c481eaf10e6660a0dc5575"     # sim/scenario.py grid seed 7, before site= existed
-GRID7_TRUTH_MD5 = "23c1302b0962be5a1b2f4bf596dda70a"
+GRID7_TRUTH_CORE_MD5 = "e37c314704ea13f88e72d54d08a5fd1b"   # victims/sounds/roles, physio excluded (vitals owns it)
 
 
 @pytest.fixture(scope="module")
@@ -21,7 +21,10 @@ def wg():
 def test_grid_default_unchanged():
     sc = make_scenario(7)
     assert hashlib.md5(sc.public_json().encode()).hexdigest() == GRID7_PUBLIC_MD5
-    assert hashlib.md5(sc.truth_json().encode()).hexdigest() == GRID7_TRUTH_MD5
+    t = sc.truth
+    core = {"start": t["start_pile"], "roles": t["roles"], "sounds": t["sounds"],
+            "v": [{k: v[k] for k in ("id", "pile", "xy", "depth", "sound")} for v in t["victims"]]}
+    assert hashlib.md5(json.dumps(core, sort_keys=True).encode()).hexdigest() == GRID7_TRUTH_CORE_MD5
     assert make_scenario(7, site="grid").public_json() == sc.public_json()
 
 
@@ -116,3 +119,31 @@ def test_expanded_map_names_weiguan_blocks(tmp_path):
     assert set("ABCDEFGHI") <= names and {b["name"] for b in EXPANDED_LAYOUT} <= names
     assert all(np.hypot(q.x, q.y) < 160 for q in sc.piles)
     assert sum(v["depth"] > 4.0 for v in sc.truth["victims"]) >= 2
+
+
+def test_collapse_site_from_cache():
+    """site="collapse": the committed 0.5 m heightmap of the teammate's USD, generator footprints as sectors."""
+    from sim.site_collapse import CORE, cache_path
+    if cache_path() is None:
+        pytest.skip("data/maps/collapse_site_heightmap.npz missing (python -m sim.site_collapse --build)")
+    sc = make_scenario(7, site="collapse")
+    d = sc.public_dict()
+    names = [p.name for p in sc.piles]
+    assert set(CORE) <= set(names) and len(names) > 120
+    assert d["bounds"] == [-160.0, -160.0, 160.0, 160.0] and d["geo"]["lat"] == pytest.approx(23.0051432)
+    hm = sc.heightmap(0.5)
+    X, Y = hm.mesh()
+    bx, by = d["base_xy"]
+    assert hm.z[np.hypot(X - bx, Y - by) < 6].max() < 0.4                 # staging on clear ground
+    for e in d["piles"]:                                                    # contracts v1.2.1: CCW polygon
+        P = np.asarray(e["polygon"], float)
+        assert len(P) >= 3 and np.sum(P[:, 0] * np.roll(P[:, 1], -1) - np.roll(P[:, 0], -1) * P[:, 1]) > 0
+    kinds = {e["kind"] for e in d["piles"]}
+    assert "standing" not in kinds and "tilted" not in kinds              # obstacles, not sectors
+    assert d["site_info"]["max_obstacle_h"] >= 20
+    t = sc.truth
+    assert t["start_pile"] in CORE and all(n in CORE for n, k in t["roles"].items() if k != "silent")
+    assert sum(v["depth"] > 4 for v in t["victims"]) >= 2
+    for v in t["victims"]:
+        assert hm.height_at(*v["xy"]) - v["z"] == pytest.approx(v["depth"], abs=2e-3)
+    assert make_scenario(7, site="weiguan-real").truth_json() == sc.truth_json()

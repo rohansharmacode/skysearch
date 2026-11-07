@@ -554,6 +554,7 @@ RT_QUALITY = {
     "/rtx/post/aa/op": 4,                       # 3 = DLSS super resolution, 4 = DLAA (AI anti-aliasing at native res)
     "/rtx/post/dlss/execMode": 2,               # quality
     "/rtx/rendermode": "RealTimePathTracing",   # "RTX Real-Time 2.0": DLSS ray reconstruction (AI denoiser)
+    "/rtx-transient/dldenoiser/enabled": True,  # ray reconstruction on (key from the L40S settings dump)
     "/rtx/post/motionblur/enabled": True, "/rtx/post/motionblur/exposureFraction": 0.5,
 }
 
@@ -565,7 +566,7 @@ def rt_quality(a=None, log=print):
         s = carb.settings.get_settings()
         modes = s.get("/rtx/rendermode")
         for k, v in RT_QUALITY.items():
-            if k == "/rtx/rendermode" and getattr(a, "rtx", "realtime") == "pathtracing":
+            if k == "/rtx/rendermode" and getattr(a, "rtx", "realtime") != "realtime":
                 continue
             if isinstance(v, bool):
                 s.set_bool(k, v)

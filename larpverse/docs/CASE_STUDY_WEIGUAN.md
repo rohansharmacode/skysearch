@@ -17,7 +17,7 @@ Ranges are kept as reported; the sources differ.
 
 ## What we simulated
 
-- **Site:** the collapse-site reconstruction of the Weiguan site (`--site collapse`, `collapse_site/collapse_site.usda` from branch `3d_model`): 320 m, the scanned core rebuilt from screenshots of the NCKU photogrammetry model, 8 search sectors Z1–Z8, staging on the south street. It is a reconstruction, not a survey.
+- **Site:** the collapse-site reconstruction of the Weiguan site (`--site collapse-core`: our compact 8-sector scenario on the map; `collapse_site/collapse_site.usda` from branch `3d_model`): 320 m, the scanned core rebuilt from screenshots of the NCKU photogrammetry model, 8 search sectors Z1–Z8, staging on the south street. It is a reconstruction, not a survey.
 - **Mission:** the unchanged autonomous mission (`sim/grid_mission.py`): 3 drones, LiDAR survey, landing on flat cells, radar scans, listening while landed, dispatch to the next sector, battery swaps at the pads.
 - **People and signals are invented.** Each seed places about 10 trapped people (305 over 30 seeds) in voids across the sectors, with voices, knocking, weak voices and silent cases (`make_truth` in `sim/site_weiguan.py`). Nothing here says where anyone actually was in 2016.
 - **Sensors:** radar `dsp` (synthetic IF through the real DSP chain) under two through-rubble presets; acoustic `stub` (synthetic clips generated from the hidden truth, so the listening numbers are an upper bound).

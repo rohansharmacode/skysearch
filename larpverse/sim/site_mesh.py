@@ -113,37 +113,57 @@ def _read_obj(path):
     return V, _fan(polys)
 
 
-def _read_usd(path):
+def _read_usd(path, include=None, exclude=("Debris", "horizon", "Cameras", "Lights")):
+    """Triangles of every visible UsdGeom.Mesh (world transform, metres, z up). ``include``: path prefixes to
+    keep (default all); ``exclude``: path substrings to skip. Meshes under a PointInstancer (visual-only
+    prototypes) are always skipped."""
     try:
         from pxr import Usd, UsdGeom
     except ImportError as e:
-        raise ImportError("USD input needs usd-core (pip install usd-core) in this venv; or export .ply/.obj/.npz") from e
-    stage = Usd.Stage.Open(path)
+        raise ImportError("USD input needs usd-core (uv pip install --python .venv/bin/python usd-core); "
+                          "or export .ply/.obj/.npz") from e
+    stage = Usd.Stage.Open(str(path))
     mpu = UsdGeom.GetStageMetersPerUnit(stage) or 1.0
     yup = UsdGeom.GetStageUpAxis(stage) == UsdGeom.Tokens.y
+    cache = UsdGeom.XformCache(Usd.TimeCode.Default())
     Vs, Fs, off = [], [], 0
-    for prim in stage.Traverse():
-        if not prim.IsA(UsdGeom.Mesh):
+    it = iter(Usd.PrimRange(stage.GetPseudoRoot()))
+    for prim in it:
+        sp = str(prim.GetPath())
+        if prim.IsA(UsdGeom.PointInstancer) or any(e in sp for e in exclude):
+            it.PruneChildren()
+            continue
+        if not prim.IsA(UsdGeom.Mesh) or (include and not any(sp.startswith(i) for i in include)):
+            continue
+        if UsdGeom.Imageable(prim).ComputeVisibility() == UsdGeom.Tokens.invisible:
             continue
         m = UsdGeom.Mesh(prim)
-        pts = np.array(m.GetPointsAttr().Get(), float)
-        if len(pts) == 0:
+        pts = m.GetPointsAttr().Get()
+        if pts is None or len(pts) == 0:
             continue
-        M = np.array(UsdGeom.Xformable(prim).ComputeLocalToWorldTransform(Usd.TimeCode.Default()), float)
+        pts = np.asarray(pts, float)
+        M = np.asarray(cache.GetLocalToWorldTransform(prim), float)
         pts = np.c_[pts, np.ones(len(pts))] @ M            # USD row-vector convention
-        counts = list(m.GetFaceVertexCountsAttr().Get())
-        idx = list(m.GetFaceVertexIndicesAttr().Get())
-        polys, k = [], 0
-        for c in counts:
-            polys.append([off + i for i in idx[k:k + c]])
-            k += c
+        counts = np.asarray(m.GetFaceVertexCountsAttr().Get(), int)
+        idx = np.asarray(m.GetFaceVertexIndicesAttr().Get(), int)
+        if len(counts) and np.all(counts == 3):
+            F = idx.reshape(-1, 3) + off
+        else:
+            polys, k = [], 0
+            for c in counts:
+                polys.append([off + i for i in idx[k:k + c]])
+                k += c
+            F = _fan(polys)
         Vs.append(pts[:, :3])
-        Fs.append(_fan(polys))
+        if F is not None:
+            Fs.append(F)
         off += len(pts)
+    if not Vs:
+        raise ValueError(f"{path}: no meshes found")
     V = np.concatenate(Vs) * mpu
     if yup:
         V = np.c_[V[:, 0], -V[:, 2], V[:, 1]]
-    return V, np.concatenate([f for f in Fs if f is not None])
+    return V, (np.concatenate(Fs) if Fs else None)
 
 
 def rasterise(V, F, origin, res, w, h):
@@ -267,7 +287,8 @@ def _kmeans(P, k, iters=25):
     return np.argmin(((P[:, None, :] - C[None]) ** 2).sum(-1), 1)
 
 
-def segment(g, ground, footprints=None, centres=None, min_h=MIN_H, min_area=MIN_AREA, max_area=MAX_AREA):
+def segment(g, ground, footprints=None, centres=None, min_h=MIN_H, min_area=MIN_AREA, max_area=MAX_AREA, auto=True,
+            exclude_polys=()):
     """Cell -> sector name ('' = not a sector) and sector list.
 
     footprints {name: [[x, y], ...]} (polygons, site frame) win; then ``centres`` {name: (x, y)} claim the
@@ -279,6 +300,8 @@ def segment(g, ground, footprints=None, centres=None, min_h=MIN_H, min_area=MIN_
     X, Y = g.mesh()
     above = (g.z - ground) > min_h
     above = ndimage.binary_closing(ndimage.binary_opening(above), iterations=2) & ((g.z - ground) > 0.3)
+    for poly in exclude_polys:                           # e.g. standing buildings: obstacles, not search sectors
+        above &= ~Path(np.asarray(poly, float)).contains_points(np.c_[X.ravel(), Y.ravel()]).reshape(X.shape)
     owner = np.full(g.z.shape, "", dtype=object)
     sectors = []
     cell = g.res ** 2
@@ -313,7 +336,7 @@ def segment(g, ground, footprints=None, centres=None, min_h=MIN_H, min_area=MIN_
                     add(name, mm, "centre")
             lab[m] = 0
     comps = []
-    for i in range(1, n + 1):
+    for i in range(1, (n if auto else 0) + 1):
         m = lab == i
         a = m.sum() * cell
         if a >= min_area:
@@ -367,7 +390,7 @@ class MeshScenario(Scenario):
                   "terrain": {"kind": "heightmap", "source": os.path.basename(self.source),
                               "md5": _md5(self.source), "origin": list(g.origin), "res": g.res, "w": g.w, "h": g.h},
                   "sectors": self._sectors})
-        return d
+        return piles_with_polygons(d, self.piles)
 
 
 def _default(name):
@@ -381,6 +404,49 @@ def _md5(path):
         for b in iter(lambda: f.read(1 << 20), b""):
             h.update(b)
     return h.hexdigest()
+
+
+def ccw(poly):
+    """[[x, y], ...] counter-clockwise (contracts v1.2.1: piles[].polygon is CCW, site metres)."""
+    P = np.asarray(poly, float)
+    if len(P) >= 3:
+        a = 0.5 * np.sum(P[:, 0] * np.roll(P[:, 1], -1) - np.roll(P[:, 0], -1) * P[:, 1])
+        if a < 0:
+            P = P[::-1]
+    return [[round(float(x), 3), round(float(y), 3)] for x, y in P]
+
+
+def attach_polygons(piles, polys, kinds=None):
+    """Set ``Pile.polygon`` (CCW) and ``Pile.kind`` (read by sim/tasking.py and the state writer)."""
+    for p in piles:
+        if p.name in polys:
+            p.polygon = ccw(polys[p.name])
+        if kinds and p.name in kinds:
+            p.kind = kinds[p.name]
+
+
+def piles_with_polygons(d, piles):
+    """public_dict piles[] + polygon / kind (only on non-grid sites; the grid JSON stays byte-identical)."""
+    by = {p.name: p for p in piles}
+    for e in d["piles"]:
+        p = by.get(e["name"])
+        if getattr(p, "polygon", None) is not None:
+            e["polygon"] = p.polygon
+        if getattr(p, "kind", None) is not None:
+            e["kind"] = p.kind
+    return d
+
+
+def _hull(x, y):
+    """Convex hull polygon [[x, y], ...] of cell centres (sector outline for maps / tasking zones)."""
+    from scipy.spatial import ConvexHull
+    P = np.c_[x, y]
+    if len(P) < 3:
+        return P.round(2).tolist()
+    try:
+        return P[ConvexHull(P).vertices].round(2).tolist()
+    except Exception:                                   # degenerate (collinear) sector
+        return P[[0, -1]].round(2).tolist()
 
 
 def make_scenario_from_mesh(path, seed=7, start_pile=None, geo=None, sectors=None, footprints=None,
@@ -414,12 +480,17 @@ def make_scenario_from_mesh(path, seed=7, start_pile=None, geo=None, sectors=Non
         sx, sy = float(max(2.0, 2 * X[m].std())), float(max(2.0, 2 * Y[m].std()))
         piles.append(Pile(name=s["name"], x=round(cx, 3), y=round(cy, 3), h=round(h, 3), sx=round(sx, 3),
                           sy=round(sy, 3), rot=0.0, lump=(0.0, 0.0)))
-        public.append({"name": s["name"], "source": s["source"], "area_m2": round(float(m.sum()) * surface.res ** 2, 1),
+        poly = (footprints or {}).get(s["name"]) or _hull(X[m], Y[m])
+        public.append({"name": s["name"], "source": s["source"], "polygon": poly,
+                       "area_m2": round(float(m.sum()) * surface.res ** 2, 1),
                        "max_h": round(h, 2), "bbox": [round(float(v), 2) for v in
                                                       (X[m].min(), Y[m].min(), X[m].max(), Y[m].max())]})
     names = [p.name for p in piles]
     if start_pile is not None and start_pile not in names:
         raise ValueError(f"start_pile {start_pile!r} not in sectors {names}")
+    attach_polygons(piles, {s["name"]: s["polygon"] for s in public}, {s["name"]: s["source"] for s in public})
+    for s in public:
+        s["polygon"] = ccw(s["polygon"])
     sc = MeshScenario(seed, piles, {}, surface, ground, path, meta, public)
     owner_s = np.where(owner == "", "", owner).astype(str)
     sup = TruthSupport(surface, ground, owner_s, solids=None, edge_bias=0.7)

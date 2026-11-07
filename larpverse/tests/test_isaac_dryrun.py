@@ -116,3 +116,46 @@ def test_isaac_dryrun_weiguan(tmp_path):
     assert state["site"]["bounds"] == [-32.0, -64.0, 68.0, 42.0]
     assert state["staging"]["xy"] == [31.0, -55.0]
     assert {p["id"] for p in state.get("piles", [])} <= set("ABCDEFGHI")
+
+
+def test_isaac_dryrun_collapse_heavy(tmp_path):
+    """--site collapse (committed heightmap cache) with the default heavy LiDAR profile / drone model."""
+    from sim.site_collapse import cache_path
+    if cache_path() is None:
+        import pytest
+        pytest.skip("data/maps/collapse_site_heightmap.npz missing")
+    from isaac.run_mission import main
+
+    out = tmp_path / "data"
+    s = main(["--dry-run", "--site", "collapse", "--lidar-profile", "heavy", "--max-steps", "40",
+              "--out", str(out), "--quiet"])
+    assert s["site"] == "collapse" and s["steps"] == 40
+    assert all(v > 5.0 for v in s["drone_moved_m"].values()), s["drone_moved_m"]
+    state = json.loads((out / "state.json").read_text())
+    assert state["site"]["bounds"] == [-160.0, -160.0, 160.0, 160.0]
+    assert state["staging"]["xy"] == [-56.0, -152.5]
+    assert len(state.get("piles", [])) > 120
+    assert not any(m == "pxr" or m.startswith(("pxr.", "omni.")) or m == "omni" for m in sys.modules)
+
+
+def test_pod_targets_and_mission_passthrough(tmp_path):
+    """Winch pods from state.pods / drones[].winch_len_m; --platform/--delivery/--penetration reach GridMission
+    (unknown ones are dropped with a log line until the mission supports them)."""
+    from isaac.pods import POD_SIZE, NullPods, pod_targets
+
+    poses = {"d1": (1.0, 2.0, 12.0, 0, "scanning", 0, 0), "d2": (5.0, 5.0, 10.0, 0, "flying", 0, 0),
+             "d3": (9.0, 9.0, 8.0, 0, "flying", 0, 0)}
+    st = {"pods": [{"drone_id": "d1", "xy": [1.2, 2.1], "z": 3.5, "status": "resting"},
+                   {"drone_id": "d2", "xy": [5, 5], "z": None, "status": "stowed"}],
+          "drones": [{"id": "d1", "winch_len_m": 8.2}, {"id": "d2", "winch_len_m": 0.0}, {"id": "d3", "winch_len_m": 4.0}]}
+    tg = pod_targets(st, poses)
+    assert tg["d1"] == (1.2, 2.1, 3.5, "resting") and "d2" not in tg
+    assert tg["d3"][2] == 8.0 - 4.0 - POD_SIZE[2]
+    np_ = NullPods()
+    np_.update(st, poses)
+    assert np_.max_visible == 2
+
+    from isaac.run_mission import main
+    s = main(["--dry-run", "--platform", "heavy_sar", "--delivery", "pod", "--penetration", "literature",
+              "--max-steps", "20", "--out", str(tmp_path / "d"), "--quiet"])
+    assert s["steps"] == 20 and "pods_max_visible" in s

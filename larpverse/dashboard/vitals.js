@@ -8,20 +8,23 @@ const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '
 // Triage chips. rank = dig-order weight (sim/vitals.py TRIAGE_RANK); "assess" sits mid-table on purpose.
 export const TRIAGE = {
   immediate: { key: 'immediate', label: 'immediate', rank: 1.0, tip: 'START respiratory criterion: breathing over 30/min. Dig first, confirm on site.' },
-  urgent: { key: 'urgent', label: 'urgent', rank: 0.85, tip: 'Rapid, slow or irregular breathing with pauses: possible injury, reduced responsiveness or airway problem. Check soon.' },
+  icheck: { key: 'icheck', label: 'immediate', rank: 0.85, tip: 'Irregular breathing, pauses, or breathing close to the 30/min cut-off: possible airway problem, injury or distress. Check first.' },
+  urgent: { key: 'urgent', label: 'urgent', rank: 0.7, tip: 'Slow, regular breathing (or fast but under the cut-off): could be deep rest or reduced consciousness; the radar cannot tell which. Call out and check responsiveness.' },
   assess: { key: 'assess', label: 'assess', rank: 0.55, tip: 'No usable breathing pattern from this scan: needs a longer or better scan.' },
-  delayed: { key: 'delayed', label: 'delayed', rank: 0.35, tip: 'Regular breathing in the normal range (respiration only: perfusion and responsiveness are unknown).' },
+  delayed: { key: 'delayed', label: 'delayed', rank: 0.35, tip: 'Calm, regular breathing in the normal range (breathing only: perfusion and responsiveness are unknown). Re-check later.' },
 };
 // Survivor CONDITION from the breathing pattern (no age inference). New classes from sim/vitals.py, plus the legacy
 // pattern names mapped onto them so older runs still read correctly.
 export const CONDITION = {
-  calm: { key: 'calm', what: 'Calm, regular breathing', means: 'no breathing distress seen', act: 'routine', hint: 'delayed' },
-  distressed_tachypnea: { key: 'distressed_tachypnea', what: 'Rapid shallow breathing', means: 'possible injury/distress', act: 'check', hint: 'urgent' },
-  unconscious_slow: { key: 'unconscious_slow', what: 'Slow breathing', means: 'possibly unconscious', act: 'check urgently', hint: 'urgent' },
-  irregular_apneic: { key: 'irregular_apneic', what: 'Irregular breathing with pauses', means: 'possible airway problem', act: 'check urgently', hint: 'urgent' },
+  calm: { key: 'calm', what: 'Calm, regular breathing', means: 'stable for now (breathing only)', act: 're-check later', hint: 'delayed' },
+  distressed_tachypnea: { key: 'distressed_tachypnea', what: 'Rapid shallow breathing', means: 'possible injury, pain or distress', act: 'check', hint: 'immediate (check)' },
+  unconscious_slow: { key: 'unconscious_slow', what: 'Slow, regular breathing', means: 'deep rest or reduced consciousness (the radar cannot tell which)', act: 'call out and check responsiveness', hint: 'urgent' },
+  irregular_apneic: { key: 'irregular_apneic', what: 'Irregular breathing with pauses', means: 'possible airway problem or reduced consciousness', act: 'check', hint: 'immediate (check)' },
   unclear: { key: 'unclear', what: 'Breathing pattern unclear', means: 'signal too weak or too short', act: 'rescan', hint: 'assess' },
 };
-const LEGACY = { regular_calm: 'calm', rapid_shallow: 'distressed_tachypnea', fast_small: 'distressed_tachypnea', slow_deep: 'unconscious_slow', irregular_with_pauses: 'irregular_apneic' };
+// legacy pattern aliases (slow_regular replaces slow_deep / fast_small; those still map for old runs)
+const LEGACY = { regular_calm: 'calm', rapid_shallow: 'distressed_tachypnea', slow_regular: 'unconscious_slow', irregular_with_pauses: 'irregular_apneic',
+  unknown: 'unclear', slow_deep: 'unconscious_slow', fast_small: 'distressed_tachypnea' };
 export function conditionOf(v) {
   const k = String(v?.condition ?? v?.pattern ?? '').toLowerCase();
   if (!k) return null;
@@ -29,6 +32,7 @@ export function conditionOf(v) {
 }
 // "Rapid shallow breathing, 32/min — possible injury/distress — check"
 export function conditionLabel(v, c) {
+  if (v?.condition_text) { const t = String(v.condition_text).replace(/\s*->\s*/g, ' — '); return t[0].toUpperCase() + t.slice(1); }   // the producer's sentence wins
   const k = conditionOf(v), r = rateOf(v, c), rt = r ? `, ${Math.round(r)}/min` : '';
   if (!k) return r ? `Breathing-like signal${rt} — no pattern analysis — assess` : null;
   return `${k.what}${rt} — ${k.means} — ${k.act}`;
@@ -38,7 +42,8 @@ export function triageOf(v) {
   let h = String(v?.triage_hint || '').toLowerCase().trim();
   if (!h && k) h = k.key === 'distressed_tachypnea' && (rateOf(v) ?? 0) > 30 ? 'immediate' : k.hint;
   if (!h || h === 'assess') return { ...TRIAGE.assess, sub: v ? '' : 'no pattern yet' };
-  if (h === 'urgent' || /^immediate\s*\(check\)/.test(h)) return { ...TRIAGE.urgent, sub: 'check' };
+  if (/^immediate\s*\(check\)/.test(h)) return { ...TRIAGE.icheck, sub: 'check' };
+  if (h === 'urgent') return { ...TRIAGE.urgent, sub: 'check responsiveness' };
   if (h.startsWith('immediate')) return { ...TRIAGE.immediate, sub: '' };
   if (/^delayed\s*\(re-?check\)/.test(h)) return { ...TRIAGE.delayed, rank: 0.45, sub: 're-check' };
   if (h.startsWith('delayed') || h === 'minor') return { ...TRIAGE.delayed, sub: '' };
@@ -56,7 +61,8 @@ export const rateOf = (v, c) => v?.rate_bpm ?? (c?.breathing_hz ? c.breathing_hz
 // Dig-order score = triage weight (shrunk towards "assess" by pattern_conf, like sim/vitals.priority_weight)
 //                   x localisation certainty (firm fix, belief share, 95% region size) x accessibility (depth).
 export function digScore(c, depth, ell) {
-  const v = c.vitals || null, t = triageOf(v), conf = clamp(+(v?.pattern_conf ?? 0));
+  // triage_fused (call-out responsiveness + vitals; no response raises, never lowers) overrides the vitals hint
+  const fz = c.triage_fused, v = fz?.triage_hint && c.vitals ? { ...c.vitals, triage_hint: fz.triage_hint, priority_weight: undefined } : c.vitals || null, t = triageOf(v), conf = clamp(+(v?.pattern_conf ?? 0));
   const tri = v?.priority_weight ?? (TRIAGE.assess.rank + (t.rank - TRIAGE.assess.rank) * conf);
   const weak = c.status !== 'candidate' || c.kind === 'moving';
   let loc = weak ? 0.45 : 0.65 + 0.35 * clamp((c.p_mass ?? 0.5) / 0.8);
@@ -133,7 +139,8 @@ export function drawTriageRing(ctx, x, y, t) {
   const ring = (r, lw, dash) => { ctx.lineWidth = lw; ctx.setLineDash(dash); ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.stroke(); };
   ctx.shadowColor = 'rgba(0,0,0,0.7)'; ctx.shadowBlur = 3;
   if (t.key === 'immediate') { ring(12, 2, []); ring(15.5, 2, []); }
-  else if (t.key === 'urgent') ring(13, 2.2, []);
+  else if (t.key === 'icheck') ring(13, 2.4, []);
+  else if (t.key === 'urgent') { ring(13, 1.2, []); ring(9.5, 1.2, []); }
   else if (t.key === 'delayed') ring(13, 1.5, [5, 4]);
   else ring(13, 1.6, [1.5, 3.5]);
   ctx.restore();

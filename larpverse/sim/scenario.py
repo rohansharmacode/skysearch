@@ -39,7 +39,9 @@ PHYSIO_STATES = {
 }
 # Demo seed: one of each condition pattern so the priority list has something to decide.
 # (No age/child class: the user decided triage reads the survivor's condition only.)
-DEMO_PHYSIO = {7: {"A2": "distressed_tachypnea", "A3": "calm", "B1": "irregular_apneic", "B2": "unconscious_slow"}}
+# Consistent with the sounds: A2 is silent (unconscious, found by radar alone), A3 shouts "my leg is trapped"
+# (distressed), B1's weak fading voice (irregular, pauses), B2 knocks (conscious, calm, waiting).
+DEMO_PHYSIO = {7: {"A2": "unconscious_slow", "A3": "distressed_tachypnea", "B1": "irregular_apneic", "B2": "calm"}}
 SOUND_KINDS = ["voice", "weak_voice", "knock", "dog", "generator", "settling"]
 TRANSCRIPTS = {   # what a TTS voice says for the synthetic human sources (truth; the pipeline must recover it)
     "voice": "Help! Can anyone hear me? My leg is trapped.",
@@ -165,13 +167,16 @@ def _top_face_points(pc: Piece, step=0.25):
     return np.concatenate(out) if out else np.zeros((0, 3))
 
 
-SITES = ("grid", "weiguan")
+SITES = ("grid", "weiguan", "collapse")
 
 
 def make_scenario(seed: int = 7, start_pile: str | None = None, site: str = "grid") -> Scenario:
     if site == "weiguan":     # Weiguan Jinlong case study (procedural stand-in): sim/site_weiguan.py
         from .site_weiguan import make_weiguan
         return make_weiguan(seed, start_pile)
+    if site in ("collapse", "weiguan-real"):   # the Isaac team's expanded site (USD): sim/site_collapse.py
+        from .site_collapse import make_collapse
+        return make_collapse(seed, start_pile)
     if site.startswith("mesh:"):   # external map "mesh:<path>[?sectors=weiguan]": sim/site_mesh.py
         from .site_mesh import make_from_spec
         return make_from_spec(seed, start_pile, site[5:])
@@ -264,7 +269,7 @@ if __name__ == "__main__":
     ap = argparse.ArgumentParser(description="Write the public scenario (and optionally the hidden truth) to JSON.")
     ap.add_argument("--seed", type=int, default=7)
     ap.add_argument("--start-pile")
-    ap.add_argument("--site", default="grid", help="grid (synthetic 3x3, default) | weiguan (case study) | mesh:<path>")
+    ap.add_argument("--site", default="grid", help="grid (synthetic 3x3, default) | weiguan (procedural case study) | collapse (real expanded site) | mesh:<path>")
     ap.add_argument("--out", default="scenario.json")
     ap.add_argument("--truth-out", help="separate file for hidden truth (generators/evaluators only)")
     a = ap.parse_args()

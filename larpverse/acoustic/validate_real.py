@@ -1150,6 +1150,226 @@ def cmd_synth(args):
     print("all done")
 
 
+# =========================================================================== DREGON real DoA
+# DREGON (Strauss, Mordel, Miguet, Deleforge, IROS 2018), https://dregon.inria.fr: 8-mic array on a
+# quadrotor with Vicon ground-truth source directions. "Freely available for personal, educational
+# and academic use only" (dataset page); cite the IROS 2018 paper. Evaluator: reads ground truth.
+DREGON = os.path.join(DATA, "dregon")
+DREGON_DL = "http://dregon.inria.fr/?smd_process_download=1&download_id="
+DREGON_FILES = {                 # name: (download id, MB) - 397 MB in all
+    "DREGON_clean_recordings_speech.zip": (375, 117),          # rotors off: tripod, 28 directions
+    "DREGON_free-flight_speech-high_room1.zip": (317, 66),     # rotors on: real flight, SNR -12.8 dB
+    "DREGON_free-flight_speech-low_room1.zip": (323, 76),      # rotors on: real flight, SNR -16.2 dB
+    "DREGON_hovering_nosource_room2.zip": (355, 53),           # rotors on, no source: real egonoise
+    "DREGON_silent-flight_whitenoise-low_room1.zip": (341, 85),  # motors off, carried by hand
+}
+DREGON_MICPOS = "https://dregon.inria.fr/DREGON_data/micPos.txt"
+
+
+def fetch_dregon():
+    import zipfile
+    os.makedirs(DREGON, exist_ok=True)
+    page = http_get("https://dregon.inria.fr/datasets/dregon/").decode("utf-8", "ignore")
+    ids = {n: int(i) for i, n in re.findall(r"download_id=(\d+)\">([^<]+\.zip)</a>", page)}
+    total = 0
+    for name in DREGON_FILES:
+        did = ids.get(name, DREGON_FILES[name][0])          # ids from the live page when present
+        out = os.path.join(DREGON, name[:-4])
+        if os.path.isdir(out) and os.listdir(out):
+            continue
+        zp = os.path.join(DREGON, name)
+        with urllib.request.urlopen(urllib.request.Request(DREGON_DL + str(did), headers=UA), timeout=120) as r, \
+                open(zp + ".part", "wb") as fh:
+            while True:
+                b = r.read(1 << 20)
+                if not b:
+                    break
+                fh.write(b)
+        os.replace(zp + ".part", zp)
+        total += os.path.getsize(zp)
+        os.makedirs(out, exist_ok=True)
+        with zipfile.ZipFile(zp) as z:
+            for m in z.namelist():                       # flatten to basenames: no path tricks
+                base = os.path.basename(m)
+                if base and not m.endswith("/") and not base.startswith("."):
+                    with z.open(m) as src, open(os.path.join(out, base), "wb") as dst:
+                        dst.write(src.read())
+        os.remove(zp)
+        print(f"{name}: {os.path.getsize(os.path.join(out, os.listdir(out)[0])) / 1e6:.1f} MB first file, "
+              f"{len(os.listdir(out))} files", flush=True)
+    open(os.path.join(DREGON, "micPos.txt"), "wb").write(http_get(DREGON_MICPOS))
+    print(f"DREGON downloaded {total / 1e6:.0f} MB")
+
+
+def dregon_micpos():
+    txt = open(os.path.join(DREGON, "micPos.txt")).read()
+    rows = re.findall(r"(-?\d+\.\d+)\s+(-?\d+\.\d+)\s+(-?\d+\.\d+)\s*\]?;", txt)
+    m = np.array(rows, float)
+    assert m.shape == (8, 3), m.shape
+    return m
+
+
+def _dregon_wav(path, fs=16000):
+    import soundfile as sf
+    from scipy.signal import resample_poly
+    x, sr = sf.read(path, dtype="float32", always_2d=True)
+    g = np.gcd(fs, sr)
+    return resample_poly(x, fs // g, sr // g, axis=0).T.astype(np.float64)   # (8, N)
+
+
+def _mat(path, key):
+    import scipy.io as sio
+    return sio.loadmat(path, squeeze_me=True, struct_as_record=False)[key]
+
+
+def srp3d(sig, mic, fs, step=2.0):
+    """Independent 3D SRP-PHAT (azimuth x elevation grid, standard spherical convention:
+    u = [cos el cos az, cos el sin az, sin el]) used only to check DREGON's angle convention."""
+    X = _stft_phat(sig, fs)
+    f = np.fft.rfftfreq(512, 1 / fs)
+    fi = (f >= 300) & (f <= 4000)
+    pairs = [(m, n) for m in range(len(mic)) for n in range(m + 1, len(mic))]
+    C = np.stack([(X[m][fi] * np.conj(X[n][fi])).sum(axis=1) for m, n in pairs])        # (P, F)
+    C /= np.abs(C) + 1e-20
+    az = np.radians(np.arange(0, 360, step))
+    el = np.radians(np.arange(-90, 90 + step, step))
+    A, E = np.meshgrid(az, el, indexing="ij")
+    U = np.stack([np.cos(E) * np.cos(A), np.cos(E) * np.sin(A), np.sin(E)], -1).reshape(-1, 3)
+    best, arg = -np.inf, None
+    for k in range(0, len(U), 2000):
+        u = U[k:k + 2000]
+        lead = mic @ u.T / 343.0                                                   # (M, D)
+        dt = np.stack([lead[m] - lead[n] for m, n in pairs])                       # (P, D)
+        pw = np.real(np.einsum("pf,pfd->d", C, np.exp(-2j * np.pi * f[fi][None, :, None] * dt[:, None, :])))
+        i = int(np.argmax(pw))
+        if pw[i] > best:
+            best, arg = pw[i], k + i
+    ia, ie = np.unravel_index(arg, A.shape)
+    return float(np.degrees(az[ia])), float(np.degrees(el[ie]))
+
+
+def _stft_phat(sig, fs):
+    M, N = sig.shape
+    S = 1 + (N - 512) // 256
+    idx = np.arange(512)[None, :] + 256 * np.arange(S)[:, None]
+    return np.fft.rfft(sig[:, idx] * np.hanning(512), axis=-1).transpose(0, 2, 1)   # (M, F, S)
+
+
+def doa_ours(sig, offs, fs, dsp, whole=False):
+    """Our DoA front end (dsp.gcc_blocks + dsp.clean, as in localise_piles). Returns per 0.5 s
+    block the CLEAN components [(az, coherence, fwhm)] (masked transient maps), or with
+    whole=True the components of the unmasked whole-window map."""
+    model = dsp.SrpModel(offs, fs)
+    Rt, Wt, Rs, Ws = dsp.gcc_blocks(model, sig, fs)
+    if whole:
+        return dsp.clean(model, Rs, Ws)
+    return [dsp.clean(model, Rt[b], Wt[b]) for b in range(Rt.shape[0])]
+
+
+def _err(a, b):
+    return abs((a - b + 180) % 360 - 180)
+
+
+def cmd_dregon_eval(args):
+    """Real DoA test on DREGON with our SRP-PHAT (azimuth only, the array's x-y offsets).
+    rotors off: 24 static loudspeaker positions x 8 utterances (semi-anechoic) and a motors-off
+    'silent flight' carried by hand; rotors on: the static clips + real hovering egonoise at set
+    SNRs, and two real free flights. -> data/audio_real/dregon-<version>.json"""
+    agent, models, scene_m, dsp, run = code(full=True)
+    fs = 16000
+    mic = dregon_micpos()
+    offs = (mic[:, :2] - mic[:, :2].mean(axis=0)).T
+    out = {"micpos": mic.tolist(), "clips": [], "flights": {}}
+    rng = np.random.default_rng(11)
+    noise = _dregon_wav(os.path.join(DREGON, "DREGON_hovering_nosource_room2", "DREGON_hovering_nosource_room2.wav"))
+    noise = noise[:, int(3 * fs):-int(3 * fs)]              # drop take-off / landing seconds
+    p_noise = float(np.mean(noise ** 2))
+    cdir = os.path.join(DREGON, "DREGON_clean_recordings_speech")
+    t0 = time.time()
+    for fn in sorted(os.listdir(cdir)):
+        m = re.match(r"(-?\d+)_(-?\d+)_([\d.]+)__(\d+)\.wav", fn)
+        if not m:
+            continue
+        az, el, dist, utt = float(m[1]), float(m[2]), float(m[3]), int(m[4])
+        x = _dregon_wav(os.path.join(cdir, fn))
+        row = {"file": fn, "az": az, "el": el, "dist": dist, "utt": utt, "dur": x.shape[1] / fs}
+        if utt == 1:                                         # convention check (independent 3D SRP)
+            row["srp3d"] = srp3d(x, mic, fs)
+        comps = doa_ours(x, offs, fs, dsp, whole=True)
+        row["off"] = comps[0][0] if comps else None
+        row["off_comps"] = [c[0] for c in comps]
+        p_sig = float(np.mean(x ** 2))
+        for snr in (10, 0, -10, -20):
+            k = int(rng.integers(0, noise.shape[1] - x.shape[1]))
+            y = x + np.sqrt(p_sig / (p_noise * 10 ** (snr / 10))) * noise[:, k:k + x.shape[1]]
+            c = doa_ours(y, offs, fs, dsp, whole=True)
+            row[f"on{snr:+d}"] = c[0][0] if c else None
+            row[f"on{snr:+d}_comps"] = [cc[0] for cc in c]
+        out["clips"].append(row)
+    print(f"static clips: {len(out['clips'])} in {time.time() - t0:.0f} s", flush=True)
+    for name in ("DREGON_silent-flight_whitenoise-low_room1", "DREGON_free-flight_speech-high_room1",
+                 "DREGON_free-flight_speech-low_room1"):
+        d = os.path.join(DREGON, name)
+        x = _dregon_wav(os.path.join(d, name + ".wav"))
+        ts = _mat(os.path.join(d, name + "_audiots.mat"), "audio_timestamps")
+        sp = _mat(os.path.join(d, name + "_sourcepos.mat"), "source_position")
+        n44 = len(ts)
+        blocks = doa_ours(x, offs, fs, dsp)
+        blk = int(dsp.BLOCK_S * fs / dsp.HOP) * dsp.HOP / fs        # gcc_blocks' block length (0.496 s)
+        rows = []
+        for b, comps in enumerate(blocks):
+            i0, i1 = int(b * blk * 44100), min(int((b + 1) * blk * 44100), n44 - 1)
+            m_ = (sp.timestamps >= ts[i0]) & (sp.timestamps < ts[i1])
+            if not m_.any():
+                continue
+            a_ = np.radians(sp.azimuth[m_])
+            gaz = float(np.degrees(np.arctan2(np.sin(a_).mean(), np.cos(a_).mean())) % 360)
+            rows.append({"t": round(b * blk, 2), "gt_az": round(gaz, 2), "gt_el": round(float(np.mean(sp.elevation[m_])), 2),
+                         "gt_dist": round(float(np.mean(sp.distance[m_])), 2),
+                         "comps": [[round(c[0], 1), round(c[1], 3)] for c in comps]})
+        out["flights"][name] = rows
+        print(f"{name}: {len(rows)} blocks with ground truth ({time.time() - t0:.0f} s)", flush=True)
+    path = os.path.join(DATA, f"dregon-{VERSION}.json")
+    json.dump(out, open(path, "w"))
+    print("wrote", path)
+
+
+def dregon_summary():
+    path = os.path.join(DATA, f"dregon-{VERSION}.json")
+    if not os.path.exists(path):
+        return None
+    D = json.load(open(path))
+
+    def stats(errs, n_total):
+        e = np.array([v for v in errs if v is not None], float)
+        return {"n": int(n_total), "n_est": int(len(e)),
+                "median": float(np.median(e)) if len(e) else float("nan"),
+                "p90": float(np.percentile(e, 90)) if len(e) else float("nan"),
+                "within10": float(np.sum(e <= 10) / max(n_total, 1)),
+                "within10_any": None}
+
+    out = {}
+    clips = D["clips"]
+    conv = [(_err(c["srp3d"][0], c["az"]), abs(c["srp3d"][1] - c["el"])) for c in clips if "srp3d" in c]
+    out["convention_check"] = {"n": len(conv), "az_err_median": float(np.median([a for a, _ in conv])),
+                               "el_err_median": float(np.median([e for _, e in conv]))}
+    for key, lab in [("off", "static, rotors off")] + [(f"on{s:+d}", f"static + real hover egonoise, {s:+d} dB")
+                                                         for s in (10, 0, -10, -20)]:
+        for elv in (None, 0, -15, -30):
+            sel = [c for c in clips if elv is None or c["el"] == elv]
+            st = stats([None if c[key] is None else _err(c[key], c["az"]) for c in sel], len(sel))
+            st["within10_any"] = float(np.mean([any(_err(a, c["az"]) <= 10 for a in c[key + "_comps"]) for c in sel]))
+            out[f"{lab}" + ("" if elv is None else f" | el {elv}")] = st
+    for name, rows in D["flights"].items():
+        lab = name.replace("DREGON_", "").replace("_room1", "")
+        for rng_, sub in (("all", rows), ("|el|<=20", [r for r in rows if abs(r["gt_el"]) <= 20])):
+            st = stats([_err(r["comps"][0][0], r["gt_az"]) if r["comps"] else None for r in sub], len(sub))
+            st["within10_any"] = float(np.mean([any(_err(c[0], r["gt_az"]) <= 10 for c in r["comps"]) for r in sub])) \
+                if sub else float("nan")
+            out[f"{lab} ({rng_})"] = st
+    return out
+
+
 # =========================================================================== report
 LEAD = 0.4                       # acoustic.agent.HUMAN_LEAD (not imported: report runs in .venv)
 CLASSES = ["voice", "shout", "knocking", "dog", "engine", "debris", "noise"]
@@ -1351,6 +1571,7 @@ def cmd_report(args):
     json.dump(summ, open(os.path.join(DATA, "summary.json"), "w"), indent=1, default=float)
     summ["code_version"] = VERSION
     summ["synth"] = synth_summary()
+    summ["dregon"] = dregon_summary()
     # other commits evaluated on the clean sets (VALIDATE_REV=<rev> run --only ...)
     import hashlib
     vers = {}
@@ -1424,6 +1645,19 @@ def print_tables(summ):
                 a = d["agent"]
                 print(f"- {rev} {g}: {_f(a['precision'])} / {_f(a['recall'])} / {_f(a['f1'])}, AUC {_f(d['auc_priority'])}; "
                       + ", ".join(f"{k} {v['flag_agent']:.2f}" for k, v in d["by_label"].items()))
+    if summ.get("dregon"):
+        d = summ["dregon"]
+        c = d["convention_check"]
+        print(f"\n## DREGON real DoA (our 2D SRP-PHAT + CLEAN; error of the strongest component; 'any' = any CLEAN "
+              f"component within 10 deg)\nconvention check, independent 3D SRP on {c['n']} static clips: median az err "
+              f"{c['az_err_median']:.1f}, el err {c['el_err_median']:.1f} deg")
+        print("| condition | n | with estimate | median err | p90 err | within 10 deg | any comp within 10 |")
+        print("|---|---|---|---|---|---|---|")
+        for k, v in d.items():
+            if k == "convention_check":
+                continue
+            print(f"| {k} | {v['n']} | {v['n_est']} | {_f(v['median'], 1)} | {_f(v['p90'], 1)} | {v['within10']:.2f} | "
+                  f"{_f(v['within10_any'])} |")
     if summ.get("synth"):
         print("\n## Synthetic head-to-head (A = our 3-drone scenes, B = teammate's 1-array scenes)")
         print("| family / level | pipeline | scenes | human recall | voice recall | flags | precision | false/scene | "
@@ -1624,6 +1858,10 @@ def main(argv=None):
     a.add_argument("--budget-s", type=float, default=240.0)
     a.add_argument("--whisper-raw", action="store_true")
     a.set_defaults(fn=cmd_whatif)
+    a = sub.add_parser("dregon")
+    a.add_argument("what", choices=["fetch", "eval"])
+    a.add_argument("--budget-s", type=float, default=240.0)
+    a.set_defaults(fn=lambda args: fetch_dregon() if args.what == "fetch" else cmd_dregon_eval(args))
     a = sub.add_parser("synth")
     a.add_argument("--family", choices=["A", "B"], required=True)
     a.add_argument("--seeds", type=int, nargs="+", default=[3, 7, 11, 19, 23, 29, 31, 37])

@@ -46,12 +46,21 @@ def victim_z(sc, v, surface=None):
     return float(fn(x, y)) - float(v["depth"])
 
 
-def mission_for_site(site: str, **kw):
-    """GridMission on ``site`` (grid | weiguan | mesh:<path>); kw go to the GridMission constructor."""
+def mission_for_site(site: str, log=None, **kw):
+    """GridMission on ``site`` (grid | weiguan | collapse | mesh:<path>); kw go to the GridMission constructor.
+    Keywords this GridMission does not accept yet (e.g. ``delivery`` before the mission agent adds it) are
+    dropped with a log line, so the adapter runs against older and newer mission code alike."""
     import sim.grid_mission as gm
     from isaac import collapse_site
-    if not collapse_site.is_collapse(site) and (
-            site == "grid" or "site" in inspect.signature(gm.GridMission.__init__).parameters):
+    params = inspect.signature(gm.GridMission.__init__).parameters
+    dropped = [k for k in kw if k not in params]
+    for k in dropped:
+        kw.pop(k)
+    if dropped and log:
+        log(f"GridMission does not take {dropped} yet; ignoring them")
+    # --site collapse-core: our compact scenario on the same map (isaac/collapse_site.py: sectors Z1-Z8,
+    # south-street staging; the case-study eval) through the shim below. --site collapse is native (sim/site_collapse.py)
+    if not collapse_site.is_core(site) and (site == "grid" or "site" in params):
         return gm.GridMission(**({"site": site} if site != "grid" else {}), **kw)
     from sim.scenario import make_scenario as _make
 
@@ -66,7 +75,7 @@ def mission_for_site(site: str, **kw):
 
     saved = gm.make_scenario, gm.DRONE_PADS
     seed, start = kw.get("seed", 7), kw.get("start_pile")
-    sc = collapse_site.make_collapse_scenario(seed, start) if collapse_site.is_collapse(site) else _make(seed, start, site=site)
+    sc = collapse_site.make_collapse_scenario(seed, start) if collapse_site.is_core(site) else _make(seed, start, site=site)
     gm.make_scenario = lambda *_a, **_k: sc
     gm.DRONE_PADS = drone_pads(sc)
     try:
@@ -79,6 +88,8 @@ def _label(sc):
     s = site_name(sc)
     if s == "weiguan":
         return "Weiguan Jinlong collapse (procedural stand-in)"
+    if s == "collapse-core":
+        return "Collapse site core (8 sectors, 160 m)"
     if s == "collapse":
         return "Collapse site (320 m reconstruction, core 160 m)"
     if s == "mesh":

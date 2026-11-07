@@ -1,6 +1,6 @@
 {
  "schema": "larpverse.acoustic-fixture/v1",
- "algo": "assoc-v6",
+ "algo": "assoc-v11",
  "seed": 7,
  "truth_roles_evaluator_only": {
   "A3": "voice",
@@ -20,12 +20,12 @@
      11.25
     ],
     "d2": [
-     -31.25,
-     4.25
+     -29.25,
+     -6.25
     ],
     "d3": [
-     -25.25,
-     -8.75
+     -21.75,
+     1.25
     ]
    },
    "exclude": [
@@ -34,7 +34,7 @@
    "listen_seed": 108,
    "state": {
     "schema": "larpverse.acoustic/v1",
-    "algo": "assoc-v6",
+    "algo": "assoc-v11",
     "seed": 108,
     "excluded_piles": [
      "A2"
@@ -50,15 +50,15 @@
      {
       "id": "d2",
       "xy": [
-       -31.25,
-       4.25
+       -29.25,
+       -6.25
       ]
      },
      {
       "id": "d3",
       "xy": [
-       -25.25,
-       -8.75
+       -21.75,
+       1.25
       ]
      }
     ],
@@ -67,9 +67,9 @@
       "clip_id": "ac-B1",
       "drone_id": "d3",
       "pile_id": "B1",
-      "bearing_deg": 45.4,
-      "width_deg": 49.0,
-      "snr_db": 12.6,
+      "bearing_deg": 36.2,
+      "width_deg": 48.0,
+      "snr_db": 12.8,
       "vad_speech_ratio": 0.538,
       "transcript": "Run their water. Hello is anyone their water.",
       "sound_class": "voice",
@@ -79,115 +79,289 @@
       "priority": 50,
       "doa_agree": "3/3",
       "association": "confident",
-      "association_conf": 0.998,
+      "association_conf": 0.999,
       "ambiguous_with": [],
       "notes": [],
-      "by": "fallback"
-     },
-     {
-      "clip_id": "ac-C1",
-      "drone_id": "d3",
-      "pile_id": "C1",
-      "bearing_deg": 31.0,
-      "width_deg": 19.0,
-      "snr_db": 16.7,
-      "vad_speech_ratio": 0.0,
-      "transcript": "",
-      "sound_class": "engine",
-      "human": 0.05,
-      "urgency": 0.02,
-      "reliability": 0.92,
-      "priority": 2,
-      "doa_agree": "3/3",
-      "association": "confident",
-      "association_conf": 1.0,
-      "ambiguous_with": [],
-      "notes": [],
-      "by": "fallback"
+      "by": "fallback",
+      "bearings": [
+       {
+        "drone_id": "d1",
+        "bearing_deg": 17.6,
+        "sigma_deg": 1.2,
+        "snr_db": 11.6,
+        "measured": true
+       },
+       {
+        "drone_id": "d2",
+        "bearing_deg": 39.3,
+        "sigma_deg": 1.2,
+        "snr_db": 11.8,
+        "measured": true
+       },
+       {
+        "drone_id": "d3",
+        "bearing_deg": 36.2,
+        "sigma_deg": 1.2,
+        "snr_db": 12.8,
+        "measured": true
+       }
+      ],
+      "heuristics": {
+       "knock_periodicity": 0.0,
+       "hum_harmonicity": 0.119,
+       "human_minus_animal": 0.5
+      },
+      "class_scores": {
+       "voice": 0.484,
+       "shout": 0.0,
+       "knocking": 0.0,
+       "dog": 0.0,
+       "engine": 0.022,
+       "debris": 0.006,
+       "noise": 0.488
+      },
+      "rationale": "voice 0.48; VAD 0.54; keywords: water, calling out; 3/3 drones agree, tri err 3.6 m; width 48 deg, SNR 13 dB",
+      "reliability_agent": 0.61
      },
      {
       "clip_id": "ac-B2",
-      "drone_id": "d1",
+      "drone_id": "d3",
       "pile_id": "B2",
-      "bearing_deg": 329.0,
+      "bearing_deg": 350.2,
       "width_deg": 24.0,
-      "snr_db": 17.9,
+      "snr_db": 20.0,
       "vad_speech_ratio": 0.0,
       "transcript": "",
       "sound_class": "knocking",
-      "human": 0.62,
-      "urgency": 0.42,
-      "reliability": 0.91,
-      "priority": 37,
+      "human": 0.74,
+      "urgency": 0.46,
+      "reliability": 0.9,
+      "priority": 45,
       "doa_agree": "3/3",
       "association": "confident",
       "association_conf": 1.0,
       "ambiguous_with": [],
       "notes": [],
-      "by": "fallback"
+      "by": "fallback",
+      "bearings": [
+       {
+        "drone_id": "d1",
+        "bearing_deg": 329.0,
+        "sigma_deg": 1.4,
+        "snr_db": 17.9,
+        "measured": true
+       },
+       {
+        "drone_id": "d2",
+        "bearing_deg": 9.2,
+        "sigma_deg": 1.4,
+        "snr_db": 16.7,
+        "measured": true
+       },
+       {
+        "drone_id": "d3",
+        "bearing_deg": 350.2,
+        "sigma_deg": 1.4,
+        "snr_db": 20.0,
+        "measured": true
+       }
+      ],
+      "heuristics": {
+       "knock_periodicity": 1.0,
+       "hum_harmonicity": 0.21,
+       "human_minus_animal": 0.328
+      },
+      "class_scores": {
+       "voice": 0.128,
+       "shout": 0.0,
+       "knocking": 0.52,
+       "dog": 0.0,
+       "engine": 0.111,
+       "debris": 0.021,
+       "noise": 0.22
+      },
+      "rationale": "knocking 0.52; VAD 0.00; knock regularity 1.00; 3/3 drones agree, tri err 2.2 m; width 24 deg, SNR 20 dB",
+      "reliability_agent": 0.9
      },
      {
       "clip_id": "ac-C2",
       "drone_id": "d3",
       "pile_id": "C2",
-      "bearing_deg": 14.0,
+      "bearing_deg": 2.0,
       "width_deg": 22.0,
-      "snr_db": 16.9,
+      "snr_db": 17.1,
       "vad_speech_ratio": 0.0,
       "transcript": "",
       "sound_class": "dog",
-      "human": 0.0,
+      "human": 0.01,
       "urgency": 0.02,
-      "reliability": 0.87,
+      "reliability": 0.88,
       "priority": 0,
       "doa_agree": "3/3",
       "association": "confident",
-      "association_conf": 0.997,
+      "association_conf": 0.994,
       "ambiguous_with": [],
       "notes": [],
-      "by": "fallback"
+      "by": "fallback",
+      "bearings": [
+       {
+        "drone_id": "d1",
+        "bearing_deg": 350.3,
+        "sigma_deg": 1.8,
+        "snr_db": 16.2,
+        "measured": true
+       },
+       {
+        "drone_id": "d2",
+        "bearing_deg": 10.3,
+        "sigma_deg": 1.8,
+        "snr_db": 16.7,
+        "measured": true
+       },
+       {
+        "drone_id": "d3",
+        "bearing_deg": 2.0,
+        "sigma_deg": 1.8,
+        "snr_db": 17.1,
+        "measured": true
+       }
+      ],
+      "heuristics": {
+       "knock_periodicity": 0.0,
+       "hum_harmonicity": 0.175,
+       "human_minus_animal": -0.566
+      },
+      "class_scores": {
+       "voice": 0.021,
+       "shout": 0.003,
+       "knocking": 0.0,
+       "dog": 0.854,
+       "engine": 0.105,
+       "debris": 0.0,
+       "noise": 0.016
+      },
+      "rationale": "dog 0.85; VAD 0.00; 3/3 drones agree, tri err 2.6 m; width 22 deg, SNR 17 dB",
+      "reliability_agent": 0.88
      },
      {
       "clip_id": "ac-A3",
-      "drone_id": "d3",
+      "drone_id": "d2",
       "pile_id": "A3",
-      "bearing_deg": 288.6,
-      "width_deg": 27.0,
-      "snr_db": 29.7,
-      "vad_speech_ratio": 0.567,
+      "bearing_deg": 297.2,
+      "width_deg": 29.0,
+      "snr_db": 27.3,
+      "vad_speech_ratio": 0.545,
       "transcript": "Help, can anyone hear me, my leg is trapped. Help, can anyone hear me?",
       "sound_class": "voice",
       "human": 0.9,
       "urgency": 0.94,
-      "reliability": 0.93,
+      "reliability": 0.92,
       "priority": 83,
       "doa_agree": "3/3",
       "association": "confident",
       "association_conf": 1.0,
       "ambiguous_with": [],
       "notes": [],
-      "by": "fallback"
+      "by": "fallback",
+      "bearings": [
+       {
+        "drone_id": "d1",
+        "bearing_deg": 277.2,
+        "sigma_deg": 1.2,
+        "snr_db": 21.1,
+        "measured": true
+       },
+       {
+        "drone_id": "d2",
+        "bearing_deg": 297.2,
+        "sigma_deg": 1.2,
+        "snr_db": 27.3,
+        "measured": true
+       },
+       {
+        "drone_id": "d3",
+        "bearing_deg": 273.2,
+        "sigma_deg": 1.2,
+        "snr_db": 24.1,
+        "measured": true
+       }
+      ],
+      "heuristics": {
+       "knock_periodicity": 0.0,
+       "hum_harmonicity": 0.074,
+       "human_minus_animal": 0.969
+      },
+      "class_scores": {
+       "voice": 0.794,
+       "shout": 0.0,
+       "knocking": 0.0,
+       "dog": 0.0,
+       "engine": 0.002,
+       "debris": 0.002,
+       "noise": 0.203
+      },
+      "rationale": "voice 0.79; VAD 0.55; keywords: help, trapped, calling out; 3/3 drones agree, tri err 0.7 m; width 29 deg, SNR 27 dB",
+      "reliability_agent": 0.92
      },
      {
       "clip_id": "ac-B3",
       "drone_id": "d3",
       "pile_id": "B3",
-      "bearing_deg": 336.5,
-      "width_deg": 29.0,
-      "snr_db": 10.6,
+      "bearing_deg": 317.7,
+      "width_deg": 32.0,
+      "snr_db": 8.9,
       "vad_speech_ratio": 0.0,
       "transcript": "",
       "sound_class": "debris",
-      "human": 0.03,
+      "human": 0.01,
       "urgency": 0.02,
-      "reliability": 0.81,
-      "priority": 1,
+      "reliability": 0.74,
+      "priority": 0,
       "doa_agree": "3/3",
       "association": "confident",
       "association_conf": 1.0,
       "ambiguous_with": [],
       "notes": [],
-      "by": "fallback"
+      "by": "fallback",
+      "bearings": [
+       {
+        "drone_id": "d1",
+        "bearing_deg": 309.9,
+        "sigma_deg": 2.0,
+        "snr_db": 6.6,
+        "measured": true
+       },
+       {
+        "drone_id": "d2",
+        "bearing_deg": 335.2,
+        "sigma_deg": 1.8,
+        "snr_db": 8.7,
+        "measured": true
+       },
+       {
+        "drone_id": "d3",
+        "bearing_deg": 317.7,
+        "sigma_deg": 1.8,
+        "snr_db": 8.9,
+        "measured": true
+       }
+      ],
+      "heuristics": {
+       "knock_periodicity": 0.0,
+       "hum_harmonicity": 0.121,
+       "human_minus_animal": 0.012
+      },
+      "class_scores": {
+       "voice": 0.019,
+       "shout": 0.0,
+       "knocking": 0.0,
+       "dog": 0.003,
+       "engine": 0.025,
+       "debris": 0.527,
+       "noise": 0.426
+      },
+      "rationale": "debris 0.53; VAD 0.00; 3/3 drones agree, tri err 0.8 m; width 32 deg, SNR 9 dB",
+      "reliability_agent": 0.74
      }
     ],
     "piles": [
@@ -200,7 +374,7 @@
       "priority": 83,
       "status": "radar_ping",
       "top_clip": "ac-A3",
-      "why": "Voice saying \"Help, can anyone hear me, my leg is trapped.\u2026\"; human 0.90, urgency 0.94, reliability 0.93.",
+      "why": "Voice saying \"Help, can anyone hear me, my leg is trapped.\u2026\"; human 0.90, urgency 0.94, reliability 0.92.",
       "association": "confident"
      },
      {
@@ -221,10 +395,10 @@
        -1.3222450729634891,
        -0.3371045966678139
       ],
-      "priority": 37,
+      "priority": 45,
       "status": "lead",
       "top_clip": "ac-B2",
-      "why": "Knocking; human 0.62, urgency 0.42, reliability 0.91.",
+      "why": "Knocking; human 0.74, urgency 0.46, reliability 0.90.",
       "association": "confident"
      },
      {
@@ -232,6 +406,17 @@
       "xy": [
        -22.854073905293202,
        20.980636101573534
+      ],
+      "priority": 8,
+      "status": "no_signal_not_cleared",
+      "top_clip": null,
+      "why": "No sound assigned to this pile during the listen. Silence is not absence: not cleared."
+     },
+     {
+      "pile_id": "C1",
+      "xy": [
+       21.60860893180662,
+       20.511202726156228
       ],
       "priority": 8,
       "status": "no_signal_not_cleared",
@@ -248,279 +433,6 @@
       "status": "no_signal_not_cleared",
       "top_clip": null,
       "why": "No sound assigned to this pile during the listen. Silence is not absence: not cleared."
-     },
-     {
-      "pile_id": "C1",
-      "xy": [
-       21.60860893180662,
-       20.511202726156228
-      ],
-      "priority": 2,
-      "status": "dismissed_nonhuman",
-      "top_clip": "ac-C1",
-      "why": "Heard engine (human 0.05); dismissed as an acoustic lead, but the pile is not cleared.",
-      "association": "confident"
-     },
-     {
-      "pile_id": "B3",
-      "xy": [
-       1.3348445134349385,
-       -20.78824963541222
-      ],
-      "priority": 1,
-      "status": "dismissed_nonhuman",
-      "top_clip": "ac-B3",
-      "why": "Heard debris (human 0.03); dismissed as an acoustic lead, but the pile is not cleared.",
-      "association": "confident"
-     },
-     {
-      "pile_id": "C2",
-      "xy": [
-       22.315168761489552,
-       0.4139897423649965
-      ],
-      "priority": 0,
-      "status": "dismissed_nonhuman",
-      "top_clip": "ac-C2",
-      "why": "Heard dog (human 0.00); dismissed as an acoustic lead, but the pile is not cleared.",
-      "association": "confident"
-     }
-    ],
-    "dispatch": {
-     "pile_id": "A3",
-     "reason": "Send the radar drone to A3: highest priority (83) from \"Help, can anyone hear me, my leg is trapped.\u2026\", 3/3 drones agreeing on the bearing at 30 dB SNR."
-    },
-    "log": []
-   }
-  },
-  {
-   "drones": {
-    "d1": [
-     -31.75,
-     -25.25
-    ],
-    "d2": [
-     -26.75,
-     -32.25
-    ],
-    "d3": [
-     -12.75,
-     -31.75
-    ]
-   },
-   "exclude": [
-    "A2",
-    "A3"
-   ],
-   "listen_seed": 209,
-   "state": {
-    "schema": "larpverse.acoustic/v1",
-    "algo": "assoc-v6",
-    "seed": 209,
-    "excluded_piles": [
-     "A2",
-     "A3"
-    ],
-    "listening_drones": [
-     {
-      "id": "d1",
-      "xy": [
-       -31.75,
-       -25.25
-      ]
-     },
-     {
-      "id": "d2",
-      "xy": [
-       -26.75,
-       -32.25
-      ]
-     },
-     {
-      "id": "d3",
-      "xy": [
-       -12.75,
-       -31.75
-      ]
-     }
-    ],
-    "clips": [
-     {
-      "clip_id": "ac-B1",
-      "drone_id": "d3",
-      "pile_id": "B1",
-      "bearing_deg": 73.0,
-      "width_deg": 54.0,
-      "snr_db": 8.8,
-      "vad_speech_ratio": 0.707,
-      "transcript": "Hello is anyone there water. Hello is anyone there water.",
-      "sound_class": "voice",
-      "human": 0.9,
-      "urgency": 0.56,
-      "reliability": 0.49,
-      "priority": 46,
-      "doa_agree": "3/3",
-      "association": "confident",
-      "association_conf": 0.998,
-      "ambiguous_with": [],
-      "notes": [],
-      "by": "fallback"
-     },
-     {
-      "clip_id": "ac-C1",
-      "drone_id": "d2",
-      "pile_id": "C1",
-      "bearing_deg": 49.0,
-      "width_deg": 19.0,
-      "snr_db": 25.8,
-      "vad_speech_ratio": 0.0,
-      "transcript": "",
-      "sound_class": "debris",
-      "human": 0.02,
-      "urgency": 0.02,
-      "reliability": 0.98,
-      "priority": 1,
-      "doa_agree": "3/3",
-      "association": "confident",
-      "association_conf": 0.996,
-      "ambiguous_with": [],
-      "notes": [],
-      "by": "fallback"
-     },
-     {
-      "clip_id": "ac-B2",
-      "drone_id": "d3",
-      "pile_id": "B2",
-      "bearing_deg": 70.7,
-      "width_deg": 27.0,
-      "snr_db": 14.9,
-      "vad_speech_ratio": 0.0,
-      "transcript": "",
-      "sound_class": "engine",
-      "human": 0.24,
-      "urgency": 0.03,
-      "reliability": 0.89,
-      "priority": 8,
-      "doa_agree": "3/3",
-      "association": "confident",
-      "association_conf": 0.998,
-      "ambiguous_with": [],
-      "notes": [],
-      "by": "fallback"
-     },
-     {
-      "clip_id": "ac-C2",
-      "drone_id": "d3",
-      "pile_id": "C2",
-      "bearing_deg": 44.0,
-      "width_deg": 21.0,
-      "snr_db": 16.8,
-      "vad_speech_ratio": 0.0,
-      "transcript": "",
-      "sound_class": "dog",
-      "human": 0.07,
-      "urgency": 0.02,
-      "reliability": 0.88,
-      "priority": 2,
-      "doa_agree": "3/3",
-      "association": "confident",
-      "association_conf": 1.0,
-      "ambiguous_with": [],
-      "notes": [],
-      "by": "fallback"
-     },
-     {
-      "clip_id": "ac-B3",
-      "drone_id": "d3",
-      "pile_id": "B3",
-      "bearing_deg": 39.5,
-      "width_deg": 26.0,
-      "snr_db": 13.7,
-      "vad_speech_ratio": 0.0,
-      "transcript": "",
-      "sound_class": "debris",
-      "human": 0.01,
-      "urgency": 0.02,
-      "reliability": 0.91,
-      "priority": 0,
-      "doa_agree": "3/3",
-      "association": "confident",
-      "association_conf": 1.0,
-      "ambiguous_with": [],
-      "notes": [],
-      "by": "fallback"
-     }
-    ],
-    "piles": [
-     {
-      "pile_id": "B1",
-      "xy": [
-       0.3876787634730312,
-       22.04235293979854
-      ],
-      "priority": 46,
-      "status": "radar_ping",
-      "top_clip": "ac-B1",
-      "why": "Voice saying \"Hello is anyone there water. Hello is anyone\u2026\"; human 0.90, urgency 0.56, reliability 0.49.",
-      "association": "confident"
-     },
-     {
-      "pile_id": "A1",
-      "xy": [
-       -22.854073905293202,
-       20.980636101573534
-      ],
-      "priority": 8,
-      "status": "no_signal_not_cleared",
-      "top_clip": null,
-      "why": "No sound assigned to this pile during the listen. Silence is not absence: not cleared."
-     },
-     {
-      "pile_id": "B2",
-      "xy": [
-       -1.3222450729634891,
-       -0.3371045966678139
-      ],
-      "priority": 8,
-      "status": "dismissed_nonhuman",
-      "top_clip": "ac-B2",
-      "why": "Heard engine (human 0.24); dismissed as an acoustic lead, but the pile is not cleared.",
-      "association": "confident"
-     },
-     {
-      "pile_id": "C3",
-      "xy": [
-       23.15217068258941,
-       -21.575284884332557
-      ],
-      "priority": 8,
-      "status": "no_signal_not_cleared",
-      "top_clip": null,
-      "why": "No sound assigned to this pile during the listen. Silence is not absence: not cleared."
-     },
-     {
-      "pile_id": "C2",
-      "xy": [
-       22.315168761489552,
-       0.4139897423649965
-      ],
-      "priority": 2,
-      "status": "dismissed_nonhuman",
-      "top_clip": "ac-C2",
-      "why": "Heard dog (human 0.07); dismissed as an acoustic lead, but the pile is not cleared.",
-      "association": "confident"
-     },
-     {
-      "pile_id": "C1",
-      "xy": [
-       21.60860893180662,
-       20.511202726156228
-      ],
-      "priority": 1,
-      "status": "dismissed_nonhuman",
-      "top_clip": "ac-C1",
-      "why": "Heard debris (human 0.02); dismissed as an acoustic lead, but the pile is not cleared.",
-      "association": "confident"
      },
      {
       "pile_id": "B3",
@@ -533,24 +445,486 @@
       "top_clip": "ac-B3",
       "why": "Heard debris (human 0.01); dismissed as an acoustic lead, but the pile is not cleared.",
       "association": "confident"
+     },
+     {
+      "pile_id": "C2",
+      "xy": [
+       22.315168761489552,
+       0.4139897423649965
+      ],
+      "priority": 0,
+      "status": "dismissed_nonhuman",
+      "top_clip": "ac-C2",
+      "why": "Heard dog (human 0.01); dismissed as an acoustic lead, but the pile is not cleared.",
+      "association": "confident"
      }
     ],
     "dispatch": {
-     "pile_id": "B1",
-     "reason": "Send the radar drone to B1: highest priority (46) from \"Hello is anyone there water. Hello is anyone\u2026\", 3/3 drones agreeing on the bearing at 9 dB SNR."
+     "pile_id": "A3",
+     "reason": "Send the radar drone to A3: highest priority (83) from \"Help, can anyone hear me, my leg is trapped.\u2026\", 3/3 drones agreeing on the bearing at 27 dB SNR."
     },
-    "log": []
+    "log": [
+     "rejected C1 hypothesis: bearings fit C1 better (posterior 1.00), tri_err=5.61 m, SNR -4.9 dB"
+    ]
    }
   },
   {
    "drones": {
     "d1": [
-     -7.75,
-     26.75
+     -22.25,
+     -11.75
     ],
     "d2": [
-     -6.25,
-     13.75
+     -10.25,
+     -27.75
+    ],
+    "d3": [
+     -29.25,
+     -15.25
+    ]
+   },
+   "exclude": [
+    "A2",
+    "A3"
+   ],
+   "listen_seed": 209,
+   "state": {
+    "schema": "larpverse.acoustic/v1",
+    "algo": "assoc-v11",
+    "seed": 209,
+    "excluded_piles": [
+     "A2",
+     "A3"
+    ],
+    "listening_drones": [
+     {
+      "id": "d1",
+      "xy": [
+       -22.25,
+       -11.75
+      ]
+     },
+     {
+      "id": "d2",
+      "xy": [
+       -10.25,
+       -27.75
+      ]
+     },
+     {
+      "id": "d3",
+      "xy": [
+       -29.25,
+       -15.25
+      ]
+     }
+    ],
+    "clips": [
+     {
+      "clip_id": "ac-B1",
+      "drone_id": "d1",
+      "pile_id": "B1",
+      "bearing_deg": 51.9,
+      "width_deg": 54.0,
+      "snr_db": 10.1,
+      "vad_speech_ratio": 0.714,
+      "transcript": "Hello is anyone there water hello is anyone there water",
+      "sound_class": "voice",
+      "human": 0.9,
+      "urgency": 0.56,
+      "reliability": 0.53,
+      "priority": 48,
+      "doa_agree": "3/3",
+      "association": "confident",
+      "association_conf": 1.0,
+      "ambiguous_with": [],
+      "notes": [],
+      "by": "fallback",
+      "bearings": [
+       {
+        "drone_id": "d1",
+        "bearing_deg": 51.9,
+        "sigma_deg": 1.4,
+        "snr_db": 10.1,
+        "measured": true
+       },
+       {
+        "drone_id": "d2",
+        "bearing_deg": 74.3,
+        "sigma_deg": 1.4,
+        "snr_db": 9.6,
+        "measured": true
+       },
+       {
+        "drone_id": "d3",
+        "bearing_deg": 47.9,
+        "sigma_deg": 1.4,
+        "snr_db": 9.4,
+        "measured": true
+       }
+      ],
+      "heuristics": {
+       "knock_periodicity": 0.0,
+       "hum_harmonicity": 0.113,
+       "human_minus_animal": 0.586
+      },
+      "class_scores": {
+       "voice": 0.588,
+       "shout": 0.0,
+       "knocking": 0.0,
+       "dog": 0.0,
+       "engine": 0.003,
+       "debris": 0.131,
+       "noise": 0.278
+      },
+      "rationale": "voice 0.59; VAD 0.71; keywords: water, calling out; 3/3 drones agree, tri err 3.2 m; width 54 deg, SNR 10 dB",
+      "reliability_agent": 0.53
+     },
+     {
+      "clip_id": "ac-C1",
+      "drone_id": "d3",
+      "pile_id": "C1",
+      "bearing_deg": 34.0,
+      "width_deg": 19.0,
+      "snr_db": 19.8,
+      "vad_speech_ratio": 0.0,
+      "transcript": "",
+      "sound_class": "debris",
+      "human": 0.0,
+      "urgency": 0.02,
+      "reliability": 0.95,
+      "priority": 0,
+      "doa_agree": "3/3",
+      "association": "confident",
+      "association_conf": 0.999,
+      "ambiguous_with": [],
+      "notes": [
+       "suppressed cross-talk from B1 (2 blocks)"
+      ],
+      "by": "fallback",
+      "bearings": [
+       {
+        "drone_id": "d1",
+        "bearing_deg": 35.0,
+        "sigma_deg": 3.5,
+        "snr_db": 18.0,
+        "measured": true
+       },
+       {
+        "drone_id": "d2",
+        "bearing_deg": 55.0,
+        "sigma_deg": 3.5,
+        "snr_db": 19.6,
+        "measured": true
+       },
+       {
+        "drone_id": "d3",
+        "bearing_deg": 34.0,
+        "sigma_deg": 3.5,
+        "snr_db": 19.8,
+        "measured": true
+       }
+      ],
+      "heuristics": {
+       "knock_periodicity": 0.0,
+       "hum_harmonicity": 0.203,
+       "human_minus_animal": 0.016
+      },
+      "class_scores": {
+       "voice": 0.013,
+       "shout": 0.0,
+       "knocking": 0.0,
+       "dog": 0.0,
+       "engine": 0.158,
+       "debris": 0.251,
+       "noise": 0.578
+      },
+      "rationale": "debris 0.25; VAD 0.00; 3/3 drones agree, tri err 1.7 m; width 19 deg, SNR 20 dB",
+      "reliability_agent": 0.95
+     },
+     {
+      "clip_id": "ac-B2",
+      "drone_id": "d2",
+      "pile_id": "B2",
+      "bearing_deg": 72.9,
+      "width_deg": 27.0,
+      "snr_db": 19.3,
+      "vad_speech_ratio": 0.0,
+      "transcript": "",
+      "sound_class": "knocking",
+      "human": 0.75,
+      "urgency": 0.47,
+      "reliability": 0.9,
+      "priority": 46,
+      "doa_agree": "3/3",
+      "association": "confident",
+      "association_conf": 1.0,
+      "ambiguous_with": [],
+      "notes": [],
+      "by": "fallback",
+      "bearings": [
+       {
+        "drone_id": "d1",
+        "bearing_deg": 26.0,
+        "sigma_deg": 1.4,
+        "snr_db": 17.5,
+        "measured": true
+       },
+       {
+        "drone_id": "d2",
+        "bearing_deg": 72.9,
+        "sigma_deg": 1.3,
+        "snr_db": 19.3,
+        "measured": true
+       },
+       {
+        "drone_id": "d3",
+        "bearing_deg": 26.5,
+        "sigma_deg": 1.4,
+        "snr_db": 18.2,
+        "measured": true
+       }
+      ],
+      "heuristics": {
+       "knock_periodicity": 0.7,
+       "hum_harmonicity": 0.181,
+       "human_minus_animal": 0.039
+      },
+      "class_scores": {
+       "voice": 0.036,
+       "shout": 0.0,
+       "knocking": 0.691,
+       "dog": 0.0,
+       "engine": 0.109,
+       "debris": 0.003,
+       "noise": 0.16
+      },
+      "rationale": "knocking 0.69; VAD 0.00; knock regularity 0.70; 3/3 drones agree, tri err 1.9 m; width 27 deg, SNR 19 dB",
+      "reliability_agent": 0.9
+     },
+     {
+      "clip_id": "ac-C2",
+      "drone_id": "d2",
+      "pile_id": "C2",
+      "bearing_deg": 43.0,
+      "width_deg": 21.0,
+      "snr_db": 18.2,
+      "vad_speech_ratio": 0.0,
+      "transcript": "",
+      "sound_class": "dog",
+      "human": 0.02,
+      "urgency": 0.02,
+      "reliability": 0.92,
+      "priority": 1,
+      "doa_agree": "3/3",
+      "association": "confident",
+      "association_conf": 1.0,
+      "ambiguous_with": [],
+      "notes": [],
+      "by": "fallback",
+      "bearings": [
+       {
+        "drone_id": "d1",
+        "bearing_deg": 18.0,
+        "sigma_deg": 1.8,
+        "snr_db": 18.0,
+        "measured": true
+       },
+       {
+        "drone_id": "d2",
+        "bearing_deg": 43.0,
+        "sigma_deg": 1.8,
+        "snr_db": 18.2,
+        "measured": true
+       },
+       {
+        "drone_id": "d3",
+        "bearing_deg": 19.0,
+        "sigma_deg": 1.8,
+        "snr_db": 17.3,
+        "measured": true
+       }
+      ],
+      "heuristics": {
+       "knock_periodicity": 0.0,
+       "hum_harmonicity": 0.169,
+       "human_minus_animal": -0.18
+      },
+      "class_scores": {
+       "voice": 0.067,
+       "shout": 0.003,
+       "knocking": 0.0,
+       "dog": 0.81,
+       "engine": 0.072,
+       "debris": 0.003,
+       "noise": 0.045
+      },
+      "rationale": "dog 0.81; VAD 0.00; 3/3 drones agree, tri err 2.2 m; width 21 deg, SNR 18 dB",
+      "reliability_agent": 0.92
+     },
+     {
+      "clip_id": "ac-B3",
+      "drone_id": "d2",
+      "pile_id": "B3",
+      "bearing_deg": 33.0,
+      "width_deg": 26.0,
+      "snr_db": 16.6,
+      "vad_speech_ratio": 0.0,
+      "transcript": "",
+      "sound_class": "debris",
+      "human": 0.02,
+      "urgency": 0.02,
+      "reliability": 0.95,
+      "priority": 1,
+      "doa_agree": "3/3",
+      "association": "confident",
+      "association_conf": 1.0,
+      "ambiguous_with": [],
+      "notes": [],
+      "by": "fallback",
+      "bearings": [
+       {
+        "drone_id": "d1",
+        "bearing_deg": 340.0,
+        "sigma_deg": 1.8,
+        "snr_db": 12.8,
+        "measured": true
+       },
+       {
+        "drone_id": "d2",
+        "bearing_deg": 33.0,
+        "sigma_deg": 1.8,
+        "snr_db": 16.6,
+        "measured": true
+       },
+       {
+        "drone_id": "d3",
+        "bearing_deg": 351.0,
+        "sigma_deg": 1.8,
+        "snr_db": 11.2,
+        "measured": true
+       }
+      ],
+      "heuristics": {
+       "knock_periodicity": 0.0,
+       "hum_harmonicity": 0.096,
+       "human_minus_animal": 0.0
+      },
+      "class_scores": {
+       "voice": 0.045,
+       "shout": 0.0,
+       "knocking": 0.0,
+       "dog": 0.0,
+       "engine": 0.017,
+       "debris": 0.399,
+       "noise": 0.54
+      },
+      "rationale": "debris 0.40; VAD 0.00; 3/3 drones agree, tri err 0.6 m; width 26 deg, SNR 17 dB",
+      "reliability_agent": 0.95
+     }
+    ],
+    "piles": [
+     {
+      "pile_id": "B1",
+      "xy": [
+       0.3876787634730312,
+       22.04235293979854
+      ],
+      "priority": 48,
+      "status": "radar_ping",
+      "top_clip": "ac-B1",
+      "why": "Voice saying \"Hello is anyone there water hello is anyone\u2026\"; human 0.90, urgency 0.56, reliability 0.53.",
+      "association": "confident"
+     },
+     {
+      "pile_id": "B2",
+      "xy": [
+       -1.3222450729634891,
+       -0.3371045966678139
+      ],
+      "priority": 46,
+      "status": "lead",
+      "top_clip": "ac-B2",
+      "why": "Knocking; human 0.75, urgency 0.47, reliability 0.90.",
+      "association": "confident"
+     },
+     {
+      "pile_id": "A1",
+      "xy": [
+       -22.854073905293202,
+       20.980636101573534
+      ],
+      "priority": 8,
+      "status": "no_signal_not_cleared",
+      "top_clip": null,
+      "why": "No sound assigned to this pile during the listen. Silence is not absence: not cleared."
+     },
+     {
+      "pile_id": "C3",
+      "xy": [
+       23.15217068258941,
+       -21.575284884332557
+      ],
+      "priority": 8,
+      "status": "no_signal_not_cleared",
+      "top_clip": null,
+      "why": "No sound assigned to this pile during the listen. Silence is not absence: not cleared."
+     },
+     {
+      "pile_id": "B3",
+      "xy": [
+       1.3348445134349385,
+       -20.78824963541222
+      ],
+      "priority": 1,
+      "status": "dismissed_nonhuman",
+      "top_clip": "ac-B3",
+      "why": "Heard debris (human 0.02); dismissed as an acoustic lead, but the pile is not cleared.",
+      "association": "confident"
+     },
+     {
+      "pile_id": "C2",
+      "xy": [
+       22.315168761489552,
+       0.4139897423649965
+      ],
+      "priority": 1,
+      "status": "dismissed_nonhuman",
+      "top_clip": "ac-C2",
+      "why": "Heard dog (human 0.02); dismissed as an acoustic lead, but the pile is not cleared.",
+      "association": "confident"
+     },
+     {
+      "pile_id": "C1",
+      "xy": [
+       21.60860893180662,
+       20.511202726156228
+      ],
+      "priority": 0,
+      "status": "dismissed_nonhuman",
+      "top_clip": "ac-C1",
+      "why": "Heard debris (human 0.00); dismissed as an acoustic lead, but the pile is not cleared.",
+      "association": "confident"
+     }
+    ],
+    "dispatch": {
+     "pile_id": "B1",
+     "reason": "Send the radar drone to B1: highest priority (48) from \"Hello is anyone there water hello is anyone\u2026\", 3/3 drones agreeing on the bearing at 10 dB SNR."
+    },
+    "log": [
+     "C1: suppressed cross-talk from B1 (2/19 blocks)"
+    ]
+   }
+  },
+  {
+   "drones": {
+    "d1": [
+     10.75,
+     19.75
+    ],
+    "d2": [
+     -2.25,
+     12.25
     ],
     "d3": [
      5.75,
@@ -565,7 +939,7 @@
    "listen_seed": 310,
    "state": {
     "schema": "larpverse.acoustic/v1",
-    "algo": "assoc-v6",
+    "algo": "assoc-v11",
     "seed": 310,
     "excluded_piles": [
      "A2",
@@ -576,15 +950,15 @@
      {
       "id": "d1",
       "xy": [
-       -7.75,
-       26.75
+       10.75,
+       19.75
       ]
      },
      {
       "id": "d2",
       "xy": [
-       -6.25,
-       13.75
+       -2.25,
+       12.25
       ]
      },
      {
@@ -600,43 +974,123 @@
       "clip_id": "ac-C1",
       "drone_id": "d2",
       "pile_id": "C1",
-      "bearing_deg": 5.0,
+      "bearing_deg": 11.0,
       "width_deg": 19.0,
-      "snr_db": 14.9,
+      "snr_db": 12.8,
       "vad_speech_ratio": 0.0,
       "transcript": "",
       "sound_class": "engine",
-      "human": 0.02,
+      "human": 0.05,
       "urgency": 0.02,
-      "reliability": 0.52,
+      "reliability": 0.34,
       "priority": 1,
-      "doa_agree": "3/3",
+      "doa_agree": "2/3",
       "association": "confident",
       "association_conf": 1.0,
       "ambiguous_with": [],
-      "notes": [],
-      "by": "fallback"
+      "notes": [
+       "transcript dropped: VAD 0.00 too low"
+      ],
+      "by": "fallback",
+      "bearings": [
+       {
+        "drone_id": "d1",
+        "bearing_deg": 4.0,
+        "sigma_deg": 27.5,
+        "snr_db": 8.9,
+        "measured": false
+       },
+       {
+        "drone_id": "d2",
+        "bearing_deg": 11.0,
+        "sigma_deg": 3.5,
+        "snr_db": 12.8,
+        "measured": true
+       },
+       {
+        "drone_id": "d3",
+        "bearing_deg": 29.0,
+        "sigma_deg": 3.5,
+        "snr_db": 10.4,
+        "measured": true
+       }
+      ],
+      "heuristics": {
+       "knock_periodicity": 0.0,
+       "hum_harmonicity": 0.449,
+       "human_minus_animal": 0.41
+      },
+      "class_scores": {
+       "voice": 0.187,
+       "shout": 0.0,
+       "knocking": 0.0,
+       "dog": 0.0,
+       "engine": 0.705,
+       "debris": 0.004,
+       "noise": 0.104
+      },
+      "rationale": "engine 0.70; VAD 0.00; 2/3 drones agree, tri err 15.7 m; width 19 deg, SNR 13 dB",
+      "reliability_agent": 0.34
      },
      {
       "clip_id": "ac-B2",
       "drone_id": "d2",
       "pile_id": "B2",
-      "bearing_deg": 283.2,
-      "width_deg": 24.0,
-      "snr_db": 21.4,
+      "bearing_deg": 269.0,
+      "width_deg": 22.0,
+      "snr_db": 21.6,
       "vad_speech_ratio": 0.0,
       "transcript": "",
-      "sound_class": "voice",
-      "human": 0.1,
-      "urgency": 0.16,
-      "reliability": 0.89,
-      "priority": 4,
+      "sound_class": "knocking",
+      "human": 0.45,
+      "urgency": 0.37,
+      "reliability": 0.91,
+      "priority": 25,
       "doa_agree": "3/3",
       "association": "confident",
-      "association_conf": 0.999,
+      "association_conf": 1.0,
       "ambiguous_with": [],
       "notes": [],
-      "by": "fallback"
+      "by": "fallback",
+      "bearings": [
+       {
+        "drone_id": "d1",
+        "bearing_deg": 239.0,
+        "sigma_deg": 1.2,
+        "snr_db": 9.8,
+        "measured": true
+       },
+       {
+        "drone_id": "d2",
+        "bearing_deg": 269.0,
+        "sigma_deg": 1.4,
+        "snr_db": 21.6,
+        "measured": true
+       },
+       {
+        "drone_id": "d3",
+        "bearing_deg": 241.4,
+        "sigma_deg": 1.2,
+        "snr_db": 18.8,
+        "measured": true
+       }
+      ],
+      "heuristics": {
+       "knock_periodicity": 0.35,
+       "hum_harmonicity": 0.177,
+       "human_minus_animal": 0.332
+      },
+      "class_scores": {
+       "voice": 0.267,
+       "shout": 0.0,
+       "knocking": 0.372,
+       "dog": 0.0,
+       "engine": 0.103,
+       "debris": 0.006,
+       "noise": 0.253
+      },
+      "rationale": "knocking 0.37; VAD 0.00; knock regularity 0.35; 3/3 drones agree, tri err 2.1 m; width 22 deg, SNR 22 dB; YAMNet class knocking: human floor",
+      "reliability_agent": 0.91
      },
      {
       "clip_id": "ac-C2",
@@ -650,40 +1104,128 @@
       "sound_class": "dog",
       "human": 0.04,
       "urgency": 0.02,
-      "reliability": 0.87,
+      "reliability": 0.88,
       "priority": 1,
       "doa_agree": "3/3",
       "association": "confident",
       "association_conf": 1.0,
       "ambiguous_with": [],
       "notes": [],
-      "by": "fallback"
+      "by": "fallback",
+      "bearings": [
+       {
+        "drone_id": "d1",
+        "bearing_deg": 305.8,
+        "sigma_deg": 1.6,
+        "snr_db": 17.2,
+        "measured": true
+       },
+       {
+        "drone_id": "d2",
+        "bearing_deg": 340.0,
+        "sigma_deg": 1.6,
+        "snr_db": 19.7,
+        "measured": true
+       },
+       {
+        "drone_id": "d3",
+        "bearing_deg": 328.9,
+        "sigma_deg": 1.6,
+        "snr_db": 20.4,
+        "measured": true
+       }
+      ],
+      "heuristics": {
+       "knock_periodicity": 0.0,
+       "hum_harmonicity": 0.13,
+       "human_minus_animal": -0.371
+      },
+      "class_scores": {
+       "voice": 0.078,
+       "shout": 0.054,
+       "knocking": 0.0,
+       "dog": 0.624,
+       "engine": 0.056,
+       "debris": 0.006,
+       "noise": 0.182
+      },
+      "rationale": "dog 0.62; VAD 0.00; 3/3 drones agree, tri err 2.7 m; width 21 deg, SNR 20 dB",
+      "reliability_agent": 0.88
      },
      {
       "clip_id": "ac-B3",
       "drone_id": "d2",
       "pile_id": "B3",
-      "bearing_deg": 283.0,
-      "width_deg": 26.0,
-      "snr_db": 10.0,
+      "bearing_deg": 277.0,
+      "width_deg": 23.0,
+      "snr_db": 9.6,
       "vad_speech_ratio": 0.0,
       "transcript": "",
       "sound_class": "debris",
-      "human": 0.01,
+      "human": 0.07,
       "urgency": 0.02,
-      "reliability": 0.71,
-      "priority": 0,
-      "doa_agree": "3/3",
+      "reliability": 0.63,
+      "priority": 2,
+      "doa_agree": "2/3",
       "association": "confident",
-      "association_conf": 0.87,
-      "ambiguous_with": [
-       "B2"
-      ],
+      "association_conf": 0.989,
+      "ambiguous_with": [],
       "notes": [],
-      "by": "fallback"
+      "by": "fallback",
+      "bearings": [
+       {
+        "drone_id": "d1",
+        "bearing_deg": 255.0,
+        "sigma_deg": 3.5,
+        "snr_db": 3.6,
+        "measured": true
+       },
+       {
+        "drone_id": "d2",
+        "bearing_deg": 277.0,
+        "sigma_deg": 1.8,
+        "snr_db": 9.6,
+        "measured": true
+       },
+       {
+        "drone_id": "d3",
+        "bearing_deg": 263.6,
+        "sigma_deg": 1.8,
+        "snr_db": 7.7,
+        "measured": true
+       }
+      ],
+      "heuristics": {
+       "knock_periodicity": 0.025,
+       "hum_harmonicity": 0.094,
+       "human_minus_animal": 0.105
+      },
+      "class_scores": {
+       "voice": 0.173,
+       "shout": 0.0,
+       "knocking": 0.039,
+       "dog": 0.0,
+       "engine": 0.062,
+       "debris": 0.224,
+       "noise": 0.501
+      },
+      "rationale": "debris 0.22; VAD 0.00; 2/3 drones agree, tri err 0.8 m; width 23 deg, SNR 10 dB",
+      "reliability_agent": 0.63
      }
     ],
     "piles": [
+     {
+      "pile_id": "B2",
+      "xy": [
+       -1.3222450729634891,
+       -0.3371045966678139
+      ],
+      "priority": 25,
+      "status": "radar_ping",
+      "top_clip": "ac-B2",
+      "why": "Knocking; human 0.45, urgency 0.37, reliability 0.91.",
+      "association": "confident"
+     },
      {
       "pile_id": "A1",
       "xy": [
@@ -707,15 +1249,15 @@
       "why": "No sound assigned to this pile during the listen. Silence is not absence: not cleared."
      },
      {
-      "pile_id": "B2",
+      "pile_id": "B3",
       "xy": [
-       -1.3222450729634891,
-       -0.3371045966678139
+       1.3348445134349385,
+       -20.78824963541222
       ],
-      "priority": 4,
+      "priority": 2,
       "status": "dismissed_nonhuman",
-      "top_clip": "ac-B2",
-      "why": "Heard voice (human 0.10); dismissed as an acoustic lead, but the pile is not cleared.",
+      "top_clip": "ac-B3",
+      "why": "Heard debris (human 0.07); dismissed as an acoustic lead, but the pile is not cleared.",
       "association": "confident"
      },
      {
@@ -727,7 +1269,7 @@
       "priority": 1,
       "status": "dismissed_nonhuman",
       "top_clip": "ac-C1",
-      "why": "Heard engine (human 0.02); dismissed as an acoustic lead, but the pile is not cleared.",
+      "why": "Heard engine (human 0.05); dismissed as an acoustic lead, but the pile is not cleared.",
       "association": "confident"
      },
      {
@@ -741,23 +1283,11 @@
       "top_clip": "ac-C2",
       "why": "Heard dog (human 0.04); dismissed as an acoustic lead, but the pile is not cleared.",
       "association": "confident"
-     },
-     {
-      "pile_id": "B3",
-      "xy": [
-       1.3348445134349385,
-       -20.78824963541222
-      ],
-      "priority": 0,
-      "status": "dismissed_nonhuman",
-      "top_clip": "ac-B3",
-      "why": "Heard debris (human 0.01); dismissed as an acoustic lead, but the pile is not cleared.",
-      "association": "confident"
      }
     ],
     "dispatch": {
-     "pile_id": null,
-     "reason": "No human-like acoustic lead; continue the systematic search and keep every pile marked not cleared."
+     "pile_id": "B2",
+     "reason": "Send the radar drone to B2: highest priority (25) from knocking, 3/3 drones agreeing on the bearing at 22 dB SNR."
     },
     "log": []
    }

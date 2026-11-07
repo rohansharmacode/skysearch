@@ -25,7 +25,7 @@ from scipy.signal import find_peaks
 
 from .scene import C_SOUND
 
-ALGO_VERSION = "assoc-v6"        # bump when localisation / association changes (cache keys)
+ALGO_VERSION = "assoc-v11"        # bump when localisation / association changes (cache keys)
 NFFT = 512
 HOP = 256
 BLOCK_S = 0.5
@@ -43,7 +43,7 @@ SIG_MEAS = 3.5                   # deg, bearing noise of one component
 PILE_R = 2.0                     # m, typical offset of a source from its pile centre
 TOL_K = 2.5                      # association gate = TOL_K x combined sigma
 SINGLE_AMP = 0.35                # one-drone support needs this coherence and no other pile in the gate
-RIVAL = 0.6                      # rival pile scoring >= RIVAL x best on the same components: ambiguous block
+RIVAL = 0.5                      # rival pile with likelihood >= RIVAL x best on the same components: ambiguous block
 CONF_MIN = 0.6                   # association confidence for a "confident" pile assignment
 POST_MIN = 0.2                   # below this bearing posterior the detection is rejected outright
 
@@ -301,7 +301,11 @@ def associate(g: _Geom, comps: dict):
                 continue
             mq = _match(g, comps, used, q, only={d: v[0] for d, v in m.items()})
             if len(mq) == len(m):                         # must explain every drone p explains
-                r = sum(v[3] for v in mq.values()) / max(score, 1e-9) * (1.0 if len(m) >= 2 else 0.5)
+                # joint bearing likelihood ratio q : p over the same components (amplitudes cancel):
+                # one drone that clearly separates the two piles is enough to resolve them
+                ll = sum(-0.5 * (mq[d][1] / g.sig[d][q]) ** 2 - np.log(g.sig[d][q])
+                         + 0.5 * (m[d][1] / g.sig[d][p]) ** 2 + np.log(g.sig[d][p]) for d in m)
+                r = float(np.exp(min(ll, 5.0)))
                 if r > ratio:
                     rival, ratio = q, float(r)
         events.append({"pile": p, "match": m, "score": float(score), "rival": rival, "rival_ratio": ratio})
@@ -388,6 +392,7 @@ def localise_piles(scene, exclude=()):
             else:
                 brg, width, amp = g.exp[d][pid], float("nan"), 0.0
             per_drone[d] = {"bearing_deg": round(brg, 1), "width_deg": round(width, 1) if h else None,
+                            "sigma_deg": round(max(1.0, SIG_MEAS / np.sqrt(len(h))) if h else g.gate(d, pid), 1),
                             "coherence": round(amp, 3), "hit_frac": round(len(h) / n_act, 2),
                             "expected_deg": round(g.exp[d][pid], 1), "measured": bool(h)}
         agreeing = [d for d in ids if per_drone[d]["hit_frac"] >= 0.5]
@@ -457,6 +462,7 @@ def extract_clip(scene, det, B, others=(), pad_blocks=1, max_s=14.0, min_blocks=
         keep = (own & (own_s >= other_s)) | (act & ~own & (other_s == 0))
         sel = keep if (keep & own).sum() >= 2 else act
     best = None
+    snrs = {}
     for d in det["per_drone"]:
         brg = det["per_drone"][d]["bearing_deg"]
         nulls = [o["per_drone"][d]["bearing_deg"] for o in others
@@ -479,8 +485,10 @@ def extract_clip(scene, det, B, others=(), pad_blocks=1, max_s=14.0, min_blocks=
         noise += 1e-15
         sigp = float(np.mean(pw[det["active_blocks"][:B]]))
         snr = 10 * np.log10(max(sigp - noise, 1e-15) / noise)
+        snrs[d] = round(float(snr), 1)
         if best is None or snr > best[1]:
             best = (d, snr, y)
+    det["snr_by_drone"] = snrs
     d, snr, y = best
     idx = np.where(sel)[0]
     segs = [y[b * blk:(b + 1) * blk] for b in idx]

@@ -41,8 +41,17 @@ def default_usd():
     return next((os.path.abspath(c) for c in cands if c and os.path.exists(c)), "")
 
 
+CORE_SITE = "collapse-core"     # our compact 8-sector scenario on the same map (case study, isaac/eval_collapse.py)
+
+
 def is_collapse(site) -> bool:
+    """Either scenario on the 3d_model map: ``collapse`` (the team's sim/site_collapse.py, 157 sectors, staging
+    (-56, -152.5)) or ``collapse-core`` (ours below: sectors Z1-Z8, staging on the south street)."""
     return str(site or "").startswith("collapse")
+
+
+def is_core(site) -> bool:
+    return str(site or "") == CORE_SITE
 
 
 def make_collapse_scenario(seed=7, start_pile=None):
@@ -78,7 +87,7 @@ def make_collapse_scenario(seed=7, start_pile=None):
         raise ValueError(f"start_pile {start_pile!r} not in sectors {names}")
     meta = {"base_xy": list(BASE_XY), "drone_pads": [list(p) for p in DRONE_PADS]}
     sc = MeshScenario(seed, piles, {}, surface, ground, SURFACE, meta, public)
-    sc.site = "collapse"
+    sc.site = CORE_SITE
     sup = TruthSupport(surface, ground, owner.astype(str), solids=None, edge_bias=0.7)
     gg = Grid(surface.origin, surface.res, surface.w, surface.h, ground)
     sc.truth = make_truth(seed, start_pile, names, sup, gg.height_at, site="mesh", salt=2017)
@@ -121,7 +130,7 @@ def main(argv=None):
     ap.add_argument("--max-t", type=float, default=900.0)
     a = ap.parse_args(argv)
     from isaac.site import mission_for_site
-    m = mission_for_site("collapse", seed=a.seed, start_pile=a.start_pile, radar=a.radar, out_dir=a.out, frames=True)
+    m = mission_for_site(CORE_SITE, seed=a.seed, start_pile=a.start_pile, radar=a.radar, out_dir=a.out, frames=True)
     while not m.done and m.t < a.max_t:
         m.step()
     print(f"collapse site seed {a.seed}: t {m.t:.0f} s, frames in {a.out}/frames")

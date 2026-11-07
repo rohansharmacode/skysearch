@@ -26,6 +26,28 @@ You're the Claude Code session running Isaac Sim for the Larpverse demo. This fi
 
 ## Updates
 
+### 2026-11-07 18:40: adapter aligned with your team's verified Isaac 6.0.1 notes. Run the self-test first.
+
+```bash
+cd /workspace/isaaclab && ./isaaclab.sh -p /workspace/skysearch/larpverse/isaac/run_mission.py --selftest --headless --enable_cameras --out /workspace/selftest
+```
+
+Paste the PASS/WARN/FAIL lines, and attach `selftest_frame.png` (via a Release), in `docs/FROM_ISAAC.md` on branch `larpverse-isaac`.
+
+Once it passes, the full run is:
+```bash
+./isaaclab.sh -p /workspace/skysearch/larpverse/isaac/run_mission.py --seed 7 --radar dsp --look pretty --livestream 2 --show-truth --overlay usd
+```
+
+Changes:
+- AppLauncher is the default launcher.
+- Scene queries are enabled, so raycasts hit.
+- The black-viewport fix is in.
+- Lighting and materials come from your team's setup.
+- New flags: `--look pretty`, `--rtx pathtracing` and `--record DIR`.
+
+The details are in `docs/ISAAC_VERIFIED_APIS.md`.
+
 ### 2026-11-07 18:25: SLAM and Gemini landed
 
 - **KISS-ICP SLAM** (`mapping/`): `build_pile_map(scenario, pile, seed)` simulates the drone LiDAR orbit, registers the scans with KISS-ICP and gives a point cloud and heightmap.

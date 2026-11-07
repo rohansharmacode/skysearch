@@ -19,10 +19,10 @@ COL = {
 }
 ACCENT = {"d1": (0.20, 0.55, 0.95), "d2": (0.95, 0.80, 0.20), "d3": (0.30, 0.85, 0.45)}
 ASSET_CANDIDATES = (
-    "/Isaac/Robots/IsaacSim/Quadcopter/quadcopter.usd",     # 5.x vendor layout
+    "/Isaac/Robots/IsaacSim/Quadcopter/quadcopter.usd",     # 5.x/6.0 layout (exists on 6.0: assets_found.json)
     "/Isaac/Robots/Quadcopter/quadcopter.usd",              # 4.x layout
+    "/Isaac/Robots/Bitcraze/Crazyflie/cf2x.usd",            # exists on 6.0 (assets_found.json); tiny, scale up
     "/Isaac/Robots/Crazyflie/cf2x.usd",
-    "/Isaac/Robots/Bitcraze/Crazyflie/cf2x.usd",
 )
 
 
@@ -167,6 +167,10 @@ class DroneViz:
             prim.GetReferences().AddReference(url)
             if not prim.GetChildren():
                 raise RuntimeError(f"{url} composed to an empty prim")
+            mpu = compat.meters_per_unit(url)        # references don't convert units (cm assets come in 100x)
+            if abs(mpu - 1.0) > 1e-6:
+                from pxr import Gf, UsdGeom
+                UsdGeom.Xformable(prim).AddScaleOp(UsdGeom.XformOp.PrecisionDouble, "units").Set(Gf.Vec3d(mpu, mpu, mpu))
             for _ in range(8):                         # de-instance so the physics APIs can be edited
                 inst = [p for p in Usd.PrimRange(prim) if p.IsInstance()]
                 if not inst:
@@ -179,6 +183,11 @@ class DroneViz:
                     p.RemoveAPI(UsdPhysics.RigidBodyAPI)
                 if p.HasAPI(UsdPhysics.ArticulationRootAPI):
                     p.RemoveAPI(UsdPhysics.ArticulationRootAPI)
+                    try:                               # what look.py does on 6.0.1 (strip_physics)
+                        from pxr import Sdf
+                        p.CreateAttribute("physxArticulation:articulationEnabled", Sdf.ValueTypeNames.Bool).Set(False)
+                    except Exception:
+                        pass
                     try:
                         from pxr import PhysxSchema
                         p.RemoveAPI(PhysxSchema.PhysxArticulationAPI)

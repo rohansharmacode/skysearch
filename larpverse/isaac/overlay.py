@@ -341,7 +341,10 @@ class UsdBackend:
 
 
 class DebugDrawBackend(UsdBackend):
-    """Lines and points through debug_draw (cheap, viewport overlay); pings stay USD prims."""
+    """Lines and points through debug_draw (cheap, viewport overlay); pings stay USD prims.
+    Signatures verified on 6.0.1: draw_lines(starts, ends, rgba, widths), draw_points(points, rgba, sizes),
+    clear_lines(), clear_points(); lists of tuples. The team's Isaac Lab Camera recordings appear to include
+    the lines (media/preview/isaac_t3s_light_fixed.png); Movie Capture is untested, so --overlay usd for that."""
 
     def __init__(self, stage, dd, point_cap=600000):
         super().__init__(stage)

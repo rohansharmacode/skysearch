@@ -61,7 +61,9 @@ class HeightmapLidar:
 
 
 class PhysxLidar:
-    """Rays through PhysX scene queries (``compat.physx_raycaster()``). ~100 rays/drone/frame is cheap."""
+    """Rays through PhysX scene queries (``compat.physx_raycaster()``). ~100 rays/drone/frame is cheap.
+    Verified API (6.0.1): ``raycast_closest`` hits only colliders, only while simulating, and only with scene-query
+    support on (Isaac Lab: ``SimulationCfg(enable_scene_query_support=True)``), else every ray silently misses."""
 
     def __init__(self, cast, max_range=40.0, n_rays=96, noise=0.01, seed=0):
         self.cast, self.max_range, self.n_rays, self.noise = cast, max_range, n_rays, noise
@@ -90,7 +92,9 @@ class RtxLidar:
     """Optional RTX LiDAR per drone (Isaac 4.5/5.x command + annotator). Every call is guarded.
 
     UNVERIFIED across versions: the ``IsaacSensorCreateRtxLidar`` command, the annotator name and whether
-    its points are already world-frame. If anything fails, ``ok`` is False and the caller uses PhysxLidar.
+    its points are already world-frame. The team never ran an RTX LiDAR; on 6.x the sensor API moved
+    (``isaacsim.sensors.experimental.rtx``), so expect this to fall back there. If anything fails, ``ok`` is
+    False and the caller uses PhysxLidar, which IS the verified route (PhysX scene queries).
     """
 
     ANNOTATORS = ("RtxSensorCpuIsaacCreateRTXLidarScanBuffer", "IsaacCreateRTXLidarScanBuffer")

@@ -1,6 +1,10 @@
 """Run the 3x3 rubble-grid SAR mission inside Isaac Sim (or ``--dry-run`` without omni/pxr).
 
-    ~/isaacsim/python.sh isaac/run_mission.py --seed 7 --speed 4                 # Isaac GUI
+    # Isaac Sim 6.0.x + Isaac Lab 3.0 (Brev launchable; the route the team verified on the L40S):
+    cd /workspace/isaaclab && ./isaaclab.sh -p /workspace/skysearch/larpverse/isaac/run_mission.py --selftest --headless
+    ./isaaclab.sh -p .../isaac/run_mission.py --livestream 2 --viz kit --speed 4 --show-truth   # watch at <brev URL>/viewer
+    # Isaac Sim 4.5 / 5.x standalone (SimulationApp route):
+    ~/isaacsim/python.sh isaac/run_mission.py --seed 7 --speed 4
     python isaac/run_mission.py --dry-run --max-steps 60                          # any laptop, numpy only
 
 The brain is ``sim.grid_mission.GridMission`` (numpy; never sees ground truth). Isaac is the world and the
@@ -30,14 +34,18 @@ SURVEY_STATES = {"surveying", "survey", "mapping", "lidar"}
 GROUNDED = {"docked", "landed", "scanning", "listening", "idle", "charging"}
 
 
-def parse_args(argv=None):
-    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+def _base_parser():
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter,
+                                 conflict_handler="resolve")
+    ap.add_argument("--launcher", choices=["auto", "lab", "kit"], default="auto",
+                    help="lab = Isaac Lab AppLauncher + SimulationContext (./isaaclab.sh -p, verified on 6.0.1); "
+                         "kit = SimulationApp + timeline (~/isaacsim/python.sh, 4.5/5.x); auto picks lab if importable")
+    ap.add_argument("--selftest", action="store_true",
+                    help="check every risky Isaac call in order, print PASS/WARN/FAIL per step, save a frame, exit")
     ap.add_argument("--seed", type=int, default=7)
     ap.add_argument("--start-pile", default=None, help="pile to begin at, e.g. B2 (default: scenario's)")
     ap.add_argument("--radar", choices=["model", "dsp"], default="model", help="dsp needs scipy in Isaac's python")
     ap.add_argument("--speed", type=float, default=4.0, help="sim-seconds per wall-second")
-    ap.add_argument("--headless", action="store_true")
-    ap.add_argument("--livestream", action="store_true", help="enable the WebRTC livestream extension (headless)")
     ap.add_argument("--show-truth", action="store_true", help="draw ground-truth victim ghosts (display only)")
     ap.add_argument("--replay", default=None, help="dir with frames/state_XXXX.json (or the frames dir itself)")
     ap.add_argument("--out", default=os.path.join(REPO, "dashboard", "data"), help="state.json output dir")
@@ -50,13 +58,61 @@ def parse_args(argv=None):
     ap.add_argument("--drone-scale", type=float, default=1.6)
     ap.add_argument("--rtx-lidar", action="store_true", help="try RTX LiDAR (falls back to PhysX raycasts)")
     ap.add_argument("--overlay", choices=["auto", "debug", "usd"], default="auto",
-                    help="debug = debug_draw lines/points; usd = prims only (shows in Movie Capture)")
+                    help="debug = debug_draw lines/points; usd = prims only (safest for Movie Capture)")
     ap.add_argument("--rays", type=int, default=96, help="LiDAR rays per surveying drone per frame")
     ap.add_argument("--lidar-range", type=float, default=40.0)
-    ap.add_argument("--render-fps", type=float, default=30.0, help="virtual frame rate for --dry-run")
+    ap.add_argument("--render-fps", type=float, default=30.0, help="virtual frame rate for --dry-run / --record")
     ap.add_argument("--no-keep-open", action="store_true", help="close the GUI when the mission ends")
     ap.add_argument("--quiet", action="store_true")
-    return ap.parse_args(argv)
+    g = ap.add_argument_group("look (docs/ISAAC_VERIFIED_APIS.md)")
+    g.add_argument("--look", choices=["basic", "pretty", "plain"], default="basic",
+                   help="basic = UsdPreviewSurface materials; pretty = + HDRI dusk sky, MDL concrete, chipped rubble, "
+                        "Flow dust; plain = bare displayColor (diagnosis)")
+    g.add_argument("--sun", type=float, default=1800.0, help="sun intensity (L40S-measured; 3000 overhead washed out)")
+    g.add_argument("--sky", type=float, default=350.0, help="dome intensity without HDRI")
+    g.add_argument("--hdri", type=float, default=900.0, help="HDRI dome intensity with --look pretty")
+    g.add_argument("--flow", type=int, default=1, help="--look pretty: Omni Flow dust under landing drones (0 = off)")
+    g.add_argument("--rtx", choices=["realtime", "pathtracing"], default="realtime",
+                   help="pathtracing: hero shots (~6.5 s/frame for 3 cams at 720p, 16 spp, on the L40S)")
+    g.add_argument("--spp", type=int, default=16, help="path-tracing samples per pixel per frame")
+    g = ap.add_argument_group("recording (Isaac Lab Camera sensor route, verified on 6.0.1)")
+    g.add_argument("--record", default=None, help="dir: save the director view to <dir>/isaac/fNNNNN.png at a fixed "
+                                                  "virtual frame rate (smooth video however slow the render is)")
+    g.add_argument("--rec-res", default="1280x720")
+    g.add_argument("--rec-every", type=int, default=1, help="save every Nth render frame")
+    g.add_argument("--fabric", action="store_true", help="Isaac Lab use_fabric=True (default off: pxr pose edits render)")
+    return ap
+
+
+def parse_args(argv=None):
+    """Two-phase parse: on the Isaac Lab route AppLauncher adds its own flags (--headless, --livestream,
+    --enable_cameras, --device, --kit_args, ...); on the Kit route we add look-alikes, so the same command line
+    works on both. Unknown flags are reported, not fatal."""
+    argv = list(sys.argv[1:] if argv is None else argv)
+    pre = argparse.ArgumentParser(add_help=False)
+    pre.add_argument("--dry-run", action="store_true")
+    pre.add_argument("--launcher", default="auto")
+    p, _ = pre.parse_known_args(argv)
+    if p.dry_run:
+        launcher = "none"
+    else:
+        from isaac import compat
+        launcher = compat.resolve_launcher(p.launcher)
+    ap = _base_parser()
+    if launcher == "lab":
+        from isaac import compat
+        compat.add_lab_args(ap)
+    else:
+        from isaac.compat import add_kit_args
+        add_kit_args(ap)
+    a, unknown = ap.parse_known_args(argv)
+    a.launcher, a.unknown = launcher, unknown
+    if unknown:
+        print(f"[isaac] ignoring unknown arguments: {unknown}", flush=True)
+    live = int(getattr(a, "livestream", 0) or 0)
+    a.live = live > 0
+    a.keep_open = not (a.dry_run or a.no_keep_open or a.record or a.selftest or (a.headless and not a.live))
+    return a
 
 
 # ---------------------------------------------------------------------------- missions
@@ -182,13 +238,17 @@ def call_ingest(mission, pts, pile, log):
 def main(argv=None):
     a = parse_args(argv)
     say = (lambda m: None) if a.quiet else (lambda m: print(f"[isaac] {m}", flush=True))
-    app = None
-    if not a.dry_run:                       # SimulationApp FIRST, before any omni/pxr import
+    if a.selftest:
+        from isaac.selftest import run as selftest
+        return selftest(a, say)
+    rt = app = None
+    if not a.dry_run:                       # the app FIRST, before any omni/pxr import
         from isaac import compat
-        app = compat.make_app(a.headless)
-        if a.livestream:
-            ok = any(compat.enable_ext(e) for e in ("omni.kit.livestream.webrtc", "omni.kit.livestream.native"))
-            say(f"livestream extension {'enabled' if ok else 'NOT available'}")
+        rt = compat.make_runtime(a)
+        app = rt.boot()
+        for m in rt.log:
+            say(m)
+        say(f"launcher={rt.mode} {compat.versions()}")
     import numpy as np
 
     from isaac.camera import DirectorCamera, focus_from_state
@@ -206,21 +266,28 @@ def main(argv=None):
     say(f"heightmap {hm.w}x{hm.h} in {time.time() - t0:.1f} s")
     surface = hm.height_at
 
-    stage, dd, rtx = None, None, None
+    stage, dd, rtx, grab, dust = None, None, None, None, None
     if a.dry_run:
         lidar = HeightmapLidar(hm, a.lidar_range, a.rays)
     else:
         from isaac import compat, scene
-        stage = compat.new_stage()
-        for _ in range(3):
-            app.update()
-        n = scene.build(stage, sc, show_truth=a.show_truth)
-        say(f"stage built: {n} rubble pieces")
+        stage = rt.stage()
+        n = scene.build(stage, sc, show_truth=a.show_truth, physics_scene=rt.own_physics_scene, sun=a.sun,
+                        sky=a.sky, materials="none" if a.look == "plain" else "preview")
+        say(f"stage built: {n} rubble pieces, {scene.build.materials.bound} material bindings")
+        if a.look == "pretty":
+            from isaac import look
+            look.apply(stage, sc, rt.mode, hdri=a.hdri, log=say)
+        if compat.set_render_mode(a.rtx, a.spp):
+            say(f"renderer: path tracing, {a.spp} spp, denoiser on")
         if a.overlay in ("auto", "debug"):
             dd = compat.debug_draw()
             if dd is None:
                 say("debug_draw unavailable; overlay uses USD prims")
         lidar = PhysxLidar(compat.physx_raycaster(), a.lidar_range, a.rays)
+        if a.record:                        # Isaac Lab Camera must exist before sim.reset()
+            from isaac.selftest import _res
+            grab = compat.FrameGrabber(rt, *_res(a.rec_res))
     ids = [d["id"] for d in as_dict(mission.build_state()).get("drones", [])] or ["d1", "d2", "d3"]
     if a.dry_run:
         drones = {i: NullDrone(None, f"/World/Drones/{i}") for i in ids}
@@ -228,18 +295,25 @@ def main(argv=None):
         drones = {i: DroneViz(stage, f"/World/Drones/{i}", did=i, scale=a.drone_scale, asset=a.drone_asset)
                   for i in ids}
     overlay = Overlay(make_backend("null" if a.dry_run else a.overlay, stage, dd), surface, pile_xy)
-    cam = DirectorCamera(stage, mode=a.camera)
+    mirrors = []
+    if not a.dry_run:
+        from isaac import compat
+        mirrors = ([compat.PERSP] if a.camera == "director" else []) + ([grab.mirror] if grab and grab.mirror else [])
+    cam = DirectorCamera(stage, mode=a.camera, mirrors=mirrors, switch_viewport=(a.camera == "director"))
+    if not a.dry_run and a.look == "pretty" and a.flow:
+        from isaac import look
+        dust = look.FlowDust(stage, ids, log=say)
 
     if not a.dry_run:
-        compat.force_load_physics()
-        compat.timeline_play()
-        for _ in range(30):                 # warm-up: PhysX parses colliders, renderer compiles shaders
-            app.update()
+        rt.start_physics(30)                # Lab: sim.reset() + steps; Kit: force_load + play + updates
+        if grab is not None:
+            grab.attach_late()
+            say(f"recording route: {grab.kind}{' (' + grab.err + ')' if grab.err else ''}")
         p0 = sc.piles[4]
         hit = lidar.cast((p0.x, p0.y, 25.0), (0, 0, -1), 60.0)
         if hit is None:
-            say("WARNING PhysX raycast hit nothing (timeline playing? colliders parsed?); "
-                "falling back to the heightmap LiDAR so the demo still shows points")
+            say("WARNING PhysX raycast hit nothing (scene queries off? physics not started?); "
+                "falling back to the heightmap LiDAR so the demo still shows points. Run --selftest.")
             lidar = HeightmapLidar(hm, a.lidar_range, a.rays)
         else:
             say(f"PhysX raycast self-test ok: hit z={hit[2]:.2f} at pile {p0.name}")
@@ -250,8 +324,9 @@ def main(argv=None):
     accum = PointAccumulator()
     cur = prev = as_dict(mission.build_state())
     steps, frame = 0, 0
+    virtual = a.dry_run or bool(a.record)   # fixed virtual frame rate: deterministic dry run, smooth recordings
     clock_v = 0.0
-    clock = (lambda: clock_v) if a.dry_run else time.monotonic
+    clock = (lambda: clock_v) if virtual else time.monotonic
     last_step = next_step = clock()
     tilt_f = {i: (0.0, 0.0) for i in ids}
     moved = {i: 0.0 for i in ids}
@@ -260,6 +335,9 @@ def main(argv=None):
     last_frame_t = clock()
     finished_at = None
     rdt_v = 1.0 / a.render_fps
+    n_rec, t_rec = 0, time.time()
+    if a.record:
+        os.makedirs(os.path.join(a.record, "isaac"), exist_ok=True)
 
     pending = {}                            # pile -> [new points not yet handed to the mission]
     fed = {}                                # pile -> points ingested
@@ -306,7 +384,7 @@ def main(argv=None):
             span = max(next_step - last_step, 1e-6)
             u = 1.0 if done else min(max((now - last_step) / span, 0.0), 1.0)
             poses = interp_drones(prev, cur, u)
-            rdt = max(now - last_frame_t, 1e-3) if not a.dry_run else rdt_v
+            rdt = rdt_v if virtual else max(now - last_frame_t, 1e-3)
             last_frame_t = now
             dt_sim_cur = max(float(cur.get("t", 0)) - float(prev.get("t", 0)), 1e-3)
             for did, (x, y, z, yaw, st, vx, vy) in poses.items():
@@ -333,26 +411,34 @@ def main(argv=None):
                         if new_pts is not None and len(new_pts):
                             pending.setdefault(pl, []).append(new_pts)
                             overlay.add_points(new_pts)
+            if dust is not None:
+                dust.update(poses, surface)
 
             focus, spread = focus_from_state(cur, pile_xy, active, list(poses.values()))
             cam.update(rdt, focus, spread)
             overlay.tick(now)
             frame += 1
-            if app is not None:
-                if not app.is_running():
+            if rt is not None:
+                if not rt.is_running():
                     break
-                app.update()
-            else:
+                rt.step()
+                if grab is not None and frame % max(a.rec_every, 1) == 0:
+                    ok, _ = grab.save(os.path.join(a.record, "isaac", f"f{n_rec:05d}.png"))
+                    n_rec += int(ok)
+                    if n_rec and n_rec % 30 == 0:
+                        say(f"recorded {n_rec} frames, {(time.time() - t_rec) / 30:.2f} s per frame")
+                        t_rec = time.time()
+            if virtual:
                 clock_v += rdt_v
             if done:
                 finished_at = finished_at or now
-                if a.dry_run or a.headless or a.no_keep_open or now - finished_at > 2.0:
+                if not a.keep_open or now - finished_at > 2.0:
                     break
     except Exception:
         traceback.print_exc()
-        if app is None or a.headless:
-            if app is not None:
-                app.close()
+        if rt is None or not a.keep_open:
+            if rt is not None:
+                rt.close()
             raise
         say("error above; keeping the window open for inspection")
 
@@ -363,21 +449,28 @@ def main(argv=None):
         "lidar_points": int(accum.total), "piles_scanned": sorted(accum.chunks), "ingested": fed,
         "overlay_updates": overlay.updates, "camera_updates": cam.updates,
         "state_json": state_path if state_path and os.path.exists(state_path) else None,
-        "mission": type(mission).__name__,
+        "mission": type(mission).__name__, "launcher": a.launcher, "recorded_frames": n_rec,
     }
     say("summary " + json.dumps(summary))
+    if n_rec:
+        fps = a.render_fps / max(a.rec_every, 1)
+        say(f"make the video: ffmpeg -framerate {fps:g} -i {a.record}/isaac/f%05d.png "
+            f"-c:v libx264 -pix_fmt yuv420p {a.record}/isaac.mp4")
 
-    if app is not None:
-        if not a.headless and not a.no_keep_open:
-            say("mission finished; window stays open (close it to exit)")
+    if rt is not None:
+        if a.keep_open:
+            say("mission finished; app stays open (close the window / Ctrl+C to exit)")
             last = time.monotonic()
-            while app.is_running():
-                now = time.monotonic()
-                cam.update(now - last, focus_from_state(cur, pile_xy, active, list(poses.values()))[0])
-                overlay.tick(now)
-                last = now
-                app.update()
-        app.close()
+            try:
+                while rt.is_running():
+                    now = time.monotonic()
+                    cam.update(now - last, focus_from_state(cur, pile_xy, active, list(poses.values()))[0])
+                    overlay.tick(now)
+                    last = now
+                    rt.step()
+            except KeyboardInterrupt:
+                pass
+        rt.close()
     return summary
 
 

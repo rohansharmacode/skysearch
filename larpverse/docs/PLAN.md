@@ -138,7 +138,7 @@ Give each session one workstream and point it at this file plus `contracts/INTER
 | ID | Pri | Item | Owner / status |
 |---|---|---|---|
 | BL-1 | P0 | Reviewer pass 1 over the whole product (dashboard live run, animations, handoff, code honesty/ground-truth) | reviewer — running |
-| BL-2 | P0 | Isaac adapter cross-check against the team's verified Isaac 6.0.1 / Isaac Lab 3.0 API notes (skysearch `isaac6-port` branch) and their Brev launch flow; fix isaac/compat.py etc. | builder — running |
+| BL-2 | P0 | Isaac adapter cross-check against the team's verified Isaac 6.0.1 / Isaac Lab 3.0 API notes | DONE 629b128, 2e75dd2 (AppLauncher default, --selftest, --look pretty, --record); awaiting teammate GPU selftest |
 | BL-3 | P0 | Acoustic pile assignment: voices attributed to wrong piles (B3/C3 in seed 7); triangulate across drones, reject inconsistent bearings | builder — running |
 | BL-4 | P1 | Gemini decider + provider layer + intake + handover brief (agents/) | DONE 1ed9bae (fallback-tested; real API untested until key) |
 | BL-5 | P1 | KISS-ICP SLAM (mapping/) then wire into grid mission landing maps | DONE 110fdd2 (ATE 3.6 cm B2, landing IoU 0.98); wiring → mission agent |
@@ -161,3 +161,5 @@ Give each session one workstream and point it at this file plus `contracts/INTER
 | 2026-11-07 | Radar returns stay a labelled synthetic generator; DSP validated on Schellenberger 2020 real data (0.39 bpm MAE) | Isaac RF doesn't model breathing through rubble | orchestrator |
 | 2026-11-07 | LLM answers cached in agents/cache (gitignored); a curated demo replay file will be committed once recorded | demo must run offline and reproducibly | orchestrator |
 | 2026-11-07 | kiss-icp 1.3.0 + open3d 0.20 accepted in .venv | SLAM agent installed before rules; numpy unchanged, tests pass | orchestrator |
+| 2026-11-07 | Isaac default launch = Isaac Lab AppLauncher (6.0.1/Lab 3.0, Brev); SimulationApp fallback | team's GPU-verified facts | orchestrator |
+| 2026-11-07 | usd-core allowed in .venv for offline pxr checks | lets us validate stage code without a GPU | orchestrator |

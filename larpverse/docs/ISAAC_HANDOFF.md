@@ -82,6 +82,13 @@ python -m sim.scenario --seed 7 --out scenario.json --truth-out scenario_truth.j
 
 ## 4. Hardware and version
 
+> **Verified on the team's Brev box: Isaac Sim 6.0.1 with Isaac Lab 3.0.** See `docs/ISAAC_VERIFIED_APIS.md` for every GPU-verified fact, with its source in the team's `isaac6-port` branch.
+>
+> There are two launch routes, chosen with `--launcher auto|lab|kit`:
+> - **lab** (default on Brev): `cd /workspace/isaaclab && ./isaaclab.sh -p /workspace/skysearch/larpverse/isaac/run_mission.py …`. Isaac Lab's AppLauncher owns physics and steps the sim, and `--livestream 1|2` is passed through.
+> - **kit**: plain `SimulationApp`, for 4.5 and 5.x workstation installs, run with `~/isaacsim/python.sh isaac/run_mission.py …`.
+
+
 | Option | Use when | Notes |
 |---|---|---|
 | **Your RTX desktop or laptop** | RTX 4080-class or better, 16 GB+ VRAM, 32 GB RAM, recent NVIDIA driver | Best for recording footage in the GUI |
@@ -103,12 +110,16 @@ python -m sim.scenario --seed 7 --out scenario.json --truth-out scenario_truth.j
    ```bash
    ~/isaacsim/python.sh -m pip install scipy
    ```
+   On Brev with Isaac Lab:
+   ```bash
+   cd /workspace/isaaclab && ./isaaclab.sh -p -m pip install scipy
+   ```
 3. You don't need our other virtualenvs for Isaac. The acoustic pipeline runs in its own environment (`.venv-audio`). If it's missing on your machine, the mission falls back to a built-in acoustic stub, so the story still runs.
 4. The web dashboard needs only Python:
    ```bash
    cd agentverse && python3 -m http.server 8765
    ```
-   Then open `http://localhost:8765/dashboard/`. It polls `dashboard/data/state.json`, which the Isaac run writes live.
+   Then open `http://localhost:8765/dashboard/`. On Brev, open `<VS Code URL>/proxy/8765/dashboard/` instead (port 8080 is taken there). The dashboard polls `dashboard/data/state.json`, which the Isaac run writes live.
 
 ## 6. Architecture: what Isaac does and what it doesn't
 
@@ -138,7 +149,16 @@ python -m sim.scenario --seed 7 --out scenario.json --truth-out scenario_truth.j
 
 | File | Purpose |
 |---|---|
-| `isaac/run_mission.py` | Entry point. Options: `--seed 7`, `--start-pile B2`, `--radar model\|dsp`, `--speed 4` (sim seconds per wall second), `--headless`, `--livestream`, `--show-truth`, `--replay DIR`, `--out DIR`, `--frames`, `--dry-run`, `--max-steps N`, `--camera director\|free`, `--drone-asset [auto\|URL]`, `--drone-scale 1.6`, `--rtx-lidar`, `--overlay auto\|debug\|usd`, `--rays 96`, `--lidar-range 40`, `--no-keep-open`, `--quiet`. |
+| `isaac/run_mission.py` | Entry point. Options: `--seed 7`, `--start-pile B2`, `--radar model\|dsp`, `--speed 4` (sim seconds per wall second), `--headless`, `--livestream`, `--show-truth`, `--replay DIR`, `--out DIR`, `--frames`, `--dry-run`, `--max-steps N`, `--camera director\|free`, `--drone-asset [auto\|URL]`, `--drone-scale 1.6`, `--rtx-lidar`, `--overlay auto\|debug\|usd`, `--rays 96`, `--lidar-range 40`, `--no-keep-open`, `--quiet`.
+
+Added after the API check:
+- `--launcher auto\|lab\|kit` chooses the launch route (section 4).
+- `--livestream 1\|2` turns on livestreaming.
+- `--selftest` runs every risky Isaac call and prints PASS/WARN/FAIL for each.
+- `--look pretty` adds an HDRI sky, NVIDIA concrete materials, chipped rubble and dust.
+- `--rtx pathtracing` switches to path tracing.
+- `--record DIR` saves frames and prints the ffmpeg command. |
+| `isaac/look.py`, `isaac/selftest.py` | The presentation look, and the one-command diagnosis. |
 | `isaac/compat.py` | Version shims: SimulationApp import, extensions, viewport camera, PhysX raycaster, assets root. |
 | `isaac/scene.py` | Builds the stage from the scenario (pxr only). |
 | `isaac/drone_viz.py`, `lidar.py`, `overlay.py`, `camera.py` | Drones, LiDAR, overlays and camera, as in the diagram above. |
@@ -156,7 +176,15 @@ The stage build, drone posing and USD overlay were also checked against the stan
 
 ## 7. Bring-up checklist (in order; verify each step)
 
-1. **Dry run, then the first headless Isaac run.** Run both with Isaac's Python. The dry run doesn't need omni and should print drone movement and LiDAR point counts, and write a `state.json`. The headless run boots Isaac, builds the stage and runs 30 mission steps:
+1. **Self-test first.** On Brev (Isaac 6.0.1 + Lab 3.0), run:
+   ```bash
+   cd /workspace/isaaclab && ./isaaclab.sh -p /workspace/skysearch/larpverse/isaac/run_mission.py --selftest --headless --enable_cameras --out /workspace/selftest
+   ```
+   It prints PASS/WARN/FAIL for each step and saves `selftest_frame.png` and `selftest.json`. Paste all of it into `docs/FROM_ISAAC.md`. On a workstation install, use `~/isaacsim/python.sh isaac/run_mission.py --selftest --headless --launcher kit`.
+
+   The older two-step check below still works.
+
+   **Dry run, then the first headless Isaac run.** Run both with Isaac's Python. The dry run doesn't need omni and should print drone movement and LiDAR point counts, and write a `state.json`. The headless run boots Isaac, builds the stage and runs 30 mission steps:
    ```bash
    ~/isaacsim/python.sh isaac/run_mission.py --dry-run --max-steps 60 --out /tmp/d && ~/isaacsim/python.sh isaac/run_mission.py --headless --max-steps 30 --no-keep-open
    ```
@@ -213,6 +241,10 @@ python -m sim.grid_mission --seed 7 --frames --out dashboard/data
 | 7 | Dashboard: click the ping to open the LiDAR model with the depth marker | 52–58 |
 | 8 | Slow wide pull-back over the whole grid, with pings, cones and drones moving to the next priority | 58–60 |
 
+**Built-in look and recording:**
+- `--look pretty` (with `--rtx pathtracing` for hero shots) applies the team's lighting and materials.
+- `--record DIR` saves frames, at about 2.2 s per frame on an L40S, or about 6.5 s path traced. Encode them with the ffmpeg command it prints.
+
 **How to record:**
 - **Movie Capture:** enable the Window → Movie Capture extension (`omni.kit.window.movie_capture`), choose 1080p at 30 fps, and render the camera path.
 - **Simpler:** run with `--speed 2–4` and screen-record the viewport with OBS.
@@ -222,7 +254,21 @@ Record the dashboard separately (OBS) and cut the two together.
 
 ## 9. Known risks and the API calls to verify first
 
-These are the calls nobody has been able to run yet. Check them in this order:
+**Already verified on 6.0.1 by the team** (`docs/ISAAC_VERIFIED_APIS.md`):
+- PhysX raycasts, once scene queries are enabled. The adapter enables them on both launch routes.
+- debug_draw.
+- The black-viewport fix: re-pose the camera every frame and copy it to the viewport and recording cameras.
+
+**Still unverified:**
+- the SimulationApp route on any version;
+- viewport camera switching;
+- recording and MDL materials on the SimulationApp route;
+- our pxr-built stage under Isaac Lab;
+- per-vertex terrain colour;
+- whether invisible boxes still block LiDAR rays;
+- RTX LiDAR.
+
+Older checklist, still useful on 4.5 and 5.x:
 1. **Does `get_physx_scene_query_interface().raycast_closest` hit anything** after `force_load_physics_from_usd()`, Play and about 30 updates?
    - A self-test runs at startup.
    - If every ray misses, the adapter falls back to a heightmap LiDAR and logs it. The run still works, but the LiDAR is then not real Isaac sensing, so fix this.

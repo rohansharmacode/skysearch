@@ -28,7 +28,24 @@ AUDIO_PY = os.path.join(ROOT, ".venv-audio", "bin", "python")
 # real-pipeline results are cached here (gitignored data/); extra read-only dirs (e.g. a committed demo cache)
 # can be listed in ACOUSTIC_CACHE_DIRS (os.pathsep-separated). The old served-folder cache is still read.
 CACHE_DIR = os.environ.get("ACOUSTIC_CACHE_DIR", os.path.join(ROOT, "data", "acoustic_cache"))
-LEGACY_CACHE_DIR = os.path.join(ROOT, "dashboard", "data", "acoustic_cache")
+
+
+def _pipeline_version():
+    """Hash of the acoustic pipeline code (acoustic/*.py, which also names the model ids) - part of the cache key,
+    so a pipeline change never replays clips from an older version."""
+    h = hashlib.sha1()
+    d = os.path.join(ROOT, "acoustic")
+    try:
+        for name in sorted(os.listdir(d)):
+            if name.endswith(".py"):
+                with open(os.path.join(d, name), "rb") as f:
+                    h.update(name.encode() + b"\0" + f.read())
+    except OSError:
+        return "none"
+    return h.hexdigest()[:12]
+
+
+ACOUSTIC_VERSION = _pipeline_version()
 STUB_SOURCE = "stub-from-truth"
 SNAP_M = 1.0                 # drone positions are snapped to this grid in the cache key
 SCHEMA = "larpverse.acoustic/v1"
@@ -198,14 +215,11 @@ def _valid(r):
     return isinstance(r, dict) and isinstance(r.get("clips"), list) and isinstance(r.get("piles"), list)
 
 
-def _cache_key(scenario, drones, exclude, seed, legacy=False):
-    if legacy:
-        d = {k: [round(float(v[0]), 1), round(float(v[1]), 1)] for k, v in sorted(drones.items())}
-    else:
-        d = {k: [round(float(v[0]) / SNAP_M) * SNAP_M, round(float(v[1]) / SNAP_M) * SNAP_M]
-             for k, v in sorted(drones.items())}
+def _cache_key(scenario, drones, exclude, seed):
+    d = {k: [round(float(v[0]) / SNAP_M) * SNAP_M, round(float(v[1]) / SNAP_M) * SNAP_M]
+         for k, v in sorted(drones.items())}
     key = json.dumps({"scenario": [scenario.seed, scenario.public_dict()["start_pile"]], "drones": d,
-                      "exclude": sorted(set(exclude)) if not legacy else sorted(exclude), "seed": int(seed)},
+                      "exclude": sorted(set(exclude)), "seed": int(seed), "version": ACOUSTIC_VERSION},
                      sort_keys=True)
     return hashlib.sha1(key.encode()).hexdigest()[:16] + ".json"
 
@@ -215,17 +229,15 @@ def _cache_path(scenario, drones, exclude, seed):
 
 
 def _cache_lookup(scenario, drones, exclude, seed):
-    """First valid cached result: CACHE_DIR, then ACOUSTIC_CACHE_DIRS, then the legacy served-folder cache."""
+    """First valid cached result of this pipeline version: CACHE_DIR, then ACOUSTIC_CACHE_DIRS (read-only)."""
     name = _cache_key(scenario, drones, exclude, seed)
     dirs = [CACHE_DIR] + [d for d in os.environ.get("ACOUSTIC_CACHE_DIRS", "").split(os.pathsep) if d]
-    paths = [os.path.join(d, name) for d in dirs]
-    paths.append(os.path.join(LEGACY_CACHE_DIR, _cache_key(scenario, drones, exclude, seed, legacy=True)))
-    for path in paths:
+    for path in (os.path.join(d, name) for d in dirs):
         if os.path.exists(path):
             try:
                 with open(path) as f:
                     r = json.load(f)
-                if _valid(r):
+                if _valid(r) and r.get("_cache_version") == ACOUSTIC_VERSION:
                     return r
             except (OSError, ValueError):
                 continue
@@ -247,6 +259,7 @@ def listen(scenario, drone_positions, exclude_piles=(), seed=0, mode="auto", log
             return r, "real-cached"
     r, src = _listen_uncached(scenario, drone_positions, exclude_piles, seed, mode, say)
     if cache and src.startswith("real"):
+        r = dict(r, _cache_version=ACOUSTIC_VERSION)
         try:
             os.makedirs(CACHE_DIR, exist_ok=True)
             with open(path + ".tmp", "w") as f:

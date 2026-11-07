@@ -2,7 +2,7 @@
 
 A run made with ``--frames`` (scripts/demo.sh does this) leaves dashboard/data/frames/state_XXXX.json, one per
 simulated second. This script copies them one at a time to dashboard/data/replay/state.json (plus the run's
-pointcloud.bin) and points the dashboard at that folder with ``?data=data/replay``, so the live run's own
+pointcloud.bin) and points the dashboard at it with ``?state=data/replay/state.json``, so the live run's own
 dashboard/data/state.json is never touched and the orchestrator's dev server (repo root on :8765) serves it.
 
 Record (headless Chrome, frame by frame, deterministic pacing; run through the browser slot):
@@ -11,7 +11,7 @@ Record (headless Chrome, frame by frame, deterministic pacing; run through the b
 
 Live replay for a demo fallback (no browser, no Mission: just paces the frames; Ctrl-C stops):
     .venv/bin/python scripts/record_dashboard.py --live --speed 6
-    then open http://localhost:8765/dashboard/?data=data/replay&poll=250
+    then open http://localhost:8765/dashboard/?state=data/replay/state.json&poll=250
 
 Video pacing: every ``--step``-th mission frame is shown, ``--per-sec`` of them per video second (default every
 2nd frame, 3 per second = 6x mission speed), then the last state is held and the first ping in the side list is
@@ -38,10 +38,17 @@ def write_atomic(path, data):
     os.replace(tmp, path)
 
 
-def load_frames(frames_dir):
+def load_frames(frames_dir, until_t=None):
     files = sorted(glob.glob(os.path.join(frames_dir, "state_*.json")))
     if not files:
         sys.exit(f"no frames in {frames_dir}: run the mission with --frames first (scripts/demo.sh does)")
+    if until_t is not None:            # frames are one per sim second (dt = 1): binary-search the cut by "t"
+        lo, hi = 0, len(files)
+        while lo < hi:
+            mid = (lo + hi) // 2
+            with open(files[mid], "rb") as f:
+                lo, hi = (mid + 1, hi) if frame_t(f.read()) <= until_t else (lo, mid)
+        files = files[:max(1, lo)]
     return files
 
 
@@ -67,12 +74,18 @@ def frame_t(raw):
         return 0.0
 
 
+def query(a, poll_ms):
+    """Dashboard query selecting the replay state file: ?state= (current app.js) plus the older ?data= dir form."""
+    dash = os.path.join(ROOT, "dashboard")
+    state = os.path.relpath(os.path.join(a.replay_dir, "state.json"), dash)
+    return f"state={state}&data={os.path.dirname(state)}&poll={poll_ms}"
+
+
 # ------------------------------------------------------------------ live replay (no browser)
 def live(a, files):
     replay_state = os.path.join(a.replay_dir, "state.json")
     prepare_replay(a.src_dir, a.replay_dir, files[0])
-    rel = os.path.relpath(a.replay_dir, os.path.join(ROOT, "dashboard"))
-    print(f"live replay of {len(files)} frames at x{a.speed}: open {a.url}?data={rel}&poll=250  (Ctrl-C stops)", flush=True)
+    print(f"live replay of {len(files)} frames at x{a.speed}: open {a.url}?{query(a, 250)}  (Ctrl-C stops)", flush=True)
     prev_t = None
     try:
         for i, path in enumerate(files):
@@ -109,8 +122,7 @@ def record(a, files):
 
     os.makedirs(os.path.dirname(os.path.abspath(a.out)) or ".", exist_ok=True)
     prepare_replay(a.src_dir, a.replay_dir, files[idx[0]])
-    rel = os.path.relpath(a.replay_dir, os.path.join(ROOT, "dashboard"))
-    url = f"{a.url}?data={rel}&poll=100"
+    url = f"{a.url}?{query(a, 100)}"
 
     ff = subprocess.Popen([imageio_ffmpeg.get_ffmpeg_exe(), "-y", "-loglevel", "error", "-f", "image2pipe",
                            "-framerate", str(a.fps), "-c:v", "mjpeg", "-i", "-", "-c:v", "libx264", "-preset", "medium",
@@ -136,6 +148,13 @@ def record(a, files):
             settle = "() => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)))"
             wait_t = """t => { const m = /t = (-?[\\d.]+)/.exec(document.getElementById('simT')?.textContent || '');
                                return m && Math.abs(+m[1] - t) < 0.06; }"""
+            with open(files[idx[0]], "rb") as f:
+                first_t = frame_t(f.read())
+            try:
+                pg.wait_for_function(wait_t, arg=first_t, timeout=10000, polling=50)
+            except Exception:                         # noqa: BLE001
+                sys.exit(f"dashboard is not showing the replay file (simT = {pg.inner_text('#simT')!r}, expected t = {first_t}); "
+                         f"does dashboard/app.js still accept ?state= (or ?data=)? url: {url}")
             t0, missed = time.time(), 0
             for n, i in enumerate(idx):
                 with open(files[i], "rb") as f:
@@ -151,6 +170,8 @@ def record(a, files):
                 if n % 50 == 0:
                     el = time.time() - t0
                     print(f"sample {n}/{len(idx)} t={frame_t(raw):.0f} s  {el / (n + 1):.2f} s/sample  eta {el / (n + 1) * (len(idx) - n):.0f} s", flush=True)
+                if missed > 10 and missed > n // 5:
+                    sys.exit(f"the dashboard stopped following the replay ({missed} of {n + 1} samples missed); aborting")
             if missed:
                 print(f"warning: {missed} samples were captured before the dashboard showed them", flush=True)
 
@@ -191,6 +212,8 @@ def main():
     ap.add_argument("--replay-dir", default=os.path.join(ROOT, "dashboard", "data", "replay"))
     ap.add_argument("--url", default="http://localhost:8765/dashboard/")
     ap.add_argument("--out", default=os.path.join(ROOT, "media", "larpverse-dashboard-seed7.mp4"))
+    ap.add_argument("--until-t", type=float, default=None,
+                    help="stop at this mission time (e.g. 350: end on B2-R1, before the C3 phase of seed 7)")
     ap.add_argument("--live", action="store_true", help="no browser: pace the frames into the replay folder")
     ap.add_argument("--speed", type=float, default=6.0, help="--live: mission seconds per wall second")
     ap.add_argument("--step", type=int, default=2, help="record: show every Nth mission frame")
@@ -207,7 +230,7 @@ def main():
         sys.exit("--replay-dir must be inside dashboard/ (the dashboard only reads ?data= folders under it)")
     if a.step < 1 or a.per_sec <= 0 or a.speed <= 0:
         sys.exit("--step, --per-sec and --speed must be positive")
-    files = load_frames(a.frames_dir)
+    files = load_frames(a.frames_dir, a.until_t)
     return live(a, files) if a.live else record(a, files)
 
 

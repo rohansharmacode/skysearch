@@ -158,6 +158,9 @@ Give each session one workstream and point it at this file plus `contracts/INTER
 | BL-18 | P0 | Radar penetration realism: ~0.5–3 m through rubble, 10–20 dB/m concrete; coverage + 'beyond radar reach' | mission builder |
 | BL-19 | P1 | Weiguan model in Isaac: Sketchfab 'VR-Weiguan Collapsed Building' (NCKU Museum, photogrammetry, 1M tris, licence/download not stated) — needs permission; else procedural stand-in of the toppled 16-storey U-shaped block | blocked on licence |
 | BL-20 | P0 | Radar vital-sign triage: breathing pattern (rapid-shallow / slow-deep / irregular-apnoeic / calm / fast-small) → triage hint → dig-order priority; validated on real apnea data where possible | builder — running |
+| BL-21 | P0 | Technical report (docs/TECHNICAL_REPORT.md + abstract) | builder — running |
+| BL-22 | P1 | Visual consistency batch 4 (animation + isaac/overlay) + grid MP4 re-record | builder — running |
+| BL-23 | P1 | Expanded Weiguan map from the Isaac teammate (Weiguan + surrounding collapsed buildings): mesh/heightmap import → scenario sectors | waiting on teammate push; importer being built |
 | BL-11 | P1 | KEY SAVED 19:58 → Gemini audio builder records live runs. Once GEMINI_API_KEY exists: record a seed-7 Gemini run and commit its replay cache (un-ignore one curated file) so the demo replays offline | blocked on key |
 
 ## Decisions log
@@ -180,3 +183,7 @@ Give each session one workstream and point it at this file plus `contracts/INTER
 | 2026-11-07 | Radar modelled with realistic penetration (≈3 m max reliable); deep victims become acoustic-only leads | physics: 10–20 dB/m concrete at 0.4–2 GHz | orchestrator |
 | 2026-11-07 | Vital-sign triage from radar is an aid for rescuers, not diagnosis; age-from-amplitude reported as low confidence only | amplitude confounded by range, aspect and rubble loss | orchestrator |
 | 2026-11-07 | Video-cut builder paused until Isaac footage + brain fixes land | avoid cutting stale story; free a slot for vitals | orchestrator |
+| 2026-11-07 | Acoustic pipeline: choose by measured comparison (ours vs Frances's) in docs/ACOUSTIC_VALIDATION.md; port her best parts | user delegated the choice | orchestrator |
+| 2026-11-07 | Gemini usage unlimited (temporary hackathon key); use live for audio analysis, prioritisation and decisions; cache for offline replay | user | user |
+| 2026-11-07 | Expanded Weiguan map comes from the Isaac teammate; we build the importer + procedural fallback | teammate already doing it | user |
+| 2026-11-07 | Up to 10 concurrent agents (user: use the budget; heavy jobs still gated by heavy.sh) | speed | user |

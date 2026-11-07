@@ -246,6 +246,8 @@ class Mission:
         self.queue = {}
         self.listen_end = None
         self.relocations = []          # (scan_no, drone, site, reason) for reports
+        self.outliers = []             # scan ids of trusted scans outvoted by the consensus
+        self.min_eig = 0.2             # nats: below this another relocation is not worth a scan
         self._belief_json = None
         self._hm_json = json.dumps([round(float(v), 3) for v in self.grid.z.ravel()], separators=(",", ":"))
         self.pc_count = 0
@@ -387,7 +389,9 @@ class Mission:
         res = self.result
         reason = None if res["status"] == "candidate" else res["reason"]
         if reason is None:
-            self._say(f"Localisation converged: {self._summ(res)}; stopping radar scans ({self.scans_cmd} used)")
+            out = (f"; scan(s) {', '.join(self.outliers)} disagree but are outvoted by later strong ranges and are "
+                   "flagged as outliers") if self.outliers else ""
+            self._say(f"Localisation converged: {self._summ(res)}{out}; stopping radar scans ({self.scans_cmd} used)")
             return self._start_listen()
         if self.scans_cmd >= self.budget:
             self._say(f"Scan budget ({self.budget}) used without a firm fix ({reason}). Evidence: "
@@ -401,6 +405,11 @@ class Mission:
         if ch is None:
             self._say("No reachable landing site left; stopping with insufficient_evidence")
             return self._start_listen()
+        if self.policy != "fixed" and self.scans_cmd >= 3 and ch.eig < self.min_eig:
+            self._say(f"Stop relocating: the best next scan ({ch.drone_id} -> {ch.site_id}) is worth only {ch.eig:.2f} "
+                      f"nats (< {self.min_eig}). Evidence: {self.explain_evidence()}. Reporting insufficient_evidence; "
+                      "the region stays open, not cleared")
+            return self._start_listen()
         self.rescanning = True
         self._issue_scan(ch.drone_id, ch.site_id, ch.reason, ch.score)
         self.relocations.append({"scan_no": self.scans_cmd, "drone": ch.drone_id, "site": ch.site_id,
@@ -408,17 +417,25 @@ class Mission:
         self._say(f"Relocate {ch.drone_id} -> {ch.site_id}: {ch.reason}")
 
     def _rescan_reason(self, res):
+        self.outliers = []
         if res["status"] != "candidate":
             return res["reason"]
         dom = res["modes"][0]["xy"]
         support = len(self.loc.strong_support(dom))
         if support < 3:
             return f"{support} of 3 strong ranges support R1 so far; need 3 for an independent fix"
+        sup = set(self.loc.strong_support(dom))
+        order = {o["scan_id"]: k for k, o in enumerate(self.loc.obs)}
+        outliers = []
         for o in self.scans:
             if o.get("doppler_moving") or not o["range_candidates"]:
                 continue
             if o["quality"] >= 0.5 and max(o["confidence"]) * o["quality"] >= 0.4 and o.get("used_weight", 1) < 0.25:
-                return f"disagreement: trusted scan {o['scan_id']} (q={o['quality']}) contradicts the consensus"
+                later = [s for s in sup if order.get(s, -1) > order.get(o["scan_id"], 1e9)]
+                if len(later) < 2:     # not yet outvoted by independent later looks: keep checking
+                    return f"disagreement: trusted scan {o['scan_id']} (q={o['quality']}) contradicts the consensus"
+                outliers.append(o["scan_id"])
+        self.outliers = outliers       # trusted scans outvoted by >= 2 later strong agreeing ranges
         return None
 
     def explain_evidence(self):
@@ -519,7 +536,7 @@ class Mission:
                           "breathing_hz": None if bhz is None else round(bhz, 3),
                           "kind": "stationary",
                           "status": "candidate" if (res["status"] == "candidate" and k == 0) else "insufficient_evidence",
-                          "evidence": ev})
+                          "evidence": ev, "outliers": list(self.outliers) if k == 0 else []})
         tracks = loc.moving_tracks()
         for k, m in enumerate(tracks):
             c = m["cov"]

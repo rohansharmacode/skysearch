@@ -20,6 +20,7 @@ from itertools import combinations, permutations
 import numpy as np
 
 from .localise import LocConfig, loc_sigma_range, predicted_range_field
+from .radar_dsp import LEVEL_DEG, PERCH_ROUGH_FACTOR, reach_prob
 from .sensor_model import SCAN_DWELL_S, detection_prob, range_sigma, rubble_path, scan_quality
 
 LANDED_SENSOR_HEIGHT = 0.25
@@ -39,8 +40,15 @@ def sensor_pose_at(site):
     return [site["xy"][0], site["xy"][1], site["z"] + LANDED_SENSOR_HEIGHT, 0.0]
 
 
+def pdet(range_m, quality, path_m):
+    """Expected detection probability of a breathing return: range / quality term times the through-rubble
+    penetration limit (radar_dsp.reach_prob). Uses hypothesised targets only, never truth."""
+    return detection_prob(range_m, quality, 0.0) * reach_prob(range_m, path_m, quality)
+
+
 def site_quality(site, dwell=SCAN_DWELL_S):
-    return scan_quality(site["roughness"], site["slope_deg"], dwell)
+    rough = site["roughness"] * (PERCH_ROUGH_FACTOR if site.get("perch") else 1.0)
+    return scan_quality(rough, max(0.0, site["slope_deg"] - LEVEL_DEG), dwell)   # levelled mount
 
 
 class Planner:
@@ -73,7 +81,7 @@ class Planner:
             q = site_quality(s)
             tgt = np.stack([px, py, ground_z], 1)
             path = rubble_path(self.grid, pose[:3], tgt)
-            w = detection_prob(r, q, path) / range_sigma(q, path) ** 2
+            w = pdet(r, q, path) / range_sigma(q, path) ** 2
             u = np.stack([dx / dh, dy / dh], 1)
             info.append(w[:, None, None] * u[:, :, None] * u[:, None, :])  # (K,2,2)
         best, best_val = None, -np.inf
@@ -109,7 +117,7 @@ class Planner:
         Xs, Ys = self._XY
         hyp = np.stack([Xs[sup][rng_pick], Ys[sup][rng_pick], self.grid.z.ravel()[sup][rng_pick] - self.cfg.depth_nom], 1)
         path = rubble_path(self.grid, pose[:3], hyp)
-        pdet = detection_prob(r_true, q, path)
+        p_det = pdet(r_true, q, path)
         y = r_true + rng_normals * range_sigma(q, path)
         w = 0.75 * q
         L = self.cfg.eps + np.minimum(w * np.exp(-0.5 * ((y[:, None] - r_c[None, :]) / sig_c[None, :]) ** 2), 1.0)
@@ -117,7 +125,7 @@ class Planner:
         post /= post.sum(axis=1, keepdims=True)
         H = -(post * np.log(np.maximum(post, 1e-300))).sum(axis=1)
         H0 = -(p_sup * np.log(np.maximum(p_sup, 1e-300))).sum()
-        return float(np.mean(pdet * (H0 - H))), q
+        return float(np.mean(p_det * (H0 - H))), q
 
     def choose_next(self, loc, result, sites, drones, travel, used_scans: int = 0):
         """drones: idle drone dicts [{'id', ...}]; travel(drone_id, site)->seconds or None."""

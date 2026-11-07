@@ -33,8 +33,15 @@ import numpy as np
 from .acoustic_grid import STUB_SOURCE, listen as acoustic_listen
 from .coordinator import KinematicFlight, Mission
 from .grid_world import GridWorld
+from . import radar_dsp
+from .radar_dsp import REACH_REF_RANGE_M, reach_path_m
 from .radar_model import make_generator
+from .sensor_model import rubble_path
 from .scenario import BASE_XY, DRONE_PADS, SITE_BOUNDS, make_scenario
+try:
+    from .scenario import SITE_GEO
+except ImportError:                    # older scenario module
+    SITE_GEO = None
 from .world import heightmap_from_points
 
 LISTEN_S = 26.0                # listening window with rotors off (matches acoustic/scene.py)
@@ -47,7 +54,11 @@ SLAM_CACHE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file
 MISSION_SCANS = 24             # autonomous: radar scans for the whole mission (all piles, all drones)
 RESERVE = 0.25                 # every drone keeps this battery fraction; below it the fleet swaps packs
 SWAP_S = 60.0                  # battery swap time at the pads once all drones are docked
+REVISIT_MIN_COVERAGE = 0.5     # revisit an open lead only if the radar can reach most of its top 2 m
 REVISIT_DISCOUNT = 0.5         # an open lead already scanned ranks at half its acoustic priority
+# radar_dsp presets: literature | legacy (docs/RADAR_PENETRATION.md). Default stays "legacy" so the seed-7
+# demo keeps its pings; with "literature" the landing ring is out of radar reach (product decision pending).
+PENETRATION_DEFAULT = "legacy"
 RASTER = ["A1", "B1", "C1", "C2", "B2", "A2", "A3", "B3", "C3"]   # fixed lawnmower baseline (row by row)
 V1_CLASS = {"voice": "voice", "shout": "shout", "knocking": "knocking", "tapping": "tapping"}
 
@@ -80,7 +91,7 @@ class GridMission:
                  world=None, flight=None, sensor_factory=None, acoustic_fn=None, decider=None,
                  slam=False, slam_scans=SLAM_SCANS, slam_kw=None, slam_cache=SLAM_CACHE,
                  autonomous=True, mission_scans=None, dispatch_policy="acoustic", reserve=RESERVE, swap_s=SWAP_S,
-                 listen_s=None, revisit_max=2):
+                 listen_s=None, revisit_max=2, penetration=None):
         """``autonomous`` (default): keep searching until the mission scan budget (``mission_scans``, default
         24), the time limit or the open leads run out; battery swaps at the pads; open leads without a firm
         ping are revisited once. ``pile_budget`` caps pile visits (None = no cap; legacy mode uses 3).
@@ -88,6 +99,8 @@ class GridMission:
         not listen unless ``listen_s`` is given)."""
         if dispatch_policy not in ("acoustic", "nearest", "raster"):
             raise ValueError(f"dispatch_policy {dispatch_policy!r}")
+        self.penetration = penetration or PENETRATION_DEFAULT
+        radar_dsp.use_penetration(self.penetration)     # process-wide: generator, planner and coverage agree
         self.seed, self.radar, self.policy, self.scan_budget = seed, radar, policy, scan_budget
         self.out_dir, self.frames, self.verbose = out_dir, frames, verbose
         self.autonomous, self.dispatch_policy, self.reserve, self.swap_s = autonomous, dispatch_policy, reserve, swap_s
@@ -148,6 +161,12 @@ class GridMission:
         cap = f", pile cap {pile_budget}" if pile_budget is not None else ""
         self._say(f"Grid mission start (seed {seed}, {radar} radar, {dispatch_policy} dispatch): 3 drones at the staging "
                   f"area, start pile {self.start_pile} (operator choice); {budget}{cap}")
+        r2, r11 = reach_path_m(REACH_REF_RANGE_M, 0.9), reach_path_m(11.0, 0.9)
+        self._say(f"Radar penetration model '{self.penetration}': a good scan sees a breathing chest through about "
+                  f"{r2:.1f} m of rubble directly beneath it and {r11:.1f} m from an 11 m stand-off"
+                  + ("; deeper than that is beyond radar reach (acoustic lead only)" if self.penetration == "literature"
+                     else ". WARNING: LEGACY optimistic model (flat 0.7 dB/m), not literature-backed; "
+                     "--penetration literature limits a scan to ~3 m beneath it"))
         self._start_pile(self.start_pile, reason="operator-selected start pile")
 
     # ------------------------------------------------------------------ helpers
@@ -405,6 +424,11 @@ class GridMission:
             c["visit"] = self.visited.count(name)
         self.done_cands = [c for c in self.done_cands if c["pile_id"] != name] + keep   # a revisit supersedes
         p["radar_candidate_ids"] = [c["id"] for c in keep]
+        cov = self._radar_coverage(pm)
+        p.update(cov)
+        reach_txt = (f"Radar reached {100 * cov['radar_coverage']:.0f}% of the pile volume "
+                     f"({100 * cov['radar_coverage_shallow']:.0f}% of its top 2 m) from the landing sites used; "
+                     f"per-scan reach ≈{cov['radar_reach_m']:.1f} m of rubble directly beneath")
         res = pm.result
         if firm:
             c = firm[0]
@@ -416,11 +440,16 @@ class GridMission:
                       f"belief share {c['p_mass']:.2f} -> sent to the operator dashboard")
         else:
             lead = (p["priority"] or 0) >= self.priority_min
+            beyond = cov["radar_coverage_shallow"] < REVISIT_MIN_COVERAGE
             p["status"] = "lead" if lead else "no_signal_not_cleared"
-            p["why"] = (f"Radar inconclusive after {p['scans']} scans ({res.get('reason', 'no data')})"
-                        + ("; acoustic lead stands" if lead else "") + ". No detection is not proof of absence: not cleared.")
+            p["why"] = (f"Radar inconclusive after {p['scans']} scans ({res.get('reason', 'no data')}). {reach_txt}"
+                        + (": much of the pile is beyond radar reach" if beyond else "")
+                        + ("; acoustic lead stands" + (" (acoustic lead only)" if beyond else "") if lead else "")
+                        + ". No detection is not proof of absence: not cleared.")
             self._say(f"No firm radar ping at {name} ({res.get('reason', 'no data')}). Evidence: {pm.explain_evidence()}. "
-                      "Pile stays not cleared" + ("; its acoustic lead stays open for a revisit" if lead else ""))
+                      f"{reach_txt}. Pile stays not cleared"
+                      + (("; beyond radar reach from these sites -> acoustic lead only, for ground teams" if beyond
+                          else "; its acoustic lead stays open for a revisit") if lead else ""))
         if self.listen_s > 0:
             self.stage = "listen"
             self.listen_end = self.t + self.listen_s
@@ -428,6 +457,44 @@ class GridMission:
                       "and stream clips to the acoustic agent")
         else:
             self._gate(None)
+
+    def _radar_coverage(self, pm):
+        """Share of the pile's rubble volume within radar reach of the landing sites actually scanned from.
+
+        Volume = 1 m cells within 9 m of the pile centre and > 0.4 m above local ground, sampled every 0.5 m
+        from 0.25 m below the surface down to ground. A point is in reach if some scan's sensor sees it through
+        no more rubble (heightmap path) than ``reach_path_m(range, that scan's quality)``. LiDAR heightmap +
+        scan metadata only; no truth.
+        """
+        g = pm.grid
+        cx, cy = self.world.pile_xy[pm.pile]
+        X, Y = g.mesh()
+        Xs, Ys, Zs = X[::2, ::2].ravel(), Y[::2, ::2].ravel(), g.z[::2, ::2].ravel()
+        dc = np.hypot(Xs - cx, Ys - cy)
+        ring = (np.hypot(X - cx, Y - cy) > 11.0)
+        ground = float(np.median(g.z[ring])) if ring.any() else float(np.min(g.z))
+        sel = (dc <= 9.0) & (Zs - ground > 0.4)
+        pts, depth = [], []
+        for x, y, z in zip(Xs[sel], Ys[sel], Zs[sel]):
+            for d in np.arange(0.25, z - ground, 0.5):
+                pts.append((x, y, z - d))
+                depth.append(d)
+        scans = [o for o in pm.scans if not o.get("doppler_moving")]
+        if not pts:
+            return {"radar_coverage": 1.0, "radar_coverage_shallow": 1.0, "radar_reach_m": None}
+        pts, depth = np.array(pts), np.array(depth)
+        hit = np.zeros(len(pts), bool)
+        for o in scans:
+            ps = np.asarray(o["sensor_pose"][:3], float)
+            r = np.linalg.norm(pts - ps[None, :], axis=1)
+            hit |= rubble_path(g, ps, pts) <= reach_path_m(r, o["quality"])
+        sh = depth <= 2.0
+        reach = [o.get("max_reliable_depth_m") for o in scans if o.get("max_reliable_depth_m") is not None]
+        if not reach and scans:
+            reach = [reach_path_m(REACH_REF_RANGE_M, o["quality"]) for o in scans]
+        return {"radar_coverage": round(float(hit.mean()), 3),
+                "radar_coverage_shallow": round(float(hit[sh].mean()) if sh.any() else 1.0, 3),
+                "radar_reach_m": round(float(np.median(reach)), 2) if reach else None}
 
     @staticmethod
     def _depth_words(c):
@@ -464,7 +531,10 @@ class GridMission:
                     "class_scores": c.get("class_scores", {}),
                     "scores": {k: c.get(k) for k in ("human", "urgency", "reliability")},
                     "priority": c.get("priority"), "rationale": c.get("rationale", ""), "by": c.get("by", "fallback"),
-                    "doa_agree": c.get("doa_agree")}
+                    "doa_agree": c.get("doa_agree"), "vad_speech_ratio": c.get("vad_speech_ratio"),
+                    "association": c.get("association"), "association_conf": c.get("association_conf"),
+                    "ambiguous_with": list(c.get("ambiguous_with") or []),
+                    "bearings": self._clip_bearings(c, drones), "notes": list(c.get("notes") or [])}
             self.clips.append(clip)
             said = f" \"{clip['transcript']}\"" if clip["transcript"] else ""
             self._say(f"Clip {clip['id']} ({clip['drone_id']}, bearing {clip['bearing_deg']:.0f}°): "
@@ -485,8 +555,28 @@ class GridMission:
                     (p["priority"] or 0) > new or p["status"] in ("lead", "dismissed_nonhuman")):
                 continue                                   # silence from here does not erase what was heard before
             st = ap["status"] if ap["status"] in ("lead", "dismissed_nonhuman", "no_signal_not_cleared") else "lead"
-            p.update(priority=new, status=st, why=ap["why"])
+            why = ap["why"]
+            if st == "dismissed_nonhuman":         # one non-human listen is not enough to dismiss a pile (R2-006)
+                p["nonhuman_listens"] = p.get("nonhuman_listens", 0) + 1
+                if p["nonhuman_listens"] < 2:
+                    st = "no_signal_not_cleared"
+                    why = f"Heard a non-human-like sound once (needs 2 listens to dismiss). {why}"
+            p.update(priority=new, status=st, why=why)
         self._gate(res)
+
+    @staticmethod
+    def _clip_bearings(c, drones):
+        """Per-drone bearings of a clip: [{drone_id, origin, bearing_deg, width_deg, snr_db}] (as reported)."""
+        src = c.get("bearings") or c.get("per_drone")
+        out = []
+        if isinstance(src, dict):
+            src = [dict(v, drone_id=k) for k, v in src.items()]
+        for b in src or [{"drone_id": c.get("drone_id"), "bearing_deg": c.get("bearing_deg"),
+                          "width_deg": c.get("width_deg"), "snr_db": c.get("snr_db")}]:
+            o = drones.get(b.get("drone_id"), (None, None))
+            out.append({"drone_id": b.get("drone_id"), "origin": None if o[0] is None else [round(o[0], 2), round(o[1], 2)],
+                        "bearing_deg": b.get("bearing_deg"), "width_deg": b.get("width_deg"), "snr_db": b.get("snr_db")})
+        return out
 
     def _gate(self, res):
         """Dispatch gate after a pile (and its listen): re-rank, then dispatch / revisit / swap / stop."""
@@ -545,7 +635,8 @@ class GridMission:
             for name in dict.fromkeys(self.visited):
                 p = self.piles[name]
                 if p["status"] != "ping" and (p["priority"] or 0) >= self.priority_min \
-                        and self.visited.count(name) < self.revisit_max:
+                        and self.visited.count(name) < self.revisit_max \
+                        and p.get("radar_coverage_shallow", 1.0) >= REVISIT_MIN_COVERAGE:
                     out.append((name, "rescan_current" if name == self.visited[-1] else "revisit",
                                 round(p["priority"] * REVISIT_DISCOUNT, 1)))
         return sorted(out, key=lambda o: -(o[2] if o[2] is not None else -1))
@@ -609,7 +700,8 @@ class GridMission:
                                  "evidence": f"radar at {here}: {cur['why'][:160]}", "flags": ["no_firm_ping"]})
         opts.append({"id": f"o{len(opts) + 1}", "action": "stop", "pile_id": None, "priority": None, "score": None,
                      "travel_s": None, "battery_after_min": round(bat_min, 2), "evidence": "return to the staging area",
-                     "flags": ["pile_budget_used"] if why_no_budget else []})
+                     "flags": (["pile_budget_used"] + (["scan_budget_used"] if "scan budget" in why_no_budget else []))
+                     if why_no_budget else []})
         stop = opts[-1]["id"]
         if why_no_budget:
             return opts, stop, why_no_budget
@@ -683,7 +775,10 @@ class GridMission:
                            for c in pings) or "none"
         leads = sorted((p for p in self.piles.values() if p["status"] == "lead"), key=lambda p: -(p["priority"] or 0))
         lead_s = "; ".join(f"{p['id']} priority {p['priority']}"
-                           + (f" (radar insufficient evidence after {p['scans']} scans)" if p.get("scans") else " (not visited)")
+                           + ((f" (radar insufficient evidence after {p['scans']} scans"
+                               + (f"; radar reached only {100 * p['radar_coverage_shallow']:.0f}% of its top 2 m: "
+                                  "acoustic lead only" if p.get("radar_coverage_shallow", 1) < REVISIT_MIN_COVERAGE else "")
+                               + ")") if p.get("scans") else " (not visited)")
                            for p in leads) or "none"
         nc = []
         for p in self.piles.values():
@@ -743,7 +838,8 @@ class GridMission:
             upcoming = self.dispatch[-1]
         return {
             "schema": "larpverse.state/v1", "t": round(self.t, 1), "phase": self.phase,
-            "site": {"name": f"Rubble grid 3x3 · seed {self.seed}", "bounds": list(SITE_BOUNDS)},
+            "site": {"name": f"Rubble grid 3x3 · seed {self.seed}", "bounds": list(SITE_BOUNDS),
+                     **({"geo": dict(SITE_GEO)} if SITE_GEO else {})},
             "heightmap": {"origin": list(g.origin), "res": g.res, "w": g.w, "h": g.h,
                           "z": "__HM__" if hm_placeholder else self._hm_list()[0]},
             "pointcloud": {"url": "pointcloud.bin", "count": self.pc_count},
@@ -762,6 +858,8 @@ class GridMission:
                         "stage": self.stage, "acoustic_source": self.acoustic_source,
                         "listen_ends": round(self.listen_end, 1) if self.stage == "listen" else None,
                         "in_transit": upcoming,
+                        "radar_penetration": self.penetration,
+                        "radar_reach_beneath_m": round(reach_path_m(REACH_REF_RANGE_M, 0.9), 2),
                         "autonomous": self.autonomous, "dispatch_policy": self.dispatch_policy, "radar": self.radar,
                         "scan_budget": self.mission_scans, "scans_used": self.scans_used,
                         "battery_reserve": self.reserve, "battery_swaps": self.n_swaps,
@@ -823,6 +921,8 @@ def main(argv=None):
                     help="dsp (default): synthetic IF through the real DSP chain; model: direct noise model")
     ap.add_argument("--acoustic", choices=["auto", "stub", "real"], default="auto",
                     help="auto: acoustic/ pipeline if importable or via .venv-audio, else the synthetic stub")
+    ap.add_argument("--penetration", choices=list(radar_dsp.PENETRATION_MODELS), default=PENETRATION_DEFAULT,
+                    help="radar through-rubble model: literature (~3 m beneath) or legacy (optimistic 0.7 dB/m)")
     ap.add_argument("--piles", type=int, default=None, help="cap on pile visits (legacy loop default 3; autonomous: none)")
     ap.add_argument("--no-autonomous", dest="autonomous", action="store_false",
                     help="legacy fixed loop: 3 piles, no battery swaps, no revisits")
@@ -851,7 +951,7 @@ def main(argv=None):
     m = GridMission(a.seed, a.start_pile, a.radar, a.out, a.frames, not a.quiet, a.realtime, a.speed,
                     pile_budget=a.piles, priority_min=a.priority_min, acoustic=a.acoustic, decider=decider,
                     slam=a.slam, slam_scans=a.slam_scans, autonomous=a.autonomous, mission_scans=a.scans,
-                    dispatch_policy=a.dispatch)
+                    dispatch_policy=a.dispatch, penetration=a.penetration)
     m.run()
     s = m.summary()
     print(f"done in {time.time() - t0:.1f} s wall, {m.t:.0f} s sim; visited {' -> '.join(s['visited'])}; "

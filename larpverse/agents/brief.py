@@ -80,8 +80,11 @@ def facts(state):
                "p_mass": c.get("p_mass"), "breathing_hz": c.get("breathing_hz"),
                "scans": len(c.get("evidence") or []), "status": c.get("status")}
         (digs if c.get("status") == "candidate" else unresolved).append(row)
-    leads = [{"pile": p["id"], "priority": p.get("priority"), "why": p.get("why")}
-             for p in piles.values() if p["id"] not in visited and p.get("status") == "lead"]
+    pinged = {d["pile"] for d in digs}
+    # A lead stays open until a radar ping resolves it: visiting a pile without a ping does not close it.
+    leads = [{"pile": p["id"], "priority": p.get("priority"),
+              "why": p.get("why"), "visited": p["id"] in visited}
+             for p in piles.values() if p.get("status") == "lead" and p["id"] not in pinged]
     leads.sort(key=lambda r: -(r["priority"] or 0))
     not_cleared = sorted(p["id"] for p in piles.values() if p["id"] not in visited)
     silent = sorted(p["id"] for p in piles.values() if p["id"] not in visited
@@ -111,7 +114,7 @@ def template(f):
         L.append(f"- {d['ping']} on {d['pile']} ({d['xy'][0]}, {d['xy'][1]}): insufficient radar evidence "
                  f"({d['scans']} scans, p {d['p_mass']}). Recheck.")
     for r in f["acoustic_leads"]:
-        L.append(f"- {r['pile']} (not searched, acoustic priority {r['priority']}): {r['why']}")
+        L.append(f"- {r['pile']} ({'searched by drone radar, no ping' if r.get('visited') else 'not searched'}; acoustic priority {r['priority']}): {r['why']}")
     if not f["unresolved_radar"] and not f["acoustic_leads"]:
         L.append("- None.")
     L += ["", "SILENT PILES NOT CLEARED: " + (", ".join(f["silent_not_cleared"]) or "none")

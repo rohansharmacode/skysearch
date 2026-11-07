@@ -42,12 +42,13 @@ class ObservationGenerator:
     @staticmethod
     def _landing_quality(rng, site: dict, dwell: float) -> float:
         """Scan quality in [0.03, 0.97] from the actual touchdown (planned patch x what happened)."""
-        true_rough = site["roughness"] * float(np.exp(rng.normal(0, 0.3)))
+        true_rough = site["roughness"] * (radar_dsp.PERCH_ROUGH_FACTOR if site.get("perch") else 1.0) \
+            * float(np.exp(rng.normal(0, 0.3)))
         # the 0.5 m heightmap hides loose debris: sometimes the touchdown is much rougher than mapped
         p_upset = 0.08 + (0.17 if site["z"] > 0.8 else 0.0)
         if rng.uniform() < p_upset:
             true_rough = max(true_rough, 0.02) * float(rng.uniform(2.0, 4.0))
-        true_slope = site["slope_deg"] * float(np.exp(rng.normal(0, 0.2)))
+        true_slope = max(0.0, site["slope_deg"] * float(np.exp(rng.normal(0, 0.2))) - radar_dsp.LEVEL_DEG)  # levelled mount
         quality = scan_quality(true_rough, true_slope, dwell) * float(rng.uniform(0.9, 1.05))
         if rng.uniform() < 0.06:  # gust / interference during the dwell
             quality *= float(rng.uniform(0.3, 0.6))
@@ -71,7 +72,8 @@ class ObservationGenerator:
             pt = self.world.target_position(self._buried, t)
             true_range = float(np.linalg.norm(pt - ps))
             path = rubble_path(grid, ps, pt)
-        if true_range is not None and rng.uniform() < float(detection_prob(true_range, quality, path)):
+        if true_range is not None and rng.uniform() < float(detection_prob(true_range, quality, 0.0)
+                                                             * radar_dsp.reach_prob(true_range, path, quality)):
             sig = float(range_sigma(quality, path))
             conf = float(np.clip(0.45 + 0.5 * quality + rng.normal(0, 0.07), 0.2, 0.98))
             cands.append((max(0.5, true_range + rng.normal(0, sig)), conf))
@@ -91,6 +93,7 @@ class ObservationGenerator:
             "range_candidates": [round(c[0], 2) for c in cands],
             "confidence": [round(c[1], 2) for c in cands], "quality": round(quality, 2),
             "breathing_hz": hz, "doppler_moving": False,
+            "max_reliable_depth_m": round(radar_dsp.reach_path_m(radar_dsp.REACH_REF_RANGE_M, quality), 2),
         }
         out = [stat]
 

@@ -60,7 +60,7 @@ class KinematicFlight(FlightBackend):
     """Straight-line waypoint flight at cruise altitude with a heightmap collision check."""
 
     def __init__(self, grid, starts=STARTS, cruise_alt=8.0, speed=4.0, climb=2.0, descend=1.2,
-                 fly_rate=0.0016, idle_rate=0.0005, scan_rate=0.0006, terrain_clear=3.0, platform=None):
+                 fly_rate=0.0016, idle_rate=0.0005, scan_rate=0.0006, terrain_clear=3.0, platform=None, max_alt=None):
         if platform is not None:          # sim.platform preset name or PlatformSpec (docs/PLATFORM.md)
             from .platform import get_platform
             kw = (get_platform(platform) if isinstance(platform, str) else platform).flight_kwargs()
@@ -78,7 +78,8 @@ class KinematicFlight(FlightBackend):
         self.starts = dict(starts)
         self.cruise, self.speed, self.climb, self.descend = cruise_alt, speed, climb, descend
         self.clear_m = terrain_clear       # vertical clearance over the highest cell along a leg
-        self.max_alt = max(25.0, self.cruise + 15.0, float(np.max(grid.z)) + 15.0)   # tall structures raise it
+        # ceiling: per site (tall standing structures raise it); a scenario may set it explicitly via max_alt
+        self.max_alt = float(max_alt) if max_alt else max(25.0, self.cruise + 15.0, float(np.max(grid.z)) + 15.0)
         self.drones = {d: _Drone(d, xy, grid.height_at(*xy) + LAND_HEIGHT) for d, xy in starts.items()}
         self.stagger = {d: 1.0 * i for i, d in enumerate(starts)}
 
@@ -466,7 +467,9 @@ class Mission:
         if self.scans_cmd == 0:
             assign, why = self.planner.initial_sites(self.loc, self.sites, idle, self.travel)
             if not assign:
-                self._say("No drone can reach any landing site; aborting")
+                what = "pod placement" if self.site_detector is not None else "landing site"
+                self._say(f"Sector unreachable: no safe {what} that a drone can reach on the fresh map; moving on "
+                          "(not cleared)")
                 return self._start_listen()
             self._say(f"Initial sites chosen: {why}")
             for did, sid in assign:

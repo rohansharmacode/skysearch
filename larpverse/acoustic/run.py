@@ -36,26 +36,73 @@ SPEECH_BLOCK = 0.3        # a clip block "has speech" when this share of its VAD
 XTALK_MARGIN = 0.15       # another clip owns that speech when its VAD in the same block is this much higher
 
 
-def gate_transcript(text, vad, cls):
-    """Whisper output is only kept as evidence when the clip looks like speech (R1-003)."""
+HUMAN_CLASSES = ("voice", "shout", "knocking")
+HUMAN_FLOOR = 0.45         # fallback human score when YAMNet itself says voice / shout / knocking
+
+
+def wants_asr(vad, cls, heur):
+    """Whisper runs on clips with voice activity, OR a human YAMNet class / human-over-animal frame:
+    Silero misses shouted calls (VAD 0.00-0.09 on 6/13 real "help me" clips)."""
+    return vad >= 0.15 or cls in ("voice", "shout") or heur.get("human_minus_animal", 0.0) >= models.HMA_MIN
+
+
+def gate_transcript(text, vad, cls, heur=None):
+    """Whisper output is only kept as evidence when the clip looks like speech (R1-003): VAD, or a
+    voice/shout class backed by YAMNet's human-over-animal score. (transcribe already drops
+    segments Whisper itself doubts: no_speech_prob / avg_logprob.)"""
     if not text:
         return "", None
-    if vad < 0.3:
+    hma = (heur or {}).get("human_minus_animal", 0.0)
+    shouted = cls in ("voice", "shout") and hma >= models.HMA_MIN
+    if vad < 0.3 and not shouted:
         return "", f"transcript dropped: VAD {vad:.2f} too low"
     if cls not in ("voice", "shout") and vad < 0.5:
         return "", f"transcript dropped: {cls} clip with VAD {vad:.2f}"
     return text, None
 
 
-def _words(t):
-    return {w for w in re.findall(r"[a-z']+", (t or "").lower()) if len(w) > 2}
+def recognise(clip, whisper="base.en"):
+    """Per-clip recognisers: VAD, YAMNet groups + heuristics, gated Whisper. Returns a dict."""
+    vad = models.vad_speech_ratio(clip)
+    cls, scores, heur, top = models.classify(clip, vad)
+    raw = models.transcribe(clip, whisper) if wants_asr(vad, cls, heur) else ""
+    text, why = gate_transcript(raw, vad, cls, heur)
+    return {"vad": vad, "cls": cls, "scores": scores, "heur": heur, "top": top, "text": text, "why": why}
+
+
+def class_human_floor(f, j):
+    """The fallback scorer scales speech evidence by VAD, which collapses under noise; when YAMNet
+    already names a human sound class the clip is at least a human lead (docs/ACOUSTIC_VALIDATION.md,
+    Requests 1). Ambiguous association still
+    caps the clip's priority, so this cannot create a confident lead from leaked sound."""
+    if j.get("by") != "fallback" or j["human"] >= HUMAN_FLOOR:
+        return j
+    cls = f["sound_class"]
+    heur = f.get("heuristics", {})
+    kp = heur.get("knock_periodicity", 0.0)
+    # each path needs a little more than the bare class: rotor noise and engines fire "knocking"
+    # (so a knock pattern is required), barks under noise can read as "voice" (so no dog score).
+    # Real audio, agent F1 eb8cdba -> now: ESC-50 0.46 -> 0.70, teammate clips 0.83 -> 0.81,
+    # +rotor 0 dB: ESC 0.24 -> 0.28, teammate 0.64 -> 0.69, DroneAudioSet 0.49 -> 0.58.
+    voiced = cls in ("voice", "shout") and f["class_scores"].get("dog", 0.0) < 0.1
+    knocked = cls == "knocking" and kp >= 0.2
+    if voiced or knocked:
+        j = dict(j, human=HUMAN_FLOOR, rationale=j["rationale"] + f"; YAMNet class {cls}: human floor")
+        if cls == "knocking":
+            j["urgency"] = max(j["urgency"], round(0.55 * (0.4 + 0.6 * HUMAN_FLOOR), 2))
+    return j
+
+
+def _bigrams(t):
+    """Word bigrams of a transcript: two talkers' scripts share single words ("anyone"), a leak
+    repeats phrases ("my leg", "leg is")."""
+    w = re.findall(r"[a-z']+", (t or "").lower())
+    return set(zip(w, w[1:]))
 
 
 def clip_features(cid, det, did, snr, clip, n_drones, whisper, notes=()):
-    vad = models.vad_speech_ratio(clip)
-    cls, scores, heur, top = models.classify(clip, vad)
-    raw = models.transcribe(clip, whisper) if vad >= 0.15 else ""
-    text, why = gate_transcript(raw, vad, cls)
+    r = recognise(clip, whisper)
+    vad, cls, scores, heur, top, text, why = (r[k] for k in ("vad", "cls", "scores", "heur", "top", "text", "why"))
     pd = det["per_drone"][did]
     return {
         "clip_id": cid, "pile_id": det["pile_id"], "drone_id": did,
@@ -116,11 +163,64 @@ def remove_crosstalk(seps, blk):
         src = ", ".join(sorted(owners))
         if len(keep) >= 2:
             s["clip"] = np.concatenate([s["clip"][j * blk:(j + 1) * blk] for j in keep])
+            s["blocks"] = [s["blocks"][j] for j in keep]
             s["notes"].append(f"suppressed cross-talk from {src} ({len(drop)} blocks)")
         else:
             s["xtalk_only"] = True
             s["notes"].append(f"content is cross-talk from {src}")
         log.append(f"{s['det']['pile_id']}: suppressed cross-talk from {src} ({len(drop)}/{len(s['blocks'])} blocks)")
+    log += _knock_crosstalk(seps, blk)
+    return log
+
+
+def _abs_onsets(s, blk):
+    """Knock onsets of a clip mapped back to listen time (s), with their clip block index."""
+    t = models.onset_times(s["clip"])
+    if t is None:
+        return []
+    bs = dsp.BLOCK_S
+    out = []
+    for x in t:
+        j = int(x // bs)
+        if j < len(s["blocks"]):
+            out.append((s["blocks"][j] * bs + (x - j * bs), j))
+    return out
+
+
+def _knock_crosstalk(seps, blk, tol=0.08):
+    """The same knocks heard in two clips belong to the cleaner knocker (higher knock periodicity).
+
+    A clip whose knock onsets mostly coincide (+-80 ms, the arrival spread across drones) with a
+    stronger knocker's onsets loses those blocks, so a settling or dog pile next to a knocking victim
+    does not inherit its pattern."""
+    log = []
+    for s in seps:
+        s["kp"] = models.knock_periodicity(s["clip"])
+        s["onsets"] = _abs_onsets(s, blk)
+    for s in seps:
+        if s["det"]["excluded"] or s["kp"] < 0.3 or len(s["onsets"]) < 3:
+            continue
+        for o in seps:
+            if o is s or o["kp"] < 0.5 or o["kp"] < s["kp"] or not o["onsets"]:
+                continue
+            if o["kp"] == s["kp"] and o["snr"] <= s["snr"]:
+                continue
+            ot = np.array([x for x, _ in o["onsets"]])
+            hit = [j for x, j in s["onsets"] if np.min(np.abs(ot - x)) <= tol]
+            if len(hit) < 0.6 * len(s["onsets"]):
+                continue
+            drop = set(hit)
+            keep = [j for j in range(len(s["blocks"])) if j not in drop]
+            src = o["det"]["pile_id"]
+            if len(keep) >= 2:
+                s["clip"] = np.concatenate([s["clip"][j * blk:(j + 1) * blk] for j in keep])
+                s["blocks"] = [s["blocks"][j] for j in keep]
+                s["notes"].append(f"suppressed knock cross-talk from {src} ({len(drop)} blocks)")
+            else:
+                s["xtalk_only"] = True
+                s["notes"].append(f"knocks are cross-talk from {src}")
+            log.append(f"{s['det']['pile_id']}: suppressed knock cross-talk from {src}")
+            break
     return log
 
 
@@ -155,7 +255,8 @@ def apply_association(clips, dets_by_pile):
     return clips
 
 
-def analyse(scene, exclude_piles=(), mode="auto", whisper="base.en", save_clips=False, timing=None):
+def analyse(scene, exclude_piles=(), mode="auto", whisper="base.en", save_clips=False, timing=None,
+            gemini_audio=None):
     """Everything downstream of the microphones. Sees only the Scene (public geometry + signals)."""
     T = timing if timing is not None else {}
     t = time.time()
@@ -210,32 +311,49 @@ def analyse(scene, exclude_piles=(), mode="auto", whisper="base.en", save_clips=
             os.makedirs(cd, exist_ok=True)
             sf.write(os.path.join(cd, f"seed{scene.seed}_{d['pile_id']}.wav"),
                      s_["clip"] / (np.abs(s_["clip"]).max() + 1e-9) * 0.8, 16000)
-    # backstop: the same words heard on two piles belong to the clip with more speech
+    # backstop: the same phrases heard on two piles belong to the clip with more speech
     for f in feats:
-        w = _words(f["transcript"])
-        if len(w) < 2:
+        w = _bigrams(f["transcript"])
+        if not w:
             continue
         rivals = [(p, t_, None) for p, t_ in ref_text.items()] + \
                  [(g["pile_id"], g["transcript"], g) for g in feats if g is not f]
         for p, t_, g in rivals:
-            ov = len(w & _words(t_)) / len(w)
-            if ov >= 0.5 and (g is None or g["vad_speech_ratio"] > f["vad_speech_ratio"]):
+            shared = len(w & _bigrams(t_))
+            if shared >= min(2, len(w)) and (g is None or g["vad_speech_ratio"] > f["vad_speech_ratio"]):
                 f["notes"].append(f"transcript repeats {p}'s talker: dropped as cross-talk")
                 log.append(f"{f['pile_id']}: suppressed cross-talk from {p} (transcript)")
                 f["transcript"] = ""
+                f["_ambiguous"] = True
                 break
+    for f in feats:     # sparse speech that sounds like a voice to YAMNet: likely another talker's leak
+        if f["sound_class"] in ("voice", "shout") and f["vad_speech_ratio"] < 0.3:
+            f["notes"].append(f"sparse speech (VAD {f['vad_speech_ratio']:.2f}): direction of the voice not pinned")
+            f["_ambiguous"] = True
+    for f in feats:
+        if f.pop("_ambiguous", False):
+            d = next(s_["det"] for s_ in seps if s_["det"]["pile_id"] == f["pile_id"])
+            d["association"], d["assigned"] = "ambiguous", False
+            f["doa"].update(association="ambiguous", assigned=False)
     T["recognise"] = time.time() - t
 
     t = time.time()
     judg, meta = agent.judge_clips(feats, mode=mode)
+    dets_by_pile = {d["pile_id"]: d for d in kept}
     clips = []
     for f in feats:
-        j = judg[f["clip_id"]]
+        j = class_human_floor(f, judg[f["clip_id"]])
         c = {k: f[k] for k in ("clip_id", "drone_id", "pile_id", "bearing_deg", "width_deg", "snr_db",
                                "vad_speech_ratio", "transcript", "sound_class", "class_scores", "heuristics")}
         c.update(human=j["human"], urgency=j["urgency"], reliability=j["reliability"],
                  rationale=j["rationale"], by=j["by"])
+        if j.get("by_note"):
+            c["by_note"] = j["by_note"]
         c["doa_agree"] = f"{f['doa']['drones_agreeing']}/{f['doa']['drones_listening']}"
+        det = dets_by_pile[f["pile_id"]]
+        c["bearings"] = [{"drone_id": d, "bearing_deg": v["bearing_deg"], "sigma_deg": v["sigma_deg"],
+                          "snr_db": det.get("snr_by_drone", {}).get(d), "measured": v["measured"]}
+                         for d, v in det["per_drone"].items()]
         clips.append(c)
     for c, f in zip(clips, feats):
         c["notes"] = f["notes"]
@@ -253,7 +371,7 @@ def analyse(scene, exclude_piles=(), mode="auto", whisper="base.en", save_clips=
             p["why"] = ("Lead (ambiguous direction" + (f"; could be {alt}" if alt else "") + "): " + p["why"])
     T["agent"] = time.time() - t
 
-    return {
+    state = {
         "schema": "larpverse.acoustic/v1",
         "algo": dsp.ALGO_VERSION,
         "t": scene.duration,
@@ -262,12 +380,77 @@ def analyse(scene, exclude_piles=(), mode="auto", whisper="base.en", save_clips=
         "listening_drones": [{"id": k, "xy": [round(float(v[0]), 2), round(float(v[1]), 2)]}
                              for k, v in scene.drones.items()],
         "clips": clips, "piles": piles, "dispatch": dispatch,
-        "agent": meta, "log": log, "timing_s": {k: round(v, 2) for k, v in T.items()},
+        "agent": meta, "log": log, "timing_s": {},
     }
+    if gemini_audio_enabled(gemini_audio, mode):
+        t = time.time()
+        sep_by = {s_["det"]["pile_id"]: s_ for s_ in seps}
+        items = [{"clip_id": c["clip_id"], "pile_id": c["pile_id"], "drone_id": c["drone_id"],
+                  "audio": sep_by[c["pile_id"]]["clip"],
+                  "background": scene.signals[c["drone_id"]][0].astype(np.float32),
+                  "reliability": c["reliability"], "association": c["association"]} for c in clips]
+        add_gemini_audio(state, items, mode)
+        T["gemini_audio"] = time.time() - t
+    state["timing_s"] = {k: round(v, 2) for k, v in T.items()}
+    return state
+
+
+def gemini_audio_enabled(flag, mode) -> bool:
+    """Stage 1 novelty -> stage 2 Gemini audio -> stage 3 sector ranking (acoustic/gemini_audio.py).
+
+    flag: True/False forces it; None = env LARPVERSE_GEMINI_AUDIO (1/0) if set, else ON exactly when
+    agents.llm resolves to Gemini with a key (or LLM_REPLAY), and never with mode="fallback"."""
+    if flag is not None:
+        return bool(flag)
+    env = os.environ.get("LARPVERSE_GEMINI_AUDIO", "").strip().lower()
+    if env in ("1", "true", "yes", "on"):
+        return True
+    if env in ("0", "false", "no", "off") or mode == "fallback":
+        return False
+    try:
+        from agents import llm
+        return llm.resolve()[0] == "gemini" and llm.available()
+    except Exception:                                   # noqa: BLE001
+        return False
+
+
+def add_gemini_audio(state, items, mode="auto"):
+    """Run the novelty -> Gemini audio stage on the separated clips and merge it into state (in place).
+
+    Gemini answers are cached/replayed by agents.llm; without a key, or on any failure, gemini_audio
+    falls back to local analysis per clip, and if the whole stage fails the v1 state is left as it
+    was with the error in state["gemini_audio"]. Association still bounds the result: an ambiguous
+    pile keeps its priority cap, so stage 3 cannot dispatch on a direction we could not pin down."""
+    from . import gemini_audio
+    gmode = {"llm": "live", "replay": "replay", "fallback": "fallback"}.get(mode, "auto")
+    try:
+        res = gemini_audio.analyse_sector_audio(items, mode=gmode)
+        gemini_audio.merge_into_state(state, res)
+    except Exception as e:                              # noqa: BLE001
+        state["gemini_audio"] = {"mode": gmode, "error": f"{type(e).__name__}: {e}"[:300]}
+        state["log"].append(f"gemini audio stage failed ({type(e).__name__}); v1 ranking kept")
+        return state
+    amb = {c["pile_id"] for c in state["clips"] if c.get("association") != "confident"}
+    changed = False
+    for p in state["piles"]:
+        if p["pile_id"] in amb and p["priority"] > AMBIGUOUS_PRIORITY_CAP:
+            p["priority"], changed = AMBIGUOUS_PRIORITY_CAP, True
+    if changed:
+        state["piles"].sort(key=lambda p: (-p["priority"], p["pile_id"]))
+        leads = [p for p in state["piles"] if p["status"] in ("lead", "radar_ping")]
+        for p in leads:
+            p["status"] = "lead"
+        if leads:
+            leads[0]["status"] = "radar_ping"
+            if state["dispatch"].get("pile_id") != leads[0]["pile_id"]:
+                state["dispatch"] = {"pile_id": leads[0]["pile_id"],
+                                     "reason": f"Send the drones to {leads[0]['pile_id']}: highest priority "
+                                               f"({leads[0]['priority']}). {leads[0]['why']}"}
+    return state
 
 
 def listen_and_rank(scenario, drone_positions: dict | None = None, exclude_piles=(), seed: int | None = None,
-                    mode="auto", whisper="base.en", return_truth=False):
+                    mode="auto", whisper="base.en", return_truth=False, gemini_audio=None):
     """Mission hook: listen from the landed drones and rank the piles. Returns the
     larpverse.acoustic/v1 dict (writes nothing). Only the scene synthesis reads scenario.truth;
     pass return_truth=True to also get the evaluation summary as a second value."""
@@ -275,7 +458,7 @@ def listen_and_rank(scenario, drone_positions: dict | None = None, exclude_piles
     t0 = time.time()
     scene, truth = build_scene(scenario, drone_positions, seed)
     T["scene"] = time.time() - t0
-    state = analyse(scene, exclude_piles, mode, whisper, save_clips=False, timing=T)
+    state = analyse(scene, exclude_piles, mode, whisper, save_clips=False, timing=T, gemini_audio=gemini_audio)
     state["timing_s"]["total"] = round(time.time() - t0, 2)
     return (state, truth) if return_truth else state
 
@@ -328,6 +511,8 @@ def main(argv=None):
     ap.add_argument("--drone-xy", default=None, help='JSON {"d1": [x, y], ...} of landed drones')
     ap.add_argument("--exclude", default="", help="comma-separated piles to leave out of the ranking")
     ap.add_argument("--agent", default="auto", choices=["auto", "llm", "replay", "fallback"])
+    ap.add_argument("--gemini-audio", default="auto", choices=["auto", "on", "off"],
+                    help="novelty -> Gemini audio stage (auto: on when a Gemini key is configured)")
     ap.add_argument("--whisper", default="base.en", help="faster-whisper model (tiny.en, base.en)")
     ap.add_argument("--out", default=DEFAULT_OUT)
     ap.add_argument("--no-truth", action="store_true", help="hide the evaluation line")
@@ -344,7 +529,8 @@ def main(argv=None):
     t0 = time.time()
     scene, truth = build_scene(sc, drones, a.seed)
     T["scene"] = time.time() - t0
-    state = analyse(scene, excl, a.agent, a.whisper, save_clips=True, timing=T)
+    state = analyse(scene, excl, a.agent, a.whisper, save_clips=True, timing=T,
+                    gemini_audio={"auto": None, "on": True, "off": False}[a.gemini_audio])
     state["timing_s"]["total"] = round(time.time() - t0, 2)
     path = write_state(state, a.out)
     print_report(state, None if a.no_truth else truth)

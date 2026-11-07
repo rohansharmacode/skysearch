@@ -180,7 +180,7 @@ Written by `acoustic/run.py` (`ALGO_VERSION` in `acoustic/dsp.py`); every v1 fie
 
 ```jsonc
 {
-  "algo": "assoc-v8",                          // localisation/association version (cache keys should include it)
+  "algo": "assoc-v11",                          // localisation/association version (cache keys should include it)
   "clips": [ {
     "association": "confident",                // confident | ambiguous
     "association_conf": 0.97,                  // 0-1: bearing likelihood of this pile over all nine piles
@@ -189,7 +189,9 @@ Written by `acoustic/run.py` (`ALGO_VERSION` in `acoustic/dsp.py`); every v1 fie
     "reliability": 0.81,                       // agent reliability x (0.5 + 0.5 x association_conf); <= 0.45 if ambiguous
     "reliability_agent": 0.84,                 // the agent's own value before the association factor
     "doa_agree": "2/3",                        // drones whose bearing is within min(15 deg, gate) of the pile centre
-    "heuristics": { "knock_periodicity": 0.62, "hum_harmonicity": 0.2 },
+    "heuristics": { "knock_periodicity": 0.62, "hum_harmonicity": 0.2, "human_minus_animal": 0.31 },
+    "bearings": [ { "drone_id": "d1", "bearing_deg": 288.4, "sigma_deg": 1.6,   // per landed drone; sigma = bearing
+                    "snr_db": 21.3, "measured": true } ],                         //  noise (gate width if not measured)
     "notes": [ "suppressed cross-talk from A3 (2 blocks)", "transcript dropped: dog clip with VAD 0.26" ]
   } ],
   "piles": [ { "association": "ambiguous",     // association of the top clip (absent for silent piles)

@@ -220,7 +220,8 @@ def report(algos, seeds, verbose=True):
 
 CLIP_KEYS = ("clip_id", "drone_id", "pile_id", "bearing_deg", "width_deg", "snr_db", "vad_speech_ratio",
              "transcript", "sound_class", "human", "urgency", "reliability", "priority", "doa_agree",
-             "association", "association_conf", "ambiguous_with", "notes", "by")
+             "association", "association_conf", "ambiguous_with", "notes", "by", "bearings", "heuristics",
+             "class_scores", "rationale", "reliability_agent")
 
 
 def write_fixture(seed: int, path: str, algo=None) -> str:

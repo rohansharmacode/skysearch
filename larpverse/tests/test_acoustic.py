@@ -171,3 +171,75 @@ def test_fixture_excluded_piles_are_not_reported(seed7):
         for c in st["clips"]:
             n, m = map(int, c["doa_agree"].split("/"))
             assert 0 <= n <= m
+
+
+def _v1_state():
+    return {"clips": [{"clip_id": "ac-B3", "pile_id": "B3", "association": "ambiguous"},
+                      {"clip_id": "ac-A3", "pile_id": "A3", "association": "confident"}],
+            "piles": [{"pile_id": "A3", "priority": 60, "status": "radar_ping", "why": "voice"},
+                      {"pile_id": "B3", "priority": 19, "status": "lead", "why": "Lead (ambiguous direction): x"}],
+            "dispatch": {"pile_id": "A3", "reason": "voice"}, "log": []}
+
+
+def test_gemini_stage_cannot_lift_an_ambiguous_pile_and_failures_keep_v1(monkeypatch):
+    pytest.importorskip("scipy")
+    from acoustic import gemini_audio, run
+    task = {"pile_id": "B3", "priority": 85, "status": "lead", "distress": ["trapped"], "languages": [],
+            "reasons": ["voice"], "rationale": "voice says trapped"}
+    monkeypatch.setattr(gemini_audio, "analyse_sector_audio", lambda items, mode="auto": {
+        "prompt": "p", "mode": mode, "clips": {}, "sector_tasks": [task], "stage1": {}, "stage2": {}})
+    st = run.add_gemini_audio(_v1_state(), [], mode="fallback")
+    pr = {p["pile_id"]: p["priority"] for p in st["piles"]}
+    assert pr["B3"] <= run.AMBIGUOUS_PRIORITY_CAP and st["dispatch"]["pile_id"] == "A3"
+
+    def boom(items, mode="auto"):
+        raise RuntimeError("network down")
+    monkeypatch.setattr(gemini_audio, "analyse_sector_audio", boom)
+    st = run.add_gemini_audio(_v1_state(), [], mode="auto")
+    assert st["dispatch"]["pile_id"] == "A3" and "error" in st["gemini_audio"]
+    assert run.gemini_audio_enabled(None, "fallback") is False      # LLM_PROVIDER=none in tests
+
+
+def test_knock_pattern_beats_debris_bursts():
+    from acoustic import models
+    from acoustic.scene import FS, debris, knocking, through_rubble
+    rng = np.random.default_rng(1)
+    k = through_rubble(knocking(rng), 0.8)
+    x = np.zeros(int(4.5 * FS))
+    for t0 in (0.5, 2.6):
+        d = debris(rng)
+        x[int(t0 * FS):int(t0 * FS) + len(d)] += d
+    assert models.knock_periodicity(k) >= 0.7
+    assert models.knock_periodicity(through_rubble(x, 0.3)) < 0.3
+
+
+def test_class_floor_and_whisper_gate():
+    from acoustic import run
+    knock = _feat("k", "", "knocking", {"knocking": 0.6}, vad=0.0)
+    knock["heuristics"]["knock_periodicity"] = 0.7
+    j = run.class_human_floor(knock, {"human": 0.2, "urgency": 0.1, "reliability": 0.8, "rationale": "x",
+                                      "by": "fallback"})
+    assert j["human"] >= agent.HUMAN_LEAD
+    noisy = dict(knock, heuristics={"knock_periodicity": 0.0, "hum_harmonicity": 0.1})
+    assert run.class_human_floor(noisy, dict(j, human=0.2))["human"] == 0.2      # rotor "knocking"
+    dog = _feat("d", "", "voice", {"voice": 0.5, "dog": 0.4}, vad=0.0)
+    assert run.class_human_floor(dog, dict(j, human=0.2))["human"] == 0.2        # bark read as voice
+    llm = dict(j, human=0.1, by="llm")
+    assert run.class_human_floor(knock, llm)["human"] == 0.1                      # LLM judgments untouched
+    # shouted call that Silero misses: still transcribed and kept when YAMNet hears a human
+    assert run.wants_asr(0.02, "shout", {"human_minus_animal": 0.5})
+    assert run.gate_transcript("help me", 0.02, "shout", {"human_minus_animal": 0.5})[0] == "help me"
+    assert run.gate_transcript("my name is trapp", 0.26, "dog", {"human_minus_animal": 0.0})[0] == ""
+
+
+def test_busy_llm_falls_back_with_note(monkeypatch, tmp_path):
+    from agents import llm
+
+    def busy(*a, meta=None, **k):
+        meta.update(busy=True, error="gemini HTTP 429")
+        return None
+    monkeypatch.setattr(llm, "call_json", busy)
+    f = _feat("a", "help", "voice", {"voice": 0.9}, vad=0.5)
+    j, meta = agent.judge_clips([f], mode="llm", cache_path=str(tmp_path / "c.jsonl"))
+    assert j["a"]["by"] == "fallback" and j["a"]["by_note"] == "Gemini busy — using fallback"
+    assert meta["busy"] and meta["fallback"] == 1

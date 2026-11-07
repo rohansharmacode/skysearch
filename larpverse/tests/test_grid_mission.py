@@ -379,3 +379,23 @@ def test_winch_pod_cycle_and_state():
         x, y, z = o["sensor_pose"][:3]
         assert abs(z - (m.grid.height_at(x, y) + 0.05)) < 0.6
     assert m.build_state()["mission"]["delivery"] == "pod"
+
+
+def test_too_few_sites_and_tall_site_ceiling():
+    """Collapse-site fixes: < 3 placements does not crash; the flight ceiling follows the tallest structure."""
+    from sim.coordinator import KinematicFlight
+    from sim.localise import Localiser
+    from sim.planner import Planner
+    from sim.world import Grid
+    n = 60
+    g = Grid((-15.0, -15.0), 0.5, n, n, np.zeros((n, n), np.float32))
+    g.z[20:24, 20:24] = 24.0                                   # a 24 m standing structure
+    f = KinematicFlight(g, starts={"d1": (-12.0, -12.0)})
+    assert f.max_alt >= 37.0 and f.eta("d1", [12.0, 12.0, 0.0]) is not None
+    loc = Localiser(g)
+    pl = Planner(g, loc.cfg, seed=1)
+    site = {"id": "P1", "xy": [5.0, 5.0], "z": 0.0, "slope_deg": 2.0, "roughness": 0.01, "status": "candidate"}
+    drones = [{"id": "d1", "battery": 1.0}, {"id": "d2", "battery": 1.0}]
+    assign, _ = pl.initial_sites(loc, [site], drones, lambda d, s: 10.0)
+    assert len(assign) == 1
+    assert pl.initial_sites(loc, [], drones, lambda d, s: 10.0)[0] == []

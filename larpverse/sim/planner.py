@@ -87,9 +87,12 @@ class Planner:
             w = pdet(r, q, path) / range_sigma(q, path) ** 2
             u = np.stack([dx / dh, dy / dh], 1)
             info.append(w[:, None, None] * u[:, :, None] * u[:, None, :])  # (K,2,2)
+        k = min(3, len(cand), len(drones))
+        if k == 0:                     # nothing safe to land or lower a pod on: the caller marks it unreachable
+            return [], "no safe landing site or pod placement"
         best, best_val = None, -np.inf
-        for combo in combinations(range(len(cand)), 3):
-            J = info[combo[0]] + info[combo[1]] + info[combo[2]] + 0.05 * np.eye(2)
+        for combo in combinations(range(len(cand)), k):
+            J = sum(info[c] for c in combo) + 0.05 * np.eye(2)
             val = float(np.mean(np.log(np.linalg.det(J))))
             if val > best_val:
                 best, best_val = combo, val

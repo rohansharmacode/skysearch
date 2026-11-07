@@ -73,6 +73,9 @@ def _base_parser():
     g.add_argument("--penetration", default=None, help="radar through-rubble model (sim/radar_dsp.py): literature | legacy")
     g.add_argument("--delivery", choices=["pod", "land"], default=None,
                    help="radar delivery: pod = winch-lowered pod (drawn hanging/resting), land = the drone perches")
+    g.add_argument("--acoustic", choices=["auto", "stub", "real"], default=None,
+                   help="acoustic agent (sim/grid_mission.py): stub = synthetic clips from the hidden truth (labelled), "
+                        "real = the acoustic pipeline, auto = real when available")
     g.add_argument("--no-autonomous", dest="autonomous", action="store_false",
                    help="legacy fixed loop: 3 piles, no battery swaps, no revisits")
     ap.add_argument("--speed", type=float, default=4.0, help="sim-seconds per wall-second")
@@ -225,7 +228,8 @@ def load_mission(a, log):
         return ReplayMission(a.replay, a.out, a.seed, a.start_pile, a.site)
     try:
         from isaac.site import mission_for_site
-        extra = {k: getattr(a, k) for k in ("platform", "penetration", "delivery") if getattr(a, k, None) is not None}
+        extra = {k: getattr(a, k) for k in ("platform", "penetration", "delivery", "acoustic")
+                 if getattr(a, k, None) is not None}
         extra["autonomous"] = getattr(a, "autonomous", True)
         tk = getattr(a, "tasking", None)
         if tk:                              # live operator zones: GridMission re-reads the file each step (mtime)

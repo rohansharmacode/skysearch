@@ -540,6 +540,11 @@ class Rigs:
         f = min(cls.MAP_H * cls.APERTURE / w, cls.MAP_H * cls.APERTURE / aspect / h)
         return (cls.MAP_H, f) if f >= min_focal else (cls.MAP_H * min_focal / f, min_focal)
 
+    def _top(self, x, y, r=6.0):
+        """Rubble top near (x, y): 80th percentile of the surface on a 5x5 grid of radius r."""
+        g = np.linspace(-r, r, 5)
+        return float(np.percentile([float(self.surface(float(x + u), float(y + v))) for u in g for v in g], 80))
+
     def _centre(self):
         x0, y0, x1, y1 = self.bounds or self.GRID_BOUNDS
         return 0.5 * (x0 + x1), 0.5 * (y0 + y1), max(x1 - x0, y1 - y0)
@@ -564,6 +569,7 @@ class Rigs:
                     c = np.array([px, py, 0.5 + 0.5 * float(self.surface(px, py))])
                 elif focus is not None:
                     c = np.array(focus, float)
+                    c[2] = max(c[2], self._top(c[0], c[1]) - 1.0)   # tall wrecks: aim at the rubble top, not z ~2 m
                 else:
                     continue
                 r["clock"] = r.get("clock", 0.0) + dt
@@ -575,7 +581,8 @@ class Rigs:
             elif r["mode"] == "top":
                 if focus is None:
                     continue
-                eye = np.array([focus[0], focus[1] - 0.01, focus[2] + 26.0]); tgt = np.array(focus, float)
+                fz = max(float(focus[2]), self._top(focus[0], focus[1]) - 1.0)
+                eye = np.array([focus[0], focus[1] - 0.01, fz + 26.0]); tgt = np.array([focus[0], focus[1], fz])
             else:
                 p = poses.get(r["who"])
                 if p is None:

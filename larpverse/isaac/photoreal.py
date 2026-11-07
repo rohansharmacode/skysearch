@@ -418,7 +418,10 @@ def dress(stage, sc, a, log=print):
     if "asphalt" in mats:
         bind(stage, "/World/Staging/Pad", mats["asphalt"])
     dress_rubble(stage, sc, mats, log, seed=sc.seed)
-    scatter_debris(stage, sc, mats, log, seed=sc.seed)
+    if getattr(sc, "site", "grid") == "collapse":   # the referenced site has its own 56k-piece debris instancer
+        log("[photoreal] collapse site: keeping its own debris, no extra scatter")
+    else:
+        scatter_debris(stage, sc, mats, log, seed=sc.seed)
     if a.veg:
         vegetation(stage, sc, nv, log, seed=sc.seed)
     if a.operator:

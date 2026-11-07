@@ -4,6 +4,10 @@ Updated 2026-11-07 ~22:15. Repo: /home/peroxide/Downloads/UCL/agentverse (local 
 - remote github.com/rohansharmacode/skysearch, branch `larpverse-sensing`, folder `larpverse/`;
 - local clone of the team repo at ~/Downloads/UCL/skysearch.
 
+## Pause history
+
+Paused by the user at about 23:15 and resumed at about 23:20. All 11 agents were resumed via SendMessage; watchdog and heartbeat cron (17a9724f) re-armed.
+
 ## Standing instructions (user)
 
 **Pace and budget**

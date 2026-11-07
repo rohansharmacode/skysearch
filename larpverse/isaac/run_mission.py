@@ -6,8 +6,10 @@
     # Isaac Sim 4.5 / 5.x standalone (SimulationApp route):
     ~/isaacsim/python.sh isaac/run_mission.py --seed 7 --speed 4
     python isaac/run_mission.py --dry-run --max-steps 60                          # any laptop, numpy only
-    # Sites (docs/SITE_WEIGUAN.md): --site grid (default) | weiguan (case study) | "mesh:<map.npz|.ply|.obj|.usd>[?sectors=weiguan]"
-    ./isaaclab.sh -p .../isaac/run_mission.py --site weiguan --headless --show-truth --photoreal 1
+    # Sites (docs/SITE_WEIGUAN.md): --site grid (default) | collapse (real expanded site) | weiguan (procedural)
+    #   | "mesh:<map.npz|.ply|.obj|.usd>[?sectors=weiguan]"
+    ./isaaclab.sh -p /workspace/skysearch/larpverse/isaac/run_mission.py --site collapse \
+        --site-usd /workspace/skysearch/collapse_site/collapse_site.usda --headless --show-truth --speed 4
     # Footage (isaac/photoreal.py, verified on the L40S; --launcher kit = the exact route it was recorded on):
     ... run_mission.py --headless --radar dsp --show-truth --photoreal 1 --record out/lv1 \
         --rec-cams director,wide,chase:d1,fpv:d2,top --rec-res 1920x1080 --rec-fps 30 --rec-speed 6 --rec-warp 4 \
@@ -52,7 +54,15 @@ def _base_parser():
     ap.add_argument("--seed", type=int, default=7)
     ap.add_argument("--start-pile", default=None, help="pile to begin at, e.g. B2 (default: scenario's)")
     ap.add_argument("--site", default="grid",
-                    help="grid (synthetic 3x3) | weiguan (Weiguan Jinlong case study) | mesh:<path>[?sectors=weiguan]")
+                    help="grid (synthetic 3x3) | collapse (the real expanded site, USD) | weiguan (procedural stand-in) "
+                         "| mesh:<path>[?sectors=weiguan]")
+    ap.add_argument("--site-usd", default=None,
+                    help="--site collapse: path to collapse_site.usda (default: <repo>/collapse_site/collapse_site.usda "
+                         "on branch 3d_model, $LARPVERSE_COLLAPSE_SITE, assets/collapse_site/, ../collapse_site_src/)")
+    ap.add_argument("--site-lights", choices=["auto", "site", "ours", "both"], default="auto",
+                    help="lights with a referenced site USD: auto = ours under --photoreal, else the site's own Sun/Sky")
+    ap.add_argument("--no-scan-textures", dest="scan_textures", action="store_false",
+                    help="drop the albedo maps derived from the third-party photogrammetry screenshots (licence unknown)")
     ap.add_argument("--radar", choices=["model", "dsp"], default="dsp", help="dsp needs scipy in Isaac's python")
     ap.add_argument("--speed", type=float, default=4.0, help="sim-seconds per wall-second")
     ap.add_argument("--show-truth", action="store_true", help="draw ground-truth victim ghosts (display only)")
@@ -64,12 +74,17 @@ def _base_parser():
     ap.add_argument("--camera", choices=["director", "free"], default="director")
     ap.add_argument("--drone-asset", nargs="?", const="auto", default=None,
                     help="reference Isaac's quadcopter USD (optionally a path/URL) instead of primitives")
-    ap.add_argument("--drone-scale", type=float, default=1.6)
+    ap.add_argument("--drone-scale", type=float, default=1.6, help="small model only (heavy is true scale)")
+    ap.add_argument("--drone-model", choices=["heavy", "small"], default="heavy",
+                    help="heavy: FlyCart/T50-class coaxial X8 from sim.platform (docs/PLATFORM.md); small: old quad")
     ap.add_argument("--rtx-lidar", action="store_true", help="try RTX LiDAR (falls back to PhysX raycasts)")
     ap.add_argument("--overlay", choices=["auto", "debug", "usd"], default="auto",
                     help="debug = debug_draw lines/points; usd = prims only (safest for Movie Capture)")
-    ap.add_argument("--rays", type=int, default=96, help="LiDAR rays per surveying drone per frame")
-    ap.add_argument("--lidar-range", type=float, default=40.0)
+    ap.add_argument("--rays", type=int, default=None, help="pin LiDAR rays per surveying drone per frame "
+                    "(default: the --lidar-profile's: small 96, heavy auto-sized to --lidar-budget-ms)")
+    ap.add_argument("--lidar-range", type=float, default=None, help="default: profile's (small 40, heavy 60)")
+    from isaac.lidar import add_lidar_args
+    add_lidar_args(ap)
     ap.add_argument("--render-fps", type=float, default=30.0, help="virtual frame rate for --dry-run (--record: --rec-fps)")
     ap.add_argument("--no-keep-open", action="store_true", help="close the GUI when the mission ends")
     ap.add_argument("--quiet", action="store_true")
@@ -125,6 +140,9 @@ def parse_args(argv=None):
             setattr(a, k, photo if a.photoreal else basic)
     live = int(getattr(a, "livestream", 0) or 0)
     a.live = live > 0
+    from isaac.lidar import profile as lidar_profile     # resolve the LiDAR profile once (selftest reads a.rays)
+    a.lidar_prof = lidar_profile(a.lidar_profile, a.lidar_budget_ms, a.rays, a.lidar_range)
+    a.rays, a.lidar_range = a.lidar_prof["n_rays"], a.lidar_prof["max_range"]
     a.keep_open = not (a.dry_run or a.no_keep_open or a.record or a.selftest or (a.headless and not a.live))
     return a
 
@@ -269,7 +287,8 @@ def main(argv=None):
 
     from isaac.camera import DirectorCamera, focus_from_state
     from isaac.drone_viz import DroneViz, NullDrone
-    from isaac.lidar import HeightmapLidar, PhysxLidar, PointAccumulator, RtxLidar
+    from isaac.lidar import HeightmapLidar, PointAccumulator, RtxLidar, make_lidar
+    lprof = a.lidar_prof
     from isaac.overlay import Overlay, make_backend
 
     if a.out:
@@ -281,15 +300,26 @@ def main(argv=None):
     hm = sc.heightmap(0.5)                  # public geometry: overlay draping + dry-run LiDAR target
     say(f"site {getattr(sc, 'site', 'grid')}: {len(sc.piles)} sectors; heightmap {hm.w}x{hm.h} in {time.time() - t0:.1f} s")
     surface = hm.height_at
+    from isaac.site import site_name
 
     stage, dd, rtx, dust = None, None, None, None
     if a.dry_run:
-        lidar = HeightmapLidar(hm, a.lidar_range, a.rays)
+        lidar = make_lidar("heightmap", lprof, grid=hm)
     else:
         from isaac import compat, scene
         stage = rt.stage()
+        site_usd = None
+        if site_name(sc) == "collapse":
+            from sim.site_collapse import find_usd
+            site_usd = os.path.abspath(a.site_usd) if a.site_usd else find_usd()
+            if not site_usd or not os.path.exists(site_usd):
+                raise FileNotFoundError("--site collapse needs collapse_site.usda: pass --site-usd <path> "
+                                        "(teammate's checkout: <repo>/collapse_site/collapse_site.usda, branch 3d_model)")
+            say(f"referencing {site_usd} at /World/CollapseSite (lights: {a.site_lights}, "
+                f"scan textures: {'on' if a.scan_textures else 'off'})")
         n = scene.build(stage, sc, show_truth=a.show_truth, physics_scene=rt.own_physics_scene, sun=a.sun,
-                        sky=a.sky, materials="none" if a.look == "plain" else "preview")
+                        sky=a.sky, materials="none" if a.look == "plain" else "preview", site_usd=site_usd,
+                        site_lights=a.site_lights, scan_textures=a.scan_textures, photoreal=bool(a.photoreal))
         say(f"stage built: {n} rubble pieces, {scene.build.materials.bound} material bindings")
         if a.photoreal:                     # visual only; colliders keep the scenario's piece poses
             from isaac import photoreal
@@ -301,14 +331,15 @@ def main(argv=None):
             dd = compat.debug_draw()
             if dd is None:
                 say("debug_draw unavailable; overlay uses USD prims")
-        lidar = PhysxLidar(compat.physx_raycaster(), a.lidar_range, a.rays)
+        lidar = make_lidar("physx", lprof, cast=compat.physx_raycaster())
     ids = [d["id"] for d in as_dict(mission.build_state()).get("drones", [])] or ["d1", "d2", "d3"]
     if a.dry_run:
         drones = {i: NullDrone(None, f"/World/Drones/{i}") for i in ids}
     else:
-        drones = {i: DroneViz(stage, f"/World/Drones/{i}", did=i, scale=a.drone_scale, asset=a.drone_asset)
+        drones = {i: DroneViz(stage, f"/World/Drones/{i}", did=i, scale=a.drone_scale, asset=a.drone_asset,
+                              model=a.drone_model)
                   for i in ids}
-    from isaac.site import base_xy, site_name
+    from isaac.site import base_xy
     overlay = Overlay(make_backend("null" if a.dry_run else a.overlay, stage, dd), surface, pile_xy,
                       base_xy=base_xy(sc))
     mirrors = []
@@ -331,10 +362,12 @@ def main(argv=None):
         else:
             say(f"PhysX raycast self-test ok: hit z={hit[2]:.2f} at pile {p0.name}")
         if a.rtx_lidar:
-            rtx = RtxLidar({i: d.path for i, d in drones.items()})
+            rtx = RtxLidar({i: d.path for i, d in drones.items()}, configs=lprof["rtx_configs"],
+                           mount_z=0.35 if a.drone_model == "small" else 0.50)
             rtx = rtx if rtx.ok else None
 
-    accum = PointAccumulator()
+    accum = PointAccumulator.for_profile(lprof)
+    mount_z = 0.35 if a.drone_model == "small" else 0.50   # LiDAR puck above the skids (nose gimbal on the X8)
     cur = prev = as_dict(mission.build_state())
     steps, frame = 0, 0
     virtual = a.dry_run or bool(a.record)   # recording: fixed frame clock, so slow (path-traced) frames don't skip
@@ -439,7 +472,7 @@ def main(argv=None):
                 if not done and is_surveying(st, cur.get("phase"), z - float(surface(x, y)) > 1.5):
                     pl = active if active in pile_xy else nearest_pile(pile_xy, x, y)
                     if pl:
-                        pts = rtx.read(did) if rtx is not None else lidar.sweep((x, y, z + 0.35), yaw, frame)
+                        pts = rtx.read(did) if rtx is not None else lidar.sweep((x, y, z + mount_z), yaw, frame)
                         new_pts = accum.add(pl, pts)
                         if new_pts is not None and len(new_pts):
                             pending.setdefault(pl, []).append(new_pts)

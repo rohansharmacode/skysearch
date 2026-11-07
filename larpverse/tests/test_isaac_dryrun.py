@@ -116,3 +116,23 @@ def test_isaac_dryrun_weiguan(tmp_path):
     assert state["site"]["bounds"] == [-32.0, -64.0, 68.0, 42.0]
     assert state["staging"]["xy"] == [31.0, -55.0]
     assert {p["id"] for p in state.get("piles", [])} <= set("ABCDEFGHI")
+
+
+def test_isaac_dryrun_collapse_heavy(tmp_path):
+    """--site collapse (committed heightmap cache) with the default heavy LiDAR profile / drone model."""
+    from sim.site_collapse import cache_path
+    if cache_path() is None:
+        import pytest
+        pytest.skip("data/maps/collapse_site_heightmap.npz missing")
+    from isaac.run_mission import main
+
+    out = tmp_path / "data"
+    s = main(["--dry-run", "--site", "collapse", "--lidar-profile", "heavy", "--max-steps", "40",
+              "--out", str(out), "--quiet"])
+    assert s["site"] == "collapse" and s["steps"] == 40
+    assert all(v > 5.0 for v in s["drone_moved_m"].values()), s["drone_moved_m"]
+    state = json.loads((out / "state.json").read_text())
+    assert state["site"]["bounds"] == [-160.0, -160.0, 160.0, 160.0]
+    assert state["staging"]["xy"] == [-56.0, -152.5]
+    assert len(state.get("piles", [])) > 120
+    assert not any(m == "pxr" or m.startswith(("pxr.", "omni.")) or m == "omni" for m in sys.modules)

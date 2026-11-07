@@ -9,6 +9,10 @@ Sequence (seconds of physics before the drones launch):
                      released in stages, nearest to the epicentre of the damage first, and fall under PhysX.
   .. +SETTLE         dust hangs, debris settles; then the mission (scenario.step) starts.
 
+The pieces are irregular broken concrete (isaac/rubble.py): chipped blocks, fractured lumps, broken slab pieces
+with bent rebar, ragged wall tops, a rubble mound height field and thousands of gravel stones. Each falling piece
+collides as its own convex hull. `Q.bursts` lists (t, x, y, z, size) where debris lets go, for volumetric dust.
+
 Everything that falls is a PhysX rigid body. Where it ends up is tied to the map the swarm searches:
   * slab panels land on crushed contents (an invisible ledge at the void height from the map, with visible
     debris posts), so a void that is 0.5 m high in the map is 0.5 m high in Isaac. While they fall, panels
@@ -23,8 +27,13 @@ run time is attempted three ways and the one that works is printed.
 """
 from __future__ import annotations
 import math
+import os
+import sys
 import numpy as np
 from scipy.ndimage import binary_dilation, binary_erosion
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import rubble as RB  # noqa: E402
 
 OUT_CLEAR = 99.0
 
@@ -68,12 +77,116 @@ def rectangles(mask, value, tol=0.15, max_side=5):
     return out
 
 
+class UsdWriter:
+    """Writes the irregular rubble meshes straight into the USD stage (pxr), with PhysX physics schemas.
+    Rigid pieces: Xform root (RigidBodyAPI + MassAPI, translate/orient ops) -> child Mesh `geo` (convex-hull
+    collider) and optional child Mesh `rebar` (visual). Static pieces: Mesh with a triangle-mesh collider."""
+
+    def __init__(self, log=print):
+        import omni.usd
+        from pxr import Gf, Sdf, UsdGeom, UsdPhysics, UsdShade, Vt
+        self.Gf, self.Sdf, self.UsdGeom, self.UsdPhysics, self.UsdShade, self.Vt = Gf, Sdf, UsdGeom, UsdPhysics, UsdShade, Vt
+        try:
+            from pxr import PhysxSchema
+            self.Physx = PhysxSchema
+        except Exception:
+            self.Physx = None
+        self.st = omni.usd.get_context().get_stage()
+        self.log = log
+        self._phys_mat = None
+
+    def xform(self, path, pos=(0.0, 0.0, 0.0), quat=(1.0, 0.0, 0.0, 0.0)):
+        G = self.UsdGeom
+        x = G.Xform.Define(self.st, path)
+        x.AddTranslateOp(precision=G.XformOp.PrecisionDouble).Set(self.Gf.Vec3d(*[float(v) for v in pos]))
+        x.AddOrientOp(precision=G.XformOp.PrecisionDouble).Set(self.Gf.Quatd(float(quat[0]), self.Gf.Vec3d(*[float(v) for v in quat[1:]])))
+        x.AddScaleOp(precision=G.XformOp.PrecisionDouble).Set(self.Gf.Vec3d(1.0, 1.0, 1.0))
+        return x.GetPrim()
+
+    def mesh(self, path, P, F, rgb=(0.5, 0.5, 0.5), collider=None, smooth=False):
+        """collider: None (visual), 'convexHull' (dynamic) or 'none' (static triangle mesh)."""
+        G, Vt = self.UsdGeom, self.Vt
+        m = G.Mesh.Define(self.st, path)
+        P = np.asarray(P, np.float32); F = np.asarray(F, np.int32)
+        m.CreatePointsAttr(Vt.Vec3fArray.FromNumpy(P))
+        m.CreateFaceVertexCountsAttr(Vt.IntArray.FromNumpy(np.full(len(F), 3, np.int32)))
+        m.CreateFaceVertexIndicesAttr(Vt.IntArray.FromNumpy(F.reshape(-1)))
+        m.CreateSubdivisionSchemeAttr("none")
+        if smooth:
+            m.CreateNormalsAttr(Vt.Vec3fArray.FromNumpy(RB.smooth_normals(P, F))); m.SetNormalsInterpolation("vertex")
+        else:
+            m.CreateNormalsAttr(Vt.Vec3fArray.FromNumpy(RB.normals(P, F))); m.SetNormalsInterpolation("faceVarying")
+        lo, hi = P.min(0), P.max(0)
+        m.CreateExtentAttr(Vt.Vec3fArray([self.Gf.Vec3f(*map(float, lo)), self.Gf.Vec3f(*map(float, hi))]))
+        m.CreateDisplayColorAttr(Vt.Vec3fArray([self.Gf.Vec3f(*map(float, rgb))]))
+        prim = m.GetPrim()
+        if collider is not None:
+            self.UsdPhysics.CollisionAPI.Apply(prim)
+            self.UsdPhysics.MeshCollisionAPI.Apply(prim).CreateApproximationAttr(collider)
+            self.UsdShade.MaterialBindingAPI.Apply(prim).Bind(self.phys_mat(), self.UsdShade.Tokens.weakerThanDescendants, "physics")
+        return prim
+
+    def rigid(self, prim, mass, max_depen=2.0, ang_damp=0.6, lin_damp=0.05):
+        self.UsdPhysics.RigidBodyAPI.Apply(prim)
+        self.UsdPhysics.MassAPI.Apply(prim).CreateMassAttr(float(mass))
+        if self.Physx is not None:
+            try:
+                api = self.Physx.PhysxRigidBodyAPI.Apply(prim)
+                api.CreateMaxDepenetrationVelocityAttr(float(max_depen))
+                api.CreateAngularDampingAttr(float(ang_damp))
+                api.CreateLinearDampingAttr(float(lin_damp))
+            except Exception:
+                pass
+
+    def phys_mat(self):
+        """Rough concrete: high friction, almost no bounce, so broken pieces don't roll far."""
+        if self._phys_mat is None:
+            mat = self.UsdShade.Material.Define(self.st, "/World/Physics/concrete")
+            api = self.UsdPhysics.MaterialAPI.Apply(mat.GetPrim())
+            api.CreateStaticFrictionAttr(1.0); api.CreateDynamicFrictionAttr(0.85); api.CreateRestitutionAttr(0.05)
+            self._phys_mat = mat
+        return self._phys_mat
+
+    def preview_material(self, path, rgb, roughness=0.6, metallic=0.0):
+        S, Sdf = self.UsdShade, self.Sdf
+        mat = S.Material.Define(self.st, path)
+        sh = S.Shader.Define(self.st, path + "/Shader")
+        sh.CreateIdAttr("UsdPreviewSurface")
+        sh.CreateInput("diffuseColor", Sdf.ValueTypeNames.Color3f).Set(self.Gf.Vec3f(*map(float, rgb)))
+        sh.CreateInput("roughness", Sdf.ValueTypeNames.Float).Set(float(roughness))
+        sh.CreateInput("metallic", Sdf.ValueTypeNames.Float).Set(float(metallic))
+        mat.CreateSurfaceOutput().ConnectToSource(sh.ConnectableAPI(), "surface")
+        return mat
+
+    def bind(self, paths, mat):
+        for p in paths:
+            prim = self.st.GetPrimAtPath(p)
+            if prim.IsValid():
+                self.UsdShade.MaterialBindingAPI.Apply(prim).Bind(mat, self.UsdShade.Tokens.strongerThanDescendants)
+
+    def set_visible(self, path, visible):
+        prim = self.st.GetPrimAtPath(path)
+        if prim.IsValid():
+            im = self.UsdGeom.Imageable(prim)
+            im.MakeVisible() if visible else im.MakeInvisible()
+
+
+def _yaw_quat(yaw):
+    return (math.cos(yaw / 2), 0.0, 0.0, math.sin(yaw / 2))
+
+
 class Quake:
     PRE, SHAKE, SETTLE = 2.0, 8.0, 2.5
 
-    def __init__(self, scen, cfg, sim_utils, W3, wall_h=3.0, pga=0.45, seed=0, log=print):
+    def __init__(self, scen, cfg, sim_utils, W3, wall_h=3.0, pga=0.45, seed=0, log=print, dust=1.0, reveal=True):
         self.s, self.cfg, self.su, self.W3, self.wall_h = scen, cfg, sim_utils, W3, wall_h
         self.pga, self.log = pga, log
+        self.dust_scale = float(dust)          # debug-draw dust opacity (0 = off, e.g. when Flow dust is used)
+        self.reveal_t = self.PRE + 2.4 if reveal else None    # rubble mounds/gravel appear as the upper floor comes down
+        self._revealed = False
+        self.usd = None
+        self.rebar_paths = []
+        self.bursts = []                       # (t, x, y, z, size): where/when debris lets go, for Flow dust emitters
         self.rng = np.random.default_rng(seed + 101)
         self.duration = self.PRE + self.SHAKE + self.SETTLE
         self.t = 0.0
@@ -155,32 +268,111 @@ class Quake:
 
     # ------------------------------------------------------------------ building (static parts, with colliders)
     def build_static(self, boxes, collide):
-        """Walls (jagged where damaged), rubble heap bases, desks. `boxes(name, mask, z0, z1, rgb)` builds a batch
-        and returns its prim paths; `collide(paths)` gives them static colliders."""
-        b, cfg, H = self.s.b, self.cfg, self.wall_h
-        c = b.clear
+        """Intact walls (boxes), damaged walls with ragged broken tops and exposed rebar (meshes), rubble mounds
+        as a height field, gravel, desks. `boxes(name, mask, z0, z1, rgb)` builds a batch of boxes and returns
+        its prim paths; `collide(paths)` gives them static colliders. Meshes get triangle-mesh colliders."""
+        b, cfg, H, rng = self.s.b, self.cfg, self.wall_h, self.rng
+        c, cell, W3 = b.clear, cfg.cell, self.W3
+        if self.usd is None:
+            self.usd = UsdWriter(self.log)
+        U = self.usd
         wall_ok = self.walls & ~self.damage
         wall_dmg = self.walls & self.damage
-        self.wall_top = np.where(wall_dmg, self.rng.uniform(1.9, 2.7, c.shape), H)
+        paths = boxes("walls", wall_ok, 0.0, H, (0.62, 0.62, 0.60))
+        if paths:
+            collide(paths)
+        # damaged walls: straight runs (horizontal first, the rest vertical), one ragged mesh per run
+        from scipy.ndimage import gaussian_filter
+        brk = np.clip(gaussian_filter(rng.uniform(1.7, 2.8, c.shape), 0.8), 1.8, 2.75)
+        self.wall_top = np.full(c.shape, H)
+        U.xform("/World/Building/walls/broken")
+        used = np.zeros_like(wall_dmg)
+        runs = []
+        for r in range(c.shape[0]):
+            x = 0
+            while x < c.shape[1]:
+                if wall_dmg[r, x]:
+                    x0 = x
+                    while x < c.shape[1] and wall_dmg[r, x]:
+                        x += 1
+                    if x - x0 >= 2:
+                        runs.append(("h", [(r, k) for k in range(x0, x)])); used[r, x0:x] = True
+                else:
+                    x += 1
+        rem = wall_dmg & ~used
+        for x in range(c.shape[1]):
+            r = 0
+            while r < c.shape[0]:
+                if rem[r, x]:
+                    r0 = r
+                    while r < c.shape[0] and rem[r, x]:
+                        r += 1
+                    runs.append(("v", [(k, x) for k in range(r0, r)]))
+                else:
+                    r += 1
+        for i, (kind, cells) in enumerate(runs):
+            n = len(cells)
+            L = n * cell
+            tops = np.array([brk[rc] for rc in cells])
+            (P, F), bars, prof, xs = RB.wall_run(rng, L, cell, tops)
+            for k, rc in enumerate(cells):                     # where the falling top piece of each cell sits
+                sel = (xs >= -L / 2 + k * cell - 1e-6) & (xs <= -L / 2 + (k + 1) * cell + 1e-6)
+                self.wall_top[rc] = float(prof[sel].max()) + 0.01
+            (r0, x0), (r1, x1) = cells[0], cells[-1]
+            mx, my = (x0 + x1 + 1) / 2 * cell, (r0 + r1 + 1) / 2 * cell
+            yaw = 0.0 if kind == "h" else -math.pi / 2               # local +x along increasing column / row
+            root = f"/World/Building/walls/broken/w{i:03d}"
+            U.xform(root, W3((mx, my), 0.0), _yaw_quat(yaw))
+            U.mesh(root + "/geo", P, F, (0.60, 0.59, 0.56), collider="none")
+            if len(bars[0]):
+                U.mesh(root + "/rebar", *bars, (0.25, 0.14, 0.09), smooth=True)
+                self.rebar_paths.append(root + "/rebar")
+        # rubble mounds: one height field over the rubble cells (static triangle-mesh collider)
         heap = 1.2 + 0.9 * np.random.default_rng(cfg.seed + 11).random(c.shape)
-        self.heap_base = 0.55 * heap
+        U.xform("/World/Building/rubble")
+        P, F, self.heap_z = RB.heap(0.55 * heap, self.rubble, cell, rng)
+        if len(F):
+            U.mesh("/World/Building/rubble/heap", P, F, (0.42, 0.39, 0.35), collider="none", smooth=True)
+        rr, cc = np.nonzero(self.rubble)
+        self.heap_base = np.zeros(c.shape)
+        if len(rr):
+            self.heap_base[rr, cc] = self.heap_z((cc + 0.5) * cell, -(rr + 0.5) * cell)
+        # gravel: small stones on the mounds and scattered over the floor of the damaged zone (visual only)
+        xy, z0, small = [], [], []
+        for k in range(len(rr)):
+            for _ in range(6):
+                x, y = (cc[k] + rng.random()) * cell, -(rr[k] + rng.random()) * cell
+                xy.append((x, y)); z0.append(float(self.heap_z(x, y))); small.append(False)
+        floor = self.damage & ~self.walls & ~self.rubble & ~self.desk & (c < OUT_CLEAR)
+        fr, fc = np.nonzero(floor)
+        for k in range(len(fr)):
+            for _ in range(rng.integers(0, 3)):
+                xy.append(((fc[k] + rng.random()) * cell, -(fr[k] + rng.random()) * cell)); z0.append(0.0); small.append(True)
+        parts = []
+        for (x, y), z, sm in zip(xy, z0, small):
+            sz = rng.uniform(0.015, 0.045) if sm else rng.uniform(0.03, 0.11)
+            Pp, Fp = RB.rock(rng, sz, sz * rng.uniform(0.6, 1.0), sz * rng.uniform(0.35, 0.7), n=9)
+            Pp = Pp + np.array([x, y, z - Pp[:, 2].min() - 0.3 * sz])
+            parts.append((Pp, Fp))
+        if parts:
+            P, F = RB.merge(parts)
+            U.mesh("/World/Building/rubble/gravel", P, F, (0.47, 0.44, 0.40))
+        self.log(f"[quake] static: {len(runs)} broken wall runs, rubble mound over {len(rr)} cells, {len(parts)} stones of gravel")
+        # gaps too tight for any drone under the collapse: low solid base (boxes)
         tight = (c >= 0.12) & (c < 0.25) & self.collapsed
-        for name, mask, z0, z1, rgb in [
-            ("walls", wall_ok, 0.0, H, (0.62, 0.62, 0.60)),
-            ("walls_broken", wall_dmg, 0.0, self.wall_top, (0.60, 0.59, 0.56)),
-            ("rubble_base", self.rubble, 0.0, self.heap_base, (0.42, 0.39, 0.35)),
-            ("tight_base", tight, 0.0, np.clip(c, 0.12, 0.25), (0.45, 0.41, 0.36)),
-            ("desks", self.desk, 0.70, 0.76, (0.55, 0.42, 0.30)),
-        ]:
-            paths = boxes(name, mask, z0, z1, rgb, per_cell=(name == "walls_broken"))
-            if paths:
-                collide(paths)
-        # desk legs (visual)
+        paths = boxes("tight", tight, 0.0, np.clip(c, 0.12, 0.25), (0.45, 0.41, 0.36))
+        if paths:
+            collide(paths)
+        paths = boxes("desks", self.desk, 0.70, 0.76, (0.55, 0.42, 0.30))
+        if paths:
+            collide(paths)
         legs = np.zeros_like(self.desk)
         for (r, x) in getattr(b, "desk_cells", []):
             if self.desk[r, x]:
                 legs[r, x] = legs[r, x + 2] = True
         boxes("desk_legs", legs, 0.0, 0.70, (0.25, 0.25, 0.27), per_cell=True, thin=0.06)
+        if self.reveal_t is not None:
+            U.set_visible("/World/Building/rubble", False)
 
     # ------------------------------------------------------------------ dynamic parts
     def _spawn_group(self, name, items, RigidObject, RigidObjectCfg):
@@ -195,6 +387,25 @@ class Quake:
                                 mass_props=su.MassPropertiesCfg(mass=float(it["mass"])),
                                 collision_props=su.CollisionPropertiesCfg())
             cfgb.func(f"/World/Quake/{name}/p_{i:04d}", cfgb, translation=tuple(float(v) for v in it["pos"]))
+        self._register(name, items, RigidObject, RigidObjectCfg)
+
+    def _spawn_mesh_group(self, name, items, RigidObject, RigidObjectCfg):
+        """Irregular rigid pieces: items carry mesh=(P, F) in the piece frame (+ optional rebar=(P, F)), pos, quat."""
+        if not items:
+            return
+        U = self.usd
+        U.xform(f"/World/Quake/{name}")
+        for i, it in enumerate(items):
+            root = f"/World/Quake/{name}/p_{i:04d}"
+            prim = U.xform(root, it["pos"], it.get("quat", (1.0, 0.0, 0.0, 0.0)))
+            U.rigid(prim, it["mass"], ang_damp=it.get("ang_damp", 0.6))
+            U.mesh(root + "/geo", *it["mesh"], it["rgb"], collider="convexHull")
+            if it.get("rebar") is not None and len(it["rebar"][0]):
+                U.mesh(root + "/rebar", *it["rebar"], (0.25, 0.14, 0.09), smooth=True)
+                self.rebar_paths.append(root + "/rebar")
+        self._register(name, items, RigidObject, RigidObjectCfg)
+
+    def _register(self, name, items, RigidObject, RigidObjectCfg):
         obj = None
         try:
             obj = RigidObject(RigidObjectCfg(prim_path=f"/World/Quake/{name}/p_.*", spawn=None))
@@ -212,49 +423,80 @@ class Quake:
         b, cfg, H, W3, rng = self.s.b, self.cfg, self.wall_h, self.W3, self.rng
         cell = cfg.cell
         c = b.clear
+        if self.usd is None:
+            self.usd = UsdWriter(self.log)
         dist = lambda x, y: float(np.hypot(x - self.epi[0], y - self.epi[1])) / self.spread
-        # 1) upper-floor slab panels over voids: fall and land at the void height from the map
-        panels, ledges = [], []
+        grey = lambda base, j=0.04: tuple(np.clip(np.array(base) + rng.normal(0, j), 0, 1))
+
+        def put(mesh, x, y, z_bot):
+            """World position of a piece whose mesh bottom should sit at z_bot."""
+            return W3((x, y), z_bot - float(mesh[0][:, 2].min()))
+
+        # 1) upper-floor slab: broken slab pieces with rebar over the voids; each lands at the void height in the map
+        panels, frags, ledges = [], [], []
         T = 0.18
-        for (r, x, h, w) in rectangles(self.panel_mask, c):
+        for (r, x, h, w) in rectangles(self.panel_mask, c, max_side=4):
             zr = float(np.median(c[r:r + h, x:x + w]))
             cx, cy = (x + w / 2) * cell, (r + h / 2) * cell
-            sx, sy = w * cell - 0.03, h * cell - 0.03
+            sx, sy = w * cell - 0.02, h * cell - 0.02
             d = dist(cx, cy)
-            panels.append(dict(size=(sx, sy, T), pos=W3((cx, cy), H + T / 2), rgb=(0.56, 0.54, 0.51),
-                               mass=2400 * sx * sy * T, release=self.PRE + 2.4 + 1.6 * d + rng.uniform(0, 0.3),
-                               kick=np.r_[0, 0, -0.5, rng.normal(0, 0.4, 3)], guide=True, target=W3((cx, cy), zr + T / 2)))
+            rel = self.PRE + 2.4 + 1.6 * d + rng.uniform(0, 0.3)
+            kick = np.r_[0, 0, -0.5, rng.normal(0, 0.4, 3)]
+            mesh = RB.slab(rng, sx, sy, T)
+            panels.append(dict(mesh=mesh, rebar=RB.rebar(rng, sx, sy, 0.0), pos=put(mesh, cx, cy, H), rgb=grey((0.56, 0.54, 0.51), 0.02),
+                               mass=2400 * sx * sy * T, release=rel, kick=kick, guide=True,
+                               target=put(mesh, cx, cy, zr)))
             ledges.append((cx, cy, sx, sy, zr))
-        # 2) concrete mass above the rubble zone (upper floor + upper-storey wall remains), two layers of blocks
+            # loose concrete lying on the slab: rides it down (pancake debris)
+            for _ in range(1 + int(sx * sy / 0.6)):
+                sz = rng.uniform(0.10, 0.28)
+                m2 = RB.rock(rng, sz * 1.2, sz * rng.uniform(0.8, 1.2), sz * rng.uniform(0.5, 0.8))
+                fx, fy = cx + rng.uniform(-0.35, 0.35) * sx, cy + rng.uniform(-0.35, 0.35) * sy
+                frags.append(dict(mesh=m2, pos=put(m2, fx, fy, H + T + 0.03), rgb=grey((0.52, 0.49, 0.45)),
+                                  mass=2400 * 0.45 * sz ** 3, release=rel + 0.02, kick=kick + np.r_[rng.normal(0, 0.3, 2), 0, rng.normal(0, 1.5, 3)]))
+        # 2) the concrete mass above the rubble zone: a packed layer of chipped blocks (reads as the upper floor
+        #    before the quake), broken lumps on top, and smaller pieces; a cell's stack lets go together
         chunks = []
         rr, cc = np.nonzero(self.rubble)
         for k in range(len(rr)):
             x, y = (cc[k] + 0.5) * cell, (rr[k] + 0.5) * cell
-            for layer in (0, 1):
-                if layer == 1 and rng.random() < 0.55:
-                    continue
-                s = np.array([cell * rng.uniform(0.8, 1.0), cell * rng.uniform(0.8, 1.0), rng.uniform(0.25, 0.4)])
-                z = H + 0.02 + layer * 0.42 + s[2] / 2
-                d = dist(x, y)
-                chunks.append(dict(size=s, pos=W3((x + rng.normal(0, 0.03), y + rng.normal(0, 0.03)), z),
-                                   rgb=tuple(np.clip(np.array([0.50, 0.47, 0.43]) + rng.normal(0, 0.04), 0, 1)),
-                                   mass=2400 * s.prod(), release=self.PRE + 1.8 + 1.4 * d + 0.25 * layer + rng.uniform(0, 0.35),
+            base = self.PRE + 1.8 + 1.4 * dist(x, y) + rng.uniform(0, 0.35)
+            z = H + 0.02
+            stack = [("block", cell * 0.96, cell * 0.96, rng.uniform(0.25, 0.38))]
+            if rng.random() < 0.45:
+                stack.append(("rock", cell * 0.85, cell * 0.8, rng.uniform(0.22, 0.34)))
+            for _ in range(rng.integers(1, 4)):
+                sz = rng.uniform(0.10, 0.24)
+                stack.append(("rock", sz * 1.2, sz * rng.uniform(0.8, 1.1), sz * rng.uniform(0.5, 0.8)))
+            for j, (kind, a_, b_, h_) in enumerate(stack):
+                mesh = RB.block(rng, a_, b_, h_) if kind == "block" else RB.rock(rng, a_, b_, h_)
+                ext = np.ptp(mesh[0], 0)
+                ox, oy = (0.0, 0.0) if j < 2 else tuple(rng.uniform(-1, 1, 2) * max(0.0, (cell - ext[0]) / 2 - 0.01))
+                chunks.append(dict(mesh=mesh, pos=put(mesh, x + ox, y + oy, z), rgb=grey((0.50, 0.47, 0.43)),
+                                   mass=2400 * 0.6 * a_ * b_ * h_, release=base + 0.04 * j,
                                    kick=np.r_[rng.normal(0, 0.6, 2), -1.0, rng.normal(0, 2.5, 3)]))
-        # 3) wall tops over damaged walls: the part above the jagged break falls off
+                z += float(ext[2]) + 0.01
+        # 3) wall tops over damaged walls: the part above the ragged break falls off, often in two pieces
         tops = []
         wr, wc = np.nonzero(self.walls & self.damage)
         for k in range(len(wr)):
             r, x = wr[k], wc[k]
             h0 = float(self.wall_top[r, x])
-            if H - h0 < 0.15:
+            hh = H - h0 - 0.01
+            if hh < 0.12:
                 continue
             px, py = (x + 0.5) * cell, (r + 0.5) * cell
             away = np.array([px - self.epi[0], py - self.epi[1]])
             away = -away / (np.linalg.norm(away) + 1e-6)            # wall tops fall towards the collapse
-            tops.append(dict(size=(cell - 0.02, cell - 0.02, H - h0 - 0.02), pos=W3((px, py), (H + h0) / 2),
-                             rgb=(0.60, 0.59, 0.56), mass=2000 * cell * cell * (H - h0),
-                             release=self.PRE + rng.uniform(0.8, 3.8),
-                             kick=np.r_[1.2 * away[0], -1.2 * away[1], 0.3, rng.normal(0, 1.5, 3)]))
+            rel = self.PRE + rng.uniform(0.8, 3.8)
+            parts = [hh] if hh < 0.55 else [hh * (u := rng.uniform(0.4, 0.6)), hh * (1 - u) - 0.01]
+            zb = h0
+            for j, ph in enumerate(parts):
+                mesh = RB.block(rng, cell - 0.02, cell - 0.02, ph, chip=0.12)
+                tops.append(dict(mesh=mesh, pos=put(mesh, px, py, zb), rgb=grey((0.60, 0.59, 0.56), 0.015),
+                                 mass=2000 * cell * cell * ph, release=rel - 0.25 * j,
+                                 kick=np.r_[1.2 * away[0], -1.2 * away[1], 0.3, rng.normal(0, 1.5, 3)]))
+                zb += float(np.ptp(mesh[0][:, 2])) + 0.01
         # 4) unanchored furniture in open parts of rooms: slides and topples in the shaking (never held)
         furn = []
         open_room = (c >= 2.0) & (c < OUT_CLEAR) & (b.room_id > 0)
@@ -272,11 +514,12 @@ class Quake:
                 yaw_long = rng.random() < 0.5
                 sz = (size[1], size[0], size[2]) if yaw_long else size
                 furn.append(dict(size=sz, pos=W3(((x + 0.5) * cell, (r + 0.5) * cell), size[2] / 2 + 0.01), rgb=rgb,
-                                 mass=mass, release=0.0))
+                                 mass=mass, release=0.0, kind=kind))
         from types import SimpleNamespace
-        self._ns = SimpleNamespace(panels=panels, chunks=chunks, tops=tops, furn=furn)
-        for name, items in (("panels", panels), ("chunks", chunks), ("walltops", tops), ("furniture", furn)):
-            self._spawn_group(name, items, RigidObject, RigidObjectCfg)
+        self._ns = SimpleNamespace(panels=panels, chunks=chunks, tops=tops, furn=furn, frags=frags)
+        for name, items in (("panels", panels), ("fragments", frags), ("chunks", chunks), ("walltops", tops)):
+            self._spawn_mesh_group(name, items, RigidObject, RigidObjectCfg)
+        self._spawn_group("furniture", furn, RigidObject, RigidObjectCfg)
         # invisible ledges the panels land on (crushed furniture/debris), plus visible debris posts
         su = self.su
         for i, (cx, cy, sx, sy, zr) in enumerate(ledges):
@@ -285,13 +528,38 @@ class Quake:
             for (ox, oy) in ((-0.35, -0.35), (0.35, 0.35)):
                 if zr > 0.2:
                     self.posts.append(((cx + ox * sx, cy + oy * sy), zr))
-        self.log(f"[quake] {len(panels)} slab panels, {len(chunks)} concrete blocks, {len(tops)} wall tops, "
-                 f"{len(furn)} furniture pieces; epicentre of damage ({self.epi[0]:.1f}, {self.epi[1]:.1f}) m; rooms hit {self.rooms_hit}")
+        n_all = sum(len(v) for v in (panels, frags, chunks, tops, furn))
+        self.log(f"[quake] {n_all} rigid bodies: {len(panels)} slab pieces (+rebar), {len(frags)} loose pieces on them, "
+                 f"{len(chunks)} concrete blocks/lumps, {len(tops)} wall-top pieces, {len(furn)} furniture; "
+                 f"epicentre of damage ({self.epi[0]:.1f}, {self.epi[1]:.1f}) m; rooms hit {self.rooms_hit}")
 
-    def posts_boxes(self, boxes_xy):
-        """Visible crushed-debris posts under panel corners (visual only)."""
-        if self.posts:
-            boxes_xy("debris_posts", [p for p, _ in self.posts], [z for _, z in self.posts], (0.36, 0.33, 0.30))
+    def posts_boxes(self, boxes_xy=None):
+        """Crushed-debris stacks under the slab corners (visual only, one merged mesh; boxes_xy is unused)."""
+        if not self.posts:
+            return
+        rng, parts = self.rng, []
+        for (xy, zr) in self.posts:
+            x, y = self.W3(xy)[:2]
+            z = 0.0
+            while z < zr - 0.04:
+                s = min(rng.uniform(0.12, 0.2), zr - z + 0.02)
+                P, F = RB.rock(rng, rng.uniform(0.14, 0.2), rng.uniform(0.12, 0.18), max(s, 0.05), n=12)
+                P = P + np.array([x + rng.normal(0, 0.015), y + rng.normal(0, 0.015), z - P[:, 2].min()])
+                parts.append((P, F))
+                z += float(np.ptp(P[:, 2])) * 0.9
+        P, F = RB.merge(parts)
+        self.usd.mesh("/World/Building/rubble/posts", P, F, (0.40, 0.37, 0.33))
+
+    def after_look(self):
+        """Rebar is steel: rebind it after look.apply() (which binds concrete on everything under /World/Quake)."""
+        if not self.rebar_paths or self.usd is None:
+            return
+        try:
+            mat = self.usd.preview_material("/World/Looks/rebar_steel", (0.22, 0.12, 0.07), roughness=0.55, metallic=0.7)
+            self.usd.bind(self.rebar_paths, mat)
+            self.log(f"[quake] rusty steel on {len(self.rebar_paths)} rebar meshes")
+        except Exception as e:
+            self.log(f"[quake] rebar material skipped ({type(e).__name__}: {e})")
 
     # ------------------------------------------------------------------ runtime
     def after_reset(self, sim):
@@ -401,6 +669,8 @@ class Quake:
                 self._write(o, new, vel=g["kick"][new])
                 if name in ("panels", "chunks", "walltops"):
                     self._emit_dust(g["hold"][new, :3], n_each={"panels": 4, "chunks": 1, "walltops": 1}[name])
+                    for p in g["hold"][new, :3]:
+                        self.bursts.append((t, float(p[0]), float(p[1]), float(p[2]), {"panels": 1.0, "chunks": 0.4, "walltops": 0.3}[name]))
             live = np.nonzero(g["released"])[0]
             if len(live) and (self.gravity_mode == "velocity" and self.envelope(t - self.PRE) > 0 or g["guide"].any()):
                 try:
@@ -420,6 +690,9 @@ class Quake:
                     if not getattr(self, "_warned", False):
                         self.log(f"[quake] guide/pseudo-force skipped ({type(e).__name__}: {e})")
                         self._warned = True
+        if self.reveal_t is not None and not self._revealed and t >= self.reveal_t:
+            self.usd.set_visible("/World/Building/rubble", True)        # mounds and gravel appear as the floor comes down
+            self._revealed = True
         self._step_dust(dt)
         self.t += dt
         if self.done and self.gravity_mode != "velocity":
@@ -454,11 +727,11 @@ class Quake:
 
     def dust_points(self, t_mission=0.0):
         """(points, rgba, sizes) for debug draw; dust lingers into the first ~20 s of the mission."""
-        if not len(self.dust):
+        if not len(self.dust) or self.dust_scale <= 0:
             return [], [], []
         d = self.dust                         # positions freeze once the mission runs; the dust only fades
         age = d[:, 6] + t_mission
-        alpha = np.clip(0.16 * (1 - age / 20.0), 0, 0.16)
+        alpha = np.clip(0.16 * (1 - age / 20.0), 0, 0.16) * min(self.dust_scale, 1.0 / 0.16)
         keep = alpha > 0.02
         pts = [tuple(map(float, p)) for p in d[keep, 0:3]]
         cols = [(0.66, 0.62, 0.56, float(a)) for a in alpha[keep]]

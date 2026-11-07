@@ -36,6 +36,8 @@ ap.add_argument("--sky", type=float, default=350.0, help="dome light intensity")
 ap.add_argument("--sun", type=float, default=1800.0, help="sun (distant light) intensity")
 ap.add_argument("--collapse", action="store_true", help="physically simulated earthquake before launch (isaac/quake.py)")
 ap.add_argument("--pga", type=float, default=0.45, help="--collapse: peak ground acceleration in g")
+ap.add_argument("--dust_points", type=float, default=1.0, help="--collapse: opacity of the debug-draw dust points (0 = off, e.g. with Flow dust)")
+ap.add_argument("--reveal", type=int, default=1, help="--collapse: hide rubble mounds/gravel until the upper floor comes down")
 ap.add_argument("--rec_cams", default="", help="extra recording cameras, comma list: chase:C1, fpv:C1, fpv:S1, collapse "
                 "(collapse = a person's eye height in the corridor, looking at the damage). Saved to <record>/isaac_<name>/")
 ap.add_argument("--stop_t", type=float, default=0.0, help="--record: stop at this mission time (s) instead of at handoff")
@@ -284,7 +286,7 @@ def build_stage(scen, cfg, Q=None):
     if Q is not None:
         from isaaclab.assets import RigidObject, RigidObjectCfg
         Q.build_dynamic(RigidObject, RigidObjectCfg)
-        Q.posts_boxes(lambda name, xys, zs, rgb: _posts(name, xys, zs, rgb))
+        Q.posts_boxes()                         # crushed-debris stacks under the slab corners (meshes)
         debris = []
     else:
         debris = drop_debris(cfg, b, a.debris)
@@ -293,6 +295,8 @@ def build_stage(scen, cfg, Q=None):
         import look
         a._quake = Q                           # look.py places Flow dust at the quake epicentre
         look.apply(scen, cfg, a, W3, OUT, log=lambda m: print(m, flush=True))
+    if Q is not None:
+        Q.after_look()                          # rebar: steel, not the concrete look.apply put on /World/Quake
     sim.reset()
     if Q is not None:
         Q.after_reset(sim)
@@ -429,7 +433,8 @@ def main():
     if a.collapse:
         sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
         import quake as quake_mod
-        Q = quake_mod.Quake(scen, cfg, sim_utils, W3, WALL_H, pga=a.pga, seed=a.seed, log=lambda m: print(m, flush=True))
+        Q = quake_mod.Quake(scen, cfg, sim_utils, W3, WALL_H, pga=a.pga, seed=a.seed, log=lambda m: print(m, flush=True),
+                             dust=a.dust_points, reveal=bool(a.reveal))
     sim, people, decoys, drones, dcam, rec, debris = build_stage(scen, cfg, Q)
     live.serve()
     sub = max(1, int(round(cfg.dt * FPS / a.speed)))           # render frames per mission tick

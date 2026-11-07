@@ -894,7 +894,8 @@ async function openDetail(c) {
     viewer ||= await import('./viewer3d.js').then(m => m.createViewer($('v3d')));
     $('vhint').hidden = false;
     const tv = c.vitals ? ' · ' + (DIG_BY.get(c.id)?.triage || triageOf(c.vitals)).label + ' (aid)' : '';
-    viewer.show({ cloud, center: [c.xy[0], c.xy[1]], surf, z, ellipse: e, id: c.id, depthLabel: di.long + tv, weak: weak || moving });
+    $('vinfo').textContent = '';
+    viewer.show({ cloud, tiles: S.pointcloud?.tiles, base: DATA, center: [c.xy[0], c.xy[1]], surf, z, ellipse: e, id: c.id, depthLabel: di.long + tv, weak: weak || moving, onInfo: t => { $('vinfo').textContent = t; } });
   } catch (err) {
     $('v3d').innerHTML = '<div class="v3dmsg">3D view unavailable: three.js could not load (offline?). The facts on the right still apply.</div>';
     $('vhint').hidden = true;
@@ -921,4 +922,4 @@ new ResizeObserver(() => resize()).observe(cv);
 renderBasemapUI();
 resize();
 poll();
-(function tick(now) { draw(now); requestAnimationFrame(tick); })(performance.now());
+(function tick(now) { if ($('detail').hidden) draw(now); requestAnimationFrame(tick); })(performance.now());   // map paused under the 3D view

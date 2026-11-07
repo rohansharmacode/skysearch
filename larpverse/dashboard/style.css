@@ -272,6 +272,8 @@ details.dism[open] summary { margin-bottom: 4px; }
 #v3d .lbl.dig { background: rgba(8, 12, 16, 0.85); border-color: var(--line); color: var(--fg); }
 #v3d .v3dmsg { position: absolute; inset: 0; display: grid; place-items: center; padding: 24px; text-align: center; color: var(--muted); font: 13px var(--f-mono); }
 .vhint { position: absolute; left: 12px; bottom: 10px; font-size: 11px; color: var(--muted); }
+.vinfo { position: absolute; left: 12px; top: 10px; font-size: 11px; color: #c9d4dc; background: rgba(7, 11, 15, 0.8); padding: 3px 7px; border-radius: 3px; }
+.vinfo:empty { display: none; }
 .facts { padding: 16px 18px; overflow-y: auto; border-left: 1px solid var(--line); display: flex; flex-direction: column; gap: 10px; }
 .dhead { display: flex; justify-content: space-between; align-items: center; }
 .dhead h3 { margin: 0; font-size: 26px; font-weight: 600; }

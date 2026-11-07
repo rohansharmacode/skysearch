@@ -320,3 +320,17 @@ The heavy drone delivers the radar and a 4-mic array on a pod lowered by winch o
             "lead": "a7", "t": 312.0 } ]
 ```
 Scans made from a pod carry `scans[].delivery = "pod"` and have their origin at the pod's surface position (no air-gap path).
+
+### Point cloud LOD and tiles (v1.3.1, R-PLAT-4)
+
+```jsonc
+"pointcloud": { "url": "pointcloud.bin",          // preview, ≤ 300k points (always written)
+                "count": 300000, "lod": 0, "full_count": 2470000,
+                "tiles": [ { "url": "pc_tiles/x+016_y-032.bin", "count": 144000,
+                             "bounds": [xmin, ymin, xmax, ymax] } ] }   // 16 m square tiles, full resolution; optional
+```
+Viewers draw the preview first, then fetch only the tiles that touch the region around a clicked ping. With no `tiles`, they use the preview.
+
+### Vitals condition names (v1.3.1)
+
+The vitals output carries `vitals.condition` ∈ `calm | distressed_tachypnea | unconscious_slow | irregular_apneic` (or `unknown`). There is no age field anywhere. `vitals.pattern` is a legacy alias that consumers may still read.

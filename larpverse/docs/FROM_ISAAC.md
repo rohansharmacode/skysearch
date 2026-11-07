@@ -1,5 +1,18 @@
 # From the Isaac Sim session (newest first)
 
+### 2026-11-07 22:05: collapse site path-traced cut, and a Weiguan 2016 case-study simulation
+
+**Path-traced collapse windows (034d94b, release `larpverse-collapse-pt`):** all 7 cameras, 1920×1080, 16 spp, `--replay` of the seed 9 CPU story (`python -m isaac.collapse_site --seed 9`), one process on the L40S, ~0.5 s per camera-frame (about 15 min for ~1,650 camera-frames). Review:
+- **Read well:** `director`, `wide`, `map` (excellent ending shot, whole site north-up), `chase:d1` during deploy (operator and drones lifting off) and when landed on a slab, `mid` when the ping beacon and rings are up.
+- **Weak on this map:** `fpv:d2` and `top` close-ups. The scan-photo texture is blobby within ~20 m, and the first-person view passes close to wreck faces. The cut uses director/chase there instead.
+- Our 58 s cut opens with a case-study card (reported 2016 figures with sources, and a line saying the site is a reconstruction and the people, sounds, radar and drone data are simulated, per R2-016), then runs the mission with burned-in sector IDs, ping tags and a mission clock that only moves forward (no repeated action across shots).
+
+**Case-study simulation (new, CPU only):** `isaac/eval_collapse.py` (evaluator: reads truth only after each run) runs the unchanged `GridMission` on `--site collapse` over 30 seeds × {acoustic, nearest, raster} × {legacy, literature} radar, plus an independent-start variant. Results: `docs/EVAL_COLLAPSE.md`; write-up with the 2016 figures and sources: `docs/CASE_STUDY_WEIGUAN.md`; figure: `docs/img/case_weiguan_timeline.png` (`python -m isaac.case_timeline`).
+- Every sector is pinged, flagged or marked not cleared within 9.5–12.5 min of launch, against 52–60 h to the last live rescue and a 7–7.5 day search in 2016.
+- With literature-grade radar, radar pings 3 of 305 invented people on this map (tall wrecks). The sectors flagged by listening hold 66% of them (74% with optimistic radar), against 1–30% for radar-only orders.
+- Caveats are in the doc: about 10 invented people per seed, not 155; 7.2 of 8 sectors are occupied, so flagging is easy; `--acoustic stub` is an upper bound.
+- `RASTER` for this map is set inside the evaluator (serpentine Z8 Z2 Z4 Z6 Z5 Z3 Z1 Z7 from the staging street); `sim/` is untouched.
+
 ### 2026-11-07 21:10: brief follow-ups (11eb199), and a regression you should know about
 
 **Regression fixed: path-traced lines were back to 0.5 m tubes.** Your merge took `photoreal.dress()` from 68036c8, which sets `LINE_W = 0.006` but leaves `overlay.LINE_MESH` off. In RTX and path tracing, BasisCurves ignore that width and render as ~0.5 m yellow tubes (pt1 contact sheet). `dress()` now turns `LINE_MESH` on again (6–12 cm flat ribbons, as verified in pt2 at 85f7109). Please keep that line when you merge.

@@ -1,0 +1,527 @@
+{
+ "common": {
+  "seeds": "1-30",
+  "n_seeds": 30
+ },
+ "case_2016": {
+  "deaths_in_building": "114-115 (2 more elsewhere in Tainan) [BBC, 13 Feb 2016]",
+  "rescued_alive": "175-289 [Reuters 13 Feb 2016; CNN 14 Feb 2016; Taipei Times 8 Feb 2016]",
+  "injured": "550, of whom 289 were pulled out of the rubble [CNN 14 Feb 2016; ReliefWeb 14 Feb 2016]",
+  "initially_trapped": "120-155+ in the first 24-48 h [Taipei Times 8 Feb 2016; Reuters 13 Feb 2016]",
+  "rescue_duration": "7-7.5 days [BBC 13 Feb 2016; ReliefWeb 14 Feb 2016]",
+  "last_live_rescue_h": "52-60 h after the quake (day 3) [BBC 13 Feb 2016; ReliefWeb 14 Feb 2016]",
+  "response": "~3,900 emergency workers, 140 vehicles, 2 helicopters city-wide [Taipei Times 8 Feb 2016]"
+ },
+ "results": {
+  "legacy:reported": {
+   "acoustic": {
+    "n_seeds": 30,
+    "victims_total": 305,
+    "victims_non_start_total": 258,
+    "pinged_total": 63,
+    "pinged_non_start_total": 42,
+    "frac_pinged": [
+     0.20575628075628075,
+     0.17494480056980055,
+     0.2383181494431494
+    ],
+    "frac_pinged_non_start": [
+     0.15775733525733523,
+     0.118933170995671,
+     0.19800129268879263
+    ],
+    "t_first_non_start_median": [
+     333.5,
+     301.0,
+     390.0
+    ],
+    "t_first_non_start_none": 6,
+    "all_pinged_seeds": 0,
+    "t_all_pinged_median": null,
+    "loc_err_median_m": 0.22,
+    "loc_err_p90_m": 0.6520000000000004,
+    "false_pings": 2,
+    "wasted_visits_mean": [
+     0.0,
+     0.0,
+     0.0
+    ],
+    "insufficient_mean": 1.3,
+    "flight_s_mean": [
+     758.1333333333333,
+     706.9925,
+     806.9074999999999
+    ],
+    "mission_s_mean": [
+     744.7666666666667,
+     703.6325,
+     776.5383333333333
+    ],
+    "scans_mean": 22.933333333333334,
+    "swaps_mean": 0.23333333333333334,
+    "depth_estimates": 1,
+    "depth_err_median_m": 0.09,
+    "victims_in_flagged_total": 227,
+    "frac_in_flagged": [
+     0.7406559181559182,
+     0.6794824851074851,
+     0.7950481902356903
+    ],
+    "flagged_empty_mean": 0.0,
+    "t_first_ping_median": 181.0
+   },
+   "nearest": {
+    "n_seeds": 30,
+    "victims_total": 305,
+    "victims_non_start_total": 258,
+    "pinged_total": 49,
+    "pinged_non_start_total": 28,
+    "frac_pinged": [
+     0.16144781144781145,
+     0.13031986531986534,
+     0.19498379629629625
+    ],
+    "frac_pinged_non_start": [
+     0.10852092352092353,
+     0.0734406265031265,
+     0.14554800986050986
+    ],
+    "t_first_non_start_median": [
+     363.0,
+     288.0,
+     468.5
+    ],
+    "t_first_non_start_none": 12,
+    "all_pinged_seeds": 0,
+    "t_all_pinged_median": null,
+    "loc_err_median_m": 0.23,
+    "loc_err_p90_m": 0.5760000000000001,
+    "false_pings": 1,
+    "wasted_visits_mean": [
+     0.7333333333333333,
+     0.5333333333333333,
+     0.9333333333333333
+    ],
+    "insufficient_mean": 1.3333333333333333,
+    "flight_s_mean": [
+     719.4666666666667,
+     695.4325,
+     746.4675
+    ],
+    "mission_s_mean": [
+     639.8,
+     629.0325,
+     651.5008333333333
+    ],
+    "scans_mean": 23.466666666666665,
+    "swaps_mean": 0.03333333333333333,
+    "depth_estimates": 1,
+    "depth_err_median_m": 0.25,
+    "victims_in_flagged_total": 72,
+    "frac_in_flagged": [
+     0.23574074074074072,
+     0.1832891414141414,
+     0.2918453282828283
+    ],
+    "flagged_empty_mean": 0.0,
+    "t_first_ping_median": 172.0
+   },
+   "raster": {
+    "n_seeds": 30,
+    "victims_total": 305,
+    "victims_non_start_total": 258,
+    "pinged_total": 62,
+    "pinged_non_start_total": 41,
+    "frac_pinged": [
+     0.20523245273245275,
+     0.17558017676767676,
+     0.23458998640248632
+    ],
+    "frac_pinged_non_start": [
+     0.15991101491101486,
+     0.1309635642135642,
+     0.19029876142376137
+    ],
+    "t_first_non_start_median": [
+     315.0,
+     293.0,
+     331.0
+    ],
+    "t_first_non_start_none": 3,
+    "all_pinged_seeds": 0,
+    "t_all_pinged_median": null,
+    "loc_err_median_m": 0.21,
+    "loc_err_p90_m": 0.63,
+    "false_pings": 0,
+    "wasted_visits_mean": [
+     0.8333333333333334,
+     0.6333333333333333,
+     1.0341666666666622
+    ],
+    "insufficient_mean": 1.2333333333333334,
+    "flight_s_mean": [
+     736.9666666666667,
+     707.0316666666666,
+     767.2666666666667
+    ],
+    "mission_s_mean": [
+     637.0333333333333,
+     625.2991666666667,
+     650.7025
+    ],
+    "scans_mean": 23.433333333333334,
+    "swaps_mean": 0.06666666666666667,
+    "depth_estimates": 0,
+    "depth_err_median_m": null,
+    "victims_in_flagged_total": 90,
+    "frac_in_flagged": [
+     0.2973452473452473,
+     0.2485593110593111,
+     0.34667760942760933
+    ],
+    "flagged_empty_mean": 0.0,
+    "t_first_ping_median": 181.0
+   }
+  },
+  "legacy:independent": {
+   "acoustic": {
+    "n_seeds": 30,
+    "victims_total": 305,
+    "victims_non_start_total": 272,
+    "pinged_total": 56,
+    "pinged_non_start_total": 43,
+    "frac_pinged": [
+     0.1819178969178969,
+     0.14787661875161875,
+     0.2189982517482517
+    ],
+    "frac_pinged_non_start": [
+     0.16095959595959594,
+     0.12865265752765753,
+     0.19613170394420393
+    ],
+    "t_first_non_start_median": [
+     386.0,
+     331.0,
+     430.0
+    ],
+    "t_first_non_start_none": 3,
+    "all_pinged_seeds": 0,
+    "t_all_pinged_median": null,
+    "loc_err_median_m": 0.28500000000000003,
+    "loc_err_p90_m": 0.755,
+    "false_pings": 2,
+    "wasted_visits_mean": [
+     0.0,
+     0.0,
+     0.0
+    ],
+    "insufficient_mean": 1.1333333333333333,
+    "flight_s_mean": [
+     741.4,
+     687.9783333333334,
+     793.2058333333333
+    ],
+    "mission_s_mean": [
+     726.9,
+     680.9316666666666,
+     766.7041666666667
+    ],
+    "scans_mean": 22.333333333333332,
+    "swaps_mean": 0.2,
+    "depth_estimates": 2,
+    "depth_err_median_m": 0.215,
+    "victims_in_flagged_total": 192,
+    "frac_in_flagged": [
+     0.6237179487179486,
+     0.558071127946128,
+     0.684500777000777
+    ],
+    "flagged_empty_mean": 0.0,
+    "t_first_ping_median": 257.0
+   },
+   "nearest": {
+    "n_seeds": 30,
+    "victims_total": 305,
+    "victims_non_start_total": 272,
+    "pinged_total": 51,
+    "pinged_non_start_total": 38,
+    "frac_pinged": [
+     0.16518065268065268,
+     0.13000367456617454,
+     0.1990748025123024
+    ],
+    "frac_pinged_non_start": [
+     0.14066738816738814,
+     0.10777988215488216,
+     0.17300048100048093
+    ],
+    "t_first_non_start_median": [
+     408.0,
+     318.0,
+     491.0
+    ],
+    "t_first_non_start_none": 5,
+    "all_pinged_seeds": 0,
+    "t_all_pinged_median": null,
+    "loc_err_median_m": 0.3,
+    "loc_err_p90_m": 0.8,
+    "false_pings": 2,
+    "wasted_visits_mean": [
+     0.8333333333333334,
+     0.5333333333333333,
+     1.1333333333333333
+    ],
+    "insufficient_mean": 1.4666666666666666,
+    "flight_s_mean": [
+     725.8666666666667,
+     700.9325,
+     748.1025
+    ],
+    "mission_s_mean": [
+     633.4666666666667,
+     623.565,
+     643.3666666666667
+    ],
+    "scans_mean": 23.433333333333334,
+    "swaps_mean": 0.0,
+    "depth_estimates": 0,
+    "depth_err_median_m": null,
+    "victims_in_flagged_total": 78,
+    "frac_in_flagged": [
+     0.24998251748251746,
+     0.19402967171717173,
+     0.3077561026936027
+    ],
+    "flagged_empty_mean": 0.0,
+    "t_first_ping_median": 224.0
+   },
+   "raster": {
+    "n_seeds": 30,
+    "victims_total": 305,
+    "victims_non_start_total": 272,
+    "pinged_total": 48,
+    "pinged_non_start_total": 35,
+    "frac_pinged": [
+     0.15481675731675734,
+     0.12377672558922559,
+     0.18889298433048424
+    ],
+    "frac_pinged_non_start": [
+     0.1288792688792689,
+     0.09877395983645985,
+     0.16020451539201536
+    ],
+    "t_first_non_start_median": [
+     333.0,
+     299.0,
+     351.0
+    ],
+    "t_first_non_start_none": 5,
+    "all_pinged_seeds": 0,
+    "t_all_pinged_median": null,
+    "loc_err_median_m": 0.22,
+    "loc_err_p90_m": 0.6360000000000001,
+    "false_pings": 1,
+    "wasted_visits_mean": [
+     0.9333333333333333,
+     0.6666666666666666,
+     1.2
+    ],
+    "insufficient_mean": 1.6,
+    "flight_s_mean": [
+     734.2333333333333,
+     703.3258333333333,
+     765.6724999999999
+    ],
+    "mission_s_mean": [
+     636.4333333333333,
+     625.4666666666667,
+     648.5024999999999
+    ],
+    "scans_mean": 23.5,
+    "swaps_mean": 0.03333333333333333,
+    "depth_estimates": 0,
+    "depth_err_median_m": null,
+    "victims_in_flagged_total": 69,
+    "frac_in_flagged": [
+     0.222018907018907,
+     0.18046801346801342,
+     0.26619483294483287
+    ],
+    "flagged_empty_mean": 0.0,
+    "t_first_ping_median": 263.0
+   }
+  },
+  "literature:reported": {
+   "acoustic": {
+    "n_seeds": 30,
+    "victims_total": 305,
+    "victims_non_start_total": 258,
+    "pinged_total": 3,
+    "pinged_non_start_total": 1,
+    "frac_pinged": [
+     0.009511784511784511,
+     0.0,
+     0.02113215488215486
+    ],
+    "frac_pinged_non_start": [
+     0.0033333333333333335,
+     0.0,
+     0.010000000000000002
+    ],
+    "t_first_non_start_median": [
+     385.0,
+     385.0,
+     385.0
+    ],
+    "t_first_non_start_none": 29,
+    "all_pinged_seeds": 0,
+    "t_all_pinged_median": null,
+    "loc_err_median_m": 0.2,
+    "loc_err_p90_m": 0.5840000000000001,
+    "false_pings": 0,
+    "wasted_visits_mean": [
+     0.0,
+     0.0,
+     0.0
+    ],
+    "insufficient_mean": 0.6,
+    "flight_s_mean": [
+     936.8,
+     866.655,
+     1005.7666666666667
+    ],
+    "mission_s_mean": [
+     679.1666666666666,
+     623.3208333333333,
+     733.6008333333333
+    ],
+    "scans_mean": 19.733333333333334,
+    "swaps_mean": 0.36666666666666664,
+    "depth_estimates": 0,
+    "depth_err_median_m": null,
+    "victims_in_flagged_total": 202,
+    "frac_in_flagged": [
+     0.6571037296037295,
+     0.5971605639730639,
+     0.7134473905723904
+    ],
+    "flagged_empty_mean": 0.0,
+    "t_first_ping_median": 119.0
+   },
+   "nearest": {
+    "n_seeds": 30,
+    "victims_total": 305,
+    "victims_non_start_total": 258,
+    "pinged_total": 4,
+    "pinged_non_start_total": 2,
+    "frac_pinged": [
+     0.013678451178451177,
+     0.0027777777777777775,
+     0.027819865319865317
+    ],
+    "frac_pinged_non_start": [
+     0.007792207792207792,
+     0.0,
+     0.020346320346320345
+    ],
+    "t_first_non_start_median": [
+     536.0,
+     525.0,
+     547.0
+    ],
+    "t_first_non_start_none": 28,
+    "all_pinged_seeds": 0,
+    "t_all_pinged_median": null,
+    "loc_err_median_m": 0.17,
+    "loc_err_p90_m": 0.23500000000000001,
+    "false_pings": 0,
+    "wasted_visits_mean": [
+     1.3,
+     1.0666666666666667,
+     1.5333333333333334
+    ],
+    "insufficient_mean": 0.4666666666666667,
+    "flight_s_mean": [
+     1035.0333333333333,
+     1003.1241666666666,
+     1069.8349999999998
+    ],
+    "mission_s_mean": [
+     571.6666666666666,
+     554.0991666666667,
+     591.2333333333333
+    ],
+    "scans_mean": 22.833333333333332,
+    "swaps_mean": 0.16666666666666666,
+    "depth_estimates": 0,
+    "depth_err_median_m": null,
+    "victims_in_flagged_total": 4,
+    "frac_in_flagged": [
+     0.013678451178451177,
+     0.0027777777777777775,
+     0.027819865319865317
+    ],
+    "flagged_empty_mean": 0.0,
+    "t_first_ping_median": 322.0
+   },
+   "raster": {
+    "n_seeds": 30,
+    "victims_total": 305,
+    "victims_non_start_total": 258,
+    "pinged_total": 2,
+    "pinged_non_start_total": 0,
+    "frac_pinged": [
+     0.006734006734006734,
+     0.0,
+     0.016498316498316498
+    ],
+    "frac_pinged_non_start": [
+     0.0,
+     0.0,
+     0.0
+    ],
+    "t_first_non_start_median": [
+     null,
+     null,
+     null
+    ],
+    "t_first_non_start_none": 30,
+    "all_pinged_seeds": 0,
+    "t_all_pinged_median": null,
+    "loc_err_median_m": 0.17,
+    "loc_err_p90_m": 0.194,
+    "false_pings": 0,
+    "wasted_visits_mean": [
+     1.3666666666666667,
+     1.1666666666666667,
+     1.5666666666666667
+    ],
+    "insufficient_mean": 0.4666666666666667,
+    "flight_s_mean": [
+     1062.1,
+     1017.665,
+     1110.1333333333334
+    ],
+    "mission_s_mean": [
+     604.1,
+     581.8,
+     628.8358333333333
+    ],
+    "scans_mean": 23.0,
+    "swaps_mean": 0.3,
+    "depth_estimates": 0,
+    "depth_err_median_m": null,
+    "victims_in_flagged_total": 2,
+    "frac_in_flagged": [
+     0.006734006734006734,
+     0.0,
+     0.016498316498316498
+    ],
+    "flagged_empty_mean": 0.0,
+    "t_first_ping_median": 118.5
+   }
+  }
+ }
+}

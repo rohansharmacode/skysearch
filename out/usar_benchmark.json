@@ -1,0 +1,896 @@
+{
+ "summary": {
+  "skysearch": {
+   "runs": 12,
+   "people_found_pct": 86.1,
+   "median_time_to_find_s": 168.5,
+   "all_found_pct": 66.7,
+   "false_confirmations_per_run": 0.0,
+   "human_reviews_per_run": 0.75,
+   "drones_lost_per_run": 0.58,
+   "errors": 0
+  },
+  "scouts_only": {
+   "runs": 12,
+   "people_found_pct": 0.0,
+   "median_time_to_find_s": 600.0,
+   "all_found_pct": 0.0,
+   "false_confirmations_per_run": 0.0,
+   "human_reviews_per_run": 0.0,
+   "drones_lost_per_run": 1.08,
+   "errors": 0
+  },
+  "crevice_only": {
+   "runs": 12,
+   "people_found_pct": 97.2,
+   "median_time_to_find_s": 108.75,
+   "all_found_pct": 91.7,
+   "false_confirmations_per_run": 0.0,
+   "human_reviews_per_run": 1.5,
+   "drones_lost_per_run": 0.0,
+   "errors": 0
+  },
+  "no_listeners": {
+   "runs": 12,
+   "people_found_pct": 88.9,
+   "median_time_to_find_s": 72.75,
+   "all_found_pct": 75.0,
+   "false_confirmations_per_run": 0.0,
+   "human_reviews_per_run": 0.25,
+   "drones_lost_per_run": 0.08,
+   "errors": 0
+  },
+  "no_radar": {
+   "runs": 12,
+   "people_found_pct": 88.9,
+   "median_time_to_find_s": 170.25,
+   "all_found_pct": 75.0,
+   "false_confirmations_per_run": 0.0,
+   "human_reviews_per_run": 3.17,
+   "drones_lost_per_run": 0.25,
+   "errors": 0
+  }
+ },
+ "runs": [
+  {
+   "variant": "skysearch",
+   "seed": 100,
+   "found": [
+    366.0,
+    258.5,
+    159.0
+   ],
+   "lost": 0,
+   "false_pos": 0,
+   "reviews": 2,
+   "wall_s": 7.0,
+   "error": null
+  },
+  {
+   "variant": "scouts_only",
+   "seed": 100,
+   "found": [
+    null,
+    null,
+    null
+   ],
+   "lost": 0,
+   "false_pos": 0,
+   "reviews": 0,
+   "wall_s": 14.2,
+   "error": null
+  },
+  {
+   "variant": "crevice_only",
+   "seed": 100,
+   "found": [
+    118.5,
+    174.0,
+    260.0
+   ],
+   "lost": 0,
+   "false_pos": 0,
+   "reviews": 1,
+   "wall_s": 4.0,
+   "error": null
+  },
+  {
+   "variant": "no_listeners",
+   "seed": 100,
+   "found": [
+    108.0,
+    66.5,
+    73.5
+   ],
+   "lost": 0,
+   "false_pos": 0,
+   "reviews": 1,
+   "wall_s": 2.2,
+   "error": null
+  },
+  {
+   "variant": "no_radar",
+   "seed": 100,
+   "found": [
+    336.5,
+    174.0,
+    171.0
+   ],
+   "lost": 0,
+   "false_pos": 0,
+   "reviews": 5,
+   "wall_s": 6.7,
+   "error": null
+  },
+  {
+   "variant": "skysearch",
+   "seed": 101,
+   "found": [
+    241.5,
+    42.5,
+    114.5
+   ],
+   "lost": 0,
+   "false_pos": 0,
+   "reviews": 1,
+   "wall_s": 4.5,
+   "error": null
+  },
+  {
+   "variant": "scouts_only",
+   "seed": 101,
+   "found": [
+    null,
+    null,
+    null
+   ],
+   "lost": 0,
+   "false_pos": 0,
+   "reviews": 0,
+   "wall_s": 14.0,
+   "error": null
+  },
+  {
+   "variant": "crevice_only",
+   "seed": 101,
+   "found": [
+    68.0,
+    44.0,
+    95.5
+   ],
+   "lost": 0,
+   "false_pos": 0,
+   "reviews": 2,
+   "wall_s": 1.2,
+   "error": null
+  },
+  {
+   "variant": "no_listeners",
+   "seed": 101,
+   "found": [
+    103.5,
+    36.0,
+    69.0
+   ],
+   "lost": 0,
+   "false_pos": 0,
+   "reviews": 0,
+   "wall_s": 2.1,
+   "error": null
+  },
+  {
+   "variant": "no_radar",
+   "seed": 101,
+   "found": [
+    266.0,
+    53.5,
+    114.0
+   ],
+   "lost": 0,
+   "false_pos": 0,
+   "reviews": 3,
+   "wall_s": 5.1,
+   "error": null
+  },
+  {
+   "variant": "skysearch",
+   "seed": 102,
+   "found": [
+    123.5,
+    178.0,
+    236.5
+   ],
+   "lost": 0,
+   "false_pos": 0,
+   "reviews": 2,
+   "wall_s": 4.4,
+   "error": null
+  },
+  {
+   "variant": "scouts_only",
+   "seed": 102,
+   "found": [
+    null,
+    null,
+    null
+   ],
+   "lost": 1,
+   "false_pos": 0,
+   "reviews": 0,
+   "wall_s": 12.2,
+   "error": null
+  },
+  {
+   "variant": "crevice_only",
+   "seed": 102,
+   "found": [
+    110.0,
+    120.0,
+    175.5
+   ],
+   "lost": 0,
+   "false_pos": 0,
+   "reviews": 2,
+   "wall_s": 2.6,
+   "error": null
+  },
+  {
+   "variant": "no_listeners",
+   "seed": 102,
+   "found": [
+    52.0,
+    86.0,
+    null
+   ],
+   "lost": 0,
+   "false_pos": 0,
+   "reviews": 1,
+   "wall_s": 13.0,
+   "error": null
+  },
+  {
+   "variant": "no_radar",
+   "seed": 102,
+   "found": [
+    106.5,
+    155.0,
+    244.0
+   ],
+   "lost": 1,
+   "false_pos": 0,
+   "reviews": 3,
+   "wall_s": 3.8,
+   "error": null
+  },
+  {
+   "variant": "skysearch",
+   "seed": 103,
+   "found": [
+    71.5,
+    31.5,
+    88.5
+   ],
+   "lost": 0,
+   "false_pos": 0,
+   "reviews": 0,
+   "wall_s": 1.4,
+   "error": null
+  },
+  {
+   "variant": "scouts_only",
+   "seed": 103,
+   "found": [
+    null,
+    null,
+    null
+   ],
+   "lost": 1,
+   "false_pos": 0,
+   "reviews": 0,
+   "wall_s": 11.8,
+   "error": null
+  },
+  {
+   "variant": "crevice_only",
+   "seed": 103,
+   "found": [
+    107.5,
+    65.0,
+    121.5
+   ],
+   "lost": 0,
+   "false_pos": 0,
+   "reviews": 0,
+   "wall_s": 1.7,
+   "error": null
+  },
+  {
+   "variant": "no_listeners",
+   "seed": 103,
+   "found": [
+    72.0,
+    30.5,
+    61.5
+   ],
+   "lost": 0,
+   "false_pos": 0,
+   "reviews": 0,
+   "wall_s": 1.3,
+   "error": null
+  },
+  {
+   "variant": "no_radar",
+   "seed": 103,
+   "found": [
+    83.5,
+    42.5,
+    109.5
+   ],
+   "lost": 0,
+   "false_pos": 0,
+   "reviews": 3,
+   "wall_s": 1.7,
+   "error": null
+  },
+  {
+   "variant": "skysearch",
+   "seed": 104,
+   "found": [
+    199.5,
+    189.0,
+    359.5
+   ],
+   "lost": 1,
+   "false_pos": 0,
+   "reviews": 1,
+   "wall_s": 6.6,
+   "error": null
+  },
+  {
+   "variant": "scouts_only",
+   "seed": 104,
+   "found": [
+    null,
+    null,
+    null
+   ],
+   "lost": 0,
+   "false_pos": 0,
+   "reviews": 0,
+   "wall_s": 12.7,
+   "error": null
+  },
+  {
+   "variant": "crevice_only",
+   "seed": 104,
+   "found": [
+    100.0,
+    68.5,
+    null
+   ],
+   "lost": 0,
+   "false_pos": 0,
+   "reviews": 2,
+   "wall_s": 9.5,
+   "error": null
+  },
+  {
+   "variant": "no_listeners",
+   "seed": 104,
+   "found": [
+    48.0,
+    444.0,
+    132.0
+   ],
+   "lost": 0,
+   "false_pos": 0,
+   "reviews": 0,
+   "wall_s": 9.0,
+   "error": null
+  },
+  {
+   "variant": "no_radar",
+   "seed": 104,
+   "found": [
+    null,
+    237.0,
+    null
+   ],
+   "lost": 0,
+   "false_pos": 0,
+   "reviews": 3,
+   "wall_s": 10.4,
+   "error": null
+  },
+  {
+   "variant": "skysearch",
+   "seed": 105,
+   "found": [
+    null,
+    null,
+    26.0
+   ],
+   "lost": 1,
+   "false_pos": 0,
+   "reviews": 0,
+   "wall_s": 10.4,
+   "error": null
+  },
+  {
+   "variant": "scouts_only",
+   "seed": 105,
+   "found": [
+    null,
+    null,
+    null
+   ],
+   "lost": 3,
+   "false_pos": 0,
+   "reviews": 0,
+   "wall_s": 9.2,
+   "error": null
+  },
+  {
+   "variant": "crevice_only",
+   "seed": 105,
+   "found": [
+    81.5,
+    280.0,
+    43.5
+   ],
+   "lost": 0,
+   "false_pos": 0,
+   "reviews": 2,
+   "wall_s": 3.7,
+   "error": null
+  },
+  {
+   "variant": "no_listeners",
+   "seed": 105,
+   "found": [
+    141.5,
+    78.5,
+    25.5
+   ],
+   "lost": 0,
+   "false_pos": 0,
+   "reviews": 0,
+   "wall_s": 2.9,
+   "error": null
+  },
+  {
+   "variant": "no_radar",
+   "seed": 105,
+   "found": [
+    169.5,
+    194.5,
+    null
+   ],
+   "lost": 0,
+   "false_pos": 0,
+   "reviews": 3,
+   "wall_s": 11.3,
+   "error": null
+  },
+  {
+   "variant": "skysearch",
+   "seed": 106,
+   "found": [
+    133.5,
+    240.0,
+    89.5
+   ],
+   "lost": 0,
+   "false_pos": 0,
+   "reviews": 1,
+   "wall_s": 3.2,
+   "error": null
+  },
+  {
+   "variant": "scouts_only",
+   "seed": 106,
+   "found": [
+    null,
+    null,
+    null
+   ],
+   "lost": 1,
+   "false_pos": 0,
+   "reviews": 0,
+   "wall_s": 12.8,
+   "error": null
+  },
+  {
+   "variant": "crevice_only",
+   "seed": 106,
+   "found": [
+    127.5,
+    76.5,
+    68.5
+   ],
+   "lost": 0,
+   "false_pos": 0,
+   "reviews": 1,
+   "wall_s": 1.9,
+   "error": null
+  },
+  {
+   "variant": "no_listeners",
+   "seed": 106,
+   "found": [
+    67.5,
+    127.5,
+    52.0
+   ],
+   "lost": 0,
+   "false_pos": 0,
+   "reviews": 0,
+   "wall_s": 2.6,
+   "error": null
+  },
+  {
+   "variant": "no_radar",
+   "seed": 106,
+   "found": [
+    131.0,
+    243.5,
+    110.0
+   ],
+   "lost": 1,
+   "false_pos": 0,
+   "reviews": 3,
+   "wall_s": 4.2,
+   "error": null
+  },
+  {
+   "variant": "skysearch",
+   "seed": 107,
+   "found": [
+    276.0,
+    null,
+    439.5
+   ],
+   "lost": 3,
+   "false_pos": 0,
+   "reviews": 0,
+   "wall_s": 7.3,
+   "error": null
+  },
+  {
+   "variant": "scouts_only",
+   "seed": 107,
+   "found": [
+    null,
+    null,
+    null
+   ],
+   "lost": 3,
+   "false_pos": 0,
+   "reviews": 0,
+   "wall_s": 10.5,
+   "error": null
+  },
+  {
+   "variant": "crevice_only",
+   "seed": 107,
+   "found": [
+    138.5,
+    431.5,
+    52.0
+   ],
+   "lost": 0,
+   "false_pos": 0,
+   "reviews": 3,
+   "wall_s": 7.0,
+   "error": null
+  },
+  {
+   "variant": "no_listeners",
+   "seed": 107,
+   "found": [
+    66.0,
+    74.0,
+    43.0
+   ],
+   "lost": 0,
+   "false_pos": 0,
+   "reviews": 0,
+   "wall_s": 1.3,
+   "error": null
+  },
+  {
+   "variant": "no_radar",
+   "seed": 107,
+   "found": [
+    139.0,
+    221.5,
+    50.0
+   ],
+   "lost": 0,
+   "false_pos": 0,
+   "reviews": 3,
+   "wall_s": 3.6,
+   "error": null
+  },
+  {
+   "variant": "skysearch",
+   "seed": 108,
+   "found": [
+    54.5,
+    82.0,
+    233.0
+   ],
+   "lost": 0,
+   "false_pos": 0,
+   "reviews": 1,
+   "wall_s": 4.2,
+   "error": null
+  },
+  {
+   "variant": "scouts_only",
+   "seed": 108,
+   "found": [
+    null,
+    null,
+    null
+   ],
+   "lost": 1,
+   "false_pos": 0,
+   "reviews": 0,
+   "wall_s": 13.0,
+   "error": null
+  },
+  {
+   "variant": "crevice_only",
+   "seed": 108,
+   "found": [
+    42.0,
+    104.5,
+    110.5
+   ],
+   "lost": 0,
+   "false_pos": 0,
+   "reviews": 1,
+   "wall_s": 1.9,
+   "error": null
+  },
+  {
+   "variant": "no_listeners",
+   "seed": 108,
+   "found": [
+    212.0,
+    102.0,
+    65.0
+   ],
+   "lost": 0,
+   "false_pos": 0,
+   "reviews": 0,
+   "wall_s": 3.9,
+   "error": null
+  },
+  {
+   "variant": "no_radar",
+   "seed": 108,
+   "found": [
+    64.5,
+    122.0,
+    95.5
+   ],
+   "lost": 0,
+   "false_pos": 0,
+   "reviews": 3,
+   "wall_s": 2.2,
+   "error": null
+  },
+  {
+   "variant": "skysearch",
+   "seed": 109,
+   "found": [
+    139.0,
+    36.0,
+    null
+   ],
+   "lost": 0,
+   "false_pos": 0,
+   "reviews": 0,
+   "wall_s": 11.9,
+   "error": null
+  },
+  {
+   "variant": "scouts_only",
+   "seed": 109,
+   "found": [
+    null,
+    null,
+    null
+   ],
+   "lost": 2,
+   "false_pos": 0,
+   "reviews": 0,
+   "wall_s": 10.5,
+   "error": null
+  },
+  {
+   "variant": "crevice_only",
+   "seed": 109,
+   "found": [
+    127.5,
+    33.5,
+    119.0
+   ],
+   "lost": 0,
+   "false_pos": 0,
+   "reviews": 2,
+   "wall_s": 1.8,
+   "error": null
+  },
+  {
+   "variant": "no_listeners",
+   "seed": 109,
+   "found": [
+    null,
+    null,
+    64.0
+   ],
+   "lost": 1,
+   "false_pos": 0,
+   "reviews": 1,
+   "wall_s": 11.2,
+   "error": null
+  },
+  {
+   "variant": "no_radar",
+   "seed": 109,
+   "found": [
+    202.0,
+    47.0,
+    null
+   ],
+   "lost": 0,
+   "false_pos": 0,
+   "reviews": 3,
+   "wall_s": 10.0,
+   "error": null
+  },
+  {
+   "variant": "skysearch",
+   "seed": 110,
+   "found": [
+    129.5,
+    212.5,
+    89.0
+   ],
+   "lost": 1,
+   "false_pos": 0,
+   "reviews": 0,
+   "wall_s": 3.3,
+   "error": null
+  },
+  {
+   "variant": "scouts_only",
+   "seed": 110,
+   "found": [
+    null,
+    null,
+    null
+   ],
+   "lost": 1,
+   "false_pos": 0,
+   "reviews": 0,
+   "wall_s": 12.6,
+   "error": null
+  },
+  {
+   "variant": "crevice_only",
+   "seed": 110,
+   "found": [
+    135.0,
+    139.5,
+    100.5
+   ],
+   "lost": 0,
+   "false_pos": 0,
+   "reviews": 1,
+   "wall_s": 2.0,
+   "error": null
+  },
+  {
+   "variant": "no_listeners",
+   "seed": 110,
+   "found": [
+    82.0,
+    100.5,
+    null
+   ],
+   "lost": 0,
+   "false_pos": 0,
+   "reviews": 0,
+   "wall_s": 12.9,
+   "error": null
+  },
+  {
+   "variant": "no_radar",
+   "seed": 110,
+   "found": [
+    210.5,
+    233.5,
+    175.5
+   ],
+   "lost": 0,
+   "false_pos": 0,
+   "reviews": 3,
+   "wall_s": 4.0,
+   "error": null
+  },
+  {
+   "variant": "skysearch",
+   "seed": 111,
+   "found": [
+    null,
+    64.0,
+    71.0
+   ],
+   "lost": 1,
+   "false_pos": 0,
+   "reviews": 1,
+   "wall_s": 9.3,
+   "error": null
+  },
+  {
+   "variant": "scouts_only",
+   "seed": 111,
+   "found": [
+    null,
+    null,
+    null
+   ],
+   "lost": 0,
+   "false_pos": 0,
+   "reviews": 0,
+   "wall_s": 12.9,
+   "error": null
+  },
+  {
+   "variant": "crevice_only",
+   "seed": 111,
+   "found": [
+    244.5,
+    76.0,
+    52.5
+   ],
+   "lost": 0,
+   "false_pos": 0,
+   "reviews": 1,
+   "wall_s": 3.3,
+   "error": null
+  },
+  {
+   "variant": "no_listeners",
+   "seed": 111,
+   "found": [
+    69.0,
+    56.0,
+    27.5
+   ],
+   "lost": 0,
+   "false_pos": 0,
+   "reviews": 0,
+   "wall_s": 1.2,
+   "error": null
+  },
+  {
+   "variant": "no_radar",
+   "seed": 111,
+   "found": [
+    459.0,
+    83.0,
+    71.0
+   ],
+   "lost": 1,
+   "false_pos": 0,
+   "reviews": 3,
+   "wall_s": 6.7,
+   "error": null
+  }
+ ]
+}

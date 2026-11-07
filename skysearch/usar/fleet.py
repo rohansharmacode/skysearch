@@ -103,6 +103,7 @@ class Drone:
     still: int = 0
     last_pos: np.ndarray | None = None
     radar_mode: bool = False
+    released: bool = False
 
     @property
     def kind(self):
@@ -132,7 +133,7 @@ class Fleet:
             name = f"L{i + 1}" if lis else f"C{i - cfg.n_listeners + 1}"
             d = mk(1 + cfg.n_scouts + i, name, cfg.micro, bld.entrance + [-2.2, -1.5 + 0.6 * i])
             d.role = "listener" if lis else "confirmer"
-            d.has_radar = not lis                       # confirmers carry a 60 GHz breathing radar
+            d.has_radar = (not lis) and cfg.micro_radar  # confirmers carry a 60 GHz breathing radar
             self.drones.append(d)
         self.drones[0].role = "coordinator"
         # everyone knows the outside is open air
@@ -397,8 +398,15 @@ class Fleet:
             self.callout_t = self.t
             self.b.callout_t = self.t
             self.say("M loudspeaker call-out: \"Rescue team! If you can hear us, knock three times\"")
-        elif lis and len(perched) == len(lis) and len(lis) > 2 and not self.found:
-            self.caption(f"{len(lis)} listeners in position", key="listeners_all")
+        if self.callout_t is not None and self.t > self.callout_t + 20:
+            # after the call-out, only the sentinels keep listening; the rest search voids (they still hear when close)
+            for d in sorted(lis, key=lambda d: d.id)[self.cfg.n_sentinels:]:
+                if not d.released:
+                    d.released, d.post = True, None
+                    if d.state in (PERCH, TOPOST):
+                        d.state, d.task, d.D_key = IDLE, None, None
+                    self.say(f"{d.name} lifts off its listening post to search voids "
+                             f"({self.cfg.n_sentinels} listeners stay landed)")
         self.allocate(linked)
         self.place_mother()
 
@@ -440,7 +448,7 @@ class Fleet:
         lis = [d for d in self.drones if d.kind == "micro" and d.role == "listener"]
         taken = [d.post for d in lis if d.post is not None and d.alive]
         for i, d in enumerate(lis):
-            if not d.alive or d.post is not None:
+            if not d.alive or d.post is not None or d.released:
                 continue
             qx, qy = quads[i % len(quads)]
             tx, ty = X0 + qx * (X1 - X0), Y0 + qy * (Y1 - Y0)

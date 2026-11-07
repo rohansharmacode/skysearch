@@ -35,10 +35,12 @@ class USARConfig:
     quiet_len: float = 6.0
     swap_s: float = 15.0           # automatic battery swap on the mothership's docking pads
     n_listeners: int = 4           # micro-drones that land on flat spots and listen (rest are confirmers)
+    n_sentinels: int = 2           # listeners that stay landed all mission; the others lift off to search after the call-out
     scout_cam_range: float = 5.0
     radar_range_micro: float = 2.6 # 60 GHz mmWave breathing radar on micro-drones
     radar_range_scout: float = 4.0 # UWB through-rubble radar on the radar scout (S3)
     radar_scouts: tuple = (3,)     # which scouts (1-based) carry the UWB radar
+    micro_radar: bool = True       # confirmers carry the 60 GHz breathing radar (ablation switch)
     story: bool = False            # place victims / fire / knock per the team's demo storyboard
     t_fire: float = 48.0           # story: post-quake fire starts in the east wing
     t_knock_b: float = 110.0       # story: victim B (behind a shelf in room 7) regains consciousness

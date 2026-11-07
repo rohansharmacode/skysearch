@@ -58,12 +58,20 @@ class _Drone:
 class KinematicFlight(FlightBackend):
     """Straight-line waypoint flight at cruise altitude with a heightmap collision check."""
 
-    def __init__(self, grid, starts=STARTS, cruise_alt=8.0, speed=4.0, climb=2.0, descend=1.2):
+    def __init__(self, grid, starts=STARTS, cruise_alt=8.0, speed=4.0, climb=2.0, descend=1.2,
+                 fly_rate=0.0016, idle_rate=0.0005, scan_rate=0.0006, terrain_clear=3.0, platform=None):
+        if platform is not None:          # sim.platform preset name or PlatformSpec (docs/PLATFORM.md)
+            from .platform import get_platform
+            kw = (get_platform(platform) if isinstance(platform, str) else platform).flight_kwargs()
+            cruise_alt, speed, climb, descend = kw["cruise_alt"], kw["speed"], kw["climb"], kw["descend"]
+            fly_rate, idle_rate, terrain_clear = kw["fly_rate"], kw["idle_rate"], kw["terrain_clear"]
+            scan_rate = idle_rate         # perched scan: rotors off, radar + compute on
+        self.fly_rate, self.idle_rate, self.scan_rate = fly_rate, idle_rate, scan_rate
         self.grid = grid
         self.starts = dict(starts)
         self.cruise, self.speed, self.climb, self.descend = cruise_alt, speed, climb, descend
-        self.clear_m = 3.0                 # vertical clearance over the highest cell along a leg
-        self.max_alt = max(25.0, float(np.max(grid.z)) + 15.0)   # tall structures raise the ceiling
+        self.clear_m = terrain_clear       # vertical clearance over the highest cell along a leg
+        self.max_alt = max(25.0, self.cruise + 15.0, float(np.max(grid.z)) + 15.0)   # tall structures raise it
         self.drones = {d: _Drone(d, xy, grid.height_at(*xy) + LAND_HEIGHT) for d, xy in starts.items()}
         self.stagger = {d: 1.0 * i for i, d in enumerate(starts)}
 
@@ -102,7 +110,7 @@ class KinematicFlight(FlightBackend):
         if route is None:
             return None
         t = self._route_time(d.pos, route)
-        if d.battery - (0.0016 * t + 0.0006 * SCAN_DWELL_S) < 0.15:
+        if d.battery - (self.fly_rate * t + self.scan_rate * SCAN_DWELL_S) < 0.15:
             return None
         return t
 
@@ -134,6 +142,13 @@ class KinematicFlight(FlightBackend):
             home = np.array([*self.starts[d.id], self.grid.height_at(*self.starts[d.id]) + LAND_HEIGHT])
             d.route = self.plan(d, home) or []
             d.job = {"type": "return"}
+        elif typ == "scan":                # scan in place: already landed at the site, rotors off
+            if d.state not in ("landed", "scanning"):
+                return False
+            d.route = []
+            d.state = "scanning"
+            d.dwell_left = float(cmd.get("scan_duration", SCAN_DWELL_S))
+            d.job = {"type": "goto_land_scan", "site": cmd.get("landing_site_id"), "dwell": d.dwell_left}
         elif typ == "hold":
             d.route = []
             d.state = "hovering" if d.pos[2] > self.grid.height_at(d.pos[0], d.pos[1]) + 0.5 else d.state
@@ -145,18 +160,19 @@ class KinematicFlight(FlightBackend):
         for d in self.drones.values():
             if d.state == "scanning":
                 d.dwell_left -= dt
-                d.battery -= 0.0006 * dt
+                d.battery -= self.scan_rate * dt
                 if d.dwell_left <= 0:
                     d.state = "landed"
-                    ev = {"type": "scan_complete", "drone_id": d.id, "site": d.job["site"], "pose": self._pose(d)}
+                    ev = {"type": "scan_complete", "drone_id": d.id, "site": d.job["site"], "pose": self._pose(d),
+                          "dwell": d.job.get("dwell", SCAN_DWELL_S)}
                     d.job = None
                     events.append(ev)
                 continue
             if not d.route:
-                d.battery -= (0.0005 if d.state in ("landed", "docked") else 0.0016) * dt
+                d.battery -= (self.idle_rate if d.state in ("landed", "docked") else self.fly_rate) * dt
                 continue
             budget = dt
-            d.battery -= 0.0016 * dt
+            d.battery -= self.fly_rate * dt
             while d.route and budget > 1e-9:
                 w = d.route[0]
                 delta = w - d.pos
@@ -251,6 +267,9 @@ class Mission:
         self.relocations = []          # (scan_no, drone, site, reason) for reports
         self.outliers = []             # scan ids of trusted scans outvoted by the consensus
         self.min_eig = 0.2             # nats: below this another relocation is not worth a scan
+        self.vitals_look_s = 0.0       # > 0: one long in-place dwell after a firm fix (breathing-pattern triage)
+        self.vitals_look = None        # scan id of that dwell
+        self._drone_site = {}          # drone id -> site id it last scanned from
         self._belief_json = None
         self._hm_json = json.dumps([round(float(v), 3) for v in self.grid.z.ravel()], separators=(",", ":"))
         self.pc_count = 0
@@ -391,6 +410,8 @@ class Mission:
             return
         res = self.result
         reason = None if res["status"] == "candidate" else res["reason"]
+        if reason is None and self.vitals_look_s > 0 and self.vitals_look is None:
+            return self._start_vitals_look(res)
         if reason is None:
             out = (f"; scan(s) {', '.join(self.outliers)} disagree but are outvoted by later strong ranges and are "
                    "flagged as outliers") if self.outliers else ""
@@ -418,6 +439,28 @@ class Mission:
         self.relocations.append({"scan_no": self.scans_cmd, "drone": ch.drone_id, "site": ch.site_id,
                                  "reason": ch.reason, "trigger": reason})
         self._say(f"Relocate {ch.drone_id} -> {ch.site_id}: {ch.reason}")
+
+    def _start_vitals_look(self, res):
+        """One long in-place dwell from the drone best placed on R1: breathing patterns need 45-60 s."""
+        m = res["modes"][0]["xy"]
+        best = None
+        for o in self.loc.obs:
+            did, sid = o["drone_id"], self._drone_site.get(o["drone_id"])
+            if sid is None or not o["range_candidates"] or self.flight.drone_state(did)[0] != "landed":
+                continue
+            score = self.loc.agreement(o, m) * max(o["confidence"]) * o["quality"]
+            if best is None or score > best[0]:
+                best = (score, did, sid)
+        self.vitals_look = "none"
+        if best is None or not self.flight.command({"drone_id": best[1], "type": "scan", "landing_site_id": best[2],
+                                                    "scan_duration": self.vitals_look_s}):
+            self._say("Localisation converged; no landed drone can hold a vitals look, stopping radar scans")
+            return self._start_listen()
+        self.vitals_look = "pending"
+        self.pending[best[1]] = {"drone_id": best[1], "site_id": best[2], "score": 0.0,
+                                 "reason": f"{self.vitals_look_s:.0f} s vitals look at R1 (breathing pattern)"}
+        self._say(f"Localisation converged: {self._summ(res)}. {best[1]} stays at {best[2]} for a "
+                  f"{self.vitals_look_s:.0f} s vitals look (breathing pattern to help order the dig; rescuers check on site)")
 
     def _rescan_reason(self, res):
         self.outliers = []
@@ -484,7 +527,13 @@ class Mission:
         pose = sensor_pose_at(site)
         pose[3] = ev["pose"][3]
         self.scan_idx += 1
-        obs_list = self.sensors.radar_scan(self.scan_idx, did, pose, site, self.t)
+        self._drone_site[did] = sid
+        dwell = float(ev.get("dwell", SCAN_DWELL_S))
+        obs_list = self.sensors.radar_scan(self.scan_idx, did, pose, site, self.t, dwell=dwell)
+        if self.vitals_look == "pending" and dwell > SCAN_DWELL_S:
+            self.vitals_look = obs_list[0]["scan_id"]
+            for o in obs_list:
+                o["vitals_look"] = True
         for o in obs_list:
             kind = self.loc.update_radar(o)
             o["used_weight"] = 0.0

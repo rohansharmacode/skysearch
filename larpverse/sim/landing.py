@@ -36,35 +36,39 @@ def mound_centre(grid: Grid):
     return float((X * w).sum() / w.sum()), float((Y * w).sum() / w.sum())
 
 
-def patch_fields(grid: Grid):
-    """Vectorised 3x3 plane fit: returns slope_deg, roughness, plane gradients (a, b)."""
+def patch_fields(grid: Grid, k: int = 3):
+    """Vectorised k x k plane fit (k odd: 3 = legacy 1.5 m, 7 = heavy_sar 3.5 m patch, see sim/platform.py):
+    returns slope_deg, roughness, plane gradients (a, b), mean."""
     z = grid.z.astype(np.float64)
     h, w = z.shape
     res = grid.res
-    zp = np.pad(z, 1, mode="edge")
+    r = k // 2
+    offs = range(-r, r + 1)
+    zp = np.pad(z, r, mode="edge")
     a = np.zeros_like(z)
     b = np.zeros_like(z)
     mean = np.zeros_like(z)
     shifts = {}
-    for dy in (-1, 0, 1):
-        for dx in (-1, 0, 1):
-            s = zp[1 + dy:1 + dy + h, 1 + dx:1 + dx + w]
+    for dy in offs:
+        for dx in offs:
+            s = zp[r + dy:r + dy + h, r + dx:r + dx + w]
             shifts[(dy, dx)] = s
             a += dx * res * s
             b += dy * res * s
             mean += s
-    a /= 6 * res ** 2
-    b /= 6 * res ** 2
-    mean /= 9
+    sxx = k * sum(d * d for d in offs) * res ** 2      # = 6 res^2 for k = 3
+    a /= sxx
+    b /= sxx
+    mean /= k * k
     ss = np.zeros_like(z)
     for (dy, dx), s in shifts.items():
         ss += (s - (mean + a * dx * res + b * dy * res)) ** 2
-    rough = np.sqrt(ss / 9)
+    rough = np.sqrt(ss / (k * k))
     slope = np.degrees(np.arctan(np.hypot(a, b)))
     return slope, rough, a, b, mean
 
 
-def _clearance_step_approach(zpad, i, j, pad, a, b, zc, res):
+def _clearance_step_approach(zpad, i, j, pad, a, b, zc, res, step_r=LIM_CLEAR):
     """Window analyses for one patch centred at cell (j, i) (indices in unpadded grid)."""
     # clearance / step window: +-6 cells (3 m)
     R = 6
@@ -76,7 +80,7 @@ def _clearance_step_approach(zpad, i, j, pad, a, b, zc, res):
     obstacle = rel > OBSTACLE_H
     clearance = float(D[obstacle].min()) if obstacle.any() else 3.0
     clearance = min(clearance, 3.0)
-    inner = D <= 0.9
+    inner = D <= step_r
     step = float(np.abs(rel[inner]).max())
     # approach cone: window +-12 cells (6 m)
     R2 = 12
@@ -91,10 +95,16 @@ def _clearance_step_approach(zpad, i, j, pad, a, b, zc, res):
 
 
 def detect_landing_sites(grid: Grid, centre=None, max_sites: int = MAX_SITES,
-                         min_spacing: float = MIN_SPACING, search_radius: float = SEARCH_RADIUS):
-    """Return landing-site dicts (INTERFACES.md fields) with status candidate/rejected."""
+                         min_spacing: float = MIN_SPACING, search_radius: float = SEARCH_RADIUS, limits=None):
+    """Return landing-site dicts (INTERFACES.md fields) with status candidate/rejected.
+
+    ``limits`` = ``sim.platform.PlatformSpec.landing_limits()`` (None = legacy constants above)."""
+    L = limits or {}
+    lim_flat, lim_perch = L.get("slope_deg", LIM_SLOPE), L.get("perch_slope_deg", PERCH_SLOPE)
+    lim_rough, lim_step, lim_clear = L.get("rough_m", LIM_ROUGH), L.get("step_m", LIM_STEP), L.get("clear_m", LIM_CLEAR)
+    edge_first = str(L.get("prefer", "")).startswith("street")    # heavy drone: firm ground at the pile edge
     cx, cy = centre if centre is not None else mound_centre(grid)
-    slope, rough, a, b, mean = patch_fields(grid)
+    slope, rough, a, b, mean = patch_fields(grid, L.get("patch_cells", 3))
     X, Y = grid.mesh()
     rc = np.hypot(X - cx, Y - cy)
     pad = 14
@@ -103,10 +113,11 @@ def detect_landing_sites(grid: Grid, centre=None, max_sites: int = MAX_SITES,
     rows = []
     ground_ref = float(np.median(grid.z[rc > 20.0])) if (rc > 20.0).any() else 0.0
     perch = mean > ground_ref + 0.6               # on the rubble: the radar needs to be close (penetration limit)
-    lim_slope = np.where(perch, PERCH_SLOPE, LIM_SLOPE)
-    sel = (rc <= search_radius) & (slope <= lim_slope + 6) & (rough <= LIM_ROUGH + 0.05)
+    lim_slope = np.where(perch, lim_perch, lim_flat)
+    sel = (rc <= search_radius) & (slope <= lim_slope + 6) & (rough <= lim_rough + 0.05)
     for j, i in zip(*np.nonzero(sel)):
-        clearance, step, app = _clearance_step_approach(zpad, i, j, pad, a[j, i], b[j, i], mean[j, i], grid.res)
+        clearance, step, app = _clearance_step_approach(zpad, i, j, pad, a[j, i], b[j, i], mean[j, i], grid.res,
+                                                        L.get("step_r_m", LIM_CLEAR))
         s_slope = max(0.0, 1 - slope[j, i] / 10.0)
         s_rough = max(0.0, 1 - rough[j, i] / 0.06)
         s_clear = min(1.0, clearance / 3.0)
@@ -114,11 +125,11 @@ def detect_landing_sites(grid: Grid, centre=None, max_sites: int = MAX_SITES,
         reason = None
         if slope[j, i] > lim_slope[j, i]:
             reason = "slope"
-        elif rough[j, i] > LIM_ROUGH:
+        elif rough[j, i] > lim_rough:
             reason = "roughness"
-        elif step > LIM_STEP:
+        elif step > lim_step:
             reason = "step"
-        elif clearance < LIM_CLEAR:
+        elif clearance < lim_clear:
             reason = "clearance"
         elif not app:
             reason = "approach"
@@ -126,8 +137,8 @@ def detect_landing_sites(grid: Grid, centre=None, max_sites: int = MAX_SITES,
                          slope=float(slope[j, i]), rough=float(rough[j, i]), clearance=clearance,
                          score=float(score), reason=reason, r=float(rc[j, i]), perch=bool(perch[j, i])))
 
-    def rank(row):  # prefer good patches, mildly prefer the ones near the rubble
-        return row["score"] - 0.012 * row["r"]
+    def rank(row):  # prefer good patches, mildly prefer the ones near the rubble (heavy: off the pile first)
+        return row["score"] - 0.012 * row["r"] - (0.15 if edge_first and row["perch"] else 0.0)
 
     ok = sorted([r for r in rows if r["reason"] is None], key=rank, reverse=True)
     bad = sorted([r for r in rows if r["reason"] is not None and r["r"] < 12.0],
@@ -145,7 +156,7 @@ def detect_landing_sites(grid: Grid, centre=None, max_sites: int = MAX_SITES,
             if all(np.hypot(row["x"] - c["x"], row["y"] - c["y"]) >= spacing for c in chosen):
                 chosen.append(row)
 
-    take(on_rubble, max_sites // 2, 2.5)
+    take(on_rubble, max_sites // (4 if edge_first else 2), 2.5 if not edge_first else 4.0)
     take(ok, max_sites, min_spacing)
     rejected = []
     for row in bad:

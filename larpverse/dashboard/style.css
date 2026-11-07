@@ -83,7 +83,7 @@ button { font: inherit; color: inherit; }
 #help .lead { margin: 8px 0; color: #c6d2da; font-size: 13px; }
 #help .lead.small { font-size: 12px; color: var(--muted); margin-bottom: 0; }
 .keys { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; font-size: 12.5px; color: #c6d2da; }
-.keys li { display: grid; grid-template-columns: 74px 1fr; gap: 8px; align-items: start; }
+.keys li { display: grid; grid-template-columns: 92px 1fr; gap: 8px; align-items: start; }
 .keys li > i { justify-self: center; margin-top: 2px; font-style: normal; }
 .keys b { color: var(--fg); font-weight: 600; }
 .k-pile { width: 30px; height: 30px; border-radius: 50%; border: 1.5px solid var(--teal); box-shadow: inset 0 0 0 7px transparent, 0 0 0 0; position: relative; }
@@ -96,12 +96,13 @@ button { font: inherit; color: inherit; }
 .k-tri { width: 0; height: 0; border-bottom: 13px solid #dfe7ec; border-left: 8px solid transparent; border-right: 8px solid transparent; }
 .k-sq-inline { display: inline-block; width: 9px; height: 9px; border: 2px solid #4fd18b; vertical-align: -1px; }
 .k-arrow { width: 30px; height: 0; border-top: 2.5px dashed var(--coord); margin-top: 8px !important; }
-.k-tri-rings { position: relative; width: 74px; height: 22px; display: block; }
+.k-tri-rings { position: relative; width: 92px; height: 22px; display: block; }
 .k-tri-rings i { position: absolute; top: 2px; width: 16px; height: 16px; border-radius: 50%; border: 2px solid #f0f4f8; }
 .k-tri-rings .r2 { left: 0; box-shadow: 0 0 0 2px #131c25, 0 0 0 3.5px #f0f4f8; top: 3px; left: 2px; width: 14px; height: 14px; }
-.k-tri-rings .r1 { left: 20px; }
-.k-tri-rings .rd { left: 39px; border-style: dashed; border-width: 1.5px; }
-.k-tri-rings .ro { left: 58px; border-style: dotted; border-width: 1.5px; border-color: var(--muted); }
+.k-tri-rings .r1 { left: 20px; border-width: 2.5px; }
+.k-tri-rings .ru { left: 39px; border-width: 1px; box-shadow: inset 0 0 0 2px #131c25, inset 0 0 0 3px #f0f4f8; }
+.k-tri-rings .rd { left: 58px; border-style: dashed; border-width: 1.5px; }
+.k-tri-rings .ro { left: 77px; border-style: dotted; border-width: 1.5px; border-color: var(--muted); }
 .k-hatch { width: 30px; height: 22px; border-radius: 50%; border: 1px solid rgba(205, 218, 228, 0.5); background: repeating-linear-gradient(-45deg, rgba(205, 218, 228, 0.5) 0 1px, transparent 1px 6px); }
 .k-stage { width: 30px; height: 16px; border: 1.5px dashed rgba(90, 169, 255, 0.8); background: rgba(90, 169, 255, 0.1); }
 
@@ -156,7 +157,8 @@ body.grid #railCaveat { order: 7; }
 .tri { display: inline-block; font: 600 9.5px/15px var(--f-mono); text-transform: uppercase; letter-spacing: 0.06em; border-radius: 8px; padding: 0 6px; white-space: nowrap; border: 1px solid; }
 .tri small { font: inherit; font-weight: 400; text-transform: none; letter-spacing: 0; }
 .tri.t-immediate { background: #f0f4f8; color: #0b1016; border-color: #f0f4f8; box-shadow: 0 0 0 1.5px var(--panel), 0 0 0 2.5px #f0f4f8; margin: 0 2px; }
-.tri.t-urgent { color: #f0f4f8; border: 1.5px solid #f0f4f8; }
+.tri.t-icheck { color: #f0f4f8; border: 2px solid #f0f4f8; }
+.tri.t-urgent { color: #dfe6eb; border: 1px solid #dfe6eb; box-shadow: inset 0 0 0 1.5px var(--panel), inset 0 0 0 2.5px rgba(223,230,235,0.6); }
 .tri.t-delayed { color: #b8c4cc; border-style: dashed; border-color: #b8c4cc; }
 .tri.t-assess { color: var(--muted); border-style: dotted; border-color: var(--muted); }
 

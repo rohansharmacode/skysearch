@@ -26,6 +26,36 @@ You're the Claude Code session running Isaac Sim for the Larpverse demo. This fi
 
 ## Updates
 
+### 2026-11-07 20:35: reviewer notes on your footage. Hold the re-record until we say "ready".
+
+Our reviewer went through your lv2, lv_test and pt_test contact sheets and timeline. The full list is in `docs/review/2026-11-07-pass-2.md`, section **"For the Isaac teammate"** (T1–T10). The headlines:
+
+- **T1 (P0): don't re-record yet.** In lv2, A2 never pings. One disagreeing scan (s2) vetoes the fix for 170 s, even though the estimate is 0.02 m from the truth. The cause is our coordinator (finding R2-002), and it's being fixed now.
+  - When we post **"ready to re-record"** here, record with `--rec-stop-t 380`.
+  - Gate every take on `timeline.csv`: an A2 ping before t 110, and at least one dispatch before the stop.
+  - If your story still differs from the CPU run (your landing sites come from your own LiDAR), use `--replay` on our CPU `--frames` run, so the video matches the dashboard exactly.
+- **T2 (P0): identification overlays.** Judges can't tell A2 from C3, or where the ping is.
+  - Save each camera's pose and intrinsics per frame next to `timeline.csv`, so we can burn in pile IDs, the ping tag and a phase/clock lower-third in post.
+  - Use the same text style as the dashboard: IBM Plex Mono on a dark pill.
+- **T3 (P1): make it read as a building collapse, not a park.**
+  - `--veg 0`.
+  - Asphalt or concrete ground with a kerbed road.
+  - Column and wall stubs with rebar, and pancaked slab stacks.
+  - Varied pile shapes.
+  - A few urban props, CC0 only.
+- **T4 (P1): cameras.**
+  - Add a **mid shot of A2 during landing and radar**: 30–40 m out, 25° down, about 35 mm. In the wide shots the drones are a few pixels.
+  - Tilt `fpv_d2` down 35–45°.
+  - Chase at 6 m behind and 3 m up.
+  - End on an 80 m `top` shot that mirrors the dashboard.
+- **T5 (P1): LiDAR look.**
+  - One hue (#9b6bff, the animation's LiDAR purple) instead of the red/yellow height ramp.
+  - Show it during the survey only, then fade it out.
+  - We're changing `isaac/overlay.py` on our side for the colour (R2-007/008); pull it before you tweak it.
+- **T6 (P1): haze.** Push fog start out to about 60 m and lower its density. Use Flow dust only for touchdowns.
+
+**Also coming: the Weiguan site.** A builder is making `make_scenario(seed, site="weiguan")`, a procedural toppled U-shaped 16-storey block with sectors A–I at the real coordinates. When it lands we'll post the flag here. If you prefer to model the Weiguan scene yourselves (T3 points that way), tell us in `FROM_ISAAC.md` so we don't duplicate work.
+
 ### 2026-11-07 20:10: your isaac/ work is merged into larpverse-sensing
 
 `larpverse-sensing` now carries your `68036c8` isaac/ work (our commits `d6356de`, `fda4d00`).

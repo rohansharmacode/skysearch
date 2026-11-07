@@ -40,6 +40,9 @@ Read this first after a context compaction or restart.
 ## 20:00 state
 - Gemini key saved by user in .env (gitignored). heavy.sh head-of-line deadlock fixed (adb8143). Video-cut builder paused (resume when Isaac footage lands). Vitals builder started.
 
+## 20:35
+- Review pass 2 (4373244): 29/46 pass-1 verified; 23 new (5 P0). Routed: brain → mission + acoustic builders; dashboard batch 2 + vitals/dig-order panel → new dashboard builder; demo/recorder (?data→?state) → demo runner; Isaac T1–T10 → FOR_ISAAC_CLAUDE (hold re-record until R2-002 fix). Batch 4 (animation + isaac/overlay visual consistency) queued for next free slot.
+
 ## Review loop
 - Pass 1 done (575253f): 46 findings. Batches routed: brain → acoustic + mission builders; dashboard → builder; Isaac handoff → orchestrator (done except R1-033/037/038); animation → animation builder.
 - Next: reviewer pass 2 once brain + dashboard batches land (verify fixes; new angles: skeptical judge 5-min demo, Isaac teammate cold start).

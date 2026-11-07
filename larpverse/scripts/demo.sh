@@ -8,15 +8,15 @@
 #   scripts/demo.sh --stub          # force the synthetic acoustic stub
 #   scripts/demo.sh --no-gemini     # force the argmax decider / template brief even if a key exists
 #   scripts/demo.sh --direct        # on stage: run the mission directly, not through the shared heavy.sh queue
-#   scripts/demo.sh --all-piles     # no pile cap (default --piles 3 until BL-3 lands: ends after B2-R1)
+#   scripts/demo.sh --piles 3       # cap the visited piles (default: no cap; BL-3 acoustic fix has landed)
 #
-# Env: DEMO_SEED (7), DEMO_SPEED (4), DEMO_START_PILE, DEMO_PORT (8765), DEMO_PILES (3; 0 = no cap), DEMO_STAGE=1 (= --direct).
+# Env: DEMO_SEED (7), DEMO_SPEED (4), DEMO_START_PILE, DEMO_PORT (8765), DEMO_PILES (0 = no cap, default), DEMO_STAGE=1 (= --direct).
 # Writes dashboard/data/{state.json,pointcloud.bin,frames/state_XXXX.json,brief.md}. Leaves no background processes.
 set -euo pipefail
 ROOT=$(cd "$(dirname "$0")/.." && pwd); cd "$ROOT"
 
 SEED=${DEMO_SEED:-7}; SPEED=${DEMO_SPEED:-4}; PORT=${DEMO_PORT:-8765}; START=${DEMO_START_PILE:-}
-REALTIME=1; SLAM=""; FORCE_STUB=""; NO_GEMINI=""; PILES=${DEMO_PILES:-3}
+REALTIME=1; SLAM=""; FORCE_STUB=""; NO_GEMINI=""; PILES=${DEMO_PILES:-0}
 DIRECT=""; [ "${DEMO_STAGE:-}" = 1 ] && DIRECT=1
 while [ $# -gt 0 ]; do case "$1" in
   --speed) SPEED=${2:?--speed needs a number}; shift 2 ;;
@@ -99,7 +99,7 @@ echo
 bold "Dashboard: $URL      (open it now; it polls state.json every second)"
 if [ -n "$REALTIME" ]; then
   awk -v s="$SPEED" 'BEGIN { if (s + 0 <= 0) exit 1 }' || die "--speed must be a positive number"
-  echo "Mission  : realtime x$SPEED (~$(awk -v s="$SPEED" -v m="$([ "$PILES" = 0 ] && echo 745 || echo 400)" 'BEGIN { printf "%.1f", (m / s + 15) / 60 }') min with warm caches). Ctrl-C stops it."
+  echo "Mission  : realtime x$SPEED (~$(awk -v s="$SPEED" -v m="$([ "$PILES" = 0 ] && echo 1500 || echo 800)" 'BEGIN { printf "%.1f", (m / s + 15) / 60 }') min with warm caches). Ctrl-C stops it."
 else echo "Mission  : --fast (no pacing): the dashboard jumps; use scripts/record_dashboard.py --live for a paced replay"; fi
 echo "Command  : ${RUN[*]} $PY ${ARGS[*]}"
 echo

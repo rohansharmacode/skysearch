@@ -66,3 +66,39 @@ def test_look_geometry_and_quat():
     r = v + 2 * np.cross(q, np.cross(q, v) + w * v)
     d = (tgt - eye) / np.linalg.norm(tgt - eye)
     assert np.allclose(r, d, atol=1e-6)
+
+
+def test_flags_merged_once():
+    """Our flags + the Isaac teammate's photoreal/recording flags: every option registered exactly once."""
+    from isaac.compat import add_kit_args
+    from isaac.run_mission import _base_parser, parse_args
+
+    ap = _base_parser()
+    add_kit_args(ap)
+    opts = [o for act in ap._actions for o in act.option_strings]
+    assert len(opts) == len(set(opts))
+    lost = [act.dest for act in ap._actions if not act.option_strings and act.nargs != 0 and act.dest != "help"]
+    assert not lost, lost                                  # conflict_handler="resolve" would silently drop these
+    for flag in ("--photoreal", "--record", "--rec-cams", "--rec-res", "--rec-fps", "--rec-speed", "--rec-warp",
+                 "--rec-stop-t", "--rec-windows", "--rec-every", "--rtx", "--spp", "--hdri", "--sky", "--sun",
+                 "--sun-elev", "--veg", "--operator", "--assets", "--launcher", "--selftest", "--look", "--flow",
+                 "--fabric", "--dry-run", "--radar"):
+        assert flag in opts, flag
+    a = parse_args(["--dry-run"])
+    assert (a.photoreal, a.sun, a.sky, a.radar, a.rec_res) == (0, 1800.0, 350.0, "dsp", "1920x1080")
+    a = parse_args(["--dry-run", "--look", "pretty"])          # --look pretty is an alias for --photoreal 1
+    assert (a.photoreal, a.sun, a.sky, a.hdri) == (1, 2200.0, 900.0, "evening_road_01_4k.hdr")
+    a = parse_args(["--dry-run", "--photoreal", "1", "--sun", "3000"])
+    assert (a.sun, a.sky) == (3000.0, 900.0)
+
+
+def test_isaac_dryrun_photoreal_record_flags(tmp_path):
+    """Their recording flags on the dry run: virtual clock at --rec-fps, --rec-speed, --rec-warp, --rec-stop-t,
+    photoreal LiDAR draw radius. No recorder without Isaac; nothing Isaac-only is imported."""
+    from isaac.run_mission import main
+
+    s = main(["--dry-run", "--photoreal", "1", "--record", str(tmp_path / "rec"), "--rec-fps", "10",
+              "--rec-speed", "6", "--rec-warp", "4", "--rec-stop-t", "30", "--out", str(tmp_path / "d"), "--quiet"])
+    assert 28 <= s["t"] <= 40 and s["recorded_frames"] == 0, s
+    assert s["lidar_points"] > 0
+    assert not any(m == "pxr" or m.startswith(("pxr.", "omni.")) or m == "omni" for m in sys.modules)

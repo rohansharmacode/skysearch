@@ -37,6 +37,9 @@ Read this first after a context compaction or restart.
 - Frances pushed branch acoustic-voice-detection (her own SRP-PHAT+YAMNet pipeline + real recordings) → fed to the real-audio validation builder.
 - User 19:30: up to 8 agents; guardrails loosened (heavy.sh 3 slots, 1.2 GB floor; watchdog warn 1.5 GB / kill browsers <0.9 GB).
 
+## 20:00 state
+- Gemini key saved by user in .env (gitignored). heavy.sh head-of-line deadlock fixed (adb8143). Video-cut builder paused (resume when Isaac footage lands). Vitals builder started.
+
 ## Review loop
 - Pass 1 done (575253f): 46 findings. Batches routed: brain → acoustic + mission builders; dashboard → builder; Isaac handoff → orchestrator (done except R1-033/037/038); animation → animation builder.
 - Next: reviewer pass 2 once brain + dashboard batches land (verify fixes; new angles: skeptical judge 5-min demo, Isaac teammate cold start).

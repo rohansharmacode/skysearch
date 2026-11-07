@@ -16,9 +16,23 @@
     <div class="brand"><i></i>Larpverse</div>
     <div class="pill" id="phase">phase</div>
     <div class="site" id="siteName">Rubble site</div>
+    <button class="case" id="caseBtn" aria-expanded="false" aria-controls="casePop"><span class="long">Case study: Weiguan Jinlong collapse, Tainan, 2016</span><span class="short">Case study: Tainan 2016</span></button>
     <div class="meta"><span id="simT">t = 0.0 s</span><span id="conn" class="conn">connecting</span></div>
   </header>
   <div id="banner" role="status" hidden></div>
+
+  <div id="casePop" role="dialog" aria-labelledby="caseTitle" hidden>
+    <div class="hh"><h3 id="caseTitle">Case study: Weiguan Jinlong building, Tainan</h3><button class="btn" id="caseClose" aria-label="Close case study">Close</button></div>
+    <ul>
+      <li>On 6 February 2016 at 03:57 local time, a magnitude 6.4 earthquake centred in Meinong District, Kaohsiung, struck southern Taiwan.</li>
+      <li>The Weiguan Jinlong building (維冠金龍大樓) in Yongkang District, Tainan, was a residential complex built in the early 1990s: 16 storeys plus a basement, in nine blocks (A–I) arranged in a U shape facing west.</li>
+      <li>In the 6 Feb 2016 Meinong earthquake the whole building toppled from west to east across Yongda Road Section 2; 115 people died there. The search was declared over on 13 Feb, about a week later.</li>
+      <li>In 2019 Taiwan's Supreme Court upheld five-year sentences for the developer, two architects, a designer and a structural engineer for homicide through professional negligence.</li>
+      <li class="src">Sources: zh.wikipedia 維冠金龍大樓; Taipei Times, 22 Feb 2019.</li>
+    </ul>
+    <p class="note"><b>In this demo</b> the real site only anchors the map frame. Rubble piles, sectors, people, radar returns and sounds are synthetic.</p>
+    <p class="note mono" id="caseGeo"></p>
+  </div>
 
   <main id="mapWrap">
     <canvas id="map" aria-label="Site map. Red dots are radar candidate regions; yellow cones are acoustic directions. Open 'How to read this map' for the full key."></canvas>
@@ -26,7 +40,7 @@
       <button class="tog key" id="helpBtn" aria-expanded="false" aria-controls="help"><span class="long">? How to read this map</span><span class="short">? Map key</span></button>
       <button class="tog" id="layersBtn" aria-expanded="false" aria-controls="layers">Layers ▾</button>
       <div id="layers">
-        <button class="tog" data-k="basemap" aria-pressed="true">LiDAR relief</button>
+        <div class="seg" role="group" aria-label="Basemap"><span>Basemap</span><button class="tog" data-bm="map" aria-pressed="true">Map</button><button class="tog" data-bm="sat" aria-pressed="false">Satellite</button><button class="tog" data-bm="relief" aria-pressed="false">LiDAR relief</button></div>
         <button class="tog" data-k="belief" aria-pressed="true">Radar belief</button>
         <button class="tog" data-k="rings" aria-pressed="false">Range rings</button>
         <button class="tog" data-k="acoustic" aria-pressed="true">Acoustic cones</button>
@@ -40,6 +54,7 @@
       <button class="btn" id="zfit" aria-label="Fit site">Fit</button>
     </div>
     <div id="cursor" class="float mono">x — · y — m</div>
+    <div id="attrib" class="float" hidden></div>
     <div id="legend" class="float">
       <span><i class="dot red"></i>Radar ping (candidate region)</span>
       <span class="lx"><i class="ring"></i>Insufficient evidence</span>
@@ -65,6 +80,7 @@
         <li><i class="k-tri"></i><div><b>Drone</b> (white; yellow while listening with rotors off). <i class="k-sq-inline"></i> green squares are landing sites the drones chose from the LiDAR map.</div></li>
         <li><i class="k-arrow"></i><div><b>Dispatch</b>: where the coordinator sent the fleet next, and why (see Dispatch decisions).</div></li>
         <li><i class="k-stage"></i><div><b>Staging</b>: the operator's console and the drone pads.</div></li>
+        <li><i class="k-geo">N</i><div><b>Basemap</b>: the real case-study site (OpenStreetMap or satellite imagery), with the site frame anchored at the building (the N arrow, top right, shows true north). The shaded mounds on top are the drones' LiDAR map of the (synthetic) rubble. Without network the map falls back to the LiDAR relief.</div></li>
       </ul>
       <p class="lead small">Depth is shown as <b>(nominal)</b> when it is an assumed 1.5 m rather than measured, and as <b>± (radar estimate)</b> when the radar measured it.</p>
     </div>

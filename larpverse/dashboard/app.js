@@ -29,7 +29,7 @@ const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '
 let S = null;                 // current state
 let cloud = null, cloudKey = null;
 let live = false, lastRaw = null;
-const layers = { basemap: true, belief: true, rings: false, acoustic: true, sites: true, piles: true };
+const layers = { belief: true, rings: false, acoustic: true, sites: true, piles: true };
 const isGrid = () => Array.isArray(S?.piles) && S.piles.length > 0;
 // UI state that survives re-renders
 let selListen = null;                                  // null = follow the latest listen
@@ -69,7 +69,7 @@ let hmKey = null;
 function setState(s) {
   const first = !S || (S.demo && !s.demo) || (!!S.piles !== !!s.piles);
   const hk = s.heightmap ? `${s.heightmap.origin}|${s.heightmap.w}x${s.heightmap.h}|${s.heightmap.z.length}|${s.heightmap.z[(s.heightmap.z.length / 3) | 0]}` : null;
-  if (hk !== hmKey) { baseImg = null; hmKey = hk; }
+  if (hk !== hmKey) { baseImg = null; rubbleImg = null; hmKey = hk; }
   S = s; beliefImg = null;
   ensureCloud();
   renderSide();
@@ -141,6 +141,78 @@ const ambChip = c => isAmb(c) ? `<span class="chip amb" title="The drones' beari
 const SRC_TXT = { 'real-cached': 'Recorded audio · cached analysis', real: 'Live audio analysis', 'real-venv': 'Live audio analysis', custom: 'Custom acoustic source', demo: 'Demo data' };
 const srcText = s => (/^stub/.test(s) ? 'Synthetic clips (from scenario)' : SRC_TXT[s] || s);
 
+// ---------------- georeference + basemap tiles ----------------
+// Site frame (metres, x east, y north) anchored at site.geo (default: the Weiguan Jinlong building, Tainan).
+// bearing_deg = compass bearing of the site +y axis (0 = north). Local ENU approximation, fine over ~100 m.
+const GEO_DEFAULT = { lat: 23.0051432, lon: 120.2608904, bearing_deg: 0, name: 'Weiguan Jinlong building (維冠金龍大樓), Yongkang District, Tainan' };
+const geo = () => ({ ...GEO_DEFAULT, ...(S?.site?.geo || {}) });
+const R_E = 6378137, RAD = Math.PI / 180;
+function siteToLL(x, y) {
+  const g = geo(), b = (g.bearing_deg || 0) * RAD, e = x * Math.cos(b) + y * Math.sin(b), n = -x * Math.sin(b) + y * Math.cos(b);
+  return [g.lat + n / R_E / RAD, g.lon + e / (R_E * Math.cos(g.lat * RAD)) / RAD];
+}
+function llToG(lat, lon, z) { const n = 256 * 2 ** z, s = Math.sin(lat * RAD); return [(lon + 180) / 360 * n, (0.5 - Math.log((1 + s) / (1 - s)) / (4 * Math.PI)) * n]; }
+const TILES = {
+  map: { url: (z, x, y) => `https://tile.openstreetmap.org/${z}/${x}/${y}.png`, max: 19,
+    filter: 'invert(0.92) hue-rotate(180deg) saturate(0.55) brightness(0.92) contrast(0.92)',
+    attr: 'Map © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors' },
+  sat: { url: (z, x, y) => `https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/${z}/${y}/${x}`, max: 19,
+    filter: 'brightness(0.7) saturate(0.85)',
+    attr: 'Imagery © <a href="https://www.esri.com/" target="_blank" rel="noopener">Esri</a>, Maxar, Earthstar Geographics, and the GIS User Community' },
+};
+let basemap = 'map';
+const tileCache = new Map(), tileStat = { map: { ok: 0, fail: 0 }, sat: { ok: 0, fail: 0 } };
+let tileVer = 0;
+function tile(mode, z, x, y) {
+  const k = `${mode}/${z}/${x}/${y}`; let t = tileCache.get(k);
+  if (!t) {
+    const img = new Image(); t = { img, ok: false, fail: false };
+    img.onload = () => { t.ok = true; tileStat[mode].ok++; tileVer++; };
+    img.onerror = () => { t.fail = true; tileStat[mode].fail++; tileVer++; if (tilesDead(mode)) renderBasemapUI(); };
+    img.src = TILES[mode].url(z, x, y); tileCache.set(k, t);
+  }
+  return t;
+}
+const tilesDead = m => !!TILES[m] && tileStat[m].ok === 0 && tileStat[m].fail >= 3;   // offline: fall back to LiDAR relief
+const tilesOn = () => !!TILES[basemap] && !tilesDead(basemap);
+const bmCv = document.createElement('canvas'); let bmKey = '';
+function renderTiles(mode) {
+  bmCv.width = Math.max(1, W * dpr); bmCv.height = Math.max(1, Hh * dpr);
+  const c = bmCv.getContext('2d'), T = TILES[mode], g = geo();
+  const z = Math.max(1, Math.min(T.max, Math.ceil(Math.log2(156543.03392 * Math.cos(g.lat * RAD) * view.scale))));
+  // site metres -> global pixel (relative to the site origin) at zoom z, as a local affine map
+  const p0 = llToG(...siteToLL(0, 0), z), pe = llToG(...siteToLL(100, 0), z), pn = llToG(...siteToLL(0, 100), z);
+  const a = (pe[0] - p0[0]) / 100, b = (pe[1] - p0[1]) / 100, cc = (pn[0] - p0[0]) / 100, d = (pn[1] - p0[1]) / 100, det = a * d - b * cc;
+  const s = view.scale, ox = W / 2 - view.cx * s, oy = Hh / 2 + view.cy * s;
+  const m11 = s * d / det, m12 = -s * cc / det, m21 = s * b / det, m22 = -s * a / det;    // screen = M (G - p0) + o
+  const gs = [[0, 0], [W, 0], [0, Hh], [W, Hh]].map(([px, py]) => { const [x, y] = toM(px, py); return [a * x + cc * y + p0[0], b * x + d * y + p0[1]]; });
+  const tx0 = Math.floor(Math.min(...gs.map(q => q[0])) / 256), tx1 = Math.floor(Math.max(...gs.map(q => q[0])) / 256);
+  const ty0 = Math.floor(Math.min(...gs.map(q => q[1])) / 256), ty1 = Math.floor(Math.max(...gs.map(q => q[1])) / 256);
+  if ((tx1 - tx0 + 1) * (ty1 - ty0 + 1) > 120) return;
+  c.setTransform(dpr * m11, dpr * m21, dpr * m12, dpr * m22, dpr * ox, dpr * oy);
+  c.filter = T.filter;
+  for (let ty = ty0; ty <= ty1; ty++) for (let tx = tx0; tx <= tx1; tx++) {
+    const t = tile(mode, z, tx, ty);
+    if (t.ok) c.drawImage(t.img, tx * 256 - p0[0], ty * 256 - p0[1], 256.6, 256.6);
+    else for (let k = 1; k <= 3; k++) {     // until it loads, stretch an already-loaded parent tile
+      const pt = tileCache.get(`${mode}/${z - k}/${tx >> k}/${ty >> k}`); if (!pt?.ok) continue;
+      const f = 256 >> k, sx = (tx - ((tx >> k) << k)) * f, sy = (ty - ((ty >> k) << k)) * f;
+      c.drawImage(pt.img, sx, sy, f, f, tx * 256 - p0[0], ty * 256 - p0[1], 256.6, 256.6); break;
+    }
+  }
+}
+function drawBasemap() {
+  if (!tilesOn()) return false;
+  const key = [basemap, view.cx, view.cy, view.scale, W, Hh, dpr, tileVer, JSON.stringify(S?.site?.geo || null)].join('|');
+  if (key !== bmKey) { bmKey = key; renderTiles(basemap); }
+  ctx.drawImage(bmCv, 0, 0, W, Hh); return true;
+}
+function renderBasemapUI() {
+  document.querySelectorAll('[data-bm]').forEach(b => { b.setAttribute('aria-pressed', b.dataset.bm === basemap); b.classList.toggle('dead', tilesDead(b.dataset.bm)); b.title = tilesDead(b.dataset.bm) ? 'Map tiles unavailable (offline): showing the LiDAR relief' : ''; });
+  const on = tilesOn(); $('attrib').hidden = !on; if (on) $('attrib').innerHTML = TILES[basemap].attr;
+  cv.classList.toggle('bmrelief', !on);
+}
+
 // ---------------- map ----------------
 const cv = $('map'), ctx = cv.getContext('2d');
 const view = { cx: 0, cy: 0, scale: 14 };      // site metres at canvas centre; px per metre
@@ -163,7 +235,7 @@ function fit() {
   draw();
 }
 
-let baseImg = null, beliefImg = null;
+let baseImg = null, beliefImg = null, rubbleImg = null;
 function gridImage(g, fn) {
   const c = document.createElement('canvas'); c.width = g.w; c.height = g.h;
   const x = c.getContext('2d'), im = x.createImageData(g.w, g.h);
@@ -182,6 +254,17 @@ function makeBase() {
     const shade = Math.max(0, Math.min(1, 0.62 + (-dx * 0.55 + dy * 0.55) / Math.sqrt(1 + dx * dx + dy * dy)));
     const e = z(i, j) / zmax, k = 26 + 70 * shade + 40 * e;
     return [k * 1.05, k, k * 0.92, 255];
+  });
+}
+function makeRubble() {
+  const g = S.heightmap; if (!g) return null;
+  const z = (i, j) => g.z[Math.min(g.h - 1, Math.max(0, j)) * g.w + Math.min(g.w - 1, Math.max(0, i))];
+  let zmax = 0.5; for (const v of g.z) zmax = Math.max(zmax, v);
+  return gridImage(g, (i, j) => {
+    const dx = (z(i + 1, j) - z(i - 1, j)) / (2 * g.res), dy = (z(i, j + 1) - z(i, j - 1)) / (2 * g.res);
+    const shade = Math.max(0, Math.min(1, 0.62 + (-dx * 0.55 + dy * 0.55) / Math.sqrt(1 + dx * dx + dy * dy)));
+    const h = z(i, j), k = 40 + 90 * shade + 40 * h / zmax, a = Math.max(0, Math.min(1, (h - 0.15) / 0.9));
+    return [k * 1.06, k, k * 0.9, 225 * a];
   });
 }
 function makeBelief() {
@@ -254,7 +337,9 @@ function draw(now = performance.now()) {
   if (!S || !W) return;
   LQ = [];
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.clearRect(0, 0, W, Hh);
-  if (layers.basemap && S.heightmap) { baseImg ||= makeBase(); if (baseImg) drawGridImage(baseImg, S.heightmap); }
+  if (drawBasemap()) {   // real map underneath, then the drones' LiDAR rubble mounds on top (flat ground transparent)
+    if (S.heightmap) { rubbleImg ||= makeRubble(); if (rubbleImg) drawGridImage(rubbleImg, S.heightmap); }
+  } else if (S.heightmap) { baseImg ||= makeBase(); if (baseImg) drawGridImage(baseImg, S.heightmap); }
   // metric grid, 5 m (10 m on the grid site)
   const step = isGrid() ? 10 : 5;
   ctx.strokeStyle = COL.grid; ctx.lineWidth = 1; ctx.beginPath();
@@ -396,10 +481,12 @@ function drawGridLayer(now) {
 }
 function roundRect(x, y, w, h, r) { ctx.beginPath(); ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r); ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath(); }
 function scaleBar() {
-  const nice = [1, 2, 5, 10, 20, 50], m = nice.find(v => v * view.scale > 70) || 50, px = m * view.scale, x = 14, y = Hh - (W < 900 ? 40 : 44);
+  const nice = [1, 2, 5, 10, 20, 50], m = nice.find(v => v * view.scale > 70) || 50, px = m * view.scale, x = 14, y = Hh - (W < 900 ? (tilesOn() ? 62 : 40) : 44);
   ctx.strokeStyle = COL.fg; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + px, y); ctx.moveTo(x, y - 4); ctx.lineTo(x, y + 4); ctx.moveTo(x + px, y - 4); ctx.lineTo(x + px, y + 4); ctx.stroke();
   ctx.fillStyle = COL.fg; ctx.font = '500 11px "IBM Plex Mono", monospace'; ctx.textAlign = 'left'; ctx.fillText(`${m} m`, x + px + 6, y + 4);
-  ctx.fillText('N ↑', W - 40, 60);
+  const b = (geo().bearing_deg || 0) * RAD, nx = W - 30, ny = 66;   // true north relative to the site frame
+  ctx.save(); ctx.translate(nx, ny); ctx.rotate(-b); ctx.beginPath(); ctx.moveTo(0, -11); ctx.lineTo(5, 4); ctx.lineTo(0, 1); ctx.lineTo(-5, 4); ctx.closePath(); ctx.fill();
+  ctx.textAlign = 'center'; ctx.fillText('N', 0, -14); ctx.restore(); ctx.textAlign = 'left';
 }
 
 // interaction
@@ -407,7 +494,7 @@ let drag = null;
 cv.addEventListener('pointerdown', e => { drag = { x: e.clientX, y: e.clientY, cx: view.cx, cy: view.cy, moved: false }; cv.setPointerCapture(e.pointerId); });
 cv.addEventListener('pointermove', e => {
   const r = cv.getBoundingClientRect(), [mx, my] = toM(e.clientX - r.left, e.clientY - r.top);
-  $('cursor').textContent = `x ${mx.toFixed(1)} · y ${my.toFixed(1)} m`;
+  const [la, lo] = siteToLL(mx, my); $('cursor').textContent = `x ${mx.toFixed(1)} · y ${my.toFixed(1)} m · ${la.toFixed(5)}° N ${lo.toFixed(5)}° E`;
   if (drag) { const dx = e.clientX - drag.x, dy = e.clientY - drag.y; if (Math.hypot(dx, dy) > 3) drag.moved = true; view.cx = drag.cx - dx / view.scale; view.cy = drag.cy + dy / view.scale; cv.classList.add('drag'); draw(); return; }
   const hit = hitTest(e.clientX - r.left, e.clientY - r.top); hoverId = hit?.id ?? null; cv.classList.toggle('hot', !!hit);
 });
@@ -423,7 +510,8 @@ function hitTest(px, py) {
   for (const c of S?.radar_candidates || []) { const [x, y] = toPx(...c.xy); if (Math.hypot(px - x, py - y) < 16) return c; }
   return null;
 }
-document.querySelectorAll('#layers .tog').forEach(b => b.onclick = () => { const k = b.dataset.k; layers[k] = !layers[k]; b.setAttribute('aria-pressed', layers[k]); draw(); });
+document.querySelectorAll('[data-bm]').forEach(b => b.onclick = () => { basemap = b.dataset.bm; renderBasemapUI(); draw(); });
+document.querySelectorAll('#layers .tog[data-k]').forEach(b => b.onclick = () => { const k = b.dataset.k; layers[k] = !layers[k]; b.setAttribute('aria-pressed', layers[k]); draw(); });
 $('layersBtn').onclick = () => { const o = $('tools').classList.toggle('open'); $('layersBtn').setAttribute('aria-expanded', o); };
 function setHelp(open) { if (open) { const t = $('tools'); $('help').style.top = (t.offsetTop + t.offsetHeight + 8) + 'px'; } $('help').hidden = !open; $('helpBtn').setAttribute('aria-expanded', open); if (open) { $('tools').classList.remove('open'); $('layersBtn').setAttribute('aria-expanded', false); } }
 $('helpBtn').onclick = () => setHelp($('help').hidden);
@@ -617,10 +705,19 @@ async function openDetail(c) {
 function closeDetail() { $('detail').hidden = true; viewer?.stop(); }
 $('dClose').onclick = closeDetail;
 $('detail').addEventListener('click', e => { if (e.target.id === 'detail') closeDetail(); });
-addEventListener('keydown', e => { if (e.key === 'Escape') { if (!$('detail').hidden) closeDetail(); else setHelp(false); } });
+addEventListener('keydown', e => { if (e.key === 'Escape') { if (!$('detail').hidden) closeDetail(); else { setHelp(false); setCase(false); } } });
+
+// ---------------- case study ----------------
+function setCase(open) {
+  $('casePop').hidden = !open; $('caseBtn').setAttribute('aria-expanded', open);
+  if (open) { const g = geo(); $('caseGeo').textContent = `Map anchor: ${g.name}, ${(+g.lat).toFixed(5)}° N, ${(+g.lon).toFixed(5)}° E (source: zh.wikipedia 維冠金龍大樓). Site frame: metres, x east, y north, origin at the building, bearing ${f0(g.bearing_deg || 0)}°${S?.site?.geo ? ' (from state.json)' : ' (default)'}.`; }
+}
+$('caseBtn').onclick = () => setCase($('casePop').hidden);
+$('caseClose').onclick = () => setCase(false);
 
 // ---------------- boot ----------------
 new ResizeObserver(() => resize()).observe(cv);
+renderBasemapUI();
 resize();
 poll();
 (function tick(now) { draw(now); requestAnimationFrame(tick); })(performance.now());

@@ -11,7 +11,9 @@ The mission writes `<out>/state.json`, so the web dashboard shows the Isaac run 
 |---|---|
 | `compat.py` | launch routes (`LabRuntime` = AppLauncher + SimulationContext, `KitRuntime` = SimulationApp), debug_draw, viewport + per-frame camera poses, PhysX raycaster, frame grabber + PNG writer, render mode, assets |
 | `scene.py` | stage from the scenario (pxr only): terrain mesh, ~620 collidable rubble boxes, staging area, UsdPreviewSurface materials, measured lighting, `--show-truth` ghosts |
-| `look.py` | `--look pretty`: HDRI sky, MDL materials, chipped rubble twins, Omni Flow dust (adapted from the team's look.py) |
+| `photoreal.py` | (Isaac teammate, GPU-verified) `--photoreal 1`: MDL materials, irregular rubble pieces as the colliders, debris, dusk HDRI + low sun, haze, vegetation, operator; `--record` multi-camera recorder (`Rigs`, `Recorder`, `--rec-windows`), `--rtx pathtracing` |
+| `rubble.py` | (Isaac teammate) numpy/scipy broken-concrete geometry used by `photoreal.py` |
+| `look.py` | `--look pretty` shim: forwards to `photoreal.dress`; keeps our Omni Flow dust (`--flow`) |
 | `selftest.py` | `--selftest`: PASS/WARN/FAIL per risky call, saves a frame |
 | `drone_viz.py` | primitive quadrotor (rotors spin, purple LiDAR puck, orange radar, teal mics, skids) or `--drone-asset` |
 | `lidar.py` | `PhysxLidar` (Isaac), `HeightmapLidar` (dry-run), optional `RtxLidar` |
@@ -54,9 +56,10 @@ L=/workspace/skysearch/larpverse
 ./isaaclab.sh -p $L/isaac/run_mission.py --selftest --headless --enable_cameras --out /workspace/selftest
 # 2) live, streamed: watch at <brev URL>/viewer (keep one viewer tab)
 ./isaaclab.sh -p $L/isaac/run_mission.py --livestream 2 --viz kit --enable_cameras --speed 4 --show-truth --radar dsp
-# 3) record headless at a fixed frame rate (smooth video however slow the render), then ffmpeg (command is printed)
-./isaaclab.sh -p $L/isaac/run_mission.py --headless --enable_cameras --record /workspace/rec --rec-res 1920x1080 \
-    --speed 6 --show-truth --radar dsp --look pretty
+# 3) record headless on a virtual clock (smooth video however slow the render); PNGs per camera + timeline.csv
+./isaaclab.sh -p $L/isaac/run_mission.py --headless --show-truth --radar dsp --photoreal 1 --record /workspace/rec \
+    --rec-cams director,wide,chase:d1,fpv:d2,top --rec-res 1920x1080 --rec-fps 30 --rec-speed 6 --rec-warp 4 --rec-stop-t 250
+#    (the teammate recorded with /workspace/isaaclab/_isaac_sim/python.sh ... --launcher kit is that exact route)
 # dashboard: second terminal, then open <VS Code URL>/proxy/8765/dashboard/  (8080 is code-server)
 cd $L && python3 -m http.server 8765
 ```
@@ -88,24 +91,29 @@ cd skysearch/larpverse && python isaac/run_mission.py --selftest --out /tmp/self
 The first launch asks you to accept the EULA (or set `OMNI_KIT_ACCEPT_EULA=YES`) and spends several
 minutes compiling shaders. That is normal.
 
-**Recording.** `--record DIR` saves the director view every render frame (`--rec-every N` to thin) through the
-Isaac Lab `Camera` sensor at `/World/Cams/rec` (the route the team recorded `isaac_story.mp4` with; Kit route:
-replicator, unverified). The mission then runs on a fixed virtual clock (`--render-fps 30`), so the video is
-smooth at any render speed; at the end it prints the `ffmpeg` command. Budget: the team measured ~2.2 s per frame
-for 3 cameras at 720p real-time and 6.5 s with `--rtx pathtracing --spp 16`, so record short shots
-(`--max-steps`, `--start-pile`) or raise `--speed`. In the GUI, Movie Capture still works: pick camera
+**Recording** (`isaac/photoreal.py`, verified on the L40S). `--record DIR` writes `DIR/<cam>/fNNNNN.png` per
+camera from replicator render products (headless-safe) plus `DIR/timeline.csv` (frame -> mission t, phase, pile,
+pings) for cutting. Cameras: `--rec-cams director,wide,chase:d1,fpv:d2,top`. The mission runs on a virtual clock
+at `--rec-fps` with `--rec-speed` sim-seconds per video second (`--rec-warp 4` speeds up radar/rescan/relocate),
+`--rec-stop-t` ends it, `--rec-every N` thins previews, `--rec-windows "director:120-250;wide:0-110"` renders only
+the frame ranges the cut uses (cheap path-traced passes). Budget: ~2.2 s per frame for 3 cameras at 720p
+real-time and 6.5 s with `--rtx pathtracing --spp 16`. In the GUI, Movie Capture still works: pick camera
 `/World/DirectorCam` and use `--overlay usd`.
 
 **Look.** `--look basic` (default): real `UsdPreviewSurface` materials on every prim, low warm sun 1800 + cool sky
-350 (the team's measured values; 1200/3000 washed out). `--look pretty`: + HDRI dusk sky, NVIDIA MDL concrete /
-brick / dirt / gravel / asphalt, chipped-concrete rubble (visual twins; the boxes stay as invisible colliders), and
-Omni Flow dust under drones near the ground (`--flow 0` to disable). `--rtx pathtracing --spp 16` for hero shots.
-`--look plain` = bare displayColor, for diagnosis only.
+350 (the team's measured values; 1200/3000 washed out). `--photoreal 1` (or its alias `--look pretty`, which also
+adds Omni Flow dust under drones near the ground; `--flow 0` to disable): NVIDIA MDL concrete / brick / gravel /
+dirt / asphalt / rusted steel, every rubble box swapped for an irregular piece of the same pose and size that is
+also the LiDAR's collider, debris, dusk HDRI (`--hdri FILE --sky 900`), low sun (`--sun 2200 --sun-elev 24`),
+haze, vegetation (`--veg 0` off), operator (`--operator 0` off); LiDAR hits are drawn only within 11 m of the
+pile being mapped. `--rtx pathtracing --spp 16` for hero shots. `--look plain` = bare displayColor, diagnosis only.
 
 ### Useful flags
 
-`--selftest` · `--launcher auto|lab|kit` · `--look basic|pretty|plain` · `--rtx realtime|pathtracing --spp 16` ·
-`--sun 1800 --sky 350 --hdri 900` · `--record DIR --rec-res 1280x720 --rec-every 1` · `--fabric` ·
+`--selftest` · `--launcher auto|lab|kit` · `--look basic|pretty|plain` · `--photoreal 1` ·
+`--rtx realtime|pathtracing --spp 16` · `--sun --sky --sun-elev --hdri FILE --assets ROOT --veg --operator` ·
+`--record DIR --rec-cams --rec-res 1920x1080 --rec-fps 30 --rec-speed 6 --rec-warp --rec-stop-t --rec-windows
+--rec-every` · `--fabric` ·
 `--start-pile B2` · `--radar dsp` · `--speed 4` (sim-seconds per wall-second) · `--show-truth` (victim ghosts,
 display only) · `--frames` (record `frames/state_XXXX.json`) · `--replay DIR` (play recorded frames, no brain)
 · `--max-steps N` · `--camera free` · `--drone-asset [PATH|URL]` · `--drone-scale 1.6` · `--rtx-lidar` ·

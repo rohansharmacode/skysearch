@@ -157,7 +157,8 @@ Give each session one workstream and point it at this file plus `contracts/INTER
 | BL-17 | P0 | Case-study map: Weiguan Jinlong collapse, Tainan 2016 (23.0051432 N, 120.2608904 E) — georeferenced basemap in dashboard | dashboard builder |
 | BL-18 | P0 | Radar penetration realism: ~0.5–3 m through rubble, 10–20 dB/m concrete; coverage + 'beyond radar reach' | mission builder |
 | BL-19 | P1 | Weiguan model in Isaac: Sketchfab 'VR-Weiguan Collapsed Building' (NCKU Museum, photogrammetry, 1M tris, licence/download not stated) — needs permission; else procedural stand-in of the toppled 16-storey U-shaped block | blocked on licence |
-| BL-11 | P1 | Once GEMINI_API_KEY exists: record a seed-7 Gemini run and commit its replay cache (un-ignore one curated file) so the demo replays offline | blocked on key |
+| BL-20 | P0 | Radar vital-sign triage: breathing pattern (rapid-shallow / slow-deep / irregular-apnoeic / calm / fast-small) → triage hint → dig-order priority; validated on real apnea data where possible | builder — running |
+| BL-11 | P1 | KEY SAVED 19:58 → Gemini audio builder records live runs. Once GEMINI_API_KEY exists: record a seed-7 Gemini run and commit its replay cache (un-ignore one curated file) so the demo replays offline | blocked on key |
 
 ## Decisions log
 
@@ -177,3 +178,5 @@ Give each session one workstream and point it at this file plus `contracts/INTER
 | 2026-11-07 | Case study = Weiguan Jinlong building collapse, Tainan, 6 Feb 2016; site frame anchored at 23.0051432 N, 120.2608904 E | user | user |
 | 2026-11-07 | Audio pipeline = open-model novelty filter first, only outliers sent to Gemini (multilingual), then prioritisation | user design | user |
 | 2026-11-07 | Radar modelled with realistic penetration (≈3 m max reliable); deep victims become acoustic-only leads | physics: 10–20 dB/m concrete at 0.4–2 GHz | orchestrator |
+| 2026-11-07 | Vital-sign triage from radar is an aid for rescuers, not diagnosis; age-from-amplitude reported as low confidence only | amplitude confounded by range, aspect and rubble loss | orchestrator |
+| 2026-11-07 | Video-cut builder paused until Isaac footage + brain fixes land | avoid cutting stale story; free a slot for vitals | orchestrator |

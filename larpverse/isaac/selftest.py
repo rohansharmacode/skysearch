@@ -131,11 +131,19 @@ def run(a, say=print):
     have_stage = "stage" in ctx
 
     # 5. look (optional) -------------------------------------------------------------------------
-    def look_step():
-        from isaac import look
-        rep = look.apply(ctx["stage"], ctx["sc"], ctx["rt"].mode, hdri=a.hdri, log=say)
-        return ("PASS" if rep["mdl"] and rep["hdri"] else "WARN"), rep
-    R.step("look_pretty", look_step, skip=no_isaac or ("--look is not pretty" if a.look != "pretty" else None)
+    def look_step():                       # --look pretty == --photoreal 1 (isaac/photoreal.py)
+        from pxr import UsdPhysics
+
+        from isaac import photoreal
+        stage = ctx["stage"]
+        photoreal.dress(stage, ctx["sc"], a, say)
+        meshes = [p for p in stage.Traverse() if str(p.GetPath()).startswith("/World/RubbleMesh/")
+                  and p.HasAPI(UsdPhysics.CollisionAPI)]
+        sky = stage.GetPrimAtPath("/World/Sky").GetAttribute("inputs:texture:file")
+        rep = {"rubble_colliders": len(meshes), "hdri": bool(sky and sky.Get())}
+        return ("PASS" if meshes and rep["hdri"] else "WARN"), rep
+    R.step("look_pretty", look_step,
+           skip=no_isaac or (None if a.photoreal else "not requested (--photoreal 1 / --look pretty)")
            or (None if have_stage else "no stage"))
 
     # 6. scene objects: drones, overlay backend, recording camera, director camera (BEFORE physics start) ---

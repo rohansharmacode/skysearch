@@ -21,6 +21,11 @@ AMBER = (1.0, 0.68, 0.10, 0.9)
 YELLOW = (1.0, 0.92, 0.15, 0.95)
 GREEN = (0.20, 0.95, 0.35, 1.0)
 HUMAN = {"voice", "weak_voice", "shout", "knock", "knocking", "tapping", "human"}
+# Drawing scale (metres per width unit for lines, point diameter, how many recent scans get range rings).
+# isaac/photoreal.py lowers these for footage: thick tubes and big dots read as props in a realistic render.
+LINE_W = 0.03
+POINT_W = 0.09
+MAX_SCANS = 12
 ACTIVE = {"active", "survey", "surveying", "scanning", "searching", "in_progress", "radar", "landing",
           "relocate", "rescan", "acoustic"}
 
@@ -127,7 +132,7 @@ class Overlay:
             elif pxy is not None and np.hypot(s["sensor_pose"][0] - pxy[0], s["sensor_pose"][1] - pxy[1]) > 16:
                 continue
             scans.append(s)
-        for s in scans[-12:]:
+        for s in scans[-MAX_SCANS:]:
             sx, sy = s["sensor_pose"][:2]
             confs = s.get("confidence") or []
             wgt = float(s.get("used_weight", 1.0) if s.get("used_weight") is not None else 1.0)
@@ -252,7 +257,7 @@ class UsdBackend:
         pts[0::2], pts[1::2] = P0, P1
         self.curves.CreatePointsAttr(Vt.Vec3fArray.FromNumpy(pts))
         self.curves.CreateCurveVertexCountsAttr(Vt.IntArray([2] * n))
-        self.curves.CreateWidthsAttr(Vt.FloatArray.FromNumpy(np.repeat(np.asarray(W, np.float32) * 0.03, 2)))
+        self.curves.CreateWidthsAttr(Vt.FloatArray.FromNumpy(np.repeat(np.asarray(W, np.float32) * LINE_W, 2)))
         self.curves.SetWidthsInterpolation(UsdGeom.Tokens.vertex)
         lo, hi = pts.min(0), pts.max(0)
         self.curves.CreateExtentAttr([self.Gf.Vec3f(*map(float, lo - 1)), self.Gf.Vec3f(*map(float, hi + 1))])
@@ -323,7 +328,7 @@ class UsdBackend:
         C = np.concatenate(self.col_buf).astype(np.float32)
         self.pts_buf, self.col_buf = [P], [C]
         self.pts_prim.CreatePointsAttr(Vt.Vec3fArray.FromNumpy(P))
-        self.pts_prim.CreateWidthsAttr(Vt.FloatArray.FromNumpy(np.full(len(P), 0.09, np.float32)))
+        self.pts_prim.CreateWidthsAttr(Vt.FloatArray.FromNumpy(np.full(len(P), POINT_W, np.float32)))
         self.pts_prim.SetWidthsInterpolation(self.UsdGeom.Tokens.vertex)
         lo, hi = P.min(0), P.max(0)
         self.pts_prim.CreateExtentAttr([self.Gf.Vec3f(*map(float, lo)), self.Gf.Vec3f(*map(float, hi))])

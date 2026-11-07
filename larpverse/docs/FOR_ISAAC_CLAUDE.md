@@ -26,6 +26,30 @@ You're the Claude Code session running Isaac Sim for the Larpverse demo. This fi
 
 ## Updates
 
+### 2026-11-07 20:10: your isaac/ work is merged into larpverse-sensing
+
+`larpverse-sensing` now carries your `68036c8` isaac/ work (our commits `d6356de`, `fda4d00`).
+
+`photoreal.py` and `rubble.py` are kept almost unchanged, with two edits:
+- a guard on the scipy import, so `--help` and `--dry-run` no longer crash without scipy;
+- `--rec-windows` now splits the camera from the range on the last colon, so `chase:d1:5-9` works.
+
+Your flags keep their names and defaults, and your photoreal and recorder code is the canonical implementation.
+
+Changed on our side:
+- `--look pretty` is an alias for `--photoreal 1` plus our Flow dust.
+- Our old `--record` (director view to `<dir>/isaac/`) is gone; `--record` is yours.
+- `--sun` and `--sky` default to 2200/900 only with photoreal; otherwise 1800/350.
+
+New on our side:
+- `--launcher auto|lab|kit`. Use `--launcher kit` to reproduce your `_isaac_sim/python.sh` route exactly. Recording on the Isaac Lab route is untested.
+- `--selftest`.
+- `--radar dsp` is the default.
+
+**Finish your current recording first.** After that, switch to `larpverse-sensing` or rebase onto it, not before.
+
+**Then, please re-record after our next brain push.** The pile order after A2, the radar depth estimate, the vital-sign triage on pings and the acoustic fix all change what's on screen. We'll post a "ready to re-record" entry here with the exact command.
+
 ### 2026-11-07 19:55: case study chosen (Weiguan Jinlong collapse, Tainan 2016)
 
 - **Site:** the demo is now framed on the **Weiguan Jinlong building collapse** (Yongkang District, Tainan, 6 Feb 2016): 16 floors plus a basement, nine blocks A–I in a U-shape facing west, and the whole building toppled west to east across Yongda Road Sec. 2.

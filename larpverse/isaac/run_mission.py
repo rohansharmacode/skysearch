@@ -6,6 +6,10 @@
     # Isaac Sim 4.5 / 5.x standalone (SimulationApp route):
     ~/isaacsim/python.sh isaac/run_mission.py --seed 7 --speed 4
     python isaac/run_mission.py --dry-run --max-steps 60                          # any laptop, numpy only
+    # Footage (isaac/photoreal.py, verified on the L40S; --launcher kit = the exact route it was recorded on):
+    ... run_mission.py --headless --radar dsp --show-truth --photoreal 1 --record out/lv1 \
+        --rec-cams director,wide,chase:d1,fpv:d2,top --rec-res 1920x1080 --rec-fps 30 --rec-speed 6 --rec-warp 4 \
+        --rec-stop-t 250 [--rec-windows "director:120-250;wide:0-110"] [--rtx pathtracing --spp 16]
 
 The brain is ``sim.grid_mission.GridMission`` (numpy; never sees ground truth). Isaac is the world and the
 body: the stage is built from the same seeded ``sim.scenario``; drones are posed kinematically from the
@@ -32,6 +36,7 @@ if REPO not in sys.path:
 
 SURVEY_STATES = {"surveying", "survey", "mapping", "lidar"}
 GROUNDED = {"docked", "landed", "scanning", "listening", "idle", "charging"}
+LIGHT_DEFAULTS = {"sun": (1800.0, 2200.0), "sky": (350.0, 900.0)}   # dest: (basic look L40S-measured, photoreal)
 
 
 def _base_parser():
@@ -61,26 +66,26 @@ def _base_parser():
                     help="debug = debug_draw lines/points; usd = prims only (safest for Movie Capture)")
     ap.add_argument("--rays", type=int, default=96, help="LiDAR rays per surveying drone per frame")
     ap.add_argument("--lidar-range", type=float, default=40.0)
-    ap.add_argument("--render-fps", type=float, default=30.0, help="virtual frame rate for --dry-run / --record")
+    ap.add_argument("--render-fps", type=float, default=30.0, help="virtual frame rate for --dry-run (--record: --rec-fps)")
     ap.add_argument("--no-keep-open", action="store_true", help="close the GUI when the mission ends")
     ap.add_argument("--quiet", action="store_true")
     g = ap.add_argument_group("look (docs/ISAAC_VERIFIED_APIS.md)")
     g.add_argument("--look", choices=["basic", "pretty", "plain"], default="basic",
-                   help="basic = UsdPreviewSurface materials; pretty = + HDRI dusk sky, MDL concrete, chipped rubble, "
-                        "Flow dust; plain = bare displayColor (diagnosis)")
-    g.add_argument("--sun", type=float, default=1800.0, help="sun intensity (L40S-measured; 3000 overhead washed out)")
-    g.add_argument("--sky", type=float, default=350.0, help="dome intensity without HDRI")
-    g.add_argument("--hdri", type=float, default=900.0, help="HDRI dome intensity with --look pretty")
+                   help="basic = UsdPreviewSurface materials; pretty = alias for --photoreal 1 (isaac/photoreal.py: MDL "
+                        "materials, irregular rubble, HDRI dusk sky, debris, vegetation) + Flow dust; "
+                        "plain = bare displayColor (diagnosis)")
     g.add_argument("--flow", type=int, default=1, help="--look pretty: Omni Flow dust under landing drones (0 = off)")
-    g.add_argument("--rtx", choices=["realtime", "pathtracing"], default="realtime",
-                   help="pathtracing: hero shots (~6.5 s/frame for 3 cams at 720p, 16 spp, on the L40S)")
-    g.add_argument("--spp", type=int, default=16, help="path-tracing samples per pixel per frame")
-    g = ap.add_argument_group("recording (Isaac Lab Camera sensor route, verified on 6.0.1)")
-    g.add_argument("--record", default=None, help="dir: save the director view to <dir>/isaac/fNNNNN.png at a fixed "
-                                                  "virtual frame rate (smooth video however slow the render is)")
-    g.add_argument("--rec-res", default="1280x720")
-    g.add_argument("--rec-every", type=int, default=1, help="save every Nth render frame")
+    g = ap.add_argument_group("Isaac Lab")
     g.add_argument("--fabric", action="store_true", help="Isaac Lab use_fabric=True (default off: pxr pose edits render)")
+    # --photoreal, --assets, --hdri, --sky, --sun, --sun-elev, --veg, --operator, --record, --rec-*, --rtx, --spp:
+    # the Isaac teammate's GPU-verified implementation (larpverse-isaac) is canonical; see isaac/photoreal.py.
+    from isaac.photoreal import add_args as _photoreal_args
+    _photoreal_args(ap)
+    for act in ap._actions:                 # --sun/--sky: default depends on the look (resolved in parse_args)
+        if act.dest in LIGHT_DEFAULTS:
+            act.default = None
+            b, p = LIGHT_DEFAULTS[act.dest]
+            act.help = f"{act.help} (default {p:g} with --photoreal/--look pretty, else {b:g})"
     return ap
 
 
@@ -109,6 +114,11 @@ def parse_args(argv=None):
     a.launcher, a.unknown = launcher, unknown
     if unknown:
         print(f"[isaac] ignoring unknown arguments: {unknown}", flush=True)
+    if a.look == "pretty":                  # --look pretty is a thin alias for --photoreal 1
+        a.photoreal = a.photoreal or 1
+    for k, (basic, photo) in LIGHT_DEFAULTS.items():
+        if getattr(a, k) is None:
+            setattr(a, k, photo if a.photoreal else basic)
     live = int(getattr(a, "livestream", 0) or 0)
     a.live = live > 0
     a.keep_open = not (a.dry_run or a.no_keep_open or a.record or a.selftest or (a.headless and not a.live))
@@ -266,7 +276,7 @@ def main(argv=None):
     say(f"heightmap {hm.w}x{hm.h} in {time.time() - t0:.1f} s")
     surface = hm.height_at
 
-    stage, dd, rtx, grab, dust = None, None, None, None, None
+    stage, dd, rtx, dust = None, None, None, None
     if a.dry_run:
         lidar = HeightmapLidar(hm, a.lidar_range, a.rays)
     else:
@@ -275,19 +285,17 @@ def main(argv=None):
         n = scene.build(stage, sc, show_truth=a.show_truth, physics_scene=rt.own_physics_scene, sun=a.sun,
                         sky=a.sky, materials="none" if a.look == "plain" else "preview")
         say(f"stage built: {n} rubble pieces, {scene.build.materials.bound} material bindings")
-        if a.look == "pretty":
-            from isaac import look
-            look.apply(stage, sc, rt.mode, hdri=a.hdri, log=say)
-        if compat.set_render_mode(a.rtx, a.spp):
-            say(f"renderer: path tracing, {a.spp} spp, denoiser on")
+        if a.photoreal:                     # visual only; colliders keep the scenario's piece poses
+            from isaac import photoreal
+            photoreal.dress(stage, sc, a, say)
+        if a.rtx == "pathtracing" and not a.record:     # interactive hero view; --record sets it below
+            from isaac import photoreal
+            photoreal.set_renderer(a, say)
         if a.overlay in ("auto", "debug"):
             dd = compat.debug_draw()
             if dd is None:
                 say("debug_draw unavailable; overlay uses USD prims")
         lidar = PhysxLidar(compat.physx_raycaster(), a.lidar_range, a.rays)
-        if a.record:                        # Isaac Lab Camera must exist before sim.reset()
-            from isaac.selftest import _res
-            grab = compat.FrameGrabber(rt, *_res(a.rec_res))
     ids = [d["id"] for d in as_dict(mission.build_state()).get("drones", [])] or ["d1", "d2", "d3"]
     if a.dry_run:
         drones = {i: NullDrone(None, f"/World/Drones/{i}") for i in ids}
@@ -298,7 +306,7 @@ def main(argv=None):
     mirrors = []
     if not a.dry_run:
         from isaac import compat
-        mirrors = ([compat.PERSP] if a.camera == "director" else []) + ([grab.mirror] if grab and grab.mirror else [])
+        mirrors = [compat.PERSP] if a.camera == "director" else []
     cam = DirectorCamera(stage, mode=a.camera, mirrors=mirrors, switch_viewport=(a.camera == "director"))
     if not a.dry_run and a.look == "pretty" and a.flow:
         from isaac import look
@@ -306,9 +314,6 @@ def main(argv=None):
 
     if not a.dry_run:
         rt.start_physics(30)                # Lab: sim.reset() + steps; Kit: force_load + play + updates
-        if grab is not None:
-            grab.attach_late()
-            say(f"recording route: {grab.kind}{' (' + grab.err + ')' if grab.err else ''}")
         p0 = sc.piles[4]
         hit = lidar.cast((p0.x, p0.y, 25.0), (0, 0, -1), 60.0)
         if hit is None:
@@ -324,7 +329,9 @@ def main(argv=None):
     accum = PointAccumulator()
     cur = prev = as_dict(mission.build_state())
     steps, frame = 0, 0
-    virtual = a.dry_run or bool(a.record)   # fixed virtual frame rate: deterministic dry run, smooth recordings
+    virtual = a.dry_run or bool(a.record)   # recording: fixed frame clock, so slow (path-traced) frames don't skip
+    if a.record:
+        a.speed = a.rec_speed
     clock_v = 0.0
     clock = (lambda: clock_v) if virtual else time.monotonic
     last_step = next_step = clock()
@@ -334,10 +341,25 @@ def main(argv=None):
     active = overlay.update(cur)
     last_frame_t = clock()
     finished_at = None
-    rdt_v = 1.0 / a.render_fps
-    n_rec, t_rec = 0, time.time()
-    if a.record:
-        os.makedirs(os.path.join(a.record, "isaac"), exist_ok=True)
+    rdt_v = 1.0 / (a.rec_fps if a.record else a.render_fps)
+    rigs = rec = None
+    if a.record and rt is not None:         # photoreal.Recorder: replicator render products per camera (headless-safe)
+        from isaac import photoreal
+        photoreal.set_renderer(a, say)
+        specs = [c.strip() for c in a.rec_cams.split(",") if c.strip()]
+        rigs = photoreal.Rigs(stage, [c for c in specs if c != "director"], surface)
+        cams = ([("director", cam.path)] if "director" in specs else []) + [(r["name"], r["path"]) for r in rigs.rigs]
+        rec = photoreal.Recorder(a.record, cams, a.rec_res, say, windows=photoreal.Recorder.parse_windows(a.rec_windows))
+        if a.rec_windows and a.headless:        # nothing needs the viewport: render only the windowed cameras
+            try:
+                from omni.kit.viewport.utility import get_active_viewport
+                get_active_viewport().updates_enabled = False
+                say("[photoreal] viewport updates off (windowed recording)")
+            except Exception as e:
+                say(f"[photoreal] viewport stays on ({type(e).__name__}: {e})")
+        for _ in range(10):
+            rt.step()
+    rec_i = lambda: frame // max(1, a.rec_every)    # noqa: E731  video frame index
 
     pending = {}                            # pile -> [new points not yet handed to the mission]
     fed = {}                                # pile -> points ingested
@@ -372,6 +394,9 @@ def main(argv=None):
                 new = as_dict(mission.build_state())
                 dt_sim = max(float(new.get("t", 0)) - float(cur.get("t", 0)), 1e-3)
                 prev, cur = cur, new
+                if a.record and a.rec_warp > 1:     # recording: compress the long radar stretches
+                    from isaac.photoreal import WARP_PHASES
+                    a.speed = a.rec_speed * (a.rec_warp if cur.get("phase") in WARP_PHASES else 1.0)
                 last_step, next_step = next_step, next_step + dt_sim / max(a.speed, 1e-3)
                 if now - next_step > 1.0:      # fell behind (slow step): resync instead of spiralling
                     last_step, next_step = now, now + dt_sim / max(a.speed, 1e-3)
@@ -410,26 +435,37 @@ def main(argv=None):
                         new_pts = accum.add(pl, pts)
                         if new_pts is not None and len(new_pts):
                             pending.setdefault(pl, []).append(new_pts)
-                            overlay.add_points(new_pts)
+                            show = new_pts
+                            if a.photoreal and pl in pile_xy:   # the map, not hits sprayed over the whole site
+                                from isaac.photoreal import LIDAR_DRAW_R
+                                c = np.asarray(pile_xy[pl], float)[:2]
+                                show = new_pts[np.hypot(new_pts[:, 0] - c[0], new_pts[:, 1] - c[1]) < LIDAR_DRAW_R]
+                            if len(show):
+                                overlay.add_points(show)
             if dust is not None:
                 dust.update(poses, surface)
 
             focus, spread = focus_from_state(cur, pile_xy, active, list(poses.values()))
             cam.update(rdt, focus, spread)
+            if rigs is not None:
+                rigs.update(poses, focus, rdt)
             overlay.tick(now)
             frame += 1
             if rt is not None:
                 if not rt.is_running():
                     break
+                if rec is not None:
+                    rec.prepare(rec_i())
                 rt.step()
-                if grab is not None and frame % max(a.rec_every, 1) == 0:
-                    ok, _ = grab.save(os.path.join(a.record, "isaac", f"f{n_rec:05d}.png"))
-                    n_rec += int(ok)
-                    if n_rec and n_rec % 30 == 0:
-                        say(f"recorded {n_rec} frames, {(time.time() - t_rec) / 30:.2f} s per frame")
-                        t_rec = time.time()
+                if rec is not None and frame % max(1, a.rec_every) == 0:
+                    rec.capture(rec_i())
+                    rec.note(rec_i(), cur, active)
             if virtual:
                 clock_v += rdt_v
+            if a.record and a.rec_stop_t and float(cur.get("t", 0)) >= a.rec_stop_t:
+                done = True
+            if rec is not None and rec.done(rec_i()):
+                done = True                     # past the last window
             if done:
                 finished_at = finished_at or now
                 if not a.keep_open or now - finished_at > 2.0:
@@ -449,13 +485,14 @@ def main(argv=None):
         "lidar_points": int(accum.total), "piles_scanned": sorted(accum.chunks), "ingested": fed,
         "overlay_updates": overlay.updates, "camera_updates": cam.updates,
         "state_json": state_path if state_path and os.path.exists(state_path) else None,
-        "mission": type(mission).__name__, "launcher": a.launcher, "recorded_frames": n_rec,
+        "mission": type(mission).__name__, "launcher": a.launcher,
+        "recorded_frames": rec.n if rec is not None else 0,
     }
     say("summary " + json.dumps(summary))
-    if n_rec:
-        fps = a.render_fps / max(a.rec_every, 1)
-        say(f"make the video: ffmpeg -framerate {fps:g} -i {a.record}/isaac/f%05d.png "
-            f"-c:v libx264 -pix_fmt yuv420p {a.record}/isaac.mp4")
+    if rec is not None and rec.n:
+        fps = a.rec_fps / max(a.rec_every, 1)
+        say(f"make the video (per camera): ffmpeg -framerate {fps:g} -i {a.record}/<cam>/f%05d.png "
+            f"-c:v libx264 -pix_fmt yuv420p {a.record}/<cam>.mp4   (cams: {', '.join(rec.paths)})")
 
     if rt is not None:
         if a.keep_open:

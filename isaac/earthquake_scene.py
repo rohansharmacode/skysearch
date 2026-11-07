@@ -32,6 +32,9 @@ ap.add_argument("--port", type=int, default=8090, help="dashboard port (8080 is 
 ap.add_argument("--record", default="", help="folder: save one Isaac frame + one dashboard frame per mission tick, then exit at handoff")
 ap.add_argument("--rec_res", default="1280x720")
 ap.add_argument("--debris", type=int, default=60, help="falling concrete chunks at start (PhysX)")
+ap.add_argument("--sky", type=float, default=350.0, help="dome light intensity")
+ap.add_argument("--sun", type=float, default=1800.0, help="sun (distant light) intensity")
+ap.add_argument("--probe_frames", type=int, default=0, help="record this many ticks, print brightness, exit (lighting check)")
 
 from isaaclab.app import AppLauncher  # noqa: E402
 AppLauncher.add_app_launcher_args(ap)
@@ -177,8 +180,12 @@ def drop_debris(cfg, b, n, center=None, radius=None, tag="d"):
 def build_stage(scen, cfg):
     b, f = scen.b, scen.fleet
     sim = sim_utils.SimulationContext(sim_utils.SimulationCfg(dt=1 / FPS, device=a.device, enable_scene_query_support=True))
-    sim_utils.DomeLightCfg(intensity=1200.0).func("/World/Dome", sim_utils.DomeLightCfg(intensity=1200.0))
-    sim_utils.DistantLightCfg(intensity=3000.0).func("/World/Sun", sim_utils.DistantLightCfg(intensity=3000.0))
+    # measured on the L40S: dome 1200 + overhead sun 3000 blows every surface out to white at building scale.
+    # Dimmer sky, and a low, tilted sun so walls, rubble and slabs get shading and shadows.
+    dome = sim_utils.DomeLightCfg(intensity=a.sky, color=(0.80, 0.85, 1.0))
+    dome.func("/World/Dome", dome)
+    sun = sim_utils.DistantLightCfg(intensity=a.sun, angle=1.0, color=(1.0, 0.95, 0.85))
+    sun.func("/World/Sun", sun, orientation=tuple(look_at_quat([0, 0, 0], [-0.55, 0.35, -0.75])))
     Wm, Hm = cfg.W * cfg.cell, cfg.H * cfg.cell
     ground = sim_utils.CuboidCfg(size=(Wm + 30, Hm + 30, 0.2), visual_material=sim_utils.PreviewSurfaceCfg(diffuse_color=(0.16, 0.17, 0.18)),
                                  collision_props=sim_utils.CollisionPropertiesCfg())
@@ -197,11 +204,11 @@ def build_stage(scen, cfg):
     dpaths = []
     for d in f.drones:
         if d.kind == "mother":
-            body = sim_utils.CylinderCfg(radius=0.7, height=0.25, visual_material=sim_utils.PreviewSurfaceCfg(diffuse_color=col["coordinator"]))
+            body = sim_utils.CylinderCfg(radius=0.9, height=0.3, visual_material=sim_utils.PreviewSurfaceCfg(diffuse_color=col["coordinator"]))
         elif d.kind == "scout":
-            body = sim_utils.CuboidCfg(size=(0.6, 0.6, 0.14), visual_material=sim_utils.PreviewSurfaceCfg(diffuse_color=col[d.role]))
+            body = sim_utils.CuboidCfg(size=(0.8, 0.8, 0.18), visual_material=sim_utils.PreviewSurfaceCfg(diffuse_color=col[d.role]))
         else:
-            body = sim_utils.CuboidCfg(size=(0.18, 0.18, 0.06), visual_material=sim_utils.PreviewSurfaceCfg(diffuse_color=col[d.role]))
+            body = sim_utils.CuboidCfg(size=(0.32, 0.32, 0.1), visual_material=sim_utils.PreviewSurfaceCfg(diffuse_color=col[d.role]))
         dpaths.append(spawn(body, f"/World/Drones/{d.name}", W3(d.pos, 0.3)))
     # fire marker (moved into place when a fire starts)
     fire = sim_utils.SphereCfg(radius=0.45, visual_material=sim_utils.PreviewSurfaceCfg(diffuse_color=(1.0, 0.45, 0.05), emissive_color=(1.0, 0.35, 0.0)))
@@ -379,6 +386,10 @@ def main():
             plt.imsave(os.path.join(rec_dir, "isaac", f"f{n_tick:05d}.png"), img)
             live.r.rgb_img = rgb
             live.r.save(os.path.join(rec_dir, "dash", f"f{n_tick:05d}.png"), dpi=67)
+            if a.probe_frames and n_tick >= a.probe_frames:
+                print(f"[skysearch] probe: isaac frame mean={img.mean() * (255 if img.max() <= 1.0 else 1):.1f} "
+                      f"p5={np.percentile(img, 5):.3f} p95={np.percentile(img, 95):.3f}", flush=True)
+                break
             if scen.fleet.handoff_t is not None and scen.fleet.t > scen.fleet.handoff_t + 4:
                 print(f"[skysearch] recorded {n_tick} ticks to {rec_dir}. Make the video with:\n"
                       f"  ffmpeg -framerate 6 -i {rec_dir}/isaac/f%05d.png -framerate 6 -i {rec_dir}/dash/f%05d.png "

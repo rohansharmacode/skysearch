@@ -1,12 +1,17 @@
-// Larpverse operator console. Reads <data>/state.json (contracts/INTERFACES.md, v1 + v1.1 grid extensions) every second.
+// Larpverse operator console. Reads data/state.json (contracts/INTERFACES.md, v1 + v1.1 grid extensions) every second.
 // Works with the single-pile v1 state (sim/coordinator.py) and the 3x3 grid state (sim/grid_mission.py).
-// ?data=<dir> reads another folder under dashboard/ (e.g. ?data=data_test); a missing state.json shows the demo state.
+// ?state=data/<path>.json reads another state file (only relative paths under dashboard/data/; default data/state.json);
+// the point cloud is resolved relative to that file's folder. ?poll=<ms> sets the poll interval (min 100 ms).
+// #ping=<id> opens that ping's detail view. A missing state file shows the demo state.
 import { demoState, demoCloud } from './demo.js';
 
 const params = new URLSearchParams(location.search);
-const DATA = (() => { const d = params.get('data'); return d && /^[\w-]+(\/[\w-]+)*$/.test(d) ? d : 'data'; })();
-const STATE_URL = DATA + '/state.json';
-const POLL_MS = 1000, DEMO_POLL_MS = 5000;
+const STATE_URL = (() => {
+  const q = params.get('state');
+  return q && /^data\/(?:[\w-]+\/)*[\w-]+(?:\.[\w-]+)*\.json$/.test(q) && !q.split('/').includes('..') ? q : 'data/state.json';
+})();
+const DATA = STATE_URL.slice(0, STATE_URL.lastIndexOf('/'));
+const POLL_MS = Math.max(100, +params.get('poll') || 1000), DEMO_POLL_MS = Math.max(POLL_MS, 5000);
 const COL = { detect: '#ff4545', cone: '#ffe14a', coord: '#6fd36f', radar: '#ff9f43', teal: '#22c3d6', good: '#4fd18b', bad: '#ff6464', fg: '#e3eaef', muted: '#8a9caa', grid: 'rgba(150,180,200,0.10)' };
 // status -> [long label, short label (small map scale), colour]
 const STATUS = {
@@ -70,10 +75,14 @@ function setState(s) {
   renderSide();
   if (first) fit();
   draw();
-  const m = !pingLinked && location.hash.match(/^#ping=(.+)$/);   // deep link: dashboard/#ping=A2-R1
-  if (m) { const c = (S.radar_candidates || []).find(c => c.id === decodeURIComponent(m[1])); if (c) { pingLinked = true; openDetail(c); } }
+  linkPing();
 }
 let pingLinked = false;
+function linkPing() {   // deep link: dashboard/#ping=A2-R1 (opens once the ping exists; re-armed by a hash change)
+  const m = !pingLinked && S && location.hash.match(/^#ping=(.+)$/);
+  if (m) { const c = (S.radar_candidates || []).find(c => c.id === decodeURIComponent(m[1])); if (c) { pingLinked = true; openDetail(c); } }
+}
+addEventListener('hashchange', () => { pingLinked = false; if (location.hash === '#key') setHelp(true); else linkPing(); });
 
 // ---------------- honest numbers ----------------
 // Depth: nominal (assumed constant) unless the coordinator says the radar measured it (depth_source / depth_sigma).
@@ -88,13 +97,13 @@ function depthInfo(c, surf) {
     d, sig, nominal,
     short: nominal ? `≈${f1(d)} m (nominal)` : `≈${f1(d)}${pm} m (radar estimate)`,
     long: nominal ? `≈${f1(d)} m below surface (nominal)` : `≈${f1(d)}${pm} m below surface (radar estimate)`,
-    note: nominal ? 'assumed, not measured' : `measured from the radar ranges${src !== 'radar' ? ' (' + src + ')' : ''}`,
+    note: nominal ? 'assumed, not measured' : `measured from the radar slant ranges`,
   };
 }
 // Radar support for weak candidates: "2/3 ranges". Uses the coordinator's `support` field if present, else the evidence count.
 function support(c) {
   const s = c.support;
-  if (typeof s === 'number') return { n: s, of: 3 };
+  if (typeof s === 'number') return { n: s, of: c.support_needed ?? 3 };
   if (typeof s === 'string') { const m = s.match(/(\d+)\s*(?:\/|of)\s*(\d+)/); if (m) return { n: +m[1], of: +m[2] }; }
   if (s && typeof s === 'object') return { n: s.n_strong ?? s.n ?? s.strong ?? s.ranges ?? 0, of: s.needed ?? s.of ?? s.required ?? 3 };
   return { n: (c.evidence || []).length, of: 3 };
@@ -143,9 +152,14 @@ function fit() {
   resize(); const r = cv.getBoundingClientRect();
   const b = S?.site?.bounds || [-25, -25, 25, 25];
   view.cx = (b[0] + b[2]) / 2; view.cy = (b[1] + b[3]) / 2;
-  view.scale = isGrid() ? Math.min((r.width - 24) / (b[2] - b[0]), (r.height - 120) / (b[3] - b[1]))
-    : Math.min(r.width / (b[2] - b[0]), r.height / (b[3] - b[1])) * 1.25;
-  if (isGrid()) view.cy -= 4 / view.scale;
+  if (isGrid()) {   // keep the whole site clear of the tool bar (top) and the legend + scale bar (bottom)
+    const top = Math.max(50, $('tools').getBoundingClientRect().bottom - r.top + 10);
+    const lg = $('legend').getBoundingClientRect(), bot = Math.max(70, (lg.height ? r.bottom - lg.top : 0) + 34);
+    const avail = Math.max(100, r.height - top - bot);
+    view.scale = Math.min((r.width - 24) / (b[2] - b[0]), avail / (b[3] - b[1]));
+    const topPx = top + (avail - (b[3] - b[1]) * view.scale) / 2;
+    view.cy = b[3] - (r.height / 2 - topPx) / view.scale;
+  } else view.scale = Math.min(r.width / (b[2] - b[0]), r.height / (b[3] - b[1])) * 1.25;
   draw();
 }
 
@@ -321,8 +335,8 @@ function draw(now = performance.now()) {
     const [x, y] = toPx(d.pose[0], d.pose[1]), yaw = (d.pose[3] ?? 0) * Math.PI / 180;
     ctx.save(); ctx.translate(x, y); ctx.rotate(-yaw); ctx.beginPath(); ctx.moveTo(10, 0); ctx.lineTo(-6, 6); ctx.lineTo(-3, 0); ctx.lineTo(-6, -6); ctx.closePath();
     ctx.fillStyle = d.state === 'listening' ? COL.cone : COL.fg; ctx.fill(); ctx.strokeStyle = '#0b1016'; ctx.lineWidth = 1.5; ctx.stroke(); ctx.restore();
-    const g = groups.find(g => g.state === d.state && Math.hypot(g.x - x, g.y - y) < 26);
-    if (g) { g.ids.push(d.id); g.x = Math.min(g.x, x); } else groups.push({ state: d.state, ids: [d.id], x, y });
+    const g = groups.find(g => g.state === d.state && Math.hypot(g.lx - x, g.ly - y) < 26);
+    if (g) { g.ids.push(d.id); g.x = Math.min(g.x, x); g.lx = x; g.ly = y; } else groups.push({ state: d.state, ids: [d.id], x, y, lx: x, ly: y });
   }
   for (const g of groups) {
     const n = g.ids.map(i => +i.replace(/\D/g, '')), seq = g.ids.length > 2 && n.every((v, k) => k === 0 || v === n[k - 1] + 1);
@@ -411,7 +425,7 @@ function hitTest(px, py) {
 }
 document.querySelectorAll('#layers .tog').forEach(b => b.onclick = () => { const k = b.dataset.k; layers[k] = !layers[k]; b.setAttribute('aria-pressed', layers[k]); draw(); });
 $('layersBtn').onclick = () => { const o = $('tools').classList.toggle('open'); $('layersBtn').setAttribute('aria-expanded', o); };
-function setHelp(open) { $('help').hidden = !open; $('helpBtn').setAttribute('aria-expanded', open); if (open) { $('tools').classList.remove('open'); $('layersBtn').setAttribute('aria-expanded', false); } }
+function setHelp(open) { if (open) { const t = $('tools'); $('help').style.top = (t.offsetTop + t.offsetHeight + 8) + 'px'; } $('help').hidden = !open; $('helpBtn').setAttribute('aria-expanded', open); if (open) { $('tools').classList.remove('open'); $('layersBtn').setAttribute('aria-expanded', false); } }
 $('helpBtn').onclick = () => setHelp($('help').hidden);
 $('helpClose').onclick = () => setHelp(false);
 if (location.hash === '#key') setHelp(true);
@@ -474,12 +488,12 @@ function renderCands(grid) {
 $('cands').addEventListener('click', e => { const b = e.target.closest('[data-id]'); if (b) openDetail((S.radar_candidates || []).find(c => c.id === b.dataset.id)); });
 
 function renderPiles() {
-  const m = S.mission || {}, vis = m.visited || [], done = m.stage === 'done', pmin = m.priority_min ?? 20;
+  const m = S.mission || {}, vis = [...new Set(m.visited || [])], done = m.stage === 'done', pmin = m.priority_min ?? 20;
   const visited = vis.map(pileById).filter(Boolean);
   const rest = S.piles.filter(p => !vis.includes(p.id)).sort((a, b) => (b.priority ?? -1) - (a.priority ?? -1) || a.id.localeCompare(b.id));
   const topUnvisited = done ? null : rest.find(p => p.priority != null && p.priority >= pmin);
   $('pilesTitle').textContent = done ? 'Open leads for ground teams' : 'Pile priority';
-  $('nPiles').textContent = `${vis.length} visited`;
+  $('nPiles').textContent = `${vis.length} searched`;
   const row = p => {
     const [txt, , col] = st(p.status);
     return `<div class="row ${p === topUnvisited ? 'top' : ''} ${vis.includes(p.id) ? 'done' : ''} ${openRows.has(p.id) ? 'open' : ''}" data-pile="${esc(p.id)}" title="Click to expand">
@@ -489,8 +503,11 @@ function renderPiles() {
   $('piles').innerHTML = (visited.length ? `<div class="sub">Searched by the drones</div>${visited.map(row).join('')}` : '')
     + `<div class="sub">${done ? 'Not searched: ranked by acoustic priority' : 'Not yet searched: ranked by acoustic priority'}</div>${rest.map(row).join('')}`;
   const d = (S.dispatch || []).slice(-1)[0];
-  $('dispatch').textContent = !(S.decisions || []).length && d ? (d.to_pile ? `Dispatch ${d.from_pile} → ${d.to_pile}: ${d.reason}` : `${d.from_pile}: search loop ended (${d.reason})`) : '';
+  $('dispatch').classList.toggle('summary', !!(done && m.summary)); $('dispatch').title = done && m.summary ? 'Click to expand' : '';
+  $('dispatch').textContent = done && m.summary ? m.summary.replace(/^MISSION SUMMARY:\s*/, 'Mission summary: ')
+    : !(S.decisions || []).length && d ? (d.to_pile ? `Dispatch ${d.from_pile} → ${d.to_pile}: ${d.reason}` : `${d.from_pile}: search loop ended (${d.reason})`) : '';
 }
+$('dispatch').addEventListener('click', () => $('dispatch').classList.toggle('open'));
 $('piles').addEventListener('click', e => { const r = e.target.closest('.row'); if (!r) return; const id = r.dataset.pile; openRows.has(id) ? openRows.delete(id) : openRows.add(id); r.classList.toggle('open'); });
 
 // Dispatch decisions (R1-023): options with flags, the chosen one highlighted, who decided.

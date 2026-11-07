@@ -6,7 +6,7 @@ implementation produced it:
 
 * ``real``       ``acoustic.run.listen_and_rank`` imported in this interpreter
 * ``real-venv``  the same function run in ``.venv-audio`` as a subprocess (JSON over stdin/stdout)
-* ``stub``       ``listen_and_rank`` below: synthetic DoA + fixed scoring, numpy only
+* ``stub-from-truth``  ``listen_and_rank`` below: synthetic DoA + fixed scoring from HIDDEN TRUTH, numpy only
 
 mode: ``auto`` (real -> real-venv -> stub), ``real`` (no stub fallback), ``stub``.
 
@@ -25,7 +25,12 @@ import numpy as np
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 AUDIO_PY = os.path.join(ROOT, ".venv-audio", "bin", "python")
-CACHE_DIR = os.path.join(ROOT, "dashboard", "data", "acoustic_cache")
+# real-pipeline results are cached here (gitignored data/); extra read-only dirs (e.g. a committed demo cache)
+# can be listed in ACOUSTIC_CACHE_DIRS (os.pathsep-separated). The old served-folder cache is still read.
+CACHE_DIR = os.environ.get("ACOUSTIC_CACHE_DIR", os.path.join(ROOT, "data", "acoustic_cache"))
+LEGACY_CACHE_DIR = os.path.join(ROOT, "dashboard", "data", "acoustic_cache")
+STUB_SOURCE = "stub-from-truth"
+SNAP_M = 1.0                 # drone positions are snapped to this grid in the cache key
 SCHEMA = "larpverse.acoustic/v1"
 HUMAN_LEAD = 0.4             # same constants as acoustic/agent.py
 SILENT_PRIORITY = 8
@@ -193,11 +198,38 @@ def _valid(r):
     return isinstance(r, dict) and isinstance(r.get("clips"), list) and isinstance(r.get("piles"), list)
 
 
+def _cache_key(scenario, drones, exclude, seed, legacy=False):
+    if legacy:
+        d = {k: [round(float(v[0]), 1), round(float(v[1]), 1)] for k, v in sorted(drones.items())}
+    else:
+        d = {k: [round(float(v[0]) / SNAP_M) * SNAP_M, round(float(v[1]) / SNAP_M) * SNAP_M]
+             for k, v in sorted(drones.items())}
+    key = json.dumps({"scenario": [scenario.seed, scenario.public_dict()["start_pile"]], "drones": d,
+                      "exclude": sorted(set(exclude)) if not legacy else sorted(exclude), "seed": int(seed)},
+                     sort_keys=True)
+    return hashlib.sha1(key.encode()).hexdigest()[:16] + ".json"
+
+
 def _cache_path(scenario, drones, exclude, seed):
-    key = json.dumps({"scenario": [scenario.seed, scenario.public_dict()["start_pile"]],
-                      "drones": {k: [round(float(v[0]), 1), round(float(v[1]), 1)] for k, v in sorted(drones.items())},
-                      "exclude": sorted(exclude), "seed": int(seed)}, sort_keys=True)
-    return os.path.join(CACHE_DIR, hashlib.sha1(key.encode()).hexdigest()[:16] + ".json")
+    return os.path.join(CACHE_DIR, _cache_key(scenario, drones, exclude, seed))
+
+
+def _cache_lookup(scenario, drones, exclude, seed):
+    """First valid cached result: CACHE_DIR, then ACOUSTIC_CACHE_DIRS, then the legacy served-folder cache."""
+    name = _cache_key(scenario, drones, exclude, seed)
+    dirs = [CACHE_DIR] + [d for d in os.environ.get("ACOUSTIC_CACHE_DIRS", "").split(os.pathsep) if d]
+    paths = [os.path.join(d, name) for d in dirs]
+    paths.append(os.path.join(LEGACY_CACHE_DIR, _cache_key(scenario, drones, exclude, seed, legacy=True)))
+    for path in paths:
+        if os.path.exists(path):
+            try:
+                with open(path) as f:
+                    r = json.load(f)
+                if _valid(r):
+                    return r
+            except (OSError, ValueError):
+                continue
+    return None
 
 
 def listen(scenario, drone_positions, exclude_piles=(), seed=0, mode="auto", log=None, cache=True):
@@ -209,14 +241,10 @@ def listen(scenario, drone_positions, exclude_piles=(), seed=0, mode="auto", log
     say = log or (lambda m: print(m, file=sys.stderr))
     exclude_piles = list(exclude_piles or ())
     path = _cache_path(scenario, drone_positions, exclude_piles, seed)
-    if mode != "stub" and cache and os.path.exists(path):
-        try:
-            with open(path) as f:
-                r = json.load(f)
-            if _valid(r):
-                return r, "real-cached"
-        except (OSError, ValueError):
-            pass
+    if mode != "stub" and cache:
+        r = _cache_lookup(scenario, drone_positions, exclude_piles, seed)
+        if r is not None:
+            return r, "real-cached"
     r, src = _listen_uncached(scenario, drone_positions, exclude_piles, seed, mode, say)
     if cache and src.startswith("real"):
         try:
@@ -252,4 +280,4 @@ def _listen_uncached(scenario, drone_positions, exclude_piles, seed, mode, say):
         say(f"acoustic pipeline unavailable ({err[:160]}); using the synthetic stub")
     elif mode == "real":
         raise RuntimeError("acoustic.run.listen_and_rank not found")
-    return listen_and_rank(scenario, drone_positions, exclude_piles, seed), "stub"
+    return listen_and_rank(scenario, drone_positions, exclude_piles, seed), STUB_SOURCE

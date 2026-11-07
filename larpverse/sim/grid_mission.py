@@ -30,7 +30,7 @@ import time
 
 import numpy as np
 
-from .acoustic_grid import listen as acoustic_listen
+from .acoustic_grid import STUB_SOURCE, listen as acoustic_listen
 from .coordinator import KinematicFlight, Mission
 from .grid_world import GridWorld
 from .radar_model import make_generator
@@ -44,6 +44,11 @@ LANDING_RADIUS = 12.5
 PILE_MAX_T = 600.0
 SLAM_SCANS = 120               # LiDAR sweeps per pile under --slam (~50 s, ~0.2 m ATE)
 SLAM_CACHE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "dashboard", "data", "slam_cache")
+MISSION_SCANS = 24             # autonomous: radar scans for the whole mission (all piles, all drones)
+RESERVE = 0.25                 # every drone keeps this battery fraction; below it the fleet swaps packs
+SWAP_S = 60.0                  # battery swap time at the pads once all drones are docked
+REVISIT_DISCOUNT = 0.5         # an open lead already scanned ranks at half its acoustic priority
+RASTER = ["A1", "B1", "C1", "C2", "B2", "A2", "A3", "B3", "C3"]   # fixed lawnmower baseline (row by row)
 V1_CLASS = {"voice": "voice", "shout": "shout", "knocking": "knocking", "tapping": "tapping"}
 
 
@@ -69,18 +74,34 @@ class PileMission(Mission):
 
 
 class GridMission:
-    def __init__(self, seed=7, start_pile=None, radar="model", out_dir=None, frames=False, verbose=True,
-                 realtime=False, speed=1.0, dt=1.0, pile_budget=3, priority_min=PRIORITY_MIN, scan_budget=8,
-                 policy="adaptive", acoustic="auto", n_points=360000, max_t=3000.0,
+    def __init__(self, seed=7, start_pile=None, radar="dsp", out_dir=None, frames=False, verbose=True,
+                 realtime=False, speed=1.0, dt=1.0, pile_budget=None, priority_min=PRIORITY_MIN, scan_budget=8,
+                 policy="adaptive", acoustic="auto", n_points=360000, max_t=None,
                  world=None, flight=None, sensor_factory=None, acoustic_fn=None, decider=None,
-                 slam=False, slam_scans=SLAM_SCANS, slam_kw=None, slam_cache=SLAM_CACHE):
+                 slam=False, slam_scans=SLAM_SCANS, slam_kw=None, slam_cache=SLAM_CACHE,
+                 autonomous=True, mission_scans=None, dispatch_policy="acoustic", reserve=RESERVE, swap_s=SWAP_S,
+                 listen_s=None, revisit_max=2):
+        """``autonomous`` (default): keep searching until the mission scan budget (``mission_scans``, default
+        24), the time limit or the open leads run out; battery swaps at the pads; open leads without a firm
+        ping are revisited once. ``pile_budget`` caps pile visits (None = no cap; legacy mode uses 3).
+        ``dispatch_policy``: acoustic (ours) | nearest | raster (baselines for sim/evaluate_grid.py; they do
+        not listen unless ``listen_s`` is given)."""
+        if dispatch_policy not in ("acoustic", "nearest", "raster"):
+            raise ValueError(f"dispatch_policy {dispatch_policy!r}")
         self.seed, self.radar, self.policy, self.scan_budget = seed, radar, policy, scan_budget
         self.out_dir, self.frames, self.verbose = out_dir, frames, verbose
+        self.autonomous, self.dispatch_policy, self.reserve, self.swap_s = autonomous, dispatch_policy, reserve, swap_s
+        self.revisit_max = revisit_max
+        self.mission_scans = mission_scans if mission_scans is not None else (MISSION_SCANS if autonomous else None)
+        self.listen_s = float(listen_s) if listen_s is not None else (LISTEN_S if dispatch_policy == "acoustic" else 0.0)
+        max_t = max_t if max_t is not None else (3600.0 if autonomous else 3000.0)
+        pile_budget = pile_budget if pile_budget is not None else (None if autonomous else 3)
         self.realtime, self.speed, self.dt, self.max_t = realtime, speed, dt, max_t
         self.pile_budget, self.priority_min, self.acoustic_mode = pile_budget, priority_min, acoustic
         # --- backends (Isaac swap points)
         self.scenario = make_scenario(seed, start_pile)
-        self.start_pile = self.scenario.public_dict()["start_pile"]     # operator choice, not truth
+        # operator input; when not given, the scenario's suggested start (reported collapse) is used
+        self.start_pile = start_pile or self.scenario.public_dict()["start_pile"]
         self.world = world if world is not None else GridWorld(self.scenario)
         self.grid = self.world.grid
         pads = {f"d{i + 1}": tuple(xy) for i, xy in enumerate(DRONE_PADS)}
@@ -108,7 +129,11 @@ class GridMission:
         self.acoustic_source = None
         self.last_acoustic = None
         self.pm = None
-        self.n_scans = 0
+        self.n_scans = 0               # observation index counter (scan ids)
+        self.scans_used = 0            # radar scans commanded, whole mission
+        self.n_swaps = 0
+        self.swap = None               # {"to_pile", "reason", "ends", "t"} while returning / swapping
+        self._fly_s = 0.0              # drone-seconds airborne
         self._ingested = []
         self._pc_dirty = False
         self._hm_cache = None
@@ -118,8 +143,11 @@ class GridMission:
             if frames:
                 os.makedirs(os.path.join(out_dir, "frames"), exist_ok=True)
             self._write_pointcloud(self.world.sample_pointcloud(n_points))
-        self._say(f"Grid mission start (seed {seed}): 3 drones at the staging area, start pile {self.start_pile} "
-                  f"(operator choice), pile budget {pile_budget}")
+        budget = (f"autonomous: up to {self.mission_scans} radar scans, {self.max_t:.0f} s, battery reserve "
+                  f"{100 * reserve:.0f}% with swaps at the pads" if autonomous else "fixed loop")
+        cap = f", pile cap {pile_budget}" if pile_budget is not None else ""
+        self._say(f"Grid mission start (seed {seed}, {radar} radar, {dispatch_policy} dispatch): 3 drones at the staging "
+                  f"area, start pile {self.start_pile} (operator choice); {budget}{cap}")
         self._start_pile(self.start_pile, reason="operator-selected start pile")
 
     # ------------------------------------------------------------------ helpers
@@ -139,19 +167,32 @@ class GridMission:
         cx, cy = self.world.pile_xy[name]
         pw = self.world.pile_world(name)
         prev = self.visited[-1] if self.visited else None
+        revisit = name in self.visited
         self.visited.append(name)
-        self.pm = PileMission(self.seed, self.policy, self.scan_budget, verbose=self.verbose, max_t=1e9, dt=self.dt,
+        budget = self.scan_budget
+        if self.mission_scans is not None:
+            budget = max(3, min(budget, self.mission_scans - self.scans_used))
+        self.pm = PileMission(self.seed, self.policy, budget, verbose=self.verbose, max_t=1e9, dt=self.dt,
                               world=pw, flight=self.flight, sensors=self.sensor_factory(pw, self.seed),
                               centre=(cx, cy), survey_radius=SURVEY_RADIUS, scan_offset=self.n_scans, t0=self.t,
                               log=self.log, pile=name, owner=self)
         self.pm_t0 = self.t
+        self.pm.prior_obs = [o for o in self.done_scans if o.get("pile_id") == name] if revisit else []
+        self._preload(self.pm)
         if self.slam:
             self._slam_ingest(name)
         p = self.piles[name]
         p["status"] = "surveying"
         p["why"] = f"Fleet dispatched here ({reason}); LiDAR survey and landing search under way."
         self.stage = "pile"          # PileMission.__init__ already commanded the takeoff
-        self._say(f"{'Dispatch' if prev else 'Deploy'} d1-d3 -> pile {name} at ({cx:.1f}, {cy:.1f}): {reason}")
+        verb = "Revisit" if revisit else "Dispatch" if prev else "Deploy"
+        self._say(f"{verb} d1-d3 -> pile {name} at ({cx:.1f}, {cy:.1f}): {reason}"
+                  + (f" [{len(self.pm.prior_obs)} earlier scans kept in the belief; up to {budget} new scans]" if revisit else ""))
+
+    def _preload(self, pm):
+        """Revisit: fold the pile's earlier radar observations into the (new) localiser."""
+        for o in getattr(pm, "prior_obs", []):
+            pm.loc.update_radar({k: v for k, v in o.items() if k not in ("pile_id", "used_weight")})
 
     # ------------------------------------------------------------------ LiDAR ingest (Isaac)
     def ingest_pointcloud(self, points):
@@ -251,6 +292,7 @@ class GridMission:
         from .planner import Planner
         pm.loc = Localiser(g)
         pm.planner = Planner(g, pm.loc.cfg, seed=self.seed)
+        self._preload(pm)
         pm._say(f"Heightmap window rebuilt from {int(sel.sum())} LiDAR points")
 
     # ------------------------------------------------------------------ main loop
@@ -265,15 +307,31 @@ class GridMission:
             self.t += self.dt
             self.k += 1
             self.flight.step(self.dt, self.t)
+            docked = all(p["state"] == "docked" for p in self.flight.poses())
             if self.stage == "listen" and self.t >= self.listen_end:
                 self._finish_listen()
-            elif self.stage == "return" and all(p["state"] == "docked" for p in self.flight.poses()):
+            elif self.stage == "swap":
+                if self.swap["ends"] is None and docked:
+                    self.swap["ends"] = self.t + self.swap_s
+                    self._say(f"Fleet docked; swapping batteries ({self.swap_s:.0f} s)")
+                elif self.swap["ends"] is not None and self.t >= self.swap["ends"]:
+                    for d in self.flight.drones:
+                        self._swap_battery(d)
+                    self.n_swaps += 1
+                    nxt, reason = self.swap["to_pile"], self.swap["reason"]
+                    self.swap = None
+                    self._say(f"Batteries swapped (swap {self.n_swaps}); redeploying to {nxt}")
+                    self._start_pile(nxt, reason)
+            elif self.stage == "return" and docked:
                 self.stage = "done"
                 self._say("All drones docked at the staging area. Mission complete.")
+                self._say(self.final_summary())
+        self._fly_s += self.dt * sum(1 for p in self.flight.poses() if p["state"] in ("flying", "descending", "hovering"))
         self._update_phase()
         if self.t >= self.max_t and self.stage != "done":
             self._say(f"Mission time limit ({self.max_t:.0f} s) reached; stopping")
             self.stage = "done"
+            self._say(self.final_summary())
         self._write_state()
         if self.realtime:
             time.sleep(self.dt / self.speed)
@@ -283,6 +341,12 @@ class GridMission:
         while not self.done:
             self.step()
         return self
+
+    def _swap_battery(self, did):
+        if hasattr(self.flight, "swap_battery"):
+            self.flight.swap_battery(did)
+        elif hasattr(self.flight, "drones") and hasattr(self.flight.drones[did], "battery"):
+            self.flight.drones[did].battery = 1.0
 
     def _update_phase(self):
         if self.stage == "pile":
@@ -297,6 +361,8 @@ class GridMission:
             self.phase = "acoustic"
         elif self.stage == "return":
             self.phase = "return"
+        elif self.stage == "swap":
+            self.phase = "return" if self.swap["ends"] is None else "battery_swap"
         else:
             self.phase = "done"
 
@@ -328,45 +394,64 @@ class GridMission:
             o["pile_id"] = name
         self.done_scans.extend(pm.scans)
         self.n_scans = pm.scan_idx
+        self.scans_used += pm.scans_cmd
+        p["scans"] = p.get("scans", 0) + pm.scans_cmd
         self.done_sites.extend(dict(s, id=f"{name}-{s['id']}", pile_id=name) for s in pm.sites if s["status"] == "used")
         cands = self._live_cands(pm)
         firm = [c for c in cands if c["status"] == "candidate"]
         keep = firm or ([cands[0]] if cands and cands[0]["p_mass"] >= 0.3 else [])
-        self.done_cands.extend(keep)
+        for c in keep:
+            c["t_found"] = round(self.t, 1)
+            c["visit"] = self.visited.count(name)
+        self.done_cands = [c for c in self.done_cands if c["pile_id"] != name] + keep   # a revisit supersedes
         p["radar_candidate_ids"] = [c["id"] for c in keep]
         res = pm.result
         if firm:
             c = firm[0]
-            depth = pm.grid.height_at(*c["xy"]) - c["z_est"]
             p["status"] = "ping"
-            p["why"] = (f"Radar ping {c['id']} at ({c['xy'][0]:.1f}, {c['xy'][1]:.1f}), p {c['p_mass']:.2f}, "
-                        f"≈{depth:.1f} m below the surface, {len(c['evidence'])} supporting scans. Candidate search "
-                        "region, not a confirmed person.")
-            self._say(f"PING {c['id']} at pile {name}: ({c['xy'][0]:.1f}, {c['xy'][1]:.1f}), depth ≈{depth:.1f} m, "
-                      f"p {c['p_mass']:.2f} -> sent to the operator dashboard")
+            p["why"] = (f"Radar ping {c['id']} at ({c['xy'][0]:.1f}, {c['xy'][1]:.1f}), {self._depth_words(c)}, "
+                        f"{c['support']} strong agreeing ranges ({len(c['evidence'])} supporting scans). Candidate "
+                        "search region, not a confirmed person.")
+            self._say(f"PING {c['id']} at pile {name}: ({c['xy'][0]:.1f}, {c['xy'][1]:.1f}), {self._depth_words(c)}, "
+                      f"belief share {c['p_mass']:.2f} -> sent to the operator dashboard")
         else:
             lead = (p["priority"] or 0) >= self.priority_min
             p["status"] = "lead" if lead else "no_signal_not_cleared"
-            p["why"] = (f"Radar inconclusive after {pm.scans_cmd} scans ({res.get('reason', 'no data')})"
+            p["why"] = (f"Radar inconclusive after {p['scans']} scans ({res.get('reason', 'no data')})"
                         + ("; acoustic lead stands" if lead else "") + ". No detection is not proof of absence: not cleared.")
-            self._say(f"No firm radar ping at {name} ({res.get('reason', 'no data')}); pile stays not cleared")
-        self.stage = "listen"
-        self.listen_end = self.t + LISTEN_S
-        self._say(f"Radar phase at {name} over; landed drones listen to the other piles for {LISTEN_S:.0f} s "
-                  "and stream clips to the acoustic agent")
+            self._say(f"No firm radar ping at {name} ({res.get('reason', 'no data')}). Evidence: {pm.explain_evidence()}. "
+                      "Pile stays not cleared" + ("; its acoustic lead stays open for a revisit" if lead else ""))
+        if self.listen_s > 0:
+            self.stage = "listen"
+            self.listen_end = self.t + self.listen_s
+            self._say(f"Radar phase at {name} over; landed drones listen to the other piles for {self.listen_s:.0f} s "
+                      "and stream clips to the acoustic agent")
+        else:
+            self._gate(None)
+
+    @staticmethod
+    def _depth_words(c):
+        if c.get("depth_source") == "radar_estimate":
+            return f"≈{c['depth_m']:.1f} ± {c['depth_sigma']:.1f} m below the surface (radar estimate)"
+        return f"depth not measured (assumed {c.get('depth_m') or 1.5:.1f} m; the ranges cannot separate depth from position)"
 
     # ------------------------------------------------------------------ acoustic + dispatch
     def _finish_listen(self):
         self.n_listen += 1
         drones = self._drone_xy()
-        exclude = list(self.visited)
+        exclude = list(dict.fromkeys(self.visited))
         if self.acoustic_fn is not None:
             res, src = self.acoustic_fn(self.scenario, drones, exclude, self.seed + 101 * self.n_listen), "custom"
         else:
             res, src = acoustic_listen(self.scenario, drones, exclude, self.seed + 101 * self.n_listen,
                                        mode=self.acoustic_mode, log=self._say)
-        self.acoustic_source, self.last_acoustic = src, res
         by = (res.get("agent") or {}).get("mode")
+        if by == "stub":
+            src = STUB_SOURCE
+        self.acoustic_source, self.last_acoustic = src, res
+        if src.startswith("stub"):
+            self._say("WARNING: acoustic clips are SYNTHETIC, generated from the scenario's hidden truth "
+                      "(stub-from-truth), not heard by the acoustic pipeline")
         self._say(f"Acoustic agent ({src}{', mode ' + by if by and by != src else ''}): {len(res['clips'])} clips from "
                   f"{len(res['piles'])} unvisited piles")
         for c in res["clips"]:
@@ -396,30 +481,74 @@ class GridMission:
             if p is None or ap["pile_id"] in self.visited:
                 continue
             new = int(ap["priority"])
-            if ap["status"] == "no_signal_not_cleared" and (p["priority"] or 0) > new:
-                continue                                   # silence from here does not erase an earlier lead
+            if ap["status"] == "no_signal_not_cleared" and (
+                    (p["priority"] or 0) > new or p["status"] in ("lead", "dismissed_nonhuman")):
+                continue                                   # silence from here does not erase what was heard before
             st = ap["status"] if ap["status"] in ("lead", "dismissed_nonhuman", "no_signal_not_cleared") else "lead"
             p.update(priority=new, status=st, why=ap["why"])
+        self._gate(res)
+
+    def _gate(self, res):
+        """Dispatch gate after a pile (and its listen): re-rank, then dispatch / revisit / swap / stop."""
         ranked = sorted((p for p in self.piles.values() if p["id"] not in self.visited and p["priority"] is not None),
                         key=lambda p: (-p["priority"], p["id"]))
-        self._say("Pile priority: " + ", ".join(f"{p['id']} {p['priority']}" for p in ranked[:6]))
+        if ranked:
+            self._say("Pile priority: " + ", ".join(f"{p['id']} {p['priority']}" for p in ranked[:6]))
         here = self.visited[-1]
-        nxt, reason = self._decide_dispatch(ranked, res)
-        self.dispatch.append({"t": round(self.t, 1), "from_pile": here, "to_pile": nxt["id"] if nxt else None,
-                              "reason": reason})
-        if nxt:
-            self._start_pile(nxt["id"], reason)
-        else:
-            left = [f"{p['id']} {p['priority']}" for p in ranked if p["status"] == "lead"]
-            self._say(f"Search loop ends: {reason}. Open leads for ground teams: {', '.join(left) or 'none'}. "
-                      "Drones return to the staging area")
+        opt, reason = self._decide_dispatch(ranked, res or {})
+        nxt = opt["pile_id"] if opt["action"] != "stop" else None
+        self.dispatch.append({"t": round(self.t, 1), "from_pile": here, "to_pile": nxt, "reason": reason})
+        if nxt is None:
+            self._end_loop(reason)
+        elif "battery_swap" in opt["flags"]:
+            low = ", ".join(f"{p['id']} {100 * p['battery']:.0f}%" for p in self.flight.poses())
+            self._say(f"Battery check before {nxt}: {low}; the next pile needs about {100 * self.PILE_BATTERY:.0f}% plus "
+                      f"travel and every drone must keep a {100 * self.reserve:.0f}% reserve -> the fleet returns to the "
+                      f"pads for a battery swap, then flies to {nxt}")
+            self.swap = {"to_pile": nxt, "reason": reason, "ends": None, "t": round(self.t, 1)}
             for d in self.flight.drones:
                 self.flight.command({"drone_id": d, "type": "return"})
             self.pm = None
-            self.stage = "return"
+            self.stage = "swap"
+        else:
+            self._start_pile(nxt, reason)
+
+    def _end_loop(self, reason):
+        left = [f"{p['id']} {p['priority']}" for p in self.piles.values() if p["status"] == "lead"]
+        self._say(f"Search loop ends: {reason}. Open leads for ground teams: {', '.join(left) or 'none'}. "
+                  "Drones return to the staging area")
+        for d in self.flight.drones:
+            self.flight.command({"drone_id": d, "type": "return"})
+        self.pm = None
+        self.stage = "return"
 
     # ------------------------------------------------------------------ dispatch gate (optional decider)
-    PILE_BATTERY = 0.14          # rough battery cost of one pile (survey + landings + scans + listen)
+    PILE_BATTERY = 0.16          # rough battery cost of one pile (survey + landings + scans + listen)
+    FLY_RATE = 0.0016            # battery fraction per second of flight (KinematicFlight)
+
+    def _leg_s(self, a, b):
+        """Rough flight time (s) between two xy points: cruise at 4 m/s plus climb and descent."""
+        return float(np.hypot(b[0] - a[0], b[1] - a[1])) / 4.0 + 12.0
+
+    def _targets(self):
+        """(pile_id, action, score) in this policy's preference order (no truth, no budget checks)."""
+        unvisited = [n for n in self.piles if n not in self.visited]
+        if self.dispatch_policy == "nearest":
+            c = np.mean(list(self._drone_xy().values()), axis=0)
+            order = sorted(unvisited, key=lambda n: (self._leg_s(c, self.world.pile_xy[n]), n))
+            return [(n, "dispatch", None) for n in order]
+        if self.dispatch_policy == "raster":
+            return [(n, "dispatch", None) for n in RASTER if n in unvisited]
+        out = [(p["id"], "dispatch", p["priority"]) for p in sorted(
+            (self.piles[n] for n in unvisited), key=lambda p: (-(p["priority"] if p["priority"] is not None else -1), p["id"]))]
+        if self.autonomous:
+            for name in dict.fromkeys(self.visited):
+                p = self.piles[name]
+                if p["status"] != "ping" and (p["priority"] or 0) >= self.priority_min \
+                        and self.visited.count(name) < self.revisit_max:
+                    out.append((name, "rescan_current" if name == self.visited[-1] else "revisit",
+                                round(p["priority"] * REVISIT_DISCOUNT, 1)))
+        return sorted(out, key=lambda o: -(o[2] if o[2] is not None else -1))
 
     def _options(self, ranked, res):
         """Scored options at the dispatch gate. Returns (options, argmax_option_id, argmax_reason)."""
@@ -429,7 +558,11 @@ class GridMission:
         clips_by = {}
         for c in self.clips:
             clips_by.setdefault(c["pile_id"], []).append(c)
-        budget_left = self.pile_budget - len(self.visited)
+        visits_left = None if self.pile_budget is None else self.pile_budget - len(self.visited)
+        scans_left = None if self.mission_scans is None else self.mission_scans - self.scans_used
+        why_no_budget = (f"pile budget ({self.pile_budget} visits) used" if visits_left is not None and visits_left <= 0
+                         else f"mission scan budget used ({self.scans_used}/{self.mission_scans}; a fix needs 3 scans)"
+                         if scans_left is not None and scans_left < 3 else None)
         opts = []
 
         def travel(pid):
@@ -437,43 +570,74 @@ class GridMission:
             ts = [self.flight.eta(d, [x, y, float(self.grid.height_at(x, y)) + 9.0]) for d in poses]
             return None if any(t is None for t in ts) else round(max(ts), 1)
 
-        if budget_left > 0:
-            for p in ranked[:6]:
-                ts = travel(p["id"])
-                cs = sorted(clips_by.get(p["id"], []), key=lambda c: -(c["priority"] or 0))[:2]
+        if why_no_budget is None:
+            targets = self._targets() if self.autonomous or self.dispatch_policy != "acoustic" else \
+                [(p["id"], "dispatch", p["priority"]) for p in ranked]
+            for pid, action, score in targets[:8]:
+                p = self.piles[pid]
+                ts = 0.0 if action == "rescan_current" else travel(pid)
+                bat_after = None if ts is None else round(bat_min - self.FLY_RATE * ts - self.PILE_BATTERY, 2)
+                flags = []
+                if self.autonomous and (bat_after is None or bat_after < self.reserve):
+                    pads = list(getattr(self.flight, "starts", {}).values()) or [BASE_XY]
+                    back = max(self._leg_s(xy, pads[0]) for xy in self._drone_xy().values())
+                    out = self._leg_s(pads[0], self.world.pile_xy[pid])
+                    ts, bat_after = round(back + self.swap_s + out, 1), round(1.0 - self.FLY_RATE * out - self.PILE_BATTERY, 2)
+                    flags.append("battery_swap")
+                cs = sorted(clips_by.get(pid, []), key=lambda c: -(c["priority"] or 0))[:2]
                 ev = "; ".join(f"{c['class']}" + (f" \"{c['transcript'][:60]}\"" if c["transcript"] else "")
                                + f" (human {c['scores']['human']}, priority {c['priority']}, {c['by']})" for c in cs) \
                     or "no clip assigned"
-                flags = [f for f, on in (("below_threshold", p["priority"] < self.priority_min),
-                                         ("nonhuman", p["status"] == "dismissed_nonhuman"),
-                                         ("silent", p["status"] == "no_signal_not_cleared"),
-                                         ("unreachable", ts is None)) if on]
-                opts.append({"id": f"o{len(opts) + 1}", "action": "dispatch", "pile_id": p["id"],
-                             "priority": p["priority"], "travel_s": ts,
-                             "battery_after_min": None if ts is None else
-                             round(bat_min - 0.0016 * ts - self.PILE_BATTERY, 2),
-                             "evidence": ev, "flags": flags})
-            cur = self.piles[here]
-            if cur["status"] != "ping" and self.visited.count(here) < 2:
-                opts.append({"id": f"o{len(opts) + 1}", "action": "rescan_current", "pile_id": here,
-                             "priority": cur["priority"], "travel_s": 0.0,
-                             "battery_after_min": round(bat_min - self.PILE_BATTERY, 2),
-                             "evidence": f"radar at {here}: {cur['why'][:160]}", "flags": ["no_firm_ping"]})
-        opts.append({"id": f"o{len(opts) + 1}", "action": "stop", "pile_id": None, "priority": None, "travel_s": None,
-                     "battery_after_min": round(bat_min, 2), "evidence": "return to the staging area",
-                     "flags": ["pile_budget_used"] if budget_left <= 0 else []})
+                if action != "dispatch":
+                    ev = f"radar at {pid} after {p.get('scans', 0)} scans: {p['why'][:160]} | acoustic: {ev}"
+                prio = p["priority"]
+                flags += [f for f, on in (
+                    ("below_threshold", self.dispatch_policy == "acoustic" and (prio or 0) < self.priority_min),
+                    ("nonhuman", p["status"] == "dismissed_nonhuman"),
+                    ("silent", p["status"] == "no_signal_not_cleared" or prio is None),
+                    ("no_firm_ping", action != "dispatch"),
+                    ("unreachable", ts is None)) if on]
+                opts.append({"id": f"o{len(opts) + 1}", "action": action, "pile_id": pid, "priority": prio,
+                             "score": score, "travel_s": ts, "battery_after_min": bat_after, "evidence": ev,
+                             "flags": flags})
+            if not self.autonomous:
+                cur = self.piles[here]
+                if cur["status"] != "ping" and self.visited.count(here) < 2:
+                    opts.append({"id": f"o{len(opts) + 1}", "action": "rescan_current", "pile_id": here,
+                                 "priority": cur["priority"], "score": None, "travel_s": 0.0,
+                                 "battery_after_min": round(bat_min - self.PILE_BATTERY, 2),
+                                 "evidence": f"radar at {here}: {cur['why'][:160]}", "flags": ["no_firm_ping"]})
+        opts.append({"id": f"o{len(opts) + 1}", "action": "stop", "pile_id": None, "priority": None, "score": None,
+                     "travel_s": None, "battery_after_min": round(bat_min, 2), "evidence": "return to the staging area",
+                     "flags": ["pile_budget_used"] if why_no_budget else []})
         stop = opts[-1]["id"]
-        if budget_left <= 0:
-            return opts, stop, f"pile budget ({self.pile_budget}) used"
-        ok = [o for o in opts if o["action"] == "dispatch" and "unreachable" not in o["flags"]
-              and o["priority"] >= self.priority_min]
+        if why_no_budget:
+            return opts, stop, why_no_budget
+        ok = [o for o in opts if o["action"] != "stop" and "unreachable" not in o["flags"]
+              and (self.autonomous or o["action"] == "dispatch")]
+        if self.dispatch_policy == "acoustic":
+            ok = [o for o in ok if (o["priority"] or 0) >= self.priority_min]
         if not ok:
-            return opts, stop, f"no unvisited pile at or above priority {self.priority_min}; remaining piles stay not cleared"
+            if self.dispatch_policy == "acoustic":
+                return opts, stop, (f"no pile left with an acoustic lead at or above priority {self.priority_min}"
+                                    + (" (open leads already revisited)" if self.autonomous and any(
+                                        self.visited.count(n) >= self.revisit_max for n in self.visited) else "")
+                                    + "; remaining piles stay not cleared")
+            return opts, stop, "every pile visited"
         top = ok[0]
-        d = res.get("dispatch") or {}
         p = self.piles[top["pile_id"]]
-        reason = d["reason"] if d.get("pile_id") == top["pile_id"] and d.get("reason") else \
-            f"highest acoustic priority ({p['priority']}) among unvisited piles: {p['why']}"
+        if self.dispatch_policy == "nearest":
+            reason = f"nearest unvisited pile ({top['pile_id']}, {top['travel_s']:.0f} s away); systematic baseline"
+        elif self.dispatch_policy == "raster":
+            reason = f"next pile in the fixed raster order ({top['pile_id']}); systematic baseline"
+        elif top["action"] != "dispatch":
+            reason = (f"revisit {top['pile_id']}: its acoustic lead (priority {p['priority']}) is still open after "
+                      f"{p.get('scans', 0)} radar scans without a firm fix, and no unvisited pile scores higher; fresh "
+                      "landing sites add independent ranges to the same belief")
+        else:
+            d = res.get("dispatch") or {}
+            reason = d["reason"] if d.get("pile_id") == top["pile_id"] and d.get("reason") else \
+                f"highest acoustic priority ({p['priority']}) among open piles: {p['why']}"
         return opts, top["id"], reason
 
     def _decide_dispatch(self, ranked, res):
@@ -482,7 +646,9 @@ class GridMission:
         chosen = best
         if self.decider is not None and len(opts) > 1:
             ctx = {"t": round(self.t, 1), "current_pile": self.visited[-1], "visited": list(self.visited),
-                   "pile_budget": self.pile_budget, "budget_left": self.pile_budget - len(self.visited),
+                   "pile_budget": self.pile_budget,
+                   "budget_left": None if self.pile_budget is None else self.pile_budget - len(self.visited),
+                   "scan_budget_left": None if self.mission_scans is None else self.mission_scans - self.scans_used,
                    "priority_min": self.priority_min,
                    "pings": [{"id": c["id"], "pile_id": c["pile_id"], "status": c["status"], "p_mass": c["p_mass"]}
                              for c in self.done_cands],
@@ -506,8 +672,31 @@ class GridMission:
         if by != "argmax":
             self._say(f"Decision ({by}, {latency:.0f} ms): {opt['action']} {opt['pile_id'] or ''} - {rationale}")
         if opt["action"] == "stop":
-            return None, rationale if by != "argmax" else reason
-        return self.piles[opt["pile_id"]], rationale
+            return opt, rationale if by != "argmax" else reason
+        return opt, rationale
+
+    # ------------------------------------------------------------------ report
+    def final_summary(self):
+        """One plain paragraph: what was pinged, what is still open, what is not cleared, what was spent."""
+        pings = [c for c in self.done_cands if c["status"] == "candidate"]
+        ping_s = "; ".join(f"{c['id']} at ({c['xy'][0]:.1f}, {c['xy'][1]:.1f}), t {c.get('t_found', 0):.0f} s"
+                           for c in pings) or "none"
+        leads = sorted((p for p in self.piles.values() if p["status"] == "lead"), key=lambda p: -(p["priority"] or 0))
+        lead_s = "; ".join(f"{p['id']} priority {p['priority']}"
+                           + (f" (radar insufficient evidence after {p['scans']} scans)" if p.get("scans") else " (not visited)")
+                           for p in leads) or "none"
+        nc = []
+        for p in self.piles.values():
+            if p["status"] in ("ping", "lead"):
+                continue
+            what = {"dismissed_nonhuman": "non-human sound", "no_signal_not_cleared": "nothing heard",
+                    "unvisited": "never heard or visited"}.get(p["status"], p["status"])
+            nc.append(f"{p['id']} ({what}{', radar inconclusive' if p.get('scans') else ''})")
+        return (f"MISSION SUMMARY: pinged (candidate search regions, not confirmed people): {ping_s}. "
+                f"Open leads: {lead_s}. Not cleared: {', '.join(nc) or 'none'}. "
+                f"Spent {self.scans_used} radar scans" + (f" of {self.mission_scans}" if self.mission_scans else "")
+                + f", {len(self.visited)} pile visits, {self.n_swaps} battery swap(s), {self.t:.0f} s mission time, "
+                f"{self._fly_s:.0f} drone-seconds of flight.")
 
     # ------------------------------------------------------------------ state.json
     def _write_pointcloud(self, pts):
@@ -565,14 +754,20 @@ class GridMission:
             "acoustic": self.acoustic_obs,
             "belief": belief,
             "next_scan": next_scan,
-            "log": self.log[-200:],
+            "log": self.log[-300:],
             # ---- v1.1 grid extensions
             "mission": {"kind": "grid", "seed": self.seed, "start_pile": self.start_pile,
                         "pile_budget": self.pile_budget, "priority_min": self.priority_min,
                         "visited": list(self.visited), "active_pile": self.visited[-1] if self.stage in ("pile", "listen") else None,
                         "stage": self.stage, "acoustic_source": self.acoustic_source,
                         "listen_ends": round(self.listen_end, 1) if self.stage == "listen" else None,
-                        "in_transit": upcoming},
+                        "in_transit": upcoming,
+                        "autonomous": self.autonomous, "dispatch_policy": self.dispatch_policy, "radar": self.radar,
+                        "scan_budget": self.mission_scans, "scans_used": self.scans_used,
+                        "battery_reserve": self.reserve, "battery_swaps": self.n_swaps,
+                        "battery_swap": None if self.swap is None else
+                        {"to_pile": self.swap["to_pile"], "ends": self.swap["ends"], "since": self.swap["t"]},
+                        "summary": self.final_summary() if self.stage == "done" else None},
             "staging": {"xy": list(BASE_XY), "pads": [list(p) for p in DRONE_PADS]},
             "piles": [dict(p) for p in self.piles.values()],
             "acoustic_clips": self.clips,
@@ -609,10 +804,14 @@ class GridMission:
     def summary(self):
         return {"visited": list(self.visited), "dispatch": self.dispatch,
                 "pings": [{"id": c["id"], "pile": c["pile_id"], "xy": c["xy"], "z_est": c["z_est"],
-                           "status": c["status"], "p_mass": c["p_mass"]} for c in self.done_cands],
+                           "depth_m": c.get("depth_m"), "depth_source": c.get("depth_source"),
+                           "status": c["status"], "p_mass": c["p_mass"], "t_found": c.get("t_found")}
+                          for c in self.done_cands],
                 "priorities": {p["id"]: p["priority"] for p in self.piles.values()},
                 "statuses": {p["id"]: p["status"] for p in self.piles.values()},
-                "acoustic_source": self.acoustic_source, "t": self.t, "scans": len(self.done_scans)}
+                "acoustic_source": self.acoustic_source, "t": self.t, "scans": self.scans_used,
+                "battery_swaps": self.n_swaps, "flight_s": round(self._fly_s, 1),
+                "text": self.final_summary()}
 
 
 def main(argv=None):
@@ -620,10 +819,16 @@ def main(argv=None):
     ap.add_argument("--seed", type=int, default=7)
     ap.add_argument("--start-pile", default=None, help="A1..C3 (default: seeded random pile)")
     ap.add_argument("--out", default="dashboard/data")
-    ap.add_argument("--radar", choices=["model", "dsp"], default="model")
+    ap.add_argument("--radar", choices=["model", "dsp"], default="dsp",
+                    help="dsp (default): synthetic IF through the real DSP chain; model: direct noise model")
     ap.add_argument("--acoustic", choices=["auto", "stub", "real"], default="auto",
                     help="auto: acoustic/ pipeline if importable or via .venv-audio, else the synthetic stub")
-    ap.add_argument("--piles", type=int, default=3, help="pile budget")
+    ap.add_argument("--piles", type=int, default=None, help="cap on pile visits (legacy loop default 3; autonomous: none)")
+    ap.add_argument("--no-autonomous", dest="autonomous", action="store_false",
+                    help="legacy fixed loop: 3 piles, no battery swaps, no revisits")
+    ap.add_argument("--scans", type=int, default=None, help=f"mission radar-scan budget (autonomous default {MISSION_SCANS})")
+    ap.add_argument("--dispatch", choices=["acoustic", "nearest", "raster"], default="acoustic",
+                    help="dispatch policy (nearest / raster are evaluation baselines)")
     ap.add_argument("--priority-min", type=int, default=PRIORITY_MIN)
     ap.add_argument("--frames", action="store_true")
     ap.add_argument("--realtime", action="store_true")
@@ -645,7 +850,8 @@ def main(argv=None):
             print(f"gemini decider unavailable ({type(e).__name__}: {e}); using argmax", file=sys.stderr)
     m = GridMission(a.seed, a.start_pile, a.radar, a.out, a.frames, not a.quiet, a.realtime, a.speed,
                     pile_budget=a.piles, priority_min=a.priority_min, acoustic=a.acoustic, decider=decider,
-                    slam=a.slam, slam_scans=a.slam_scans)
+                    slam=a.slam, slam_scans=a.slam_scans, autonomous=a.autonomous, mission_scans=a.scans,
+                    dispatch_policy=a.dispatch)
     m.run()
     s = m.summary()
     print(f"done in {time.time() - t0:.1f} s wall, {m.t:.0f} s sim; visited {' -> '.join(s['visited'])}; "

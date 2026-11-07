@@ -12,15 +12,18 @@ LOCKDIR=${XDG_RUNTIME_DIR:-/tmp}/larpverse-heavy; QDIR="$LOCKDIR/queue"; mkdir -
 export OMP_NUM_THREADS=${OMP_NUM_THREADS:-2} OPENBLAS_NUM_THREADS=${OPENBLAS_NUM_THREADS:-2} MKL_NUM_THREADS=${MKL_NUM_THREADS:-2}
 avail_mb() { awk '/^MemAvailable:/ { print int($2/1024) }' /proc/meminfo; }
 waited=""; note() { [ -z "$waited" ] && echo "[heavy] waiting: $1" >&2; waited=1; }
-ticket="$QDIR/$(date +%s%N).$$"; : > "$ticket"; trap 'rm -f "$ticket"' EXIT INT TERM
-my_turn() { local t; for t in $(ls "$QDIR" | sort); do
-  if kill -0 "${t##*.}" 2>/dev/null; then [ "$QDIR/$t" = "$ticket" ]; return; fi; rm -f "$QDIR/$t"; done; }
-until my_turn; do note "queued behind $(( $(ls "$QDIR" | wc -l) - 1 )) job(s)"; sleep 1; done
+# Browser jobs first wait for the single browser slot OUTSIDE the FIFO, so a job waiting on the
+# browser never blocks unrelated heavy jobs (head-of-line blocking fix, 19:55).
 browser_fd=""
 if [ -n "$BROWSER" ]; then
   until [ -n "$browser_fd" ]; do exec {b}>"$LOCKDIR/browser"
     if flock -n "$b"; then browser_fd=$b; else exec {b}>&-; note "browser slot busy"; sleep 3; fi; done
 else exec {browser_fd}>/dev/null; fi
+# FIFO: take a ticket; only the oldest live ticket may try the slot locks.
+ticket="$QDIR/$(date +%s%N).$$"; : > "$ticket"; trap 'rm -f "$ticket"' EXIT INT TERM
+my_turn() { local t; for t in $(ls "$QDIR" | sort); do
+  if kill -0 "${t##*.}" 2>/dev/null; then [ "$QDIR/$t" = "$ticket" ]; return; fi; rm -f "$QDIR/$t"; done; }
+until my_turn; do note "queued behind $(( $(ls "$QDIR" | wc -l) - 1 )) job(s)"; sleep 1; done
 slot_fd=""
 until [ -n "$slot_fd" ]; do for i in $(seq 1 "$SLOTS"); do exec {fd}>"$LOCKDIR/slot$i"
     if flock -n "$fd"; then slot_fd=$fd; break; fi; exec {fd}>&-; done

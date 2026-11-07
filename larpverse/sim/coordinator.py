@@ -40,6 +40,7 @@ class FlightBackend:
     def step(self, dt: float, t: float) -> list: ...        # advance; return events
     def poses(self) -> list: ...                            # [{'id','pose','state','battery'}]
     def eta(self, drone_id: str, dest_xyz) -> float | None: ...   # seconds, None if unreachable
+    def swap_battery(self, drone_id: str): ...              # optional: docked drone gets a full pack
 
 
 class _Drone:
@@ -101,6 +102,10 @@ class KinematicFlight(FlightBackend):
         if d.battery - (0.0016 * t + 0.0006 * SCAN_DWELL_S) < 0.15:
             return None
         return t
+
+    def swap_battery(self, drone_id):
+        d = self.drones[drone_id]
+        d.battery = 1.0
 
     # --- commands
     def command(self, cmd):
@@ -385,9 +390,10 @@ class Mission:
             self._say(f"Localisation converged: {self._summ(res)}; stopping radar scans ({self.scans_cmd} used)")
             return self._start_listen()
         if self.scans_cmd >= self.budget:
-            self._say(f"Scan budget ({self.budget}) exhausted; reporting insufficient_evidence ({reason})")
+            self._say(f"Scan budget ({self.budget}) used without a firm fix ({reason}). Evidence: "
+                      f"{self.explain_evidence()}. Reporting insufficient_evidence: the region stays open, not cleared")
             return self._start_listen()
-        self._say(f"Rescan needed: {reason}")
+        self._say(f"Rescan needed: {reason}. Evidence: {self.explain_evidence()}")
         if self.policy == "fixed":
             ch = self.planner.fixed_next(self.loc, self.sites, idle, self.travel, self.loc.centre)
         else:
@@ -405,8 +411,7 @@ class Mission:
         if res["status"] != "candidate":
             return res["reason"]
         dom = res["modes"][0]["xy"]
-        support = sum(1 for o in self.loc.obs if o["range_candidates"]
-                      and self.loc.agreement(o, dom) > 0.5 and max(o["confidence"]) * o["quality"] >= 0.35)
+        support = len(self.loc.strong_support(dom))
         if support < 3:
             return f"{support} of 3 strong ranges support R1 so far; need 3 for an independent fix"
         for o in self.scans:
@@ -415,6 +420,36 @@ class Mission:
             if o["quality"] >= 0.5 and max(o["confidence"]) * o["quality"] >= 0.4 and o.get("used_weight", 1) < 0.25:
                 return f"disagreement: trusted scan {o['scan_id']} (q={o['quality']}) contradicts the consensus"
         return None
+
+    def explain_evidence(self):
+        """Plain-words account of the radar evidence so far (observations + LiDAR heightmap only, no truth)."""
+        res = self.result
+        scans = [o for o in self.scans if not o.get("doppler_moving")]
+        if not scans:
+            return "no radar scans yet"
+        empty = [o["scan_id"] for o in scans if not o["range_candidates"]]
+        lowq = [f"{o['scan_id']} q {o['quality']:.2f}" for o in scans if o["quality"] < 0.4]
+        parts = [f"{len(scans)} scan(s)"]
+        if res["modes"]:
+            m = res["modes"][0]
+            sup = self.loc.strong_support(m["xy"])
+            weak = [o["scan_id"] for o in scans if o["range_candidates"] and o["scan_id"] not in sup
+                    and self.loc.agreement(o, m["xy"]) > 0.5]
+            off = [o["scan_id"] for o in scans if o["range_candidates"] and self.loc.agreement(o, m["xy"]) <= 0.5]
+            parts.append(f"{len(sup)} strong breathing-like range(s) agree on R1 ({', '.join(sup) or 'none'}; 3 needed)")
+            if weak:
+                parts.append(f"{len(weak)} agree but are too weak to count ({', '.join(weak)})")
+            if off:
+                parts.append(f"{len(off)} point elsewhere ({', '.join(off)})")
+            dist = [float(np.hypot(o["sensor_pose"][0] - m["xy"][0], o["sensor_pose"][1] - m["xy"][1])) for o in scans]
+            if min(dist) > 8.0:
+                parts.append(f"landing sites stand {min(dist):.0f}-{max(dist):.0f} m off R1, so returns cross "
+                             "rubble and fade with range")
+        if empty:
+            parts.append(f"{len(empty)} heard nothing ({', '.join(empty)}; no detection is not absence)")
+        if lowq:
+            parts.append(f"{len(lowq)} low quality from rough touchdowns ({', '.join(lowq)})")
+        return "; ".join(parts)
 
     def _summ(self, res):
         if not res["modes"]:
@@ -471,11 +506,17 @@ class Mission:
                   if o["scan_id"] in ev and o["breathing_hz"] is not None]
             bhz = float(sum(h * q for h, q in hz) / sum(q for _, q in hz)) if hz else None
             c = m["cov"]
+            dep = loc.estimate_depth(m["xy"], c) if k == 0 else \
+                {"depth_m": loc.cfg.depth_nom, "depth_sigma": None, "depth_source": "nominal"}
             cands.append({"id": f"R{k + 1}", "xy": [round(m["xy"][0], 2), round(m["xy"][1], 2)],
-                          "z_est": round(float(self.grid.height_at(*m["xy"])) - loc.cfg.depth_nom, 2),
+                          "z_est": round(float(self.grid.height_at(*m["xy"])) - dep["depth_m"], 2),
+                          "depth_m": dep["depth_m"], "depth_sigma": dep["depth_sigma"],
+                          "depth_source": dep["depth_source"],
                           "cov": [[round(float(c[0, 0]), 3), round(float(c[0, 1]), 3)],
                                   [round(float(c[1, 0]), 3), round(float(c[1, 1]), 3)]],
-                          "p_mass": round(m["p_mass"], 3), "breathing_hz": None if bhz is None else round(bhz, 3),
+                          "p_mass": round(m["p_mass"], 3), "p_kind": "share_of_pile_belief",
+                          "support": len(loc.strong_support(m["xy"])), "support_needed": 3,
+                          "breathing_hz": None if bhz is None else round(bhz, 3),
                           "kind": "stationary",
                           "status": "candidate" if (res["status"] == "candidate" and k == 0) else "insufficient_evidence",
                           "evidence": ev})
@@ -483,6 +524,7 @@ class Mission:
         for k, m in enumerate(tracks):
             c = m["cov"]
             cands.append({"id": f"M{k + 1}", "xy": [round(m["xy"][0], 2), round(m["xy"][1], 2)], "z_est": 0.9,
+                          "depth_m": None, "depth_sigma": None, "depth_source": "nominal", "p_kind": "share_of_moving_belief",
                           "cov": [[round(float(c[0, 0]), 3), round(float(c[0, 1]), 3)],
                                   [round(float(c[1, 0]), 3), round(float(c[1, 1]), 3)]],
                           "p_mass": round(m["p_mass"], 3), "breathing_hz": None, "kind": "moving",

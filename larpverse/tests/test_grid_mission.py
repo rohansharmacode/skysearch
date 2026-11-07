@@ -40,11 +40,26 @@ def test_visits_multiple_piles_in_acoustic_priority_order(run):
                     key=lambda p: (-p["priority"], p["pile_id"]))
     assert m.visited[1] == ranked[0]["pile_id"]
     assert state["dispatch"][0]["from_pile"] == m.visited[0] and state["dispatch"][0]["to_pile"] == m.visited[1]
-    # every dispatch goes to a pile not visited before it
+    # every dispatch goes to a pile not visited before it, unless it is an explicit revisit of an open lead
     for k, d in enumerate(state["dispatch"]):
-        if d["to_pile"]:
+        if d["to_pile"] and not d["reason"].startswith("revisit"):
             assert d["to_pile"] not in m.visited[:k + 1]
     assert any(c["status"] == "candidate" for c in state["radar_candidates"]), "expected at least one radar ping"
+
+
+def test_seed7_dsp_default_pings_every_voice_pile(run):
+    """BL-8 / R1-005: with the default dsp radar the demo pings A2, A3 (voice) and B2 (knock)."""
+    m, _, state, _ = run
+    assert m.radar == "dsp" and state["mission"]["radar"] == "dsp"
+    firm = {c["pile_id"] for c in state["radar_candidates"] if c["status"] == "candidate"}
+    assert {"A2", "A3", "B2"} <= firm
+    for c in state["radar_candidates"]:
+        assert c["depth_source"] in ("radar_estimate", "nominal") and c["p_kind"] == "share_of_pile_belief"
+        assert isinstance(c["support"], int) and c["support_needed"] == 3
+        assert c["depth_sigma"] is None or c["depth_sigma"] > 0
+        if c["status"] == "candidate":
+            assert c["support"] >= 3 and c["t_found"] > 0
+    assert "MISSION SUMMARY" in state["log"][-1]["msg"] and state["mission"]["summary"]
 
 
 def test_brain_never_reads_truth():
@@ -137,3 +152,74 @@ def test_slam_hook_ingests_pile_map(tmp_path):
     assert s["slam"][0]["map_points"] > 1000 and s["slam"][0]["ate_rmse_m"] < 1.0
     assert any("LiDAR SLAM" in e["msg"] for e in s["log"])
     assert any("Heightmap window rebuilt" in e["msg"] for e in s["log"])
+
+
+
+# ------------------------------------------------------------------ autonomy loop (stub acoustic, fast)
+def test_model_radar_revisits_open_lead_and_pings_it():
+    """Model radar misses A3 on the first visit (2 of 3 strong ranges); the autonomous loop comes back."""
+    m = GridMission(seed=7, verbose=False, acoustic="stub", radar="model").run()
+    assert m.visited.count("A3") == 2 and m.visited.index("A3") < len(m.visited) - 1
+    a3 = [c for c in m.done_cands if c["pile_id"] == "A3"]
+    assert len(a3) == 1 and a3[0]["status"] == "candidate" and a3[0]["visit"] == 2
+    assert any(e["msg"].startswith("Revisit d1-d3 -> pile A3") for e in m.log)
+    assert any("Evidence:" in e["msg"] and "3 needed" in e["msg"] for e in m.log)     # plain-words rescan log
+    assert m.scans_used <= m.mission_scans
+
+
+def test_battery_swap_then_redeploy():
+    m = GridMission(seed=7, verbose=False, acoustic="stub", reserve=0.9, pile_budget=2, swap_s=30)
+    phases, low = set(), None
+    while not m.done:
+        m.step()
+        phases.add(m.phase)
+        if m.stage == "swap" and low is None:
+            low = min(d["battery"] for d in m.flight.poses())
+    assert m.n_swaps == 1 and low is not None and low < 0.9
+    assert {"return", "battery_swap"} <= phases and len(m.visited) == 2
+    swap_msgs = [e for e in m.log if "battery swap" in e["msg"]]
+    assert swap_msgs and "reserve" in swap_msgs[0]["msg"]
+    assert m.build_state()["mission"]["battery_swaps"] == 1
+
+
+def test_scan_budget_and_pile_cap_stop_the_loop():
+    m = GridMission(seed=7, verbose=False, acoustic="stub", mission_scans=6).run()
+    assert m.scans_used <= 6 and m.dispatch[-1]["to_pile"] is None
+    assert "scan budget" in m.dispatch[-1]["reason"]
+    m2 = GridMission(seed=7, verbose=False, acoustic="stub", pile_budget=2).run()
+    assert len(m2.visited) == 2 and "pile budget" in m2.dispatch[-1]["reason"]
+    legacy = GridMission(seed=7, verbose=False, acoustic="stub", autonomous=False, radar="model").run()
+    assert legacy.pile_budget == 3 and len(legacy.visited) == 3 and legacy.n_swaps == 0
+
+
+def test_baseline_policies_and_summary():
+    r = GridMission(seed=7, verbose=False, acoustic="stub", dispatch_policy="raster", mission_scans=12).run()
+    from sim.grid_mission import RASTER
+    rest = [p for p in RASTER if p != r.start_pile]
+    assert r.visited[1:] == rest[:len(r.visited) - 1] and not r.clips          # baselines do not listen
+    n = GridMission(seed=7, verbose=False, acoustic="stub", dispatch_policy="nearest", mission_scans=10, pile_budget=2).run()
+    sx, sy = n.world.pile_xy[n.start_pile]
+    d = {p: np.hypot(x - sx, y - sy) for p, (x, y) in n.world.pile_xy.items() if p != n.start_pile}
+    assert d[n.visited[1]] <= min(d.values()) + 1.0
+    txt = r.final_summary()
+    assert txt.startswith("MISSION SUMMARY") and "Open leads" in txt and "Not cleared" in txt
+
+
+def test_stub_acoustic_is_labelled_from_truth():
+    m = GridMission(seed=7, verbose=False, acoustic="stub", pile_budget=1).run()
+    assert m.acoustic_source == "stub-from-truth"
+    assert any(e["msg"].startswith("WARNING: acoustic clips are SYNTHETIC") for e in m.log)
+
+
+def test_evaluate_grid_report(tmp_path):
+    from sim import evaluate_grid as eg
+    rows = str(tmp_path / "rows")
+    eg.main(["--seeds", "7", "--scans", "6", "--rows-dir", rows])
+    out, md = tmp_path / "r.json", tmp_path / "e.md"
+    eg.main(["--seeds", "7", "--scans", "6", "--rows-dir", rows, "--report", "--out", str(out), "--md", str(md)])
+    res = json.loads(out.read_text())
+    assert set(res["summary"]) == set(eg.POLICIES)
+    for p, s in res["summary"].items():
+        assert 1 <= s["pinged_total"] <= s["victims_total"]     # the start-pile victim is always pinged
+    text = md.read_text()
+    assert "| metric | acoustic | nearest | raster |" in text and "from the hidden truth" in text

@@ -66,3 +66,29 @@ def test_empty_scan_is_not_evidence_of_absence():
     o["range_candidates"], o["confidence"] = [], []
     assert loc.update_radar(o) == "empty"
     assert np.allclose(loc.belief(), before)
+
+
+
+def test_depth_estimate_close_geometry_vs_far():
+    """Close, steep looks pin the depth down (radar_estimate); far, shallow looks only give the prior."""
+    n = 100
+    z = np.full((n, n), 0.0, np.float32)
+    g = Grid((-25.0, -25.0), 0.5, n, n, z)
+    X, Y = g.mesh()
+    g.z = (3.0 * np.exp(-(X ** 2 + Y ** 2) / 30.0)).astype(np.float32)     # 3 m mound
+    truth, depth = (0.25, 0.25), 0.9
+
+    def run(sensors, z_s):
+        loc = Localiser(g)
+        tz = float(g.height_at(*truth)) - depth
+        for k, (sx, sy) in enumerate(sensors):
+            r = float(np.sqrt((sx - truth[0]) ** 2 + (sy - truth[1]) ** 2 + (z_s - tz) ** 2))
+            loc.update_radar({"scan_id": f"s{k}", "drone_id": "d1", "sensor_pose": [sx, sy, z_s, 0.0],
+                              "timestamp": 0.0, "range_candidates": [r], "confidence": [0.95], "quality": 0.95,
+                              "breathing_hz": 0.25, "doppler_moving": False})
+        return loc.estimate_depth(truth, np.eye(2) * 0.05)
+
+    near = run([(-1.0, 2.5), (2.5, -1.0), (-1.5, -1.5), (2.0, 2.0)], 3.0)
+    assert near["depth_source"] == "radar_estimate" and abs(near["depth_m"] - depth) < 0.3
+    far = run([(-12, 0), (0, 12), (11, -5)], 0.3)
+    assert far["depth_source"] == "nominal" and far["depth_m"] == 1.5 and far["depth_sigma"] > 0.45

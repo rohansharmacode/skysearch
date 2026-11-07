@@ -269,6 +269,56 @@ class Localiser:
         modes = extract_modes(self.pm, self.grid, self.cfg)
         return [m for m in modes[:2] if m["p_mass"] >= 0.2]
 
+    def strong_support(self, xy, min_agree=0.5, min_strength=0.35):
+        """Scan ids whose ranges pass through ``xy`` with confidence x quality >= ``min_strength``."""
+        return [o["scan_id"] for o in self.obs if o["range_candidates"] and self.agreement(o, xy) > min_agree
+                and max(o["confidence"]) * o["quality"] >= min_strength]
+
+    def estimate_depth(self, xy, cov, max_sigma=0.45, min_scans=3):
+        """Burial depth below the LiDAR surface at a mode, from the slant ranges of the scans that support it.
+
+        For each supporting scan, the range that best matches the mode is compared with the predicted slant
+        range sqrt(horizontal^2 + (sensor_z - (surface - d))^2) over a depth grid d in [0.2, 3.0] m (flat
+        prior), marginalised over 5 sigma points of the mode's xy covariance (horizontal position error is
+        the main confounder). Returns {depth_m, depth_sigma, depth_source, n_scans}: ``radar_estimate`` when
+        at least ``min_scans`` scans support the mode and the posterior sigma <= ``max_sigma``, else the
+        nominal depth (``cfg.depth_nom``) with ``depth_source: "nominal"`` and the posterior (or prior) sigma.
+        """
+        cfg = self.cfg
+        d = np.arange(0.2, 3.0001, 0.05)
+        sup = [o for o in self.obs if o["range_candidates"] and self.agreement(o, xy) > 0.5]
+        out = {"depth_m": cfg.depth_nom, "depth_sigma": round(float(np.std(d)), 2), "depth_source": "nominal",
+               "n_scans": len(sup)}
+        if not sup:
+            return out
+        cov = np.asarray(cov, float)
+        ev, V = np.linalg.eigh(cov)
+        pts, wts = [np.asarray(xy, float)], [1 / 3]
+        for k in (0, 1):
+            for sgn in (-1, 1):
+                pts.append(np.asarray(xy, float) + sgn * np.sqrt(max(ev[k], 0.0) * 3.0) * V[:, k])   # unscented, kappa = 1
+                wts.append(1 / 6)
+        post = np.zeros_like(d)
+        for p, wt in zip(pts, wts):
+            surf = float(self.grid.height_at(p[0], p[1]))
+            ll = np.zeros_like(d)
+            for o in sup:
+                sx, sy, sz = o["sensor_pose"][:3]
+                r_pred = np.sqrt((p[0] - sx) ** 2 + (p[1] - sy) ** 2 + (sz - (surf - d)) ** 2)
+                sig = loc_sigma_range(o["quality"])
+                g = np.zeros_like(d)
+                for rk, ck in zip(o["range_candidates"], o["confidence"]):
+                    g = np.maximum(g, ck * o["quality"] * np.exp(-0.5 * ((rk - r_pred) / sig) ** 2))
+                ll += np.log(cfg.eps + g)
+            post += wt * np.exp(ll - ll.max())
+        post /= post.sum()
+        mean = float((d * post).sum())
+        sd = float(np.sqrt(((d - mean) ** 2 * post).sum()))
+        out["depth_sigma"] = round(sd, 2)
+        if len(sup) >= min_scans and sd <= max_sigma:
+            out.update(depth_m=round(mean, 2), depth_source="radar_estimate")
+        return out
+
     def agreement(self, obs, xy):
         """How well observation `obs` supports location xy: 0 (outlier) .. 1 (ring passes through)."""
         if not obs["range_candidates"]:

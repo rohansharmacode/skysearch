@@ -456,3 +456,9 @@ All additive: a v1 reader keeps working.
 With `reprioritise=True` (the default), `merge_into_state` raises a pile's `priority`/`why` to the stage-3 value
 when that value is higher and the task is a `lead`, then re-picks `radar_ping` and `dispatch` from the top lead.
 
+
+### Tasking and recon defaults (v1.4.1, settled)
+
+- **No `tasking.json`, or no active zones: the mission runs recon** (the user's decision). The scenario's default sector zones are opt-in with `--tasking default`.
+- `tasking.json` may carry `aoi` (one polygon, site metres), which restricts the recon coverage flight. `scripts/serve.py` validates it and passes it through.
+- Mission `stage` adds `recon`. `phase` uses `recon_mapping` and `recon_listening` (above) while it's active.

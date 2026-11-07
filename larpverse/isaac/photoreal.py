@@ -62,6 +62,7 @@ def add_args(ap):
                    help="1 = DLAA/DLSS quality + ray-reconstruction real-time mode + motion blur (live take)")
     g.add_argument("--urban-debris", type=int, default=32000, help="3D debris pieces on the core rubble (+28%% outside)")
     g.add_argument("--crew", type=int, default=1, help="collapse map: rescue crew models at the staging area")
+    g.add_argument("--props", type=int, default=1, help="collapse map: excavators, crawler crane, fire trucks")
     g.add_argument("--clean-overlay", type=int, default=-1,
                    help="footage clarity: hide weak candidates, one radar ring per scan, lines ride over the rubble "
                         "(1 on, 0 off, -1 auto = on for the collapse map)")

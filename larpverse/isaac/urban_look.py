@@ -263,9 +263,10 @@ def facade(stage, mats, looks, log, seed=0, slabs=True):
         base = f"{SITE}/Buildings/Scanned/{t}"
         if not stage.GetPrimAtPath(base).IsValid():
             continue
-        for part, key in (("scanfaces", FACE_MAT), ("facades", FACE_MAT), ("breaks", "concrete")):
-            if key in mats:
-                PR.bind(stage, f"{base}/{part}", mats[key])
+        for part, key in (("scanfaces", "interior"), ("facades", "interior"), ("breaks", "concrete")):
+            m_ = mats.get(key, looks.get(key))
+            if m_ is not None:
+                PR.bind(stage, f"{base}/{part}", m_)
         quads = []
         for part in ("scanfaces", "facades"):
             p = stage.GetPrimAtPath(f"{base}/{part}")
@@ -274,7 +275,7 @@ def facade(stage, mats, looks, log, seed=0, slabs=True):
         if not quads:
             continue
         centre = np.concatenate([q for q, _ in quads]).mean(0)
-        bins = {k: [] for k in ("band", "frame", "glass", "void", "balcony", "stub", "rebar")}
+        bins = {k: [] for k in ("slab", "column", "wall", "tilewall", "chunk", "frame", "void", "stub", "rebar")}
         upper = sorted([i for i, (q, n) in enumerate(quads) if q[:, 2].mean() > centre[2]],
                        key=lambda i: quads[i][0][:, 0].mean())
         for fi, (Q, n) in enumerate(quads):
@@ -286,28 +287,59 @@ def facade(stage, mats, looks, log, seed=0, slabs=True):
 
             nst, nb = max(2, int(round(L / STOREY_M))), max(2, int(round(W / 3.0)))
             sh, bw = L / nst, W / nb
-            for j in range(nst + 1):                                     # slab edge at every floor
-                c = at(0.5, j / nst, 0.06)
-                if c[2] > -0.6:
-                    bins["band"].append(_box(c, U, V, N, W / 2 * 0.995, 0.16, 0.09))
-            for i in range(nb + 1):                                      # columns between the bays
-                bins["band"].append(_box(at(i / nb, 0.5, 0.04), U, V, N, 0.18, L / 2, 0.06))
+            slab_h = 0.24                                                # half thickness (slab + beam, ~0.48 m)
+            west = bool(upper) and fi == upper[0]
+
+            def tilted(theta):                                           # rotate (V, N) about U: sagging pieces
+                c, s_ = math.cos(theta), math.sin(theta)
+                return V * c + N * s_, N * c - V * s_
+
+            # floor slabs: thick grey plates sticking out of the dark crushed storeys, broken per bay
+            for j in range(nst + 1):
+                for i in range(nb):
+                    if rng.random() < 0.07:
+                        continue                                         # piece fallen out
+                    c = at((i + 0.5) / nb, j / nst, 0.10 + rng.normal(0, 0.06)) + V * rng.normal(0, 0.07)
+                    if c[2] < -0.6:
+                        continue
+                    Vt, Nt = tilted(math.radians(rng.normal(0, 3.5)))
+                    hn = 0.30 + rng.uniform(0, 0.16)
+                    bins["slab"].append(_box(c + Nt * (hn - 0.30), U, Vt, Nt, bw / 2 * rng.uniform(0.93, 1.0), slab_h, hn))
+            # between the slabs: dark crushed storeys, part-standing tiled infill walls with window openings,
+            # column stubs; balconies on the upper west faces
+            gap = (sh - 2 * slab_h) / 2
             for j in range(nst):
+                for i in range(nb + 1):                                  # columns at the bay lines
+                    c = at(i / nb, (j + 0.5) / nst, 0.12)
+                    if c[2] > -0.4 and rng.random() > 0.18:
+                        Vt, Nt = tilted(math.radians(rng.normal(0, 5)))
+                        bins["column"].append(_box(c, U, Vt, Nt, 0.22, gap * rng.uniform(0.75, 1.0), 0.2))
                 for i in range(nb):
                     c = at((i + 0.5) / nb, (j + 0.5) / nst)
                     if c[2] < -0.4:
-                        continue                                         # under the rubble
-                    hu, hv = 0.31 * bw, 0.26 * sh
+                        continue
                     r = rng.random()
-                    bins["glass" if r < 0.55 else "void"].append(_box(c + N * 0.012, U, V, N, hu, hv, 0.012))
-                    if r < 0.9:                                          # frame (missing on 1 in 10)
-                        for du, dv, a, b in ((hu, 0, 0.035, hv + 0.035), (-hu, 0, 0.035, hv + 0.035),
-                                             (0, hv, hu, 0.035), (0, -hv, hu, 0.035)):
-                            bins["frame"].append(_box(c + U * du + V * dv + N * 0.04, U, V, N, a, b, 0.04))
-                    if upper and fi == upper[0] and rng.random() < 0.8:  # balcony slab + parapet (west face)
-                        f0 = at((i + 0.5) / nb, j / nst + 0.06 / L)
-                        bins["balcony"].append(_box(f0 + N * 0.55, U, V, N, 0.45 * bw, 0.08, 0.55))
-                        bins["balcony"].append(_box(f0 + N * 1.08 + V * 0.5, U, V, N, 0.45 * bw, 0.5, 0.06))
+                    if r < 0.42:
+                        if rng.random() < 0.5:                           # crushed: chunk hanging in the gap
+                            k = rng.uniform(0.2, 0.45)
+                            bins["chunk"].append(_box(c + N * 0.1 + U * rng.normal(0, bw / 5), U, V, N, k * 1.4, k, k))
+                        continue
+                    hv = gap * (0.95 if r < 0.8 else rng.uniform(0.35, 0.6))
+                    cc = c - V * (gap - hv) * (1 if r >= 0.8 else 0) + N * rng.normal(0.02, 0.04)
+                    key = "tilewall" if rng.random() < 0.6 else "wall"
+                    hu = bw / 2 * rng.uniform(0.86, 0.97)
+                    bins[key].append(_box(cc, U, V, N, hu, hv, 0.08))
+                    if r < 0.8 and rng.random() < 0.65:                  # window opening with what is left of a frame
+                        wu, wv = hu * 0.55, hv * 0.55
+                        bins["void"].append(_box(cc + N * 0.07, U, V, N, wu, wv, 0.02))
+                        if rng.random() < 0.6:
+                            for du, dv, a_, b_ in ((wu, 0, 0.03, wv), (-wu, 0, 0.03, wv), (0, wv, wu, 0.03), (0, -wv, wu, 0.03)):
+                                bins["frame"].append(_box(cc + U * du + V * dv + N * 0.1, U, V, N, a_, b_, 0.03))
+                    if west and rng.random() < 0.55:                     # balcony slab + parapet
+                        f0 = at((i + 0.5) / nb, j / nst + slab_h / L)
+                        Vt, Nt = tilted(math.radians(rng.normal(0, 6)))
+                        bins["slab"].append(_box(f0 + Nt * 0.65, U, Vt, Nt, 0.46 * bw, 0.08, 0.6))
+                        bins["tilewall"].append(_box(f0 + Nt * 1.2 + Vt * 0.5, U, Vt, Nt, 0.46 * bw, 0.5, 0.06))
         # breaks: broken column stubs with bent rebar sticking out of both ends
         Ps = np.concatenate([q for q, _ in quads])
         for end, sgn in ((Ps[:, 1].min(), -1.0), (Ps[:, 1].max(), 1.0)):
@@ -336,15 +368,17 @@ def facade(stage, mats, looks, log, seed=0, slabs=True):
                         bins["rebar"] += [RB._bar(mid, p0, r=0.014), RB._bar(mid, tip, r=0.014)]
         out = f"{ROOT}/Facade/{t}"
         for k, parts in bins.items():
-            mat = {"band": mats.get("concrete2"), "balcony": mats.get(FACE_MAT), "stub": mats.get("concrete2"),
+            mat = {"slab": mats.get("concrete2"), "column": mats.get("concrete2"), "wall": mats.get("concrete"),
+                   "tilewall": looks.get("facade_tile"), "chunk": mats.get("concrete"), "stub": mats.get("concrete2"),
                    "rebar": mats.get("rust")}.get(k, looks.get(k))
             tot += _emit(stage, f"{out}/{k}", parts, mat)
     for s in SLABS:
         for part in (("top", "edges") if slabs else ("edges",)):
             if "concrete2" in mats:
                 PR.bind(stage, f"{SITE}/Buildings/Scanned/{s}/{part}", mats["concrete2"])
-    log(f"[urban] fallen towers: plaster and concrete instead of the scan photo, {tot} facade/break pieces "
-        f"(storey edges, columns, windows, balconies, column stubs, rebar); slabs: formed concrete")
+    log(f"[urban] fallen towers: {tot} pieces like the real site (thick grey floor slabs sticking out of dark "
+        f"crushed storeys, part-standing tiled walls with window openings, columns, balconies, broken column "
+        f"stubs and rebar at the breaks)" + ("; slabs: formed concrete" if slabs else ""))
     return tot
 
 
@@ -585,7 +619,9 @@ def dress(stage, sc, a, mats, nv, isa, log=print):
     looks = {"glass": _pv(stage, f"{ROOT}/Looks/glass", (0.035, 0.045, 0.055), 0.06, 0.0, 1.0),
              "void": _pv(stage, f"{ROOT}/Looks/void", (0.012, 0.011, 0.010), 0.95),
              "frame": _pv(stage, f"{ROOT}/Looks/frame", (0.62, 0.63, 0.64), 0.35, 0.8),
-             "tile": _pv(stage, f"{ROOT}/Looks/tile", (0.80, 0.78, 0.72), 0.3, 0.0, 0.5)}
+             "tile": _pv(stage, f"{ROOT}/Looks/tile", (0.80, 0.78, 0.72), 0.3, 0.0, 0.5),
+             "facade_tile": _pv(stage, f"{ROOT}/Looks/facade_tile", (0.60, 0.54, 0.45), 0.55, 0.0, 0.2),  # beige tiles
+             "interior": _pv(stage, f"{ROOT}/Looks/interior", (0.03, 0.028, 0.026), 0.95)}       # crushed storeys
     scan = str(getattr(a, "urban_terrain", "scan")) == "scan"
     if scan:
         scan_ai(stage, getattr(a, "scan_ai", ""), log)
@@ -595,3 +631,6 @@ def dress(stage, sc, a, mats, nv, isa, log=print):
            n_outer=int(getattr(a, "urban_debris", 32000) * 0.28))
     if getattr(a, "crew", 1):
         crew(stage, sc, isa, log)
+    if getattr(a, "props", 1):
+        from isaac import site_props
+        site_props.add(stage, log)

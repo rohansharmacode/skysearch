@@ -102,3 +102,25 @@ def test_step_api_and_listening_state():
         seen.update(d["state"] for d in st["drones"])
         assert all(len(d["pose"]) == 4 and np.all(np.isfinite(d["pose"])) for d in st["drones"])
     assert {"flying", "scanning", "listening"} <= seen
+
+
+def test_decider_hook_choice_and_fallback():
+    seen = []
+
+    def stop_now(ctx, options):
+        seen.append((ctx, options))
+        assert ctx["current_pile"] and options[-1]["action"] == "stop"
+        assert all({"id", "action", "pile_id", "priority", "travel_s", "battery_after_min", "evidence", "flags"} <= set(o)
+                   for o in options)
+        return {"choice": options[-1]["id"], "rationale": "test: stop", "by": "test"}
+
+    m = GridMission(seed=7, verbose=False, acoustic="stub", decider=stop_now).run()
+    assert m.visited == [m.start_pile] and seen
+    d = m.build_state()["decisions"]
+    assert d[0]["by"] == "test" and d[0]["chosen"] == seen[0][1][-1]["id"] and d[0]["gate"] == "dispatch"
+
+    bad = GridMission(seed=7, verbose=False, acoustic="stub", decider=lambda c, o: {"choice": "nope"}).run()
+    ref = GridMission(seed=7, verbose=False, acoustic="stub").run()
+    assert bad.visited == ref.visited
+    assert all(x["by"] == "fallback" for x in bad.decisions if len(x["options"]) > 1)
+    assert all(x["by"] == "argmax" for x in ref.decisions)

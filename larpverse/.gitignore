@@ -8,4 +8,11 @@ data/radar_real/
 acoustic/data/
 acoustic/models/
 .venv-audio/
+.venv-map/
+media/
+data/
+acoustic/cache/
+agents/cache/
 .env
+*.env
+.claude/

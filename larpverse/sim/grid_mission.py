@@ -70,7 +70,7 @@ class GridMission:
     def __init__(self, seed=7, start_pile=None, radar="model", out_dir=None, frames=False, verbose=True,
                  realtime=False, speed=1.0, dt=1.0, pile_budget=3, priority_min=PRIORITY_MIN, scan_budget=8,
                  policy="adaptive", acoustic="auto", n_points=360000, max_t=3000.0,
-                 world=None, flight=None, sensor_factory=None, acoustic_fn=None):
+                 world=None, flight=None, sensor_factory=None, acoustic_fn=None, decider=None):
         self.seed, self.radar, self.policy, self.scan_budget = seed, radar, policy, scan_budget
         self.out_dir, self.frames, self.verbose = out_dir, frames, verbose
         self.realtime, self.speed, self.dt, self.max_t = realtime, speed, dt, max_t
@@ -84,6 +84,8 @@ class GridMission:
         self.flight = flight if flight is not None else KinematicFlight(self.grid, starts=pads)
         self.sensor_factory = sensor_factory or (lambda pw, s: make_generator(pw, s, radar))
         self.acoustic_fn = acoustic_fn
+        self.decider = decider         # optional (context, options) -> {"choice", "rationale", "by"}
+        self.decisions = []
         # --- mission state (never touches truth)
         self.t, self.k = 0.0, 0
         self.stage = "pile"            # pile | listen | return | done
@@ -341,17 +343,7 @@ class GridMission:
                         key=lambda p: (-p["priority"], p["id"]))
         self._say("Pile priority: " + ", ".join(f"{p['id']} {p['priority']}" for p in ranked[:6]))
         here = self.visited[-1]
-        if len(self.visited) >= self.pile_budget:
-            reason = f"pile budget ({self.pile_budget}) used"
-            nxt = None
-        elif not ranked or ranked[0]["priority"] < self.priority_min:
-            reason = f"no unvisited pile at or above priority {self.priority_min}; remaining piles stay not cleared"
-            nxt = None
-        else:
-            nxt = ranked[0]
-            d = res.get("dispatch") or {}
-            reason = d["reason"] if d.get("pile_id") == nxt["id"] and d.get("reason") else \
-                f"highest acoustic priority ({nxt['priority']}) among unvisited piles: {nxt['why']}"
+        nxt, reason = self._decide_dispatch(ranked, res)
         self.dispatch.append({"t": round(self.t, 1), "from_pile": here, "to_pile": nxt["id"] if nxt else None,
                               "reason": reason})
         if nxt:
@@ -364,6 +356,97 @@ class GridMission:
                 self.flight.command({"drone_id": d, "type": "return"})
             self.pm = None
             self.stage = "return"
+
+    # ------------------------------------------------------------------ dispatch gate (optional decider)
+    PILE_BATTERY = 0.14          # rough battery cost of one pile (survey + landings + scans + listen)
+
+    def _options(self, ranked, res):
+        """Scored options at the dispatch gate. Returns (options, argmax_option_id, argmax_reason)."""
+        here = self.visited[-1]
+        poses = {p["id"]: p for p in self.flight.poses()}
+        bat_min = min(p["battery"] for p in poses.values())
+        clips_by = {}
+        for c in self.clips:
+            clips_by.setdefault(c["pile_id"], []).append(c)
+        budget_left = self.pile_budget - len(self.visited)
+        opts = []
+
+        def travel(pid):
+            x, y = self.world.pile_xy[pid]
+            ts = [self.flight.eta(d, [x, y, float(self.grid.height_at(x, y)) + 9.0]) for d in poses]
+            return None if any(t is None for t in ts) else round(max(ts), 1)
+
+        if budget_left > 0:
+            for p in ranked[:6]:
+                ts = travel(p["id"])
+                cs = sorted(clips_by.get(p["id"], []), key=lambda c: -(c["priority"] or 0))[:2]
+                ev = "; ".join(f"{c['class']}" + (f" \"{c['transcript'][:60]}\"" if c["transcript"] else "")
+                               + f" (human {c['scores']['human']}, priority {c['priority']}, {c['by']})" for c in cs) \
+                    or "no clip assigned"
+                flags = [f for f, on in (("below_threshold", p["priority"] < self.priority_min),
+                                         ("nonhuman", p["status"] == "dismissed_nonhuman"),
+                                         ("silent", p["status"] == "no_signal_not_cleared"),
+                                         ("unreachable", ts is None)) if on]
+                opts.append({"id": f"o{len(opts) + 1}", "action": "dispatch", "pile_id": p["id"],
+                             "priority": p["priority"], "travel_s": ts,
+                             "battery_after_min": None if ts is None else
+                             round(bat_min - 0.0016 * ts - self.PILE_BATTERY, 2),
+                             "evidence": ev, "flags": flags})
+            cur = self.piles[here]
+            if cur["status"] != "ping" and self.visited.count(here) < 2:
+                opts.append({"id": f"o{len(opts) + 1}", "action": "rescan_current", "pile_id": here,
+                             "priority": cur["priority"], "travel_s": 0.0,
+                             "battery_after_min": round(bat_min - self.PILE_BATTERY, 2),
+                             "evidence": f"radar at {here}: {cur['why'][:160]}", "flags": ["no_firm_ping"]})
+        opts.append({"id": f"o{len(opts) + 1}", "action": "stop", "pile_id": None, "priority": None, "travel_s": None,
+                     "battery_after_min": round(bat_min, 2), "evidence": "return to the staging area",
+                     "flags": ["pile_budget_used"] if budget_left <= 0 else []})
+        stop = opts[-1]["id"]
+        if budget_left <= 0:
+            return opts, stop, f"pile budget ({self.pile_budget}) used"
+        ok = [o for o in opts if o["action"] == "dispatch" and "unreachable" not in o["flags"]
+              and o["priority"] >= self.priority_min]
+        if not ok:
+            return opts, stop, f"no unvisited pile at or above priority {self.priority_min}; remaining piles stay not cleared"
+        top = ok[0]
+        d = res.get("dispatch") or {}
+        p = self.piles[top["pile_id"]]
+        reason = d["reason"] if d.get("pile_id") == top["pile_id"] and d.get("reason") else \
+            f"highest acoustic priority ({p['priority']}) among unvisited piles: {p['why']}"
+        return opts, top["id"], reason
+
+    def _decide_dispatch(self, ranked, res):
+        opts, best, reason = self._options(ranked, res)
+        by, rationale, latency = "argmax", reason, 0.0
+        chosen = best
+        if self.decider is not None and len(opts) > 1:
+            ctx = {"t": round(self.t, 1), "current_pile": self.visited[-1], "visited": list(self.visited),
+                   "pile_budget": self.pile_budget, "budget_left": self.pile_budget - len(self.visited),
+                   "priority_min": self.priority_min,
+                   "pings": [{"id": c["id"], "pile_id": c["pile_id"], "status": c["status"], "p_mass": c["p_mass"]}
+                             for c in self.done_cands],
+                   "piles": [{k: p[k] for k in ("id", "status", "priority", "why")} for p in self.piles.values()],
+                   "fleet": [{"id": p["id"], "battery": p["battery"], "state": p["state"]} for p in self.flight.poses()]}
+            t0 = time.time()
+            try:
+                out = self.decider(ctx, opts) or {}
+                ids = {o["id"] for o in opts}
+                if out.get("choice") in ids:
+                    chosen, by = out["choice"], str(out.get("by", "decider"))
+                    rationale = str(out.get("rationale") or reason)
+                else:
+                    by, rationale = "fallback", f"decider returned invalid choice {out.get('choice')!r}; argmax: {reason}"
+            except Exception as e:                       # noqa: BLE001  (never let the agent stall the mission)
+                by, rationale = "fallback", f"decider error {type(e).__name__}: {e}; argmax: {reason}"
+            latency = (time.time() - t0) * 1000
+        opt = next(o for o in opts if o["id"] == chosen)
+        self.decisions.append({"t": round(self.t, 1), "gate": "dispatch", "options": opts, "chosen": chosen, "by": by,
+                               "rationale": rationale, "latency_ms": round(latency, 1)})
+        if by != "argmax":
+            self._say(f"Decision ({by}, {latency:.0f} ms): {opt['action']} {opt['pile_id'] or ''} - {rationale}")
+        if opt["action"] == "stop":
+            return None, rationale if by != "argmax" else reason
+        return self.piles[opt["pile_id"]], rationale
 
     # ------------------------------------------------------------------ state.json
     def _write_pointcloud(self, pts):
@@ -434,6 +517,7 @@ class GridMission:
             "acoustic_clips": self.clips,
             "acoustic_agent": (self.last_acoustic or {}).get("agent"),
             "dispatch": self.dispatch,
+            "decisions": self.decisions,
         }
 
     def build_state(self):
@@ -482,11 +566,20 @@ def main(argv=None):
     ap.add_argument("--frames", action="store_true")
     ap.add_argument("--realtime", action="store_true")
     ap.add_argument("--speed", type=float, default=1.0)
+    ap.add_argument("--decider", choices=["none", "gemini"], default="none",
+                    help="dispatch-gate agent (agents.gemini_decider.make_decider); falls back to argmax")
     ap.add_argument("--quiet", action="store_true")
     a = ap.parse_args(argv)
     t0 = time.time()
+    decider = None
+    if a.decider == "gemini":
+        try:
+            from agents.gemini_decider import make_decider
+            decider = make_decider()
+        except Exception as e:                           # noqa: BLE001
+            print(f"gemini decider unavailable ({type(e).__name__}: {e}); using argmax", file=sys.stderr)
     m = GridMission(a.seed, a.start_pile, a.radar, a.out, a.frames, not a.quiet, a.realtime, a.speed,
-                    pile_budget=a.piles, priority_min=a.priority_min, acoustic=a.acoustic)
+                    pile_budget=a.piles, priority_min=a.priority_min, acoustic=a.acoustic, decider=decider)
     m.run()
     s = m.summary()
     print(f"done in {time.time() - t0:.1f} s wall, {m.t:.0f} s sim; visited {' -> '.join(s['visited'])}; "

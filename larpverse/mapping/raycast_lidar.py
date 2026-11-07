@@ -36,12 +36,26 @@ class LidarConfig:
     max_range: float = MAX_RANGE
     min_range: float = MIN_RANGE
     range_sigma: float = RANGE_SIGMA
+    non_repetitive: bool = True   # Livox-style: beams jitter within their line/step every sweep
 
-    def directions(self):
-        """Unit beam directions in the sensor frame, (channels * n_az, 3)."""
-        el = np.radians(np.linspace(self.el_min_deg, self.el_max_deg, self.channels))
-        az = np.radians(np.arange(0.0, 360.0, self.az_step_deg))
-        E, A = np.meshgrid(el, az, indexing="ij")
+    @property
+    def el_step_deg(self):
+        return (self.el_max_deg - self.el_min_deg) / (self.channels - 1)
+
+    def directions(self, rng=None):
+        """Unit beam directions in the sensor frame, (channels * n_az, 3).
+
+        A fixed fan paints the same rings on the ground every sweep, which biases point-to-point
+        ICP towards zero motion.  With ``non_repetitive`` (and an ``rng``) every beam is jittered by
+        up to one line / one azimuth step each sweep, like the non-repetitive scan of a Livox
+        Mid-360 (a common drone LiDAR), which removes that aliasing."""
+        C, n_az = self.channels, int(round(360.0 / self.az_step_deg))
+        el = np.linspace(self.el_min_deg, self.el_max_deg, C)[:, None] + np.zeros((1, n_az))
+        az = np.arange(n_az)[None, :] * self.az_step_deg + np.zeros((C, 1))
+        if self.non_repetitive and rng is not None:
+            el = np.minimum(el + rng.uniform(0, 1, el.shape) * self.el_step_deg, self.el_max_deg)
+            az = az + rng.uniform(0, 1, az.shape) * self.az_step_deg
+        E, A = np.radians(el), np.radians(az)
         return np.stack([np.cos(E) * np.cos(A), np.cos(E) * np.sin(A), np.sin(E)], -1).reshape(-1, 3)
 
 
@@ -230,14 +244,14 @@ class SceneGeometry:
         n_az = int(round(360.0 / cfg.az_step_deg))
         e0, de = np.radians(cfg.el_min_deg), np.radians(cfg.el_max_deg - cfg.el_min_deg) / (C - 1)
         da = np.radians(cfg.az_step_deg)
-        c0 = np.clip(np.floor((el - rho - e0) / de), 0, C).astype(int)
-        c1 = np.clip(np.ceil((el + rho - e0) / de), -1, C - 1).astype(int)
-        el_ext = np.minimum(np.maximum(np.abs(el - rho), np.abs(el + rho)), np.radians(89.9))
+        c0 = np.clip(np.floor((el - rho - e0) / de) - 1, 0, C).astype(int)
+        c1 = np.clip(np.ceil((el + rho - e0) / de) + 1, -1, C - 1).astype(int)
+        el_ext = np.minimum(np.maximum(np.abs(el - rho - de), np.abs(el + rho + de)), np.radians(89.9))
         sr = np.sin(rho) / np.cos(el_ext)
         full = sr >= 1
         raz = np.arcsin(np.clip(sr, 0, 1))
-        a0 = np.where(full, 0, np.floor((az - raz) / da)).astype(int)
-        a1 = np.where(full, n_az - 1, np.ceil((az + raz) / da)).astype(int)
+        a0 = np.where(full, 0, np.floor((az - raz) / da) - 1).astype(int)
+        a1 = np.where(full, n_az - 1, np.ceil((az + raz) / da) + 1).astype(int)
         a1 = np.minimum(a1, a0 + n_az - 1)
         nc = np.maximum(c1 - c0 + 1, 0)
         na = a1 - a0 + 1
@@ -254,7 +268,8 @@ class SceneGeometry:
 
 def simulate_scan(geom: SceneGeometry, pose, cfg: LidarConfig, rng, dirs=None):
     """One sweep. Returns (points_sensor (n,3) float64, points_world_truth (n,3)) of valid returns."""
-    dirs = cfg.directions() if dirs is None else dirs
+    if dirs is None:
+        dirs = cfg.directions(rng)
     R, o = pose[:3, :3], pose[:3, 3]
     D = dirs @ R.T
     t = np.minimum(geom.cast_terrain(o, D, cfg.max_range), geom.cast_boxes(o, D, cfg.max_range, grid=(R, cfg)))
@@ -274,10 +289,9 @@ def simulate_orbit(scenario: Scenario, pile_name: str, seed=0, n_scans=300, cfg:
     gt, ts = orbit_poses((p.x, p.y), n_scans, radius, altitude, rate_hz, revs, seed=seed)
     odom = noisy_odometry(gt, seed=seed + 1, rate_hz=rate_hz)
     rng = np.random.default_rng(seed + 2)
-    dirs = cfg.directions()
     scans, truth_world = [], []
     for T in gt:
-        loc, wld = simulate_scan(geom, T, cfg, rng, dirs)
+        loc, wld = simulate_scan(geom, T, cfg, rng)
         scans.append(loc)
         truth_world.append(wld.astype(np.float32))
     return {"scans": scans, "truth_world": truth_world, "gt_poses": gt, "odom_poses": odom,

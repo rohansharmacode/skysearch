@@ -12,7 +12,7 @@ Agree on these before anyone writes integration code. Change them only by editin
 
 ## Ground-truth boundary
 
-Only `sim/radar_model.py` (observation generator) and `sim/evaluate.py` may read the hidden target position (`world.targets`). The planner, localiser and dashboard must never import or receive it. The evaluator writes its own file, `eval.json`, which is never served by the dashboard.
+Only `sim/radar_model.py` (observation generator) and `sim/evaluate.py` may read the hidden target position (`world.targets`). In grid mode the same holds for `GridWorld.targets` and `Scenario.truth` (see v1.1 below). The planner, localiser and dashboard must never import or receive it. The evaluator writes its own file, `eval.json`, which is never served by the dashboard.
 
 ## Coordinator to drone: commands
 
@@ -111,3 +111,65 @@ Written by `python -m acoustic.run` to `dashboard/data/acoustic.json` (atomic wr
 - `dismissed_nonhuman`: a source was heard but judged non-human (dog, generator, debris). The pile is still **not cleared**.
 - `no_signal_not_cleared`: nothing heard. Silence is not absence; priority stays at a small baseline (8).
 - Priority is a triage order, not proof of a person.
+
+## v1.1 grid extensions (`state.json` from `sim/grid_mission.py`)
+
+The 3x3 rubble-grid mission writes the same `larpverse.state/v1` document (all v1 fields keep their meaning, so a v1 reader still works) plus the fields below. Site frame and pile names come from `sim/scenario.py` (columns A/B/C west to east, rows 1/2/3 north to south, staging area south).
+
+Changes to v1 fields in grid mode:
+
+- `site.bounds` is `SITE_BOUNDS` = `[-36, -54, 36, 36]`; `heightmap` covers the whole site (`Scenario.heightmap(0.5)`, 144 x 180 cells); `pointcloud.bin` is one site-wide cloud.
+- `radar_candidates` accumulate across piles. Each has `"pile_id"` and an id prefixed with it (`"A2-R1"`). Only stationary candidates are kept for a finished pile: the firm one(s), or else the top `insufficient_evidence` mode.
+- `scans` accumulate across piles (scan ids keep counting: `s1`, `s2`, ...), each with `"pile_id"`. `landing_sites` = used sites of finished piles + all sites of the active pile, ids prefixed (`"A3-L4"`), each with `"pile_id"`; `next_scan.site_id` uses the same prefix.
+- `belief` is for the active pile only (30 m window, its own `origin`/`w`/`h`, plus `"pile_id"`). It is `null` between piles (listening, dispatch, return).
+- `acoustic` holds the human-like clips (human >= 0.4) as v1 acoustic observations (`confidence` = reliability), plus `"pile_id"`.
+- `phase` adds `dispatch` (fleet in transit to the next pile) and `return` (flying back to the pads). `acoustic` means landed and listening.
+- `drones[].state`: `docked | flying | hovering | descending | scanning | landed | listening`. `listening` = landed, rotors off, during the listening window.
+
+New fields:
+
+```jsonc
+{
+  "mission": { "kind": "grid", "seed": 7, "start_pile": "A2", "pile_budget": 3, "priority_min": 20,
+               "visited": ["A2", "A3"], "active_pile": "A3",          // null while returning / done
+               "stage": "pile",                                        // pile | listen | return | done
+               "acoustic_source": "real-venv",                         // real | real-venv | real-cached | stub | custom
+               "listen_ends": null,                                    // t when the current listen ends
+               "in_transit": { "t": 122.0, "from_pile": "A2", "to_pile": "A3", "reason": "..." } },  // or null
+  "staging": { "xy": [0.0, -47.0], "pads": [[-2.6, -49.0], [0.0, -49.0], [2.6, -49.0]] },
+  "piles": [ { "id": "A3", "xy": [-20.6, -22.9],
+               "status": "scanning",   // unvisited | surveying | scanning | ping | lead | dismissed_nonhuman | no_signal_not_cleared
+               "priority": 77,         // acoustic priority 0-100, null if never ranked (start pile, unheard)
+               "radar_candidate_ids": ["A3-R1"],
+               "why": "Voice saying \"Help! ...\"; human 0.90, urgency 0.92, reliability 0.82." } ],
+  "acoustic_clips": [ { "id": "1-ac-A3", "listen": 1, "t": 122.0, "pile_id": "A3", "drone_id": "d3",
+                        "origin": [-25.3, -8.8],                     // listening drone xy (cone apex)
+                        "bearing_deg": 288.0, "width_deg": 20.0, "snr_db": 14.0,
+                        "class": "voice", "transcript": "Help! Can anyone hear me? ...",
+                        "class_scores": { "voice": 0.8, "...": 0.0 },
+                        "scores": { "human": 0.9, "urgency": 0.92, "reliability": 0.82 },
+                        "priority": 77, "rationale": "...", "by": "llm", "doa_agree": "3/3" } ],
+  "acoustic_agent": { "mode": "auto", "llm_calls": 0, "fallback": 3, "error": null },   // agent block of the last listen
+  "dispatch": [ { "t": 122.0, "from_pile": "A2", "to_pile": "A3", "reason": "Send the radar drones to A3: ..." },
+                { "t": 467.0, "from_pile": "B2", "to_pile": null, "reason": "pile budget (3) used" } ]
+}
+```
+
+Pile status rules (coordinator, never truth): the active pile is `surveying` then `scanning`; when its radar phase ends it becomes `ping` (a firm `candidate`), otherwise `lead` if its acoustic priority >= `priority_min`, else `no_signal_not_cleared`. Unvisited piles take the acoustic agent's status (`radar_ping` is shown as `lead`); a later silent listen never lowers an earlier lead's priority. Dispatch goes to the highest-priority unvisited pile at or above `priority_min` (default 20) until `pile_budget` (default 3) piles are visited; then the drones return to the pads. Silent piles stay **not cleared**.
+
+Ground-truth boundary in grid mode: `sim/grid_world.py` holds the victims (`GridWorld.targets`, generator-only, like `World.targets`); `sim/radar_model.py` and the stub in `sim/acoustic_grid.py` are the only non-eval readers. `sim/grid_mission.py` passes the scenario to the acoustic pipeline (whose scene synthesis is its own generator) but never reads `scenario.truth` itself.
+
+### Dispatch decisions (`decisions`, optional decider)
+
+At every dispatch gate (after a listen) the coordinator builds scored options and, if `GridMission(decider=...)` is given (CLI `--decider gemini` loads `agents.gemini_decider.make_decider()` lazily), calls `decider(context, options) -> {"choice": "o2", "rationale": str, "by": "gemini" | "fallback"}`. An unknown id or an exception falls back to the argmax option (highest-priority reachable unvisited pile at or above `priority_min`, else `stop`). Without a decider the argmax is used and recorded with `"by": "argmax"`.
+
+```jsonc
+"decisions": [ { "t": 122.0, "gate": "dispatch", "chosen": "o1", "by": "argmax", "latency_ms": 0.0,
+                 "rationale": "Send the radar drones to A3: ...",
+                 "options": [ { "id": "o1", "action": "dispatch",        // dispatch | rescan_current | stop
+                                "pile_id": "A3", "priority": 69, "travel_s": 31.4, "battery_after_min": 0.68,
+                                "evidence": "voice \"Help! ...\" (human 0.86, priority 69, fallback)",
+                                "flags": [] } ] } ]                       // below_threshold | nonhuman | silent | unreachable | no_firm_ping | pile_budget_used
+```
+
+`context` passed to the decider: `{t, current_pile, visited, pile_budget, budget_left, priority_min, pings: [{id, pile_id, status, p_mass}], piles: [{id, status, priority, why}], fleet: [{id, battery, state}]}`. `dispatch` options are only offered while pile budget is left; `rescan_current` (re-run the radar at the current pile) only when it has no firm ping and has not been rescanned.

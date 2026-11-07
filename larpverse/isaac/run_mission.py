@@ -56,6 +56,8 @@ def parse_args(argv=None):
     ap.add_argument("--render-fps", type=float, default=30.0, help="virtual frame rate for --dry-run")
     ap.add_argument("--no-keep-open", action="store_true", help="close the GUI when the mission ends")
     ap.add_argument("--quiet", action="store_true")
+    from isaac.photoreal import add_args as _photoreal_args     # --photoreal 1, --record DIR, --rtx pathtracing ...
+    _photoreal_args(ap)
     return ap.parse_args(argv)
 
 
@@ -216,6 +218,9 @@ def main(argv=None):
             app.update()
         n = scene.build(stage, sc, show_truth=a.show_truth)
         say(f"stage built: {n} rubble pieces")
+        if a.photoreal:                     # visual only; colliders keep the scenario's piece poses
+            from isaac import photoreal
+            photoreal.dress(stage, sc, a, say)
         if a.overlay in ("auto", "debug"):
             dd = compat.debug_draw()
             if dd is None:
@@ -251,7 +256,10 @@ def main(argv=None):
     cur = prev = as_dict(mission.build_state())
     steps, frame = 0, 0
     clock_v = 0.0
-    clock = (lambda: clock_v) if a.dry_run else time.monotonic
+    virtual = a.dry_run or bool(a.record)   # recording: fixed frame clock, so slow (path-traced) frames don't skip
+    if a.record:
+        a.speed = a.rec_speed
+    clock = (lambda: clock_v) if virtual else time.monotonic
     last_step = next_step = clock()
     tilt_f = {i: (0.0, 0.0) for i in ids}
     moved = {i: 0.0 for i in ids}
@@ -259,7 +267,17 @@ def main(argv=None):
     active = overlay.update(cur)
     last_frame_t = clock()
     finished_at = None
-    rdt_v = 1.0 / a.render_fps
+    rdt_v = 1.0 / (a.rec_fps if a.record else a.render_fps)
+    rigs = rec = None
+    if a.record and app is not None:
+        from isaac import photoreal
+        photoreal.set_renderer(a, say)
+        specs = [c.strip() for c in a.rec_cams.split(",") if c.strip()]
+        rigs = photoreal.Rigs(stage, [c for c in specs if c != "director"], surface)
+        cams = ([("director", cam.path)] if "director" in specs else []) + [(r["name"], r["path"]) for r in rigs.rigs]
+        rec = photoreal.Recorder(a.record, cams, a.rec_res, say)
+        for _ in range(10):
+            app.update()
 
     pending = {}                            # pile -> [new points not yet handed to the mission]
     fed = {}                                # pile -> points ingested
@@ -306,7 +324,7 @@ def main(argv=None):
             span = max(next_step - last_step, 1e-6)
             u = 1.0 if done else min(max((now - last_step) / span, 0.0), 1.0)
             poses = interp_drones(prev, cur, u)
-            rdt = max(now - last_frame_t, 1e-3) if not a.dry_run else rdt_v
+            rdt = max(now - last_frame_t, 1e-3) if not virtual else rdt_v
             last_frame_t = now
             dt_sim_cur = max(float(cur.get("t", 0)) - float(prev.get("t", 0)), 1e-3)
             for did, (x, y, z, yaw, st, vx, vy) in poses.items():
@@ -336,14 +354,22 @@ def main(argv=None):
 
             focus, spread = focus_from_state(cur, pile_xy, active, list(poses.values()))
             cam.update(rdt, focus, spread)
+            if rigs is not None:
+                rigs.update(poses, focus, rdt)
             overlay.tick(now)
             frame += 1
             if app is not None:
                 if not app.is_running():
                     break
                 app.update()
+                if rec is not None and frame % max(1, a.rec_every) == 0:
+                    rec.capture(frame // max(1, a.rec_every))
+                if virtual:
+                    clock_v += rdt_v
             else:
                 clock_v += rdt_v
+            if a.record and a.rec_stop_t and float(cur.get("t", 0)) >= a.rec_stop_t:
+                done = True
             if done:
                 finished_at = finished_at or now
                 if a.dry_run or a.headless or a.no_keep_open or now - finished_at > 2.0:

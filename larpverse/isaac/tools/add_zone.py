@@ -6,7 +6,8 @@ then appends one zone to <out>/tasking.json (a new revision): the drones' first 
 sound heard outside every zone), else the sector --sector. GridMission (run_mission --tasking auto) re-reads
 the file on its next step.
 
-    python isaac/tools/add_zone.py --out dashboard/data --at 116 [--sector T1b] [--radius 9]
+    python isaac/tools/add_zone.py --out dashboard/data --init T1a --site collapse --seed 7   # before the run
+    python isaac/tools/add_zone.py --out dashboard/data --at 116 [--sector T1b] [--radius 9]  # during it
 """
 from __future__ import annotations
 
@@ -53,8 +54,28 @@ def main(argv=None):
     ap.add_argument("--sector", default=None, help="fallback (or forced) sector id, e.g. T1b")
     ap.add_argument("--radius", type=float, default=9.0)
     ap.add_argument("--timeout", type=float, default=3600.0)
+    ap.add_argument("--init", default="", help="write revision 1 with these sectors' outlines (comma list) and exit")
+    ap.add_argument("--site", default="collapse")
+    ap.add_argument("--seed", type=int, default=7)
     a = ap.parse_args(argv)
     sp, tp = os.path.join(a.out, "state.json"), os.path.join(a.out, "tasking.json")
+    if a.init:
+        import sys
+        sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+        from sim.scenario import make_scenario
+        from sim.tasking import sector_outline
+        sc = make_scenario(a.seed, None, site=a.site) if a.site != "grid" else make_scenario(a.seed)
+        piles = {p.name: p for p in sc.piles}
+        zones = [{"id": n, "name": n, "priority": None, "note": "operator tasking before launch",
+                  "polygon": sector_outline(sc, piles[n], 2.0).round(2).tolist()} for n in a.init.split(",") if n]
+        os.makedirs(a.out, exist_ok=True)
+        for f in ("state.json",):                     # a stale state from an earlier run would fire --at at once
+            if os.path.exists(os.path.join(a.out, f)):
+                os.remove(os.path.join(a.out, f))
+        with open(tp, "w", encoding="utf-8") as f:
+            json.dump({"schema": "larpverse.tasking/v1", "revision": 1, "source": "operator", "zones": zones}, f)
+        print(f"[add_zone] {tp}: revision 1 with {[z['id'] for z in zones]}", flush=True)
+        return
     t0 = time.time()
     while True:
         st = _load(sp) or {}

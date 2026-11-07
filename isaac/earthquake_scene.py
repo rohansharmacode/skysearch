@@ -333,6 +333,15 @@ def rig_pose(rc, scen, pos3, Q):
             tgt = eye + 3.0 * fwd - np.array([0, 0, 0.5])
         else:
             back, up = (0.9, 0.22) if d.kind == "micro" else (2.2, 0.9)
+            mf = np.array([math.cos(h), math.sin(h)])            # forward in map coordinates (y down)
+            H_, W_ = b.clear.shape
+            for sd in np.linspace(0.1, back, 10):                # don't put the camera inside a wall or slab
+                q = d.pos - sd * mf
+                r_, c_ = int(np.clip(q[1] / scen.cfg.cell, 0, H_ - 1)), int(np.clip(q[0] / scen.cfg.cell, 0, W_ - 1))
+                if b.clear[r_, c_] < p[2] + up + 0.08:
+                    back = max(0.2, sd - 0.25)
+                    up = min(up, max(0.05, b.clear[r_, c_] - p[2] - 0.1))
+                    break
             eye = p - back * fwd + np.array([0, 0, up])
             tgt = p + 2.0 * fwd - np.array([0, 0, 0.1])
     if rc["eye"] is not None and rc["mode"] != "fpv":

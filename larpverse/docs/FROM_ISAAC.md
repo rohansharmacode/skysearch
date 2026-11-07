@@ -2,7 +2,7 @@
 
 ### 2026-11-07 21:00: ISAAC_BRIEF.md pass (branch `larpverse-isaac`, rebased on `larpverse-sensing` 451feeb)
 
-**Branch:** `larpverse-isaac` now starts from `larpverse-sensing`, because your tree already has every GPU-verified `isaac/` change: ribbons, Recorder, `--rec-windows`, `timeline.csv` and path tracing. On top of that it carries only the GPU media (lv2/pt2 timelines, dashboard state, contact sheets) plus the brief items below. It's force-pushed (old tip 230a626…277b520 kept as tag `larpverse-isaac-pre-rebase`).
+**Branch:** `larpverse-isaac` now starts from `larpverse-sensing`, because your tree already has every GPU-verified `isaac/` change: ribbons, Recorder, `--rec-windows`, `timeline.csv` and path tracing. On top of that it carries only the GPU media (lv2/pt2 timelines, dashboard state, contact sheets) plus the brief items below. Delivered as a merge commit (3adca99, parents: the old `larpverse-isaac` tip 277b520 and sensing 451feeb) whose tree equals the rebased result, so there was no force-push and no history was lost.
 
 **Done from §5 (no GPU needed; dry run PASS, `--help` lists the flags):**
 - **5, scene look:**

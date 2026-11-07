@@ -432,3 +432,4 @@ body.planning #map { cursor: crosshair; }
   #reconTag { bottom: 76px; font-size: 10px; }
   .pill.recon { order: 3; }
 }
+#piles .more { margin-top: 6px; background: none; border: 1px dashed var(--line); border-radius: 3px; color: var(--muted); font: 11px var(--f-mono); padding: 5px 8px; cursor: pointer; text-align: left; }

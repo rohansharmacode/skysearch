@@ -180,7 +180,7 @@ Written by `acoustic/run.py` (`ALGO_VERSION` in `acoustic/dsp.py`); every v1 fie
 
 ```jsonc
 {
-  "algo": "assoc-v7",                          // localisation/association version (cache keys should include it)
+  "algo": "assoc-v8",                          // localisation/association version (cache keys should include it)
   "clips": [ {
     "association": "confident",                // confident | ambiguous
     "association_conf": 0.97,                  // 0-1: bearing likelihood of this pile over all nine piles
@@ -262,3 +262,38 @@ When `tasking.json` has no active zones, the mission runs **recon** instead of w
     "why": "mound 6 m high; voice-like clip heard from it at a perch" }
 ]
 ```
+
+### Field decisions (v1.2.1, orchestrator, answering the dashboard agent)
+
+- **Unmapped heightmap cells:** producers write `heightmap.mask` (same shape as `heightmap.z`, `1` = mapped, `0` = not yet mapped). For unmapped cells the `z` value is `null`. Consumers accept either signal; `mask` wins if both exist.
+- **Sector outlines:** `piles[].polygon` (`[[x, y], …]`, site metres, CCW) is canonical on every site. `piles[].outline` is read as an alias only; don't emit it in new code.
+- **Drone tracks:** `drones[].track` is optional: the last ≤ 200 samples as `[x, y, z, t]`. Without it, consumers build tracks from successive frames.
+- **Colour of `radar_ping`:** red is reserved for radar-confirmed candidates in `state.pings`. An acoustic recommendation `radar_ping` ("send radar here") renders as a **teal** lead, the same as `lead`.
+- **`radar_reach_m`:** under the realistic penetration default it must be about 3 m (one metre of concrete or rubble costs about 10–20 dB). The figure of about 29 m from the seed-7 run is the legacy model and must not appear in demo state.
+
+## vitals (BL-20, additive; `sim/vitals.py`, details in docs/VITALS.md)
+
+Breathing-pattern features measured from the slow-time signal of a radar candidate's range bin. An AID for rescuers ordering the dig, never a diagnosis. Producer: `vitals.extract(...)` / `vitals.extract_from_obs(obs_debug)`. Attached (a) to each radar observation as `"vitals": [ {...} | null ]` aligned with `range_candidates`, and (b) to each ping/candidate as `"vitals": {...}` (best-`pattern_conf` scan consistent with that ping). Absent or `null` = not measured (e.g. `radar=model`).
+
+```jsonc
+"vitals": {
+  "version": "vitals-v1",
+  "rate_bpm": 31.6, "rate_ci": [29.8, 33.6],      // breaths/min (breath count if >= 3 clean intervals, else spectrum)
+  "cv": 0.21,                                    // robust breath-interval CV; null if < 3 intervals
+  "depth_rel": 0.6, "depth_rel_conf": 0.12,      // 1.0 = 5 mm p-p chest excursion; conf <= 0.3 ALWAYS (amplitude unreliable)
+  "apnea_events_per_min": 0.0,                   // pauses >= 10 s (also apnea_events, apnea_longest_s)
+  "movement": 0.03,                              // fraction of the window flagged movement / artefact
+  "sqi": 0.81, "duration_s": 60.0,               // signal quality 0-1; analysed window
+  "pattern": "rapid_shallow",                    // regular_calm | rapid_shallow | slow_deep | irregular_with_pauses | fast_small | unclear
+  "pattern_conf": 0.72, "pattern_reason": "rate 32/min > 30",
+  "triage_hint": "immediate",                    // immediate | immediate (check) | delayed (re-check) | delayed | assess
+  "triage_reason": "breathing over 30/min (START respiratory criterion for IMMEDIATE)",
+  "priority_weight": 0.88,                       // hint rank shrunk toward 'assess' (0.55) as pattern_conf falls
+  "caveats": ["aid for rescuers, not a diagnosis: ...", "..."]
+  // also: rate_spectral_bpm, rate_count_bpm, ie_ratio, apnea_events, apnea_longest_s, snr_db, n_breaths, demod
+}
+```
+
+- Dig order: `vitals.dig_score(v, p_mass, depth_m)` = `priority_weight x p_mass x clip(1 - depth_m / 4, 0.2, 1)`; no vitals -> the "assess" weight.
+- Pattern/hint claims need a >= 45-60 s dwell; a 20 s scan is rate-only (a caveat says so).
+- Wording rule (UI, decider, brief): "possible", "check", "aid"; never "diagnosis", "confirmed", or "injured" / "unconscious" / "child" as fact. `fast_small` = "fast, regular breathing (possible child, weak)".

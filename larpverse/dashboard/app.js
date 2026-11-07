@@ -47,7 +47,7 @@ const isGrid = () => (Array.isArray(S?.piles) && S.piles.length > 0) || !!S?.rec
 // UI state that survives re-renders
 let selListen = null;                                  // null = follow the latest listen
 const openRows = new Set(), openWhy = new Set(), decOpen = new Map();
-let dismOpen = false;
+let dismOpen = false, showAllPiles = false;
 let DIG = [], DIG_BY = new Map();
 let TK = null;                          // operator tasking + recon overlay (tasking.js)       // dig order (ranked pings), recomputed per state
 
@@ -86,6 +86,7 @@ function setState(s) {
   const first = !S || (S.demo && !s.demo) || (!!S.piles !== !!s.piles);
   const hk = s.heightmap ? `${s.heightmap.origin}|${s.heightmap.w}x${s.heightmap.h}|${s.heightmap.z.length}|${s.heightmap.z[(s.heightmap.z.length / 3) | 0]}|${s.heightmap.rev ?? ''}|${s.recon?.mapped_fraction ?? ''}` : null;
   if (hk !== hmKey) { baseImg = null; rubbleImg = null; hmKey = hk; }
+  for (const p of s.piles || []) if (!p.xy && polyOf(p)) { const P = polyOf(p); p.xy = [P.reduce((a, q) => a + q[0], 0) / P.length, P.reduce((a, q) => a + q[1], 0) / P.length]; }
   S = s; beliefImg = null;
   ensureCloud();
   renderSide();
@@ -256,11 +257,12 @@ function fit() {
 }
 
 let baseImg = null, beliefImg = null, rubbleImg = null;
-function gridImage(g, fn) {
-  const c = document.createElement('canvas'); c.width = g.w; c.height = g.h;
-  const x = c.getContext('2d'), im = x.createImageData(g.w, g.h);
-  for (let j = 0; j < g.h; j++) for (let i = 0; i < g.w; i++) {
-    const o = ((g.h - 1 - j) * g.w + i) * 4, [r, gg, b, a] = fn(i, j); // flip: row j=0 is south
+function gridImage(g, fn, maxCells = 200000) {   // large grids (640x640 collapse site) are sampled every `st` cells
+  const st = Math.max(1, Math.ceil(Math.sqrt(g.w * g.h / maxCells))), w = Math.ceil(g.w / st), h = Math.ceil(g.h / st);
+  const c = document.createElement('canvas'); c.width = w; c.height = h;
+  const x = c.getContext('2d'), im = x.createImageData(w, h);
+  for (let jj = 0; jj < h; jj++) for (let ii = 0; ii < w; ii++) {
+    const o = ((h - 1 - jj) * w + ii) * 4, [r, gg, b, a] = fn(Math.min(g.w - 1, ii * st), Math.min(g.h - 1, jj * st)); // flip: row j=0 is south
     im.data[o] = r; im.data[o + 1] = gg; im.data[o + 2] = b; im.data[o + 3] = a;
   }
   x.putImageData(im, 0, 0); return c;
@@ -477,6 +479,7 @@ function drawGridLayer(now) {
   }
   if (!layers.piles) return;
   const m = S.mission || {}, active = m.active_pile, short = view.scale < 6.5;
+  const vis = new Set(m.visited || []), pmin = m.priority_min ?? 20, many = (S.piles || []).length > 12, pings = new Set((S.radar_candidates || []).map(c => c.pile_id));
   // dispatch arrows: history faint, latest bright
   const ds = (S.dispatch || []).filter(d => d.to_pile && pileById(d.from_pile) && pileById(d.to_pile));
   ds.forEach((d, k) => {
@@ -486,14 +489,19 @@ function drawGridLayer(now) {
   if (layers.reach) for (const p of S.piles || []) drawReach(p, short);
   for (const p of S.piles || []) {
     const [x, y] = toPx(...p.xy), [lng0, sht, col, mapLng] = pst(p), lng = mapLng || lng0, txt = (short ? sht : lng).toUpperCase(), isActive = p.id === active;
+    const poly = !!polyOf(p), bx = shapeBox(p), [, topY] = toPx(p.xy[0], bx[3]), [lx0] = toPx(bx[0], 0), [lx1] = toPx(bx[2], 0);
+    if (lx1 < -40 || lx0 > W + 40 || topY > Hh + 40) continue;
     ctx.save();
-    ctx.beginPath(); ctx.arc(x, y, 8.5 * view.scale, 0, Math.PI * 2);
-    ctx.strokeStyle = col; ctx.globalAlpha = isActive ? 0.95 : 0.45; ctx.lineWidth = isActive ? 2.4 : 1.2;
+    if (poly) shapePath(ctx, p); else { ctx.beginPath(); ctx.arc(x, y, 8.5 * view.scale, 0, Math.PI * 2); }
+    ctx.strokeStyle = col; ctx.globalAlpha = isActive ? 0.95 : 0.45; ctx.lineWidth = isActive ? 2.4 : poly ? 1 : 1.2;
     ctx.setLineDash(p.status === 'no_signal_not_cleared' || p.status === 'unvisited' ? [4, 5] : []); ctx.stroke(); ctx.setLineDash([]);
-    if (isActive) { const k = (now / 1600) % 1; ctx.globalAlpha = 0.5 * (1 - k); ctx.beginPath(); ctx.arc(x, y, (8.5 + 3 * k) * view.scale, 0, Math.PI * 2); ctx.stroke(); }
+    if (isActive) { const k = (now / 1600) % 1; ctx.globalAlpha = 0.5 * (1 - k); poly ? shapePath(ctx, p, 0, 0, 3 * k * view.scale) : (ctx.beginPath(), ctx.arc(x, y, (8.5 + 3 * k) * view.scale, 0, Math.PI * 2)); ctx.stroke(); }
     ctx.restore();
+    // Declutter (many sectors): name blocks only for notable sectors, or any sector once it is big on screen.
+    const notable = isActive || vis.has(p.id) || ['ping', 'lead', 'radar_ping', 'scanning', 'surveying'].includes(p.status) || (p.priority ?? 0) >= pmin || pings.has(p.id);
+    if (!notable && many && (lx1 - lx0) < 90) continue;
     // name, priority badge, status chip (above the pile), placed as one fixed block
-    const ty = y - 8.5 * view.scale - 8;
+    const ty = (poly ? topY : y - 8.5 * view.scale) - 8;
     ctx.font = '600 15px "IBM Plex Sans Condensed", sans-serif'; const nw = ctx.measureText(p.id).width;
     ctx.font = '600 12px "IBM Plex Mono", monospace'; const pt = p.priority != null ? String(p.priority) : null, bw = pt ? ctx.measureText(pt).width + 10 : 0;
     ctx.font = '500 10.5px "IBM Plex Mono", monospace'; const cw = ctx.measureText(txt).width;
@@ -516,8 +524,28 @@ function drawGridLayer(now) {
 // Radar reach (piles[].radar_coverage): hatch the part of a searched pile the radar could not reach from the sites
 // it scanned from. The in-reach area is drawn as discs around those sensor positions, sized so the hatched share of
 // the pile matches 1 - radar_coverage; without radar_coverage the disc radius is the nominal reach (~3 m).
+// Sectors: a pile is a circle (3x3 grid, r 9 m) or, on mapped sites (site="collapse", mesh sites), a polygon
+// (piles[].polygon or piles[].outline, site metres). All map drawing goes through these helpers.
 const PILE_R = 9, hatchCv = document.createElement('canvas'), reachCache = new Map();
-const DISC = (() => { const o = []; for (let i = -PILE_R; i <= PILE_R; i += 0.75) for (let j = -PILE_R; j <= PILE_R; j += 0.75) if (i * i + j * j <= PILE_R * PILE_R) o.push([i, j]); return o; })();
+const polyOf = p => (Array.isArray(p.polygon) && p.polygon.length >= 3 ? p.polygon : Array.isArray(p.outline) && p.outline.length >= 3 ? p.outline : null);
+function shapeBox(p) {
+  const P = polyOf(p); if (!P) return [p.xy[0] - PILE_R, p.xy[1] - PILE_R, p.xy[0] + PILE_R, p.xy[1] + PILE_R];
+  let b = [Infinity, Infinity, -Infinity, -Infinity]; for (const [x, y] of P) b = [Math.min(b[0], x), Math.min(b[1], y), Math.max(b[2], x), Math.max(b[3], y)]; return b;
+}
+function shapePath(c2, p, ox = 0, oy = 0, grow = 0) {   // path in canvas px (minus an offset), optionally grown by `grow` px
+  const P = polyOf(p); c2.beginPath();
+  if (!P) { const [x, y] = toPx(...p.xy); c2.arc(x - ox, y - oy, PILE_R * view.scale + grow, 0, Math.PI * 2); return; }
+  const [cx, cy] = toPx(...p.xy);
+  P.forEach((q, k) => { let [x, y] = toPx(...q); if (grow) { const d = Math.hypot(x - cx, y - cy) || 1; x += (x - cx) / d * grow; y += (y - cy) / d * grow; } k ? c2.lineTo(x - ox, y - oy) : c2.moveTo(x - ox, y - oy); });
+  c2.closePath();
+}
+const inPolyXY = (x, y, P) => { let c = false; for (let i = 0, j = P.length - 1; i < P.length; j = i++) { const [xi, yi] = P[i], [xj, yj] = P[j]; if ((yi > y) !== (yj > y) && x < (xj - xi) * (y - yi) / (yj - yi) + xi) c = !c; } return c; };
+function shapeSamples(p) {
+  const P = polyOf(p), b = shapeBox(p), st = Math.max(0.5, Math.max(b[2] - b[0], b[3] - b[1]) / 24), o = [];
+  for (let x = b[0] + st / 2; x < b[2]; x += st) for (let y = b[1] + st / 2; y < b[3]; y += st)
+    if (P ? inPolyXY(x, y, P) : (x - p.xy[0]) ** 2 + (y - p.xy[1]) ** 2 <= PILE_R * PILE_R) o.push([x, y]);
+  return o;
+}
 function reachGeom(p) {
   const m = S.mission || {}, vis = m.visited || [];
   if (!vis.includes(p.id)) return null;
@@ -526,36 +554,38 @@ function reachGeom(p) {
   let pts = (S.scans || []).filter(o => o.pile_id === p.id && o.sensor_pose && !o.doppler_moving).map(o => [o.sensor_pose[0], o.sensor_pose[1]]);
   if (!pts.length) pts = (S.landing_sites || []).filter(l => l.pile_id === p.id && l.status === 'used').map(l => l.xy);
   if (!pts.length || (cov != null && cov >= 0.98)) return null;
-  const key = `${p.id}|${cov}|${pts.map(q => q.join(',')).join(';')}`;
+  const key = `${p.id}|${cov}|${pts.map(q => q.join(',')).join(';')}|${polyOf(p)?.length || 0}`;
   if (reachCache.has(key)) return reachCache.get(key);
-  const rel = pts.map(q => [q[0] - p.xy[0], q[1] - p.xy[1]]);
-  const covered = R => DISC.filter(([i, j]) => rel.some(([a, b]) => (i - a) ** 2 + (j - b) ** 2 <= R * R)).length / DISC.length;
+  const smp = shapeSamples(p), b = shapeBox(p), span = Math.hypot(b[2] - b[0], b[3] - b[1]);
+  const covered = R => smp.filter(([i, j]) => pts.some(([a, c]) => (i - a) ** 2 + (j - c) ** 2 <= R * R)).length / Math.max(1, smp.length);
   let R;
-  if (cov != null) { let lo = 0, hi = 2 * PILE_R + 12; for (let k = 0; k < 22; k++) { const mid = (lo + hi) / 2; covered(mid) < cov ? lo = mid : hi = mid; } R = (lo + hi) / 2; }
+  if (cov != null) { let lo = 0, hi = span + 12; for (let k = 0; k < 22; k++) { const mid = (lo + hi) / 2; covered(mid) < cov ? lo = mid : hi = mid; } R = (lo + hi) / 2; }
   else R = Math.min(m.radar_reach_beneath_m ?? 3, 3.5);
   const g = covered(R) > 0.98 ? null : { R, pts, beyond: cov != null ? 1 - cov : 1 - covered(R) };
-  reachCache.set(key, g); if (reachCache.size > 200) reachCache.clear();
+  reachCache.set(key, g); if (reachCache.size > 400) reachCache.clear();
   return g;
 }
 function drawReach(p, short) {
   const g = reachGeom(p); if (!g) return;
-  const s = view.scale, half = PILE_R * s + 2, size = Math.ceil(2 * half), [cx, cy] = toPx(...p.xy);
-  if (size < 8 || size > 4000) return;
-  hatchCv.width = size * dpr; hatchCv.height = size * dpr;
-  const h = hatchCv.getContext('2d'); h.setTransform(dpr, 0, 0, dpr, 0, 0); h.clearRect(0, 0, size, size);
-  h.save(); h.beginPath(); h.arc(half, half, PILE_R * s, 0, Math.PI * 2); h.clip();
+  const s = view.scale, bx = shapeBox(p), [x0, y0] = toPx(bx[0], bx[3]), [x1, y1] = toPx(bx[2], bx[1]);
+  const ox = Math.floor(x0) - 2, oy = Math.floor(y0) - 2, sw = Math.ceil(x1 - ox) + 2, sh = Math.ceil(y1 - oy) + 2, size = Math.max(sw, sh);
+  if (size < 8 || sw * sh > 9e6 || x1 < 0 || y1 < 0 || x0 > W || y0 > Hh) return;
+  hatchCv.width = sw * dpr; hatchCv.height = sh * dpr;
+  const h = hatchCv.getContext('2d'); h.setTransform(dpr, 0, 0, dpr, 0, 0); h.clearRect(0, 0, sw, sh);
+  h.save(); shapePath(h, p, ox, oy); h.clip();
   h.fillStyle = 'rgba(11,16,22,0.28)'; h.fillRect(0, 0, size, size);
   h.strokeStyle = 'rgba(205,218,228,0.42)'; h.lineWidth = 1; h.beginPath();
   for (let k = -size; k < size; k += 7) { h.moveTo(k, size); h.lineTo(k + size, 0); }
   h.stroke(); h.restore();
   h.globalCompositeOperation = 'destination-out'; h.fillStyle = '#000';
-  for (const q of g.pts) { const [px, py] = toPx(...q); h.beginPath(); h.arc(px - cx + half, py - cy + half, g.R * s, 0, Math.PI * 2); h.fill(); }
+  for (const q of g.pts) { const [px, py] = toPx(...q); h.beginPath(); h.arc(px - ox, py - oy, g.R * s, 0, Math.PI * 2); h.fill(); }
   h.globalCompositeOperation = 'source-over';
-  ctx.drawImage(hatchCv, cx - half, cy - half, size, size);
+  ctx.drawImage(hatchCv, ox, oy, sw, sh);
+  const [cx] = toPx(...p.xy);
   if ((S.zones || []).length) return;   // tasked zones carry the reach status in their own label
   const t = short ? 'beyond radar reach' : `beyond radar reach — acoustic leads only${p.radar_coverage != null ? ` (${f0(100 * g.beyond)}%)` : ''}`;
   ctx.font = FONT_L; const w = ctx.measureText(t).width;
-  qLabel(t, cx - w / 2, cy + PILE_R * s + 15, '#c3d0d9', 'rgba(11,16,22,0.84)', 8, 'rgba(205,218,228,0.35)');
+  qLabel(t, cx - w / 2, y1 + 15, '#c3d0d9', 'rgba(11,16,22,0.84)', 8, 'rgba(205,218,228,0.35)');
 }
 function roundRect(x, y, w, h, r) { ctx.beginPath(); ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r); ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath(); }
 function scaleBar() {
@@ -684,6 +714,7 @@ function renderPiles() {
   const m = S.mission || {}, vis = [...new Set(m.visited || [])], done = m.stage === 'done', pmin = m.priority_min ?? 20;
   const visited = vis.map(pileById).filter(Boolean);
   const piles = S.piles || [], rest = piles.filter(p => !vis.includes(p.id)).sort((a, b) => (b.priority ?? -1) - (a.priority ?? -1) || a.id.localeCompare(b.id));
+  const CAP = 12, restShown = showAllPiles || rest.length <= CAP + 2 ? rest : rest.filter((p, k) => k < CAP || openRows.has(p.id)), restHidden = rest.length > CAP + 2 ? rest.length - (showAllPiles ? 0 : restShown.length) : 0;
   const topUnvisited = done ? null : rest.find(p => p.priority != null && p.priority >= pmin);
   $('pilesTitle').textContent = done ? 'Open leads for ground teams' : 'Pile priority';
   $('nPiles').textContent = `${vis.length}/${piles.length}`; $('nPiles').title = `${vis.length} of ${piles.length} piles searched by the drones`;   // R2-018
@@ -694,14 +725,15 @@ function renderPiles() {
       <span class="s">${p.priority ?? '—'}</span></div>`;
   };
   $('piles').innerHTML = (visited.length ? `<div class="sub">Searched by the drones</div>${visited.map(row).join('')}` : '')
-    + `<div class="sub">${done ? 'Not searched: ranked by acoustic priority' : 'Not yet searched: ranked by acoustic priority'}</div>${rest.map(row).join('')}`;
+    + `<div class="sub">${done ? 'Not searched: ranked by acoustic priority' : 'Not yet searched: ranked by acoustic priority'}</div>${restShown.map(row).join('')}`
+    + (restHidden ? `<button class="more" id="pilesMore">${showAllPiles ? 'Show fewer' : `+ ${restHidden} more sectors (nothing ranked above them; silent ≠ cleared)`}</button>` : '');
   const d = (S.dispatch || []).slice(-1)[0];
   $('dispatch').classList.toggle('summary', !!(done && m.summary)); $('dispatch').title = done && m.summary ? 'Click to expand' : '';
   $('dispatch').textContent = done && m.summary ? m.summary.replace(/^MISSION SUMMARY:\s*/, 'Mission summary: ')
     : !(S.decisions || []).length && d ? (d.to_pile ? `Dispatch ${d.from_pile} → ${d.to_pile}: ${d.reason}` : `${d.from_pile}: search loop ended (${d.reason})`) : '';
 }
 $('dispatch').addEventListener('click', () => $('dispatch').classList.toggle('open'));
-$('piles').addEventListener('click', e => { const r = e.target.closest('.row'); if (!r) return; const id = r.dataset.pile; openRows.has(id) ? openRows.delete(id) : openRows.add(id); r.classList.toggle('open'); });
+$('piles').addEventListener('click', e => { if (e.target.id === 'pilesMore') { showAllPiles = !showAllPiles; renderPiles(); return; } const r = e.target.closest('.row'); if (!r) return; const id = r.dataset.pile; openRows.has(id) ? openRows.delete(id) : openRows.add(id); r.classList.toggle('open'); });
 
 // Dispatch decisions (R1-023): options with flags, the chosen one highlighted, who decided.
 function renderDecisions() {

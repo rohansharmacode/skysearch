@@ -2,18 +2,20 @@
 
 *** PART 1 (``simulate_if`` and the Scene classes) IS A SYNTHETIC SIGNAL GENERATOR. ***
 It fabricates the complex intermediate-frequency (IF) samples a low-frequency UWB / FMCW radar
-would deliver after dechirping: a 1-3 GHz sweep (2 GHz bandwidth -> 7.5 cm range resolution),
-512 complex fast-time samples per sweep (unambiguous range 38.4 m, useful range about 20 m after
-rubble loss), 20 Hz slow-time frame rate and a 20 s dwell.  The scene it renders contains
+would deliver after dechirping: a 0.4-2.0 GHz sweep (1.6 GHz bandwidth -> 9.4 cm range resolution;
+the sub-1 GHz part is what penetrates concrete), 512 complex fast-time samples per sweep (unambiguous
+range 48 m), 20 Hz slow-time frame rate and a 20 s dwell.  The scene it renders contains
   * strong static clutter (rubble layers, ground, antenna leakage),
   * a breathing chest (4-8 mm at 0.2-0.33 Hz, with slight rate / amplitude irregularity),
-  * two-way attenuation through rubble (SNR falls with range and rubble path length),
+  * two-way attenuation through rubble: frequency-dependent concrete loss (~10 dB/m below 1 GHz,
+    ~20 dB/m above, FHWA rule of thumb) x solid fraction, power-averaged over the sweep
+    (``two_way_loss_db``; preset ``literature``) or the old flat 0.7 dB/m (preset ``legacy``),
   * thermal noise,
   * platform-motion artefacts scaled by (1 - quality): slow drift + band-limited jitter,
   * optionally a walking person (bulk range migration -> doppler_moving) and a periodic
     non-human source (e.g. a 1.2 Hz fan / machinery vibration).
-Real through-rubble propagation is NOT simulated (it is a scalar loss in dB per metre); the slides
-must say so.  The generator is told where its reflectors are by the caller (sim/radar_model.py,
+Real through-rubble propagation is NOT simulated (scattering, rebar, moisture, layering are folded into
+a per-metre loss along the heightmap path); the slides must say so. docs/RADAR_PENETRATION.md.  The generator is told where its reflectors are by the caller (sim/radar_model.py,
 the only module allowed to read hidden truth).  This file never imports the world.
 
 *** PART 2 (``process_if`` and friends) IS THE REAL DSP, KNOWN TO THE PLANNER SIDE. ***
@@ -70,7 +72,7 @@ class RadarParams:
 
     @property
     def range_res(self):
-        return C0 / (2.0 * self.bandwidth)          # 7.5 cm for 2 GHz
+        return C0 / (2.0 * self.bandwidth)          # 9.4 cm for 1.6 GHz
 
     @property
     def max_range(self):

@@ -91,7 +91,7 @@ class GridMission:
                  world=None, flight=None, sensor_factory=None, acoustic_fn=None, decider=None,
                  slam=False, slam_scans=SLAM_SCANS, slam_kw=None, slam_cache=SLAM_CACHE,
                  autonomous=True, mission_scans=None, dispatch_policy="acoustic", reserve=RESERVE, swap_s=SWAP_S,
-                 listen_s=None, revisit_max=2, penetration=None):
+                 listen_s=None, revisit_max=2, penetration=None, launch_pile=None):
         """``autonomous`` (default): keep searching until the mission scan budget (``mission_scans``, default
         24), the time limit or the open leads run out; battery swaps at the pads; open leads without a firm
         ping are revisited once. ``pile_budget`` caps pile visits (None = no cap; legacy mode uses 3).
@@ -114,7 +114,8 @@ class GridMission:
         # --- backends (Isaac swap points)
         self.scenario = make_scenario(seed, start_pile)
         # operator input; when not given, the scenario's suggested start (reported collapse) is used
-        self.start_pile = start_pile or self.scenario.public_dict()["start_pile"]
+        # ``launch_pile`` (evaluation): start somewhere chosen independently of where the scenario put people
+        self.start_pile = launch_pile or start_pile or self.scenario.public_dict()["start_pile"]
         self.world = world if world is not None else GridWorld(self.scenario)
         self.grid = self.world.grid
         pads = {f"d{i + 1}": tuple(xy) for i, xy in enumerate(DRONE_PADS)}

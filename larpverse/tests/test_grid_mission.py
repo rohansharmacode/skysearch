@@ -250,14 +250,17 @@ def test_evaluate_grid_report(tmp_path):
     from sim import evaluate_grid as eg
     rows = str(tmp_path / "rows")
     eg.main(["--seeds", "7", "--scans", "6", "--rows-dir", rows])
+    eg.main(["--seeds", "7", "--scans", "6", "--rows-dir", rows, "--start", "independent", "--policies", "acoustic"])
     out, md = tmp_path / "r.json", tmp_path / "e.md"
     eg.main(["--seeds", "7", "--scans", "6", "--rows-dir", rows, "--report", "--out", str(out), "--md", str(md)])
-    res = json.loads(out.read_text())
+    res = json.loads(out.read_text())["legacy:reported"]
     assert set(res["summary"]) == set(eg.POLICIES)
     for p, s in res["summary"].items():
         assert 1 <= s["pinged_total"] <= s["victims_total"]     # the start-pile victim is always pinged
     text = md.read_text()
     assert "| metric | acoustic | nearest | raster |" in text and "from the hidden truth" in text
+    assert "legacy` propagation, reported start" in text and "independent start" not in text   # incomplete: skipped
+    assert eg.independent_start(7) in eg.PILES
 
 
 def test_outvoted_trusted_scan_is_flagged_not_a_veto():

@@ -92,10 +92,11 @@ export function createTasking(app) {
     const S = app.S() || {}, out = [];
     for (const p of S.piles || []) {
       let poly = null;
-      if (Array.isArray(p.outline) && p.outline.length >= 3) poly = p.outline;
+      if (Array.isArray(p.polygon) && p.polygon.length >= 3) poly = p.polygon;
+      else if (Array.isArray(p.outline) && p.outline.length >= 3) poly = p.outline;
       else if (Array.isArray(p.pieces) && p.pieces.length >= 3) poly = grow(hull(p.pieces.map(q => q.xy || q.center || q)), 2);
       else { const dz = (S.zones || []).find(z => z.pile_id === p.id || z.name?.startsWith(p.id)); poly = dz?.polygon || circlePoly(p.xy, PILE_R); }
-      out.push({ name: `${p.id} rubble`, polygon: poly.map(q => [+(+q[0]).toFixed(2), +(+q[1]).toFixed(2)]), priority: null, status: 'tasked', note: p.outline ? 'rubble outline' : p.pieces ? 'hull of the pile pieces + 2 m' : `pile centre + ${PILE_R} m` });
+      out.push({ name: `${p.id} rubble`, polygon: poly.map(q => [+(+q[0]).toFixed(2), +(+q[1]).toFixed(2)]), priority: null, status: 'tasked', note: p.polygon || p.outline ? 'sector outline' : p.pieces ? 'hull of the pile pieces + 2 m' : `pile centre + ${PILE_R} m` });
     }
     if (!out.length) for (const pr of S.zone_proposals || []) out.push({ name: `${pr.id} ${pr.kind === 'rubble_mound' ? 'mound' : 'proposal'}`, polygon: pr.polygon, priority: null, status: 'tasked', note: pr.why || '' });
     return out;

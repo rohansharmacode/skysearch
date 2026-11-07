@@ -23,11 +23,11 @@ cd /workspace/isaaclab
 ## 3. Run the swarm in Isaac Sim, streamed
 ```bash
 cd /workspace/isaaclab
-./isaaclab.sh -p ~/skysearch/isaac/isaac_bridge.py --livestream 2 --viz kit
+./isaaclab.sh -p ~/skysearch/isaac/isaac_bridge.py --livestream 2 --viz kit --enable_cameras
 ```
 - Wait for `Simulation App Startup Complete`.
 - **Viewport:** open a new browser tab with the VS Code URL, changing the end to `/viewer`. You can also use Ctrl+Shift+P, then "Simple Browser: Show", then `/viewer/`. Keep only one viewer tab open.
-- **Mission control dashboard (port 8080):** try `<VS Code URL>/proxy/8080/`. This works if the launchable's VS Code is code-server; unverified.
+- **Mission control dashboard (port 8090):** `<VS Code URL>/proxy/8090/`. Port 8080 is taken by the launchable's code-server.
 - **If the dashboard won't load:** run the CPU dashboard on a laptop for the side panel. Or ask Brev to expose port 8080 (the custom-launchable settings allow extra port rules).
 
 ## 4. Record the 60-second video
@@ -36,7 +36,10 @@ Put the `/viewer` tab and the dashboard side by side and screen-record one conti
 ## If it isn't streaming by hour one
 Stop fighting it. Record the CPU dashboard, which has the same brain and the same buttons, and keep debugging Isaac in parallel.
 
-## Known risks in `isaac/isaac_bridge.py` (written for Isaac Sim 5.x, never run on a GPU yet)
+## Isaac Sim 6.0.1 port
+The launchable ships Isaac Sim 6.0.1 + Isaac Lab 3.0, not 5.x. `isaac_bridge.py` has been ported; see `docs/ISAAC6_API.md` for what works, what's broken, and the open black-viewport issue.
+
+## Original risk notes (Isaac Sim 5.x)
 - **Import paths:** expect to fix one or two (`isaacsim.core.api`, `isaacsim.sensors.camera`, semantics helpers). Each is used in one place.
 - **Camera orientation:** `[0, 90, 0]` should point straight down. Check one camera frame.
 - **Performance:** if it's slow, raise `--tree_stride` (default 2 keeps 1,250 trees).

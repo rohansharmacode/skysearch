@@ -26,8 +26,8 @@ def brev_cmd():
 
 def ssh_cmd():
     if shutil.which("brev") or os.name != "nt":
-        return ["ssh", "-o", "StrictHostKeyChecking=no"]
-    return ["wsl", "-e", "ssh", "-o", "StrictHostKeyChecking=no"]
+        return ["ssh", "-T", "-o", "StrictHostKeyChecking=no", "-o", "ConnectTimeout=20"]
+    return ["wsl", "-e", "ssh", "-T", "-o", "StrictHostKeyChecking=no", "-o", "ConnectTimeout=20"]
 
 
 def sh(args, check=False, capture=True):
@@ -72,7 +72,8 @@ def run(cmd):
 
 def busy():
     code, out = run("nvidia-smi --query-gpu=utilization.gpu --format=csv,noheader,nounits; "
-                    "pgrep -f 'isaac_bridge|isaaclab.sh|kit/kit' >/dev/null && echo ISAAC_RUNNING || true")
+                    # bracketed first letters stop pgrep -f matching this very ssh command line
+                    "pgrep -f '[i]saac_bridge|[i]saaclab.sh|[k]it/kit|[e]arthquake_scene' >/dev/null && echo ISAAC_RUNNING || true")
     if code != 0:
         return True, f"ssh failed ({out.strip()[:80]}); assuming busy"
     nums = [int(x) for x in re.findall(r"^\s*(\d+)\s*$", out, re.M)]

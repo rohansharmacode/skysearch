@@ -73,3 +73,28 @@ def test_proposals_contain_the_nine_piles(recon):
     assert all(len(q) == 3 for q in st["recon"]["path"]) and st["zone_proposals"] == props
     tk = proposals_to_tasking(props, top_k=4)
     assert [z.id for z in tk.zones] == [p["id"] for p in props[:4]] and tk.source == "auto-accepted-proposals"
+
+
+def test_heightmap_state_marks_unmapped_cells(recon):
+    _, _, rc, _, _ = recon
+    hm = rc.heightmap_state(every_s=0)
+    assert len(hm["z"]) == len(hm["mask"]) == hm["w"] * hm["h"]
+    assert all((m == 0) == (z is None) for z, m in zip(hm["z"], hm["mask"]))
+
+
+def test_large_site_path_and_standing_buildings():
+    from sim.recon import segment_mounds
+    big = (-160.0, -160.0, 160.0, 160.0)
+    assert path_coverage(coverage_path(big, 3, lidar_radius_m=25.0), big, radius_m=25.0) >= 0.9
+    res = 0.5
+    n = 240                                           # 120 m x 120 m synthetic block: one tower, one mound
+    X, Y = np.meshgrid((np.arange(n) + 0.5) * res, (np.arange(n) + 0.5) * res)
+    z = 0.02 * np.sin(X / 7.0)
+    tower = (np.abs(X - 30) < 9) & (np.abs(Y - 30) < 12)
+    z = np.where(tower, 22.0, z)
+    z = z + 6.0 * np.exp(-((X - 85) ** 2 + (Y - 80) ** 2) / 60.0) * (1 + 0.1 * np.sin(3 * X) * np.cos(3 * Y))
+    standing = []
+    mounds = segment_mounds(z, np.ones_like(z, bool), (0.0, 0.0), res, standing=standing)
+    assert len(standing) == 1 and standing[0]["height_m"] == pytest.approx(22.0, abs=0.5)
+    assert len(mounds) == 1 and points_in_polygon(85, 80, mounds[0]["polygon"])
+    assert not points_in_polygon(30, 30, mounds[0]["polygon"])

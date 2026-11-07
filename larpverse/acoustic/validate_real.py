@@ -1351,6 +1351,30 @@ def cmd_report(args):
     json.dump(summ, open(os.path.join(DATA, "summary.json"), "w"), indent=1, default=float)
     summ["code_version"] = VERSION
     summ["synth"] = synth_summary()
+    # other commits evaluated on the clean sets (VALIDATE_REV=<rev> run --only ...)
+    import hashlib
+    vers = {}
+    sdir = os.path.join(DATA, "code_snapshot")
+    for rev in sorted(os.listdir(sdir)) if os.path.isdir(sdir) else []:
+        d = os.path.join(sdir, rev, "acoustic_snap")
+        if os.path.exists(os.path.join(d, "models.py")):
+            h = hashlib.sha1()
+            for f in ("models.py", "agent.py"):
+                h.update(open(os.path.join(d, f), "rb").read())
+            vers[h.hexdigest()[:8]] = rev
+    man = {c["id"]: c for c in json.load(open(MANIFEST))}
+    summ["versions"] = {}
+    for hsh, rev in vers.items():
+        path = os.path.join(DATA, f"results-{hsh}.jsonl")
+        if not os.path.exists(path):
+            continue
+        rr = []
+        for line in open(path):
+            r = json.loads(line)
+            r["human_score"] = r.pop("human")
+            rr.append(dict(man[r["id"]], **r))
+        summ["versions"][rev] = {g: detection([r for r in rr if r["set"] == g]) for g in ("esc", "so", "fv")
+                                 if any(r["set"] == g for r in rr)}
     print(f"code under test: acoustic/models.py + agent.py sha1 {VERSION}; {len(rows)} clips")
     print_tables(summ)
     if args.plot:
@@ -1393,6 +1417,13 @@ def print_tables(summ):
         if g in summ["fv_compare"]:
             print(f"- {g} share flagged [ours, F.V., n]: {summ['fv_compare'][g]['by_label']}")
     print("\n## 'help' keyword on teammate voice clips:", json.dumps(summ["fv_keywords"], indent=1))
+    if summ.get("versions"):
+        print("\n## Code versions on the clean sets (agent P / R / F1, AUC; per-label share flagged)")
+        for rev, dd in summ["versions"].items():
+            for g, d in dd.items():
+                a = d["agent"]
+                print(f"- {rev} {g}: {_f(a['precision'])} / {_f(a['recall'])} / {_f(a['f1'])}, AUC {_f(d['auc_priority'])}; "
+                      + ", ".join(f"{k} {v['flag_agent']:.2f}" for k, v in d["by_label"].items()))
     if summ.get("synth"):
         print("\n## Synthetic head-to-head (A = our 3-drone scenes, B = teammate's 1-array scenes)")
         print("| family / level | pipeline | scenes | human recall | voice recall | flags | precision | false/scene | "

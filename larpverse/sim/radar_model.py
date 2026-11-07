@@ -19,10 +19,17 @@ and a moving distractor that yields separate ``doppler_moving`` observations.
 """
 from __future__ import annotations
 
+import os
+
 import numpy as np
 
 from . import acoustic_model, radar_dsp
 from .sensor_model import SCAN_DWELL_S, detection_prob, range_sigma, rubble_path, scan_quality
+
+
+# The physio chest waveform (5 mm peak-to-peak for a calm adult, ~3 mm when rapid and shallow) is ~3x
+# smaller than the legacy sinusoid (4-8 mm amplitude): with it on, seed 7 loses its pings. Kept switchable.
+PHYSIO_WAVEFORM = os.environ.get("LARPVERSE_PHYSIO", "0") == "1"
 
 
 class ObservationGenerator:
@@ -162,7 +169,11 @@ class DspObservationGenerator(ObservationGenerator):
             amp = radar_dsp.reflection_amplitude(r, path, radar_dsp.CHEST_RCS_DB)
             hz = float(self._buried["breathing_hz"])
             mm = float(rng.uniform(4.0, 8.0))
-            scene.breathers.append(radar_dsp.Breather(r, amp, hz, mm, irregularity=0.03))
+            phys = None
+            if PHYSIO_WAVEFORM:          # breath-by-breath pattern (sim/physio.py); off until its SNR is agreed
+                from .physio import physio_from_breathing_hz
+                phys = self._buried.get("physio") or physio_from_breathing_hz(hz)
+            scene.breathers.append(radar_dsp.Breather(r, amp, hz, mm, irregularity=0.03, physio=phys))
             if rng.uniform() < 0.22:   # multipath copy of the chest return, delayed 1-3 m, weaker
                 scene.breathers.append(radar_dsp.Breather(r + float(rng.uniform(1.0, 3.0)), amp * float(rng.uniform(0.3, 0.5)),
                                                           hz, mm, irregularity=0.03))

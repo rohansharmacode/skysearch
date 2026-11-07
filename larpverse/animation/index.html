@@ -1,4 +1,5 @@
 <meta charset="utf-8">
+<link rel="icon" href="data:,">
 <title>Larpverse Mission Concept</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -18,7 +19,7 @@
   --cone: #ffe14a;
   --detect: #ff4545;
   --coord: #6fd36f;
-  --drone: #ef5350;
+  --drone: #e4ebf0;
   --f-display: "IBM Plex Sans Condensed", "Arial Narrow", system-ui, sans-serif;
   --f-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
 }
@@ -98,7 +99,7 @@ body { background: var(--ink); color: var(--fg); font-family: var(--f-display); 
     <div id="caption"></div>
   </div>
   <div class="hud" id="layers">
-    <button class="tog" data-k="lidar" aria-pressed="true" style="--c: var(--lidar)"><i></i>LiDAR / SLAM</button>
+    <button class="tog" data-k="lidar" aria-pressed="true" style="--c: var(--lidar)"><i></i>LiDAR map</button>
     <button class="tog" data-k="radar" aria-pressed="true" style="--c: var(--radar)"><i></i>Radar</button>
     <button class="tog" data-k="acoustic" aria-pressed="true" style="--c: var(--acoustic)"><i></i>Acoustic</button>
     <button class="tog" data-k="links" aria-pressed="true" style="--c: var(--coord)"><i></i>Coordinator links</button>
@@ -138,7 +139,7 @@ import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer
 const TAU = Math.PI * 2, D2R = Math.PI / 180;
 const T_END = 66;
 const LAYER_Y = 5.6;                     // height of the 2D search layer drawing
-const C = { lidar: 0x9b6bff, radar: 0xff9f43, acoustic: 0x22c3d6, cone: 0xffe14a, detect: 0xff4545, coord: 0x6fd36f, drone: 0xef5350, good: 0x4fd18b, bad: 0xff6464 };
+const C = { lidar: 0x9b6bff, radar: 0xff9f43, acoustic: 0x22c3d6, cone: 0xffe14a, detect: 0xff4545, coord: 0x6fd36f, drone: 0xdfe6ec, good: 0x4fd18b, bad: 0xff6464 };
 const CHAPTERS = [
   { name: 'Deploy', t0: 0, t1: 7 },
   { name: 'LiDAR survey', t0: 7, t1: 17 },
@@ -388,7 +389,7 @@ beliefs.push(belief(scans.slice(0, 4)));
 const finalModes = modes(beliefs[4]);
 const EST = finalModes[0];
 const [cxx, cxz, czz] = cov(beliefs[4], EST);
-const EST_DEPTH = TRUTH.T.depth + 0.12;  // depth from 3D range residual (synthetic, display only)
+const EST_DEPTH = 1.5;  // nominal depth, as the live system reports it (depth_source "nominal": assumed, not measured)
 const EST_SURF = hg(Math.round((EST.x - HG.o) / HG.res), Math.round((EST.z - HG.o) / HG.res));
 
 // ---------- synthetic acoustic DoA (generator) + fusion ----------
@@ -573,7 +574,7 @@ let ellipseAB;
   for (let i = 0; i < 72; i++) { const u = i / 72 * TAU, x = a * Math.cos(u), z = b * Math.sin(u); pts.push({ x: x * Math.cos(ang) - z * Math.sin(ang), z: x * Math.sin(ang) + z * Math.cos(ang) }); }
   est.add(loop(pts, lineMat(C.detect, 0.95)));
 }
-const estLbl = label(`R1 · candidate · p ${EST.mass.toFixed(2)} · 0.27 Hz`, 'detect', est, [0, 0.5, 0]);
+const estLbl = label(`R1 · candidate search region · p ${EST.mass.toFixed(2)} · 0.27 Hz`, 'detect', est, [0, 0.5, 0]);
 // acoustic cones
 const cones = acoustic.map(o => {
   const g = new THREE.Group(); layer.add(g); const L = 24, a0 = (o.brg - o.w / 2) * D2R, a1 = (o.brg + o.w / 2) * D2R, pos = [];
@@ -600,7 +601,7 @@ const plumb = new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE
 plumb.computeLineDistances(); plumb.renderOrder = 30; depthG.add(plumb);
 const digRing = new THREE.Mesh(new THREE.RingGeometry(0.9, 1.05, 48).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: C.detect, side: THREE.DoubleSide, depthTest: false, transparent: true })); digRing.position.set(EST.x, EST_SURF + 0.15, EST.z); digRing.renderOrder = 30; depthG.add(digRing);
 const compass = (() => { const b = bearingDeg({ x: 0, z: 0 }, EST); return ['E', 'NE', 'N', 'NW', 'W', 'SW', 'S', 'SE'][Math.round(b / 45) % 8]; })();
-const depthLbl = label(`Dig here · ≈${EST_DEPTH.toFixed(1)} m below surface<br>${compass} flank · surface ${EST_SURF.toFixed(1)} m above ground`, 'detect', depthG, [EST.x, ESTY - 0.6, EST.z]);
+const depthLbl = label(`Dig here · depth ≈${EST_DEPTH.toFixed(1)} m (nominal, not measured)<br>${compass} flank · surface ${EST_SURF.toFixed(1)} m above ground`, 'detect', depthG, [EST.x, ESTY - 0.6, EST.z]);
 
 // ---------- radar waves, sound waves, links ----------
 const waveGeo = new THREE.SphereGeometry(1, 30, 10, 0, TAU, 0, 0.6);
@@ -615,7 +616,7 @@ const linkLines = drones.map(() => { const l = new THREE.Line(new THREE.BufferGe
 const f1 = v => v.toFixed(1);
 const CAPS = [
   [0, 'Three drones launch from the staging point. In the sim, flight is kinematic: collision-checked waypoints, no aerodynamics.'],
-  [7, 'Each drone sweeps a spinning LiDAR from 10 m. Every return becomes a point in one shared map of the site (SLAM).'],
+  [7, 'Each drone sweeps a spinning LiDAR from 10 m. Every return becomes a point in one shared map of the site (built from known drone poses; SLAM is optional and in progress).'],
   [17, 'Every 1 m cell is scored for slope, roughness and step height. Green cells are flat enough to land on. Flat geometry is not proof the surface is structurally safe.'],
   [19.5, 'The coordinator picks three green cells spread around the pile, because ranges from different directions localise better.'],
   [24, 'Landed and rotors off, so the platform is still. Each radar dwells for about 20 s (compressed here), looking for a respiration-like 0.1–0.5 Hz phase signal.'],
@@ -626,8 +627,8 @@ const CAPS = [
   [41.5, 'From the new angle, the range fits only one mode. The belief collapses to a single candidate search region with a 95% ellipse.'],
   [47, 'Rotors are off, so the microphones can hear. Each array estimates a direction of arrival for knocking: a yellow cone.'],
   [52, 'The cones overlap where radar saw no breathing signal. No detection is not proof nobody is there, so that area is queued for the next scan.'],
-  [55, 'The LiDAR map becomes the site model. The candidate sits about 1.7 m under the surface, so rescuers know where to dig and how deep.'],
-  [61, 'This is the operator dashboard view: red is a radar candidate region, yellow is an acoustic direction. Click a red dot for the LiDAR model and the depth ping.'],
+  [55, 'The LiDAR map becomes the site model. The candidate is drawn at a nominal depth of about 1.5 m (assumed, not measured yet), so rescuers know where on the pile to dig.'],
+  [61, 'This is the operator dashboard view: red is a radar candidate region, yellow is an acoustic direction. Click a red dot for the LiDAR model and the ping placed at its nominal depth.'],
 ];
 const LOG = [
   [0.4, 'Mission start · 3 drones · scan budget 5'],

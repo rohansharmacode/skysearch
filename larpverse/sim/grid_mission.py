@@ -54,6 +54,7 @@ SLAM_CACHE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file
 MISSION_SCANS = 24             # autonomous: radar scans for the whole mission (all piles, all drones)
 RESERVE = 0.25                 # every drone keeps this battery fraction; below it the fleet swaps packs
 SWAP_S = 60.0                  # battery swap time at the pads once all drones are docked
+VITALS_LOOK_S = 0.0            # 60 s in-place dwell per firm ping once the vitals hook is live (on hold)
 REVISIT_MIN_COVERAGE = 0.5     # revisit an open lead only if the radar can reach most of its top 2 m
 REVISIT_DISCOUNT = 0.5         # an open lead already scanned ranks at half its acoustic priority
 # radar_dsp presets: literature | legacy (docs/RADAR_PENETRATION.md). Default stays "legacy" so the seed-7
@@ -91,7 +92,7 @@ class GridMission:
                  world=None, flight=None, sensor_factory=None, acoustic_fn=None, decider=None,
                  slam=False, slam_scans=SLAM_SCANS, slam_kw=None, slam_cache=SLAM_CACHE,
                  autonomous=True, mission_scans=None, dispatch_policy="acoustic", reserve=RESERVE, swap_s=SWAP_S,
-                 listen_s=None, revisit_max=2, penetration=None, launch_pile=None, site="grid"):
+                 listen_s=None, revisit_max=2, penetration=None, launch_pile=None, site="grid", platform=None):
         """``autonomous`` (default): keep searching until the mission scan budget (``mission_scans``, default
         24), the time limit or the open leads run out; battery swaps at the pads; open leads without a firm
         ping are revisited once. ``pile_budget`` caps pile visits (None = no cap; legacy mode uses 3).
@@ -101,6 +102,11 @@ class GridMission:
             raise ValueError(f"dispatch_policy {dispatch_policy!r}")
         self.penetration = penetration or PENETRATION_DEFAULT
         radar_dsp.use_penetration(self.penetration)     # process-wide: generator, planner and coverage agree
+        rx = 0.0
+        if platform not in (None, "legacy_small"):
+            from .platform import get_platform, radar_rx_advantage_db
+            rx = radar_rx_advantage_db(get_platform(platform))
+        radar_dsp.use_rx_gain_db(rx)                    # R-PLAT-5: bigger receive aperture -> more SNR
         self.seed, self.radar, self.policy, self.scan_budget = seed, radar, policy, scan_budget
         self.out_dir, self.frames, self.verbose = out_dir, frames, verbose
         self.autonomous, self.dispatch_policy, self.reserve, self.swap_s = autonomous, dispatch_policy, reserve, swap_s
@@ -128,7 +134,13 @@ class GridMission:
         self.world = world if world is not None else GridWorld(self.scenario)
         self.grid = self.world.grid
         pads = {f"d{i + 1}": tuple(xy) for i, xy in enumerate(self.pads[:3])}
-        self.flight = flight if flight is not None else KinematicFlight(self.grid, starts=pads)
+        self.platform = platform           # sim.platform preset (None / "legacy_small": today's numbers)
+        self.platform_spec = None
+        if platform not in (None, "legacy_small"):
+            from .platform import get_platform
+            self.platform_spec = get_platform(platform)
+        self.flight = flight if flight is not None else KinematicFlight(
+            self.grid, starts=pads, platform=None if self.platform_spec is None else self.platform_spec)
         self.sensor_factory = sensor_factory or (lambda pw, s: make_generator(pw, s, radar))
         self.acoustic_fn = acoustic_fn
         self.decider = decider         # optional (context, options) -> {"choice", "rationale", "by"}
@@ -209,6 +221,9 @@ class GridMission:
                               centre=(cx, cy), survey_radius=SURVEY_RADIUS, scan_offset=self.n_scans, t0=self.t,
                               log=self.log, pile=name, owner=self)
         self.pm_t0 = self.t
+        self.pm.vitals_look_s = VITALS_LOOK_S
+        if self.platform_spec is not None:
+            self.pm.landing_kw["limits"] = self.platform_spec.landing_limits()
         self.pm.prior_obs = [o for o in self.done_scans if o.get("pile_id") == name] if revisit else []
         self._preload(self.pm)
         if self.slam:
@@ -443,6 +458,8 @@ class GridMission:
                      f"({100 * cov['radar_coverage_shallow']:.0f}% of its top 2 m) from the landing sites used; "
                      f"per-scan reach ≈{cov['radar_reach_m']:.1f} m of rubble directly beneath")
         res = pm.result
+        for c in firm:
+            self._attach_vitals(pm, c)
         if firm:
             c = firm[0]
             p["status"] = "ping"
@@ -470,6 +487,41 @@ class GridMission:
                       "and stream clips to the acoustic agent")
         else:
             self._gate(None)
+
+    def _attach_vitals(self, pm, c):
+        """Ping vitals from the radar's own output: the vitals-look scan (else the best supporting scan), the
+        range candidate nearest the ping's predicted range, depth term rescaled for the rubble path. Plus the
+        dig-order score (sim/vitals.dig_score). Nothing here is truth; absent vitals stay absent."""
+        try:
+            from .vitals import dig_score, with_rubble_path
+        except Exception:                            # noqa: BLE001  (vitals module in flux)
+            return
+        pt = np.array([c["xy"][0], c["xy"][1], c["z_est"]], float)
+        best = None
+        for o in pm.scans:
+            if o.get("doppler_moving") or not o.get("vitals") or o["scan_id"] not in c.get("evidence", []) + \
+                    [s["scan_id"] for s in pm.scans if s.get("vitals_look")]:
+                continue
+            ps = np.asarray(o["sensor_pose"][:3], float)
+            r = float(np.linalg.norm(pt - ps))
+            k = int(np.argmin([abs(rc - r) for rc in o["range_candidates"]]))
+            v = o["vitals"][k] if k < len(o["vitals"]) else None
+            if not v or abs(o["range_candidates"][k] - r) > 1.5:
+                continue
+            key = (bool(o.get("vitals_look")), v.get("sqi", 0.0))
+            if best is None or key > best[0]:
+                best = (key, o, v, r, ps)
+        depth = c.get("depth_m")
+        if best is None:
+            c["dig_score"] = dig_score(None, c["p_mass"], depth)
+            return
+        _, o, v, r, ps = best
+        v = dict(with_rubble_path(v, r, float(rubble_path(pm.grid, ps, pt))), scan_id=o["scan_id"])
+        c["vitals"] = v
+        c["dig_score"] = dig_score(v, c["p_mass"], depth)
+        self._say(f"Vitals at {c['id']} from {o['scan_id']}{' (60 s look)' if o.get('vitals_look') else ''}: "
+                  f"pattern {v.get('pattern')}, rate {v.get('rate_bpm')}/min, hint {v.get('triage_hint')} "
+                  f"(confidence {v.get('pattern_conf')}); dig score {c['dig_score']}. A triage aid for rescuers to check")
 
     def _radar_coverage(self, pm):
         """Share of the pile's rubble volume within radar reach of the landing sites actually scanned from.
@@ -626,8 +678,13 @@ class GridMission:
         self.stage = "return"
 
     # ------------------------------------------------------------------ dispatch gate (optional decider)
-    PILE_BATTERY = 0.16          # rough battery cost of one pile (survey + landings + scans + listen)
-    FLY_RATE = 0.0016            # battery fraction per second of flight (KinematicFlight)
+    @property
+    def FLY_RATE(self):            # battery fraction per second of flight (from the flight backend)
+        return float(getattr(self.flight, "fly_rate", 0.0016))
+
+    @property
+    def PILE_BATTERY(self):        # rough battery cost of one pile (survey + landings + scans + listen)
+        return 0.16 * self.FLY_RATE / 0.0016
 
     def _leg_s(self, a, b):
         """Rough flight time (s) between two xy points: cruise at 4 m/s plus climb and descent."""
@@ -952,6 +1009,8 @@ def main(argv=None):
                     help="auto: acoustic/ pipeline if importable or via .venv-audio, else the synthetic stub")
     ap.add_argument("--site", default="grid",
                     help="grid | weiguan | collapse | mesh:<path> (sim/scenario.make_scenario)")
+    ap.add_argument("--platform", default="legacy_small",
+                    help="sim/platform.py preset: legacy_small (today) | heavy_sar | industrial_sar")
     ap.add_argument("--penetration", choices=list(radar_dsp.PENETRATION_MODELS), default=PENETRATION_DEFAULT,
                     help="radar through-rubble model: literature (~3 m beneath) or legacy (optimistic 0.7 dB/m)")
     ap.add_argument("--piles", type=int, default=None, help="cap on pile visits (legacy loop default 3; autonomous: none)")
@@ -982,7 +1041,8 @@ def main(argv=None):
     m = GridMission(a.seed, a.start_pile, a.radar, a.out, a.frames, not a.quiet, a.realtime, a.speed,
                     pile_budget=a.piles, priority_min=a.priority_min, acoustic=a.acoustic, decider=decider,
                     slam=a.slam, slam_scans=a.slam_scans, autonomous=a.autonomous, mission_scans=a.scans,
-                    dispatch_policy=a.dispatch, penetration=a.penetration, site=a.site)
+                    dispatch_policy=a.dispatch, penetration=a.penetration, site=a.site,
+                    platform=a.platform)
     m.run()
     s = m.summary()
     print(f"done in {time.time() - t0:.1f} s wall, {m.t:.0f} s sim; visited {' -> '.join(s['visited'])}; "

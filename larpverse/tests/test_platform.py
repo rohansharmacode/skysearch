@@ -68,7 +68,7 @@ def test_lidar_config_from_spec_and_legacy_default():
     assert legacy.n_beams == 23040 and legacy.tilt_deg == 0 and np.allclose(legacy.mount(), np.eye(3))
     os1 = LidarConfig.from_spec(get_platform("heavy_sar"))
     assert os1.channels == 128 and os1.n_beams == 128 * 1024 and os1.pts_per_s == pytest.approx(1310720)
-    assert np.allclose(os1.mount() @ [0, 0, 1], [1, 0, 0])           # spin axis along body +x
+    assert np.allclose(os1.mount() @ [0, 0, 1], [2 ** -0.5, 0, 2 ** -0.5])   # spin axis pitched 45 deg forward
     q = LidarConfig.from_spec(get_platform("heavy_sar"), sim_fraction=0.1)
     sub = q.beam_subset(np.random.default_rng(0))
     assert len(sub) == q.sim_beams and np.all(np.diff(sub) > 0)

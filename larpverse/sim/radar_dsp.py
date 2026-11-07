@@ -53,8 +53,8 @@ class RadarParams:
     fs_slow: float = 20.0           # frame (slow-time) rate, Hz
     dwell: float = 20.0             # s
     # --- processing
-    resp_band: tuple = (0.1, 0.5)   # Hz, human respiration
-    oob_band: tuple = (0.7, 3.0)    # Hz, periodic-but-not-respiration region
+    resp_band: tuple = (0.1, 0.75)  # Hz, human respiration (6-45 breaths/min, incl. tachypnoea)
+    oob_band: tuple = (0.85, 3.0)   # Hz, periodic-but-not-respiration region
     min_range: float = 1.0          # m, ignore antenna leakage / ground bounce
     nfft_slow: int = 2048           # zero padded slow-time FFT
 
@@ -114,7 +114,13 @@ LEGACY_DB_PER_M = 0.7            # pre-review model: one flat one-way loss for a
 # a good scan, < 1 m at a 11 m stand-off, 10 m of rubble is hopeless. "legacy": the original flat 0.7 dB/m
 # (kept so the pre-review seed-7 demo can still be reproduced; it lets the radar see through 10+ m).
 PENETRATION_MODELS = ("literature", "legacy")
-_PEN = {"model": "legacy"}       # process default; GridMission / CLI select explicitly
+_PEN = {"model": "legacy", "rx_gain_db": 0.0}   # process defaults; GridMission / CLI select explicitly
+
+
+def use_rx_gain_db(db: float):
+    """Receive-aperture advantage over the legacy radar (sim.platform.radar_rx_advantage_db): raises every
+    reflector (clutter too) against thermal noise, i.e. SNR, not signal-to-clutter."""
+    _PEN["rx_gain_db"] = float(db)
 
 
 def use_penetration(model: str):
@@ -157,7 +163,7 @@ def reflection_amplitude(range_m, rubble_path_m=0.0, rcs_db=0.0, params: RadarPa
     """SYNTHETIC radar-equation amplitude: 1/R^2 spreading (amplitude) and the two-way rubble loss."""
     r = max(float(range_m), 1.0)
     loss_db = two_way_loss_db(float(rubble_path_m), params) if rubble_path_m else 0.0
-    return AMP_1M * 10 ** ((rcs_db - loss_db) / 20.0) / r ** 2
+    return AMP_1M * 10 ** ((rcs_db - loss_db + _PEN["rx_gain_db"]) / 20.0) / r ** 2
 
 
 # detection threshold of process_if: chest amplitude (dB re unit noise per IF sample) at which ~90% of scans
@@ -177,7 +183,7 @@ def reach_path_m(range_m, quality=0.9, params: RadarParams | None = None):
     in ~90% of scans of the given quality (0 when even free space is out of reach). Vectorised over range.
     Not ground truth: a property of the radar and the propagation model (planner, coverage map, scans)."""
     r = np.maximum(np.asarray(range_m, float), 1.0)
-    margin = 20 * np.log10(AMP_1M / r ** 2) + CHEST_RCS_DB - detect_threshold_db(quality)
+    margin = 20 * np.log10(AMP_1M / r ** 2) + CHEST_RCS_DB + _PEN["rx_gain_db"] - detect_threshold_db(quality)
     Ls = np.linspace(0.0, 8.0 if _PEN["model"] == "literature" else 60.0, 241)
     out = np.where(margin > 0, np.interp(margin, two_way_loss_db(Ls, params), Ls), 0.0)
     return out if np.ndim(range_m) else float(out)
@@ -197,6 +203,7 @@ class Breather:
     rate_hz: float = 0.25
     chest_mm: float = 6.0
     irregularity: float = 0.03      # fractional wander of rate / amplitude
+    physio: dict | None = None      # hidden breathing pattern (sim/physio.py); replaces the sinusoid when set
 
 
 @dataclass
@@ -272,6 +279,9 @@ def _diff_jitter(scene, params, rng):
 
 
 def _breath_displacement(b: Breather, params: RadarParams, rng):
+    if b.physio:                     # breath-by-breath pattern (rate, variability, pauses) from sim/physio.py
+        from .physio import chest_displacement
+        return chest_displacement(params.t_slow, b.physio, rng)
     t = params.t_slow
     wander = np.cumsum(rng.normal(size=t.size))
     wander = wander / max(np.abs(wander).max(), 1e-9)                   # random walk in [-1, 1]
@@ -622,7 +632,8 @@ def process_if(iq: np.ndarray, params: RadarParams | None = None, cfg: DspConfig
         if edge:
             conf *= 0.5
         conf *= float(np.clip(1.0 - (asym - 0.25) / 0.35, 0.0, 1.0))      # one-sided Doppler = bulk motion
-        cands.append({"bin": int(k), "range_m": r_ref, "confidence": conf, "breathing_hz": est["rate_hz"],
+        vit = None                    # vitals hook (sim/vitals.extract) on hold until its API settles
+        cands.append({"bin": int(k), "range_m": r_ref, "confidence": conf, "breathing_hz": est["rate_hz"], "vitals": vit,
                       "snr_db": float(snr_db), "asym": asym, "static_frac": static_frac, "peakiness": est["peakiness"], "band_ratio": est["band_ratio"],
                       "_disp": disp, "_filt": est["filtered"], "_f": est["f"], "_p": est["p"]})
     if moving is None:                  # slow walker: strong, one-sided Doppler inside the respiration band

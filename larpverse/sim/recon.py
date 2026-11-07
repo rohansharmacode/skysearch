@@ -32,17 +32,24 @@ from .tasking import (Tasking, Zone, as_poly, buffer_convex, clip_human, clip_po
                       points_in_polygon, polygon_area, rasterise)
 from .world import Grid
 
-LIDAR_RADIUS_M = 12.0          # ground swath radius of the down-looking LiDAR at recon altitude (conservative)
+LIDAR_RADIUS_M = 12.0          # ground swath radius of the down-looking LiDAR at recon altitude (small sites)
+LIDAR_RADIUS_MAX_M = 25.0      # large sites (320 m collapse site): higher legs, wider swath, fewer lanes
 LANE_OVERLAP = 0.8             # lane spacing = 2 * radius * overlap
 ALT_MARGIN_M = 13.0            # flight altitude above the highest mapped point (contract: about 12-15 m)
 PERCH_EVERY_M = 90.0           # path length between perch-and-listen rounds (per drone)
 RECON_LISTEN_S = 18.0          # rotors-off listening window at a perch (contract: about 15-20 s)
+PERCH_ROUNDS = 4               # large sites: about this many perch rounds per drone path (perch_every auto)
+RECON_RESERVE = 0.3            # a drone below this battery fraction flies back to its pad for a swap
+RECON_SWAP_S = 60.0
 PERCH_SPACING_M = 15.0         # perches of one round at least this far apart
 STREET_ABOVE_M = 1.0           # mound cells rise at least this far above street level
 MIN_MOUND_M2 = 20.0
 MIN_MOUND_H = 1.5
 SPLIT_M2 = 600.0               # components larger than this are split at their cores
 MERGE_GAP_M = 3.0              # fragments (< 60 m2) within this gap join their neighbour
+MAX_PROPOSAL_M2 = 1200.0       # still larger after core splitting -> k-means parts (collapse-site heaps)
+GROUND_WINDOW_M = 60.0         # local ground: grey opening window (wider than the widest wreck footprint)
+STANDING_MIN_H = 8.0           # standing-building test: roof at least this high above ground
 OUTLINE_MARGIN_M = 1.0
 
 
@@ -125,59 +132,201 @@ def street_level(z, seen, area=None):
     return float(np.percentile(z[sel], 40)) if sel.any() else 0.0
 
 
-def segment_mounds(z, seen, origin, res, area=None, above_m=STREET_ABOVE_M, min_m2=MIN_MOUND_M2,
-                   min_h=MIN_MOUND_H, split_m2=SPLIT_M2, merge_gap_m=MERGE_GAP_M, margin_m=OUTLINE_MARGIN_M):
-    """Rubble mounds in a (partly) mapped heightmap: [{polygon, area_m2, height_max_m, peak_xy, cells}]."""
+def ground_level(z, seen, res, area=None, window_m=GROUND_WINDOW_M):
+    """Local street level: grey opening of the mapped surface (2 m block minima, ``window_m`` window), so
+    sloping streets and a site full of buildings still get a sensible reference. Unmapped -> street level."""
     from scipy import ndimage as ndi
     street = street_level(z, seen, area)
-    hi = seen & (z - street > above_m)
+    f = max(1, int(round(2.0 / res)))
+    H, W = z.shape
+    h2, w2 = -(-H // f), -(-W // f)
+    pad = np.full((h2 * f, w2 * f), np.inf)
+    pad[:H, :W] = np.where(seen, z, np.inf)
+    low = pad.reshape(h2, f, w2, f).min(axis=(1, 3))
+    low = np.where(np.isfinite(low), low, street)
+    k = max(3, int(round(window_m / (f * res))))
+    g = ndi.maximum_filter(ndi.minimum_filter(low, size=k), size=k)
+    return np.repeat(np.repeat(g, f, 0), f, 1)[:H, :W]
+
+
+def min_rect_area(pts, pad=0.0):
+    """Area of the minimum-area enclosing rectangle of 2D points (rotating calipers over hull edges);
+    ``pad`` is added to each side length (cell size, when the points are cell centres)."""
+    hull = convex_hull(pts)
+    if len(hull) < 3:
+        return 0.0
+    best = np.inf
+    for a, b in zip(hull, np.roll(hull, -1, axis=0)):
+        e = b - a
+        n = np.hypot(*e)
+        if n < 1e-9:
+            continue
+        u = e / n
+        v = np.array([-u[1], u[0]])
+        pu, pv = hull @ u, hull @ v
+        best = min(best, (np.ptp(pu) + pad) * (np.ptp(pv) + pad))
+    return float(best)
+
+
+def kmeans_split(P, k, iters=20):
+    """Deterministic k-means (farthest-point init) labels for points P (N, 2)."""
+    C = [P[np.argmin(P[:, 0] + P[:, 1])]]
+    for _ in range(1, k):
+        d = np.min([np.hypot(*(P - c).T) for c in C], 0)
+        C.append(P[int(np.argmax(d))])
+    C = np.array(C, float)
+    for _ in range(iters):
+        lab = np.argmin(((P[:, None, :] - C[None]) ** 2).sum(-1), 1)
+        C = np.array([P[lab == j].mean(0) if (lab == j).any() else C[j] for j in range(k)])
+    return lab
+
+
+def standing_core(hc, m, res, min_h=STANDING_MIN_H):
+    """Standing-building test on one component (heights above ground ``hc``, mask ``m``): a tall, roof-flat,
+    rectangular top whose surroundings drop steeply (walls). Returns the roof mask or None (rubble)."""
+    from scipy import ndimage as ndi
+    hmax = float(hc[m].max())
+    if hmax < min_h:
+        return None
+    core = m & (hc >= 0.85 * hmax)
+    lab, n = ndi.label(core)
+    if n == 0:
+        return None
+    sizes = ndi.sum(np.ones_like(lab), lab, range(1, n + 1))
+    core = lab == (int(np.argmax(sizes)) + 1)
+    a = float(core.sum()) * res * res
+    if a < 40.0:
+        return None
+    gz = Grid((0.0, 0.0), res, hc.shape[1], hc.shape[0], hc.astype(np.float32))
+    slope, rough, *_ = patch_fields(gz)
+    inner = ndi.binary_erosion(core, iterations=2)
+    sel = inner if inner.sum() >= 10 else core
+    flat = np.median(slope[sel]) < 8.0 and np.median(rough[sel]) < 0.12
+    jj, ii = np.nonzero(core)
+    rect = a / max(min_rect_area(np.stack([ii * res, jj * res], 1), pad=res), 1e-9)
+    ring = ndi.binary_dilation(core, iterations=max(1, int(round(2.0 / res)))) & ~core
+    steep = ring.any() and float(np.median(hc[ring])) < 0.5 * hmax
+    return core if (flat and rect >= 0.7 and steep) else None
+
+
+def _outline(m, x0, y0, res, margin_m):
+    from scipy import ndimage as ndi
+    edge = m & ~ndi.binary_erosion(m)
+    jj, ii = np.nonzero(edge if edge.any() else m)
+    xs, ys = x0 + (ii + 0.5) * res, y0 + (jj + 0.5) * res
+    corners = np.concatenate([np.stack([xs + dx * res / 2, ys + dy * res / 2], 1) for dx in (-1, 1) for dy in (-1, 1)])
+    return buffer_convex(convex_hull(corners), margin_m, n_arc=8)
+
+
+def segment_mounds(z, seen, origin, res, area=None, above_m=STREET_ABOVE_M, min_m2=MIN_MOUND_M2,
+                   min_h=MIN_MOUND_H, split_m2=SPLIT_M2, max_m2=MAX_PROPOSAL_M2, merge_gap_m=MERGE_GAP_M,
+                   margin_m=OUTLINE_MARGIN_M, standing=None):
+    """Rubble mounds / collapsed lots in a (partly) mapped heightmap: [{polygon, area_m2, height_max_m,
+    peak_xy, cells}]. Cells rising ``above_m`` over the local ground (``ground_level``) form components;
+    standing buildings (``standing_core``) are cut out (their footprints appended to ``standing`` if a list
+    is given: obstacles, not zones) leaving their debris skirt; large components are split at their height
+    cores, still-oversized ones (> ``max_m2``) by k-means; fragments < 60 m2 join a neighbour within
+    ``merge_gap_m`` or are dropped if smaller than ``min_m2`` / lower than ``min_h``."""
+    from scipy import ndimage as ndi
+    ground = ground_level(z, seen, res, area)
+    hgt = np.where(seen, z - ground, 0.0)
+    hi = seen & (hgt > above_m)
     if area is not None:
         hi &= area
-    hi = ndi.binary_closing(ndi.binary_opening(hi, iterations=1), iterations=2) & seen
+    hi = ndi.binary_closing(ndi.binary_opening(hi, iterations=1), iterations=2) & seen & (hgt > 0.3)
     lab, n = ndi.label(hi, structure=np.ones((3, 3)))
     cell = res * res
-    comps = [lab == i for i in range(1, n + 1)]
-    # split large components at their cores (local height threshold), cells go to the nearest core
-    out = []
-    for m in comps:
-        if m.sum() * cell > split_m2:
-            hmax = float(z[m].max() - street)
-            core, nc = ndi.label(m & (z - street > above_m + 0.5 * (hmax - above_m)), structure=np.ones((3, 3)))
-            sizes = ndi.sum(np.ones_like(core), core, range(1, nc + 1)) * cell
-            keep = [i + 1 for i, s in enumerate(sizes) if s >= min_m2]
-            if len(keep) >= 2:
-                cores = np.isin(core, keep)
-                _, idx = ndi.distance_transform_edt(~cores, return_indices=True)
-                near = core[idx[0], idx[1]]
-                out += [m & (near == k) for k in keep]
-                continue
-        out.append(m)
-    # merge fragments into a neighbour within merge_gap_m, drop what is still too small or low
-    big = [m for m in out if m.sum() * cell >= 60.0]
-    small = [m for m in out if m.sum() * cell < 60.0]
+    pad = max(2, int(round((merge_gap_m + 2.0) / res)))
+    parts = []                                      # (slice_j, slice_i, mask) in cropped coordinates
+    for k, sl in enumerate(ndi.find_objects(lab), 1):
+        if sl is None:
+            continue
+        j0, j1 = max(0, sl[0].start - pad), min(z.shape[0], sl[0].stop + pad)
+        i0, i1 = max(0, sl[1].start - pad), min(z.shape[1], sl[1].stop + pad)
+        m = lab[j0:j1, i0:i1] == k
+        hc = hgt[j0:j1, i0:i1]
+        pieces = [m]
+        core = standing_core(hc, m, res) if m.sum() * cell >= 60.0 else None
+        if core is not None:
+            if standing is not None:
+                standing.append({"polygon": _outline(core, origin[0] + i0 * res, origin[1] + j0 * res, res, 0.0),
+                                 "height_m": round(float(hc[core].max()), 1)})
+            skirt = m & ~ndi.binary_dilation(core, iterations=max(1, int(round(1.5 / res))))
+            a = skirt.sum() * cell
+            pieces = []
+            if a >= min_m2:
+                jj, ii = np.nonzero(skirt)
+                kk = max(2, int(np.ceil(a / (0.5 * split_m2))))
+                labk = kmeans_split(np.stack([ii, jj], 1).astype(float), min(kk, max(1, len(ii) // 20)))
+                for q in range(labk.max() + 1):
+                    mm = np.zeros_like(skirt)
+                    mm[jj[labk == q], ii[labk == q]] = True
+                    pieces.append(mm)
+        out = []
+        for m2 in pieces:
+            a = m2.sum() * cell
+            if a > split_m2:
+                hmax = float(hc[m2].max())
+                cl, nc = ndi.label(m2 & (hc > above_m + 0.5 * (hmax - above_m)), structure=np.ones((3, 3)))
+                sizes = ndi.sum(np.ones_like(cl), cl, range(1, nc + 1)) * cell
+                keep = [q + 1 for q, sz in enumerate(sizes) if sz >= min_m2]
+                if len(keep) >= 2:
+                    _, idx = ndi.distance_transform_edt(~np.isin(cl, keep), return_indices=True)
+                    near = cl[idx[0], idx[1]]
+                    out += [m2 & (near == q) for q in keep]
+                    continue
+            out.append(m2)
+        for m2 in out:
+            a = m2.sum() * cell
+            if a > max_m2:
+                jj, ii = np.nonzero(m2)
+                labk = kmeans_split(np.stack([ii, jj], 1).astype(float), int(np.ceil(a / max_m2)))
+                for q in range(labk.max() + 1):
+                    mm = np.zeros_like(m2)
+                    mm[jj[labk == q], ii[labk == q]] = True
+                    parts.append((j0, i0, mm))
+            else:
+                parts.append((j0, i0, m2))
+    # merge fragments into a neighbour within merge_gap_m (cropped boxes, full-frame offsets)
+    big = [p for p in parts if p[2].sum() * cell >= 60.0]
+    small = [p for p in parts if p[2].sum() * cell < 60.0]
     gap = max(1, int(round(merge_gap_m / res)))
-    for m in small:
-        grown = ndi.binary_dilation(m, iterations=gap)
-        hit = [i for i, b in enumerate(big) if (grown & b).any()]
-        if hit:
-            big[hit[0]] = big[hit[0]] | m
+
+    def full_idx(p):
+        jj, ii = np.nonzero(p[2])
+        return jj + p[0], ii + p[1]
+
+    groups = [[b] for b in big]
+    boxes = []
+    for b in big:
+        jj, ii = full_idx(b)
+        boxes.append(set(zip(jj.tolist(), ii.tolist())))
+    for sm in small:
+        g = ndi.binary_dilation(np.pad(sm[2], gap), iterations=gap)
+        jj, ii = np.nonzero(g)
+        cells = set(zip((jj - gap + sm[0]).tolist(), (ii - gap + sm[1]).tolist()))
+        hit = next((q for q, bx in enumerate(boxes) if not bx.isdisjoint(cells)), None)
+        if hit is None:
+            groups.append([sm])
         else:
-            big.append(m)
-    xs = origin[0] + (np.arange(z.shape[1]) + 0.5) * res
-    ys = origin[1] + (np.arange(z.shape[0]) + 0.5) * res
+            groups[hit].append(sm)
     mounds = []
-    for m in big:
-        a = float(m.sum() * cell)
-        h = float(z[m].max() - street)
+    for grp in groups:
+        jj = np.concatenate([full_idx(p)[0] for p in grp])
+        ii = np.concatenate([full_idx(p)[1] for p in grp])
+        a = float(len(jj) * cell)
+        hv = hgt[jj, ii]
+        h = float(hv.max())
         if a < min_m2 or h < min_h:
             continue
-        jj, ii = np.nonzero(m)
-        corners = np.concatenate([np.stack([xs[ii] + dx * res / 2, ys[jj] + dy * res / 2], 1)
-                                  for dx in (-1, 1) for dy in (-1, 1)])
-        poly = buffer_convex(convex_hull(corners), margin_m, n_arc=8)
-        k = int(np.argmax(np.where(m, z, -np.inf)))
+        j0, i0 = jj.min(), ii.min()
+        m = np.zeros((jj.max() - j0 + 1, ii.max() - i0 + 1), bool)
+        m[jj - j0, ii - i0] = True
+        poly = _outline(m, origin[0] + i0 * res, origin[1] + j0 * res, res, margin_m)
+        k = int(np.argmax(hv))
         mounds.append({"polygon": poly, "area_m2": polygon_area(poly), "height_max_m": h,
-                       "peak_xy": (float(xs[k % z.shape[1]]), float(ys[k // z.shape[1]])), "cells": int(m.sum())})
+                       "peak_xy": (float(origin[0] + (ii[k] + 0.5) * res), float(origin[1] + (jj[k] + 0.5) * res)),
+                       "cells": int(len(jj))})
     return sorted(mounds, key=lambda d: (-d["peak_xy"][1], d["peak_xy"][0]))
 
 
@@ -227,8 +376,9 @@ def proposals_to_tasking(proposals, min_score=0.0, top_k=None, revision=0, sourc
 class Recon:
     """Drives the fleet through mapping, perch-and-listen and proposals over a FlightBackend."""
 
-    def __init__(self, source_grid, flight, bounds=None, aoi=None, pile_xy=None, lidar_radius_m=LIDAR_RADIUS_M,
-                 alt_margin_m=ALT_MARGIN_M, perch_every_m=PERCH_EVERY_M, listen_s=RECON_LISTEN_S, say=None, t0=0.0):
+    def __init__(self, source_grid, flight, bounds=None, aoi=None, pile_xy=None, lidar_radius_m=None,
+                 alt_margin_m=ALT_MARGIN_M, perch_every_m=None, listen_s=RECON_LISTEN_S, say=None, t0=0.0,
+                 reserve=RECON_RESERVE, swap_s=RECON_SWAP_S):
         self.src = source_grid                      # LiDAR stand-in: heightmap revealed within sensor range
         self.flight = flight
         g = source_grid
@@ -245,18 +395,27 @@ class Recon:
         self.z = np.zeros((self.h, self.w), np.float32)
         self.seen = np.zeros((self.h, self.w), bool)
         self.pile_xy = dict(pile_xy or {})
+        if lidar_radius_m is None:                 # auto: ~12 m on the 72 x 90 m grid, 25 m on a 320 m site
+            lidar_radius_m = float(np.clip(np.sqrt(self.area.sum() * self.res ** 2) / 7.0, LIDAR_RADIUS_M,
+                                           LIDAR_RADIUS_MAX_M))
         self.lidar_radius_m, self.alt_margin_m = lidar_radius_m, alt_margin_m
         self.perch_every_m, self.listen_s = perch_every_m, listen_s
         self.say = say or (lambda m: None)
         self.drones = list(flight.drones)
         self.paths = dict(zip(self.drones, coverage_path(self.bounds, len(self.drones), lidar_radius_m,
                                                          aoi=None if self.aoi is None else self.aoi.tolist())))
+        if perch_every_m is None:                  # 90 m on small sites; ~PERCH_ROUNDS rounds on large ones
+            perch_every_m = max(PERCH_EVERY_M, max(path_length(p) for p in self.paths.values()) / (PERCH_ROUNDS + 1))
+        self.perch_every_m, self.reserve, self.swap_s = perch_every_m, reserve, swap_s
+        self.swaps, self._swap_end = 0, {}
+        self._hm_state, self._hm_t = None, None
         self.cursor = {d: 0 for d in self.drones}
         self.since = {d: 0.0 for d in self.drones}
         self.last_xy = {}
-        self.mode = {d: "takeoff" for d in self.drones}   # takeoff | path | to_perch | perched | done
+        self.mode = {d: "takeoff" for d in self.drones}   # takeoff | path | to_perch | swap | done
         self.status = "mapping"                           # mapping | listening | proposing | done
-        self.perches, self.clips, self.proposals = [], [], []
+        self.perches, self.clips, self.proposals, self.standing = [], [], [], []
+        self.leg = {}                                     # drone -> {"to": [x, y], "alt": commanded altitude}
         self.round = None                                 # {"drones": [...], "listen_end": t or None}
         self.wants_listen = None                          # {drone_id: xy} when a listen window has ended
         self.alt = None
@@ -268,8 +427,9 @@ class Recon:
             flight.command({"drone_id": d, "type": "takeoff"})
         L = [path_length(p) for p in self.paths.values()]
         self.say(f"RECON: no search zones tasked yet -> mapping the site ({self._area_m2():.0f} m², "
-                 f"{len(self.drones)} strips, {np.mean(L):.0f} m of path per drone, LiDAR swath ±{lidar_radius_m:.0f} m, "
-                 f"altitude {self.alt:.1f} m = highest mapped point + {alt_margin_m:.0f} m); perch-and-listen every "
+                 f"{len(self.drones)} strips, {np.mean(L):.0f} m of path per drone (~{np.max(L) / 4.0 / 60:.0f} min at "
+                 f"4 m/s), LiDAR swath ±{lidar_radius_m:.0f} m, each leg flown {alt_margin_m:.0f} m above the tallest "
+                 f"mapped structure along it); perch-and-listen every "
                  f"{perch_every_m:.0f} m; satellite imagery is stale after a collapse, so the map starts empty")
 
     # ---------------------------------------------------------------- map
@@ -314,14 +474,60 @@ class Recon:
         return Grid(self.origin, self.res, self.w, self.h, z)
 
     def _update_alt(self):
+        """Site-wide reference: highest mapped point + margin (used for legs over unmapped ground)."""
         top = float(self.z[self.seen].max()) if self.seen.any() else 0.0
         alt = top + self.alt_margin_m
         if self.alt is None or alt > self.alt + 0.5:
-            if self.alt is not None:
-                self.say(f"RECON: newly mapped high point {top:.1f} m -> flight altitude raised to {alt:.1f} m")
             self.alt = alt
-            if self._cruise0 is not None:
-                self.flight.cruise = alt              # KinematicFlight: routes fly at max(cruise, terrain + 3)
+
+    def leg_alt(self, a, b):
+        """Altitude for a leg a -> b: tallest mapped structure within the LiDAR swath of the leg + margin; if
+        part of the corridor is unmapped, the highest mapped point anywhere + margin (unknown = assume tall)."""
+        r = self.lidar_radius_m * 0.5 + 3.0
+        x0, x1 = min(a[0], b[0]) - r, max(a[0], b[0]) + r
+        y0, y1 = min(a[1], b[1]) - r, max(a[1], b[1]) + r
+        i0, i1 = max(0, int((x0 - self.origin[0]) / self.res)), min(self.w, int((x1 - self.origin[0]) / self.res) + 1)
+        j0, j1 = max(0, int((y0 - self.origin[1]) / self.res)), min(self.h, int((y1 - self.origin[1]) / self.res) + 1)
+        X, Y = self.X[j0:j1, i0:i1], self.Y[j0:j1, i0:i1]
+        e = np.asarray(b[:2], float) - np.asarray(a[:2], float)
+        L2 = max(float(e @ e), 1e-9)
+        t = np.clip(((X - a[0]) * e[0] + (Y - a[1]) * e[1]) / L2, 0, 1)
+        near = np.hypot(X - (a[0] + t * e[0]), Y - (a[1] + t * e[1])) <= r
+        seen = self.seen[j0:j1, i0:i1] & near
+        if not near.any():
+            return self.alt
+        if seen.sum() < 0.98 * near.sum():
+            return self.alt
+        return float(self.z[j0:j1, i0:i1][seen].max()) + self.alt_margin_m
+
+    def _fly(self, d, x, y):
+        """Command a leg at its own altitude (KinematicFlight routes at max(cruise, terrain + 3))."""
+        p = next(q["pose"] for q in self.flight.poses() if q["id"] == d)
+        alt = self.leg_alt(p[:2], (x, y))
+        if self._cruise0 is not None:
+            self.flight.cruise = alt - self.flight.stagger.get(d, 0.0) if hasattr(self.flight, "stagger") else alt
+        self.leg[d] = {"to": [x, y], "alt": alt}
+        ok = self.flight.command({"drone_id": d, "type": "goto", "destination": [x, y, alt]})
+        if not ok and self._cruise0 is not None:     # backend ceiling (KinematicFlight: 25 m): its own terrain + 3 m
+            self.flight.cruise = self._cruise0
+            ok = self.flight.command({"drone_id": d, "type": "goto", "destination": [x, y, self._cruise0]})
+            if ok and not getattr(self, "_ceiling_said", False):
+                self._ceiling_said = True
+                self.say(f"RECON: {alt:.0f} m is above the flight backend's ceiling; flying its terrain-following "
+                         "altitude (terrain + 3 m) instead")
+        return ok
+
+    def _replan(self):
+        """Newly mapped obstacles on a drone's current leg -> re-command the leg higher."""
+        for d, lg in self.leg.items():
+            if self.mode[d] != "path":
+                continue
+            p = next(q["pose"] for q in self.flight.poses() if q["id"] == d)
+            need = self.leg_alt(p[:2], lg["to"])
+            if need > lg["alt"] + 0.5:
+                self.say(f"RECON: {d} leg to ({lg['to'][0]:.0f}, {lg['to'][1]:.0f}) re-planned: newly mapped "
+                         f"structure -> {need:.1f} m")
+                self._fly(d, *lg["to"])
 
     # ---------------------------------------------------------------- control loop
     def _goto_next(self, d):
@@ -333,7 +539,7 @@ class Recon:
         x, y = path[self.cursor[d]]
         self.cursor[d] += 1
         self.mode[d] = "path"
-        if not self.flight.command({"drone_id": d, "type": "goto", "destination": [x, y, self.alt]}):
+        if not self._fly(d, x, y):
             self.say(f"RECON: {d} cannot reach waypoint ({x:.0f}, {y:.0f}) safely; skipping it")
             self._goto_next(d)
 
@@ -348,10 +554,29 @@ class Recon:
                 self.since[d] += float(np.hypot(xy[0] - self.last_xy[d][0], xy[1] - self.last_xy[d][1]))
             self.last_xy[d] = xy
         self._update_alt()
+        self._replan()
         arrived = {e["drone_id"] for e in events if e.get("type") == "arrived"}
         if self.status == "mapping":
             for d in self.drones:
-                st, _, job = self.flight.drone_state(d)
+                st, bat, job = self.flight.drone_state(d)
+                if self.mode[d] == "path" and bat < self.reserve:
+                    self.mode[d] = "swap"
+                    self._swap_end[d] = None
+                    self.cursor[d] = max(0, self.cursor[d] - 1)
+                    self.flight.command({"drone_id": d, "type": "return"})
+                    self.say(f"RECON: {d} battery {100 * bat:.0f}% < {100 * self.reserve:.0f}% reserve -> back to its pad "
+                             f"for a {self.swap_s:.0f} s battery swap, then resumes its strip")
+                    continue
+                if self.mode[d] == "swap":
+                    if st == "docked" and self._swap_end[d] is None:
+                        self._swap_end[d] = self.t + self.swap_s
+                    elif self._swap_end[d] is not None and self.t >= self._swap_end[d]:
+                        if hasattr(self.flight, "swap_battery"):
+                            self.flight.swap_battery(d)
+                        self.swaps += 1
+                        self.mode[d] = "takeoff"
+                        self.flight.command({"drone_id": d, "type": "takeoff"})
+                    continue
                 if self.mode[d] == "takeoff" and st == "hovering" and job is None:
                     self._goto_next(d)
                 elif self.mode[d] == "path" and (d in arrived or (st == "hovering" and job is None)):
@@ -470,7 +695,11 @@ class Recon:
                  + ". Drones return to the pads and wait for tasking")
 
     def propose(self):
-        mounds = segment_mounds(self.z, self.seen, self.origin, self.res, area=self.area)
+        self.standing = []
+        mounds = segment_mounds(self.z, self.seen, self.origin, self.res, area=self.area, standing=self.standing)
+        if self.standing:
+            self.say(f"RECON: {len(self.standing)} standing building(s) (tall, roof-flat, rectangular, steep walls) "
+                     "kept as flight obstacles, not search zones")
         self.proposals = score_proposals(mounds, self.clips, self.pile_xy)
         return self.proposals
 
@@ -481,6 +710,18 @@ class Recon:
             self.flight.cruise = self._cruise0
 
     # ---------------------------------------------------------------- state.json
+    def heightmap_state(self, every_s=5.0):
+        """``heightmap`` block of the fresh recon map (contract v1.2.1): ``z`` null and ``mask`` 0 where not
+        yet mapped. Cached; rebuilt at most every ``every_s`` sim seconds (large sites)."""
+        if self._hm_state is None or self._hm_t is None or self.t - self._hm_t >= every_s:
+            z = np.round(self.z.astype(np.float64), 3)
+            zl = np.where(self.seen, z, np.nan).ravel().tolist()
+            self._hm_state = {"origin": list(self.origin), "res": self.res, "w": self.w, "h": self.h,
+                              "z": [None if v != v else v for v in zl],
+                              "mask": self.seen.astype(np.uint8).ravel().tolist()}
+            self._hm_t = self.t
+        return self._hm_state
+
     def to_state(self):
         path = [[x, y, round(float(self.alt), 1)] for d in self.drones for x, y in self.paths[d]]
         return {"recon": {"status": self.status, "mapped_fraction": round(self.mapped_fraction, 3), "path": path,

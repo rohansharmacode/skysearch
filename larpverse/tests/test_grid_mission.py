@@ -337,3 +337,24 @@ def test_weiguan_site_smoke():
             x, y, z = d["pose"][:3]
             assert z >= m.grid.height_at(x, y) - 0.05
     assert {p["id"] for p in s["piles"]} == {p.name for p in m.scenario.piles}
+
+
+def test_heavy_platform_landing_battery_and_rx_gain():
+    """R-PLAT-1/2/5: spec-driven flight + battery, 3.5 m landing patches on every pile, receive gain adds reach."""
+    pytest.importorskip("sim.platform")
+    from sim import radar_dsp
+    from sim.landing import detect_landing_sites
+    from sim.platform import get_platform
+    m = GridMission(seed=7, verbose=False, acoustic="stub", pile_budget=1, platform="heavy_sar", mission_scans=6)
+    try:
+        assert m.flight.fly_rate < 0.0016 and m.PILE_BATTERY < 0.16
+        lim = get_platform("heavy_sar").landing_limits()
+        for p, xy in m.world.pile_xy.items():
+            sites = detect_landing_sites(m.world.window(p), centre=xy, search_radius=12.5, limits=lim)
+            assert sum(s["status"] == "candidate" for s in sites) >= 3, p
+        r_heavy = radar_dsp.reach_path_m(6.0, 0.95)
+        m.run()
+        assert m.done and m.visited == [m.start_pile]
+    finally:
+        radar_dsp.use_rx_gain_db(0.0)
+    assert r_heavy > radar_dsp.reach_path_m(6.0, 0.95)

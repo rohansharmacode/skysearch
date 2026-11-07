@@ -44,9 +44,9 @@ body { background: var(--ink); color: var(--fg); font-family: var(--f-display); 
 .lbl.op { border-color: var(--op); color: #d2e7ff; }
 .lbl.truth { border-style: dashed; color: var(--muted); }
 .lbl.ping { margin-top: -26px; margin-left: 70px; }
-.lbl.drone b { color: #ef5350; font-weight: 500; }
+.lbl.drone b { color: #f4f8fb; font-weight: 600; }
 
-#top { top: 16px; left: 16px; max-width: min(440px, calc(100% - 32px)); }
+#top { top: 16px; left: 16px; max-width: min(440px, calc(100% - 32px)); text-shadow: 0 1px 3px rgba(0, 0, 0, 0.85), 0 0 10px rgba(0, 0, 0, 0.5); }
 .brand { font: 500 11px/1 var(--f-mono); letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); display: flex; gap: 10px; align-items: center; }
 .brand i { width: 8px; height: 8px; border-radius: 50%; background: var(--detect); box-shadow: 0 0 10px var(--detect); }
 #phaseNo { font: 500 12px/1 var(--f-mono); color: var(--coord); margin-top: 12px; letter-spacing: 0.08em; }
@@ -107,6 +107,14 @@ body { background: var(--ink); color: var(--fg); font-family: var(--f-display); 
 #tabGL { position: absolute; inset: 0; }
 #tabPing { position: absolute; font: 500 11px/1.3 var(--f-mono); background: rgba(60, 8, 8, 0.88); border: 1px solid var(--detect); color: #ffd6d6; padding: 3px 6px; border-radius: 3px; white-space: nowrap; transform: translate(12px, -50%); }
 #tabYou { position: absolute; font: 500 11px var(--f-mono); color: #d2e7ff; background: rgba(8, 20, 40, 0.85); border: 1px solid var(--op); padding: 2px 5px; border-radius: 3px; transform: translate(10px, -50%); }
+#tabVital { position: absolute; left: 10px; right: 10px; top: 10px; font: 500 11.5px/1.4 var(--f-mono); color: var(--fg); background: rgba(8, 12, 16, 0.88); border: 1px solid var(--line); border-left: 3px solid var(--detect); padding: 6px 9px; border-radius: 3px; }
+#tabVital h4 { margin: 0 0 3px; font: 500 10px/1.2 var(--f-mono); letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); display: flex; justify-content: space-between; gap: 8px; }
+#tabVital .r1 b { color: #ffd0d0; font-weight: 500; }
+#tabVital .r2 { color: var(--muted); }
+#tabVital .tri { border: 1px solid #f0f4f8; border-radius: 2px; padding: 0 4px; color: #fff; box-shadow: 0 0 0 2px rgba(8, 12, 16, 0.9), 0 0 0 3px rgba(240, 244, 248, 0.6); }
+#tabVital .r2 .tri { box-shadow: none; border-style: dashed; color: var(--muted); border-color: var(--muted); }
+#tabAccept { position: absolute; right: 14px; bottom: 14px; font: 600 14px/1 var(--f-display); letter-spacing: 0.02em; background: var(--coord); color: var(--ink); border-radius: 4px; padding: 9px 16px; }
+#tabAccept.done { background: rgba(8, 12, 16, 0.85); color: var(--coord); border: 1px solid var(--coord); }
 #finger { position: absolute; width: 26px; height: 26px; border-radius: 50%; background: rgba(255, 255, 255, 0.35); border: 2px solid #fff; transform: translate(-50%, -50%); }
 #tablet .tf { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; padding: 9px 12px; font: 11px var(--f-mono); color: var(--muted); border-top: 1px solid var(--line); background: #0b1117; }
 #tablet .tf b { display: block; color: var(--fg); font-weight: 500; font-size: 13px; }
@@ -133,6 +141,8 @@ body { background: var(--ink); color: var(--fg); font-family: var(--f-display); 
   .tog { padding: 5px 7px; font-size: 10.5px; }
   .chap span { display: none; }
   #tablet { width: calc(100% - 32px); }
+  #tabVital { font-size: 9.5px; padding: 4px 6px; } #tabVital h4 { font-size: 8.5px; }
+  #tabAccept { font-size: 12px; padding: 7px 11px; }
 }
 </style>
 
@@ -141,8 +151,8 @@ body { background: var(--ink); color: var(--fg); font-family: var(--f-display); 
   <button id="bigPlay" hidden>▶ Play</button>
   <div class="hud" id="top">
     <div class="brand"><i></i>Larpverse · grid search</div>
-    <div id="phaseNo">01 / 11</div>
-    <div id="phaseTitle">Deploy</div>
+    <div id="phaseNo">01 / 14</div>
+    <div id="phaseTitle">Recon sweep</div>
     <div id="caption"></div>
   </div>
   <div class="hud" id="layers">
@@ -170,10 +180,11 @@ body { background: var(--ink); color: var(--fg); font-family: var(--f-display); 
     </div>
   </div>
   <div id="tablet" hidden>
-    <div class="th"><span>Larpverse · <b id="tabTitle">R1</b></span><span id="tabMode">dashboard</span></div>
+    <div class="th"><span>Larpverse · <b id="tabTitle">A2-R1</b></span><span id="tabMode">dashboard</span></div>
     <div id="tabScreen">
       <canvas id="tabMap" width="1080" height="676"></canvas>
-      <div id="tabGL" hidden><div id="tabPing"></div><div id="tabYou">you</div></div>
+      <div id="tabGL" hidden><div id="tabPing"></div><div id="tabYou">you</div><div id="tabVital" hidden></div></div>
+      <div id="tabAccept" hidden>Accept 9 zones</div>
       <div id="finger" hidden></div>
     </div>
     <div class="tf" id="tabFacts"></div>
@@ -181,7 +192,7 @@ body { background: var(--ink); color: var(--fg); font-family: var(--f-display); 
   <div class="hud" id="bar">
     <button class="btn" id="play" aria-label="Pause">❚❚</button>
     <button class="btn" id="speed" aria-label="Playback speed">1×</button>
-    <span id="time">0:00 / 1:28</span>
+    <span id="time">0:00 / 1:33</span>
     <div id="chapters"></div>
   </div>
 </div>
@@ -215,12 +226,22 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 
 // ================= helpers =================
 const TAU = Math.PI * 2, D2R = Math.PI / 180;
-const T_END = 88, LAYER_Y = 6.2, SP = 22;
-const C = { lidar: 0x9b6bff, radar: 0xff9f43, acoustic: 0x22c3d6, cone: 0xffe14a, detect: 0xff4545, coord: 0x6fd36f, drone: 0xef5350, good: 0x4fd18b, bad: 0xff6464, op: 0x5aa9ff, grey: 0x7d8b96 };
+const LAYER_Y = 6.2, SP = 22;
+// Two clocks. Video time v (timeline, seek, recorder) = a recon opening [0, OPEN) + the story, played through WARP.
+// Story time s (all the per-pile choreography below) is the original 0..88 s script; WARP speeds up the transit
+// stretches and slows the tablet's LiDAR + dig-order view. Every story function takes s.
+const OPEN = 13;
+const WARP = [[0, 0], [3, 6], [41, 44], [49, 54], [54.4, 59.4], [61, 64], [69, 72], [80, 88]];   // [v - OPEN, s]
+const T_END = OPEN + WARP[WARP.length - 1][0];
+function pw(x, A, B) { for (let i = 1; i < WARP.length; i++) if (x <= WARP[i][A] || i === WARP.length - 1) { const a0 = WARP[i - 1][A], a1 = WARP[i][A], b0 = WARP[i - 1][B], b1 = WARP[i][B]; return b0 + (b1 - b0) * Math.max(0, Math.min(1, (x - a0) / (a1 - a0))); } }
+function storyT(v) { return v < OPEN ? 0 : pw(v - OPEN, 0, 1); }
+function videoT(s) { return OPEN + pw(s, 1, 0); }
+const C = { lidar: 0x9b6bff, radar: 0xff9f43, acoustic: 0x22c3d6, cone: 0xffe14a, detect: 0xff4545, coord: 0x6fd36f, drone: 0xdfe6ec, good: 0x4fd18b, bad: 0xff6464, op: 0x5aa9ff, grey: 0x7d8b96, zone: 0xe4ebf0, proposal: 0x8b9dab };
 const CHAPTERS = [
-  ['Deploy', 0, 6], ['LiDAR map', 6, 14], ['Land on flat cells', 14, 19], ['Radar ping', 19, 25], ['Ping to dashboard', 25, 28],
+  ['Recon sweep', 0, 6.6, 1], ['Perch & listen', 6.6, 10, 1], ['Accept zones', 10, OPEN, 1],
+  ['To start pile', 0, 6], ['LiDAR map', 6, 14], ['Land on flat cells', 14, 19], ['Radar ping', 19, 25], ['Ping to dashboard', 25, 28],
   ['Audio to the agent', 28, 40], ['Priority & dispatch', 40, 44], ['Next pile', 44, 54], ['Operator on site', 54, 64], ['Dig', 64, 72], ['Whole system', 72, 88],
-].map(([name, t0, t1]) => ({ name, t0, t1 }));
+].map(([name, a, b, open]) => open ? { name, t0: a, t1: b } : { name, t0: videoT(a), t1: videoT(b) });
 function mulberry32(a) { return () => { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
 // Default: the seeded scenario from animation/scenario_seed7.js (same map as Isaac + dashboard).
 // Fallback: the old in-page random generator, when that file is missing or the URL has #s<number> (New scenario).
@@ -228,6 +249,7 @@ const HASH_SEED = (() => { const m = location.hash.match(/^#s(\d+)$/); return m 
 const SCN = HASH_SEED == null && window.LARP_SCENARIO && window.LARP_SCENARIO.piles ? window.LARP_SCENARIO : null;
 const SEED = SCN ? SCN.seed : HASH_SEED ?? Math.floor(Math.random() * 1e6);
 const rnd = mulberry32(SEED);
+const rnd2 = mulberry32(SEED + 1);   // recon opening + display extras: the story's random choices stay as before
 const R = (a, b) => a + (b - a) * rnd();
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const sstep = (a, b, v) => { const x = clamp((v - a) / (b - a), 0, 1); return x * x * (3 - 2 * x); };
@@ -301,6 +323,23 @@ silentPiles.forEach(p => p.silent = true);
 const QUEUE = [...SOURCES].sort((a, b) => b.score - a.score);
 const P2 = QUEUE[0].pile, P3 = QUEUE[1].pile;
 const T2 = { x: P2.source.x, z: P2.source.z, depth: P2.source.depth };
+// Breathing pattern per victim: storyboard truth (scenario_seed7.js victims[].physio from sim/scenario.py), display only.
+// Wording = dashboard/vitals.js (pattern + triage hint): an aid for rescuers ordering the dig, never a diagnosis.
+const PHYSIO_VIEW = {
+  distressed_tachypnea: { pat: 'rapid, shallow', note: 'possible distress', tri: 'immediate' },
+  calm: { pat: 'calm, regular', note: '', tri: 'delayed' },
+  irregular_apneic: { pat: 'irregular, with pauses', note: 'possible airway problem', tri: 'urgent' },
+  unconscious_slow: { pat: 'slow, deep', note: 'possibly unconscious', tri: 'urgent · check' },
+};
+const DEMO_PHYSIO = { A2: ['distressed_tachypnea', 31.8], A3: ['calm', 14.9], B1: ['irregular_apneic', 9.8], B2: ['unconscious_slow', 7.1] };   // sim/scenario.py seed 7 (condition only: no age class)
+function physioOf(pile, k) {
+  const v = SCN && SCN.story.victims.find(q => q.pile === pile.name);
+  if (v && v.physio) return { state: v.physio.state, rate: v.physio.rate_bpm };
+  if (SCN && SEED === 7 && DEMO_PHYSIO[pile.name]) return { state: DEMO_PHYSIO[pile.name][0], rate: DEMO_PHYSIO[pile.name][1] };
+  return k === 0 ? { state: 'distressed_tachypnea', rate: 28 + 6 * rnd2() } : { state: 'calm', rate: 12 + 4 * rnd2() };
+}
+const VIT = [physioOf(P1, 0), physioOf(P2, 1)].map(ph => ({ ...ph, ...(PHYSIO_VIEW[ph.state] || PHYSIO_VIEW.calm) }));
+const DEPTH_NOM = 1.5;   // the live system's depth: nominal (depth_source "nominal"), assumed, not measured
 
 // ================= renderer / scene =================
 const app = document.getElementById('app');
@@ -465,12 +504,73 @@ function makeDrone(name) {
 }
 const drones = ['d1', 'd2', 'd3'].map(makeDrone);
 const landY = s => s.y + LEG * SCALE;
+
+// ================= recon opening (video time v < OPEN): sweep, perch-and-listen, proposed zones, accept =================
+// INTERFACES "Reconnaissance mode (v1.2)": no zones tasked -> coverage flight + LiDAR, perch-and-listen, the dashboard
+// proposes rubble outlines, the operator accepts them, then the targeted search (the story) starts.
+const surfAt = (x, z) => 30 - castRay({ x, y: 30, z }, { x: 0, y: -1, z: 0 }, 40);
+const RECON_Y = 14, LANES = [-SP, 0, SP];
+const PERCH = (() => {
+  const c = [[SP / 2, -SP / 2], [-SP / 2, -SP / 2], [SP / 2, SP / 2], [-SP / 2, SP / 2]].map(([x, z]) => {
+    const hs = [[0, 0], [0.8, 0], [-0.8, 0], [0, 0.8], [0, -0.8]].map(([a, b]) => surfAt(x + a, z + b));
+    return { x, z, y: Math.max(...hs), bump: Math.max(...hs) - Math.min(...hs) };
+  });
+  return c.reduce((b, q) => (q.bump < b.bump - 0.02 ? q : b));
+})();
+const padOf = i => SCN ? { x: SCN.drone_pads[i].x, y: 0.12 + LEG * SCALE, z: SCN.drone_pads[i].z } : { x: BASE.x - 4 + i * 2.6, y: 0.12 + LEG * SCALE, z: 50.5 };
+const RKEYS = [0, 1, 2].map(i => {
+  const pad = padOf(i), x = LANES[i], k = [[0, pad], [1.1, { ...pad, y: 9 }], [2.4, { x, y: RECON_Y, z: 38 }], [6.6, { x, y: RECON_Y, z: -36 }]];
+  if (i === 1) { const py = PERCH.y + LEG * SCALE; k.push([7.6, { x: PERCH.x, y: py + 5, z: PERCH.z }], [8.1, { x: PERCH.x, y: py, z: PERCH.z }], [10.6, { x: PERCH.x, y: py, z: PERCH.z }], [11.8, { x: PERCH.x, y: py + 6, z: PERCH.z }]); }
+  else k.push([9, { x: x * 0.75, y: RECON_Y - 2, z: -30 }]);
+  k.push([OPEN + 5, k[k.length - 1][1]]);
+  return k;
+});
+function reconPos(i, v) {
+  const k = RKEYS[i]; let j = 0; while (j < k.length - 2 && k[j + 1][0] <= v) j++;
+  const [ta, a] = k[j], [tb, b] = k[j + 1], u = sstep(0, 1, (v - ta) / (tb - ta));
+  return { x: lerp(a.x, b.x, u), y: lerp(a.y, b.y, u), z: lerp(a.z, b.z, u) };
+}
+const RECON_END = [0, 1, 2].map(i => reconPos(i, OPEN));
+const perched = v => v >= 8.1 && v < 10.6;
+// proposed rubble outlines: convex hull of each pile's pieces + 2 m margin, draped on the surface (as the mission's default)
+function hull(pts) {
+  pts = pts.slice().sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+  const cr = (o, a, b) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]), lo = [], up = [];
+  for (const q of pts) { while (lo.length >= 2 && cr(lo[lo.length - 2], lo[lo.length - 1], q) <= 0) lo.pop(); lo.push(q); }
+  for (const q of pts.slice().reverse()) { while (up.length >= 2 && cr(up[up.length - 2], up[up.length - 1], q) <= 0) up.pop(); up.push(q); }
+  return lo.slice(0, -1).concat(up.slice(0, -1));
+}
+const ZSTY = {
+  proposed: { css: 'rgba(139,157,171,0.95)', hex: C.proposal, dash: true }, tasked: { css: 'rgba(228,235,240,0.8)', hex: C.zone, dash: true },
+  search: { css: '#6fd36f', hex: C.coord }, ping: { css: '#ff4545', hex: C.detect }, lead: { css: '#22c3d6', hex: C.acoustic },
+};
+PILES.forEach((p, zi) => {
+  const h = hull(p.meshes.map(m => [m.position.x, m.position.z])), cx = h.reduce((a, q) => a + q[0], 0) / h.length, cz = h.reduce((a, q) => a + q[1], 0) / h.length;
+  p.zone = h.map(([x, z]) => { const dx = x - cx, dz = z - cz, r = Math.hypot(dx, dz) || 1; return [x + dx / r * 2, z + dz / r * 2]; });
+  p.zi = zi;
+  const pts = [];
+  p.zone.forEach((a, k) => { const b = p.zone[(k + 1) % p.zone.length], m = Math.max(1, Math.ceil(Math.hypot(b[0] - a[0], b[1] - a[1]) / 0.5)); for (let j = 0; j < m; j++) { const x = lerp(a[0], b[0], j / m), z = lerp(a[1], b[1], j / m); pts.push(V(x, Math.max(H(x, z), surfAt(x, z)) + 0.22, z)); } });
+  pts.push(pts[0].clone());
+  const g = new THREE.BufferGeometry().setFromPoints(pts);
+  const dashed = new THREE.Line(g, new THREE.LineDashedMaterial({ color: C.zone, dashSize: 0.8, gapSize: 0.55, transparent: true, opacity: 0.9 })); dashed.computeLineDistances();
+  const solid = new THREE.Line(g, new THREE.LineBasicMaterial({ color: C.coord, transparent: true, opacity: 0.95 }));
+  scene.add(dashed, solid); p.zoneLines = { dashed, solid };
+});
+// zone status over both clocks (v = video, s = story), same states and colours as the Isaac overlay and dashboard
+function zoneStatus(p, v, s) {
+  if (v < 9.4 + p.zi * 0.12) return null;
+  if (v < 11.8) return 'proposed';
+  if (p === P1) return s >= 24.4 ? 'ping' : s >= 6 ? 'search' : 'tasked';
+  if (p === P2) return s >= 58.4 ? 'ping' : s >= 44 ? 'search' : s >= 40 ? 'lead' : 'tasked';
+  if (p === P3) return s >= 79 ? 'search' : s >= 40 ? 'lead' : 'tasked';
+  return s >= 40 && p.source && p.source.human > 0.5 ? 'lead' : 'tasked';
+}
 const orbit = (p, deg) => ({ x: p.x + 11 * Math.cos(deg * D2R), y: 9.5, z: p.z + 11 * Math.sin(deg * D2R) });
 function buildPath(i) {
   const k = [], add = (t, p, ease = true) => k.push({ t, p: { ...p }, ease });
-  const pad = SCN ? { x: SCN.drone_pads[i].x, y: 0.12 + LEG * SCALE, z: SCN.drone_pads[i].z } : { x: BASE.x - 4 + i * 2.6, y: 0.12 + LEG * SCALE, z: 50.5 };
+  const r0 = RECON_END[i];   // the story starts where the recon opening leaves the drones
   const a1 = th1 + i * 120 + 60, a2 = th2 + i * 120 + 60, a3 = R(0, 360) + i * 120;
-  add(0, pad); add(1.2, { ...pad, y: 8 }); add(6, orbit(P1, a1));
+  add(0, r0); add(1.2, { ...r0, y: Math.max(r0.y, 10) }); add(6, orbit(P1, a1));
   for (let t = 6.5; t <= 14; t += 0.5) add(t, orbit(P1, a1 + (t - 6) / 8 * 120), false);
   const s1 = P1.sites[i], s2 = P2.sites[i];
   add(15.5, orbit(P1, a1 + 120)); add(17.5, { x: s1.x, y: landY(s1) + 5, z: s1.z }); add(19, { x: s1.x, y: landY(s1), z: s1.z });
@@ -513,11 +613,26 @@ const countAt = t => { let lo = 0, hi = NP; while (lo < hi) { const m = (lo + hi
 const beamGeo = new THREE.BufferGeometry(); beamGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(3 * 24 * 6), 3));
 const beams = new THREE.LineSegments(beamGeo, new THREE.LineBasicMaterial({ color: C.lidar, transparent: true, opacity: 0.55, blending: THREE.AdditiveBlending, depthWrite: false })); beams.frustumCulled = false; scene.add(beams);
 
-// Tablet copy of P1's map, coloured by height, on layer 1 only.
-const MAKO = [[0.17, 0.12, 0.28], [0.24, 0.27, 0.55], [0.21, 0.48, 0.64], [0.29, 0.76, 0.68], [0.87, 0.96, 0.9]];
+// Recon sweep cloud (video time 2.4..6.6): coarse, whole site.
+const RMAX = 14000, rlp = new Float32Array(RMAX * 3), rlt = new Float32Array(RMAX); let RNP = 0;
+for (let v = 2.4; v < 6.6 && RNP < RMAX - 40; v += 0.06) for (let i = 0; i < 3; i++) {
+  const p = reconPos(i, v), o = { x: p.x, y: p.y + 0.3, z: p.z }, spin = v * TAU * 1.7 + i;
+  for (let k = 0; k < 30; k++) {
+    const az = spin + k * TAU / 30 + rnd2() * 0.1, el = -(28 + 58 * Math.pow(rnd2(), 0.8)) * D2R;
+    const d = { x: Math.cos(el) * Math.cos(az), y: Math.sin(el), z: Math.cos(el) * Math.sin(az) }, s = castRay(o, d, 32);
+    if (s >= 32) continue;
+    rlp[RNP * 3] = o.x + d.x * s; rlp[RNP * 3 + 1] = o.y + d.y * s; rlp[RNP * 3 + 2] = o.z + d.z * s; rlt[RNP] = v; RNP++;
+  }
+}
+const rcGeo = new THREE.BufferGeometry(); rcGeo.setAttribute('position', new THREE.BufferAttribute(rlp, 3));
+{ const c = new Float32Array(RMAX * 3); for (let i = 0; i < RNP; i++) { const b = 0.7 + 0.3 * clamp(rlp[i * 3 + 1] / 4.5, 0, 1); c[i * 3] = 0.61 * b; c[i * 3 + 1] = 0.42 * b; c[i * 3 + 2] = b; } rcGeo.setAttribute('color', new THREE.BufferAttribute(c, 3)); }
+const reconCloud = new THREE.Points(rcGeo, new THREE.PointsMaterial({ size: 3.5, sizeAttenuation: false, vertexColors: true, transparent: true, opacity: 1, depthWrite: false, toneMapped: false })); reconCloud.frustumCulled = false; scene.add(reconCloud);
+const rCountAt = v => { let lo = 0, hi = RNP; while (lo < hi) { const m = (lo + hi) >> 1; if (rlt[m] <= v) lo = m + 1; else hi = m; } return lo; };
+
+// Tablet copy of P1's map on layer 1 only: the same single LiDAR purple, brightness by height (no teal/yellow/red ramp).
 {
   const pos = [], col = [];
-  for (let i = 0; i < NP; i++) { if (lt[i] > 14 || Math.hypot(lp[i * 3] - P1.x, lp[i * 3 + 2] - P1.z) > 11) continue; const y = lp[i * 3 + 1], f = clamp(y / 4.6, 0, 0.999) * 4, a = Math.floor(f), u = f - a; pos.push(lp[i * 3], y, lp[i * 3 + 2]); for (let c = 0; c < 3; c++) col.push(lerp(MAKO[a][c], MAKO[a + 1][c], u)); }
+  for (let i = 0; i < NP; i++) { if (lt[i] > 14 || Math.hypot(lp[i * 3] - P1.x, lp[i * 3 + 2] - P1.z) > 11) continue; const y = lp[i * 3 + 1], b = 0.35 + 0.65 * clamp(y / 4.6, 0, 1); pos.push(lp[i * 3], y, lp[i * 3 + 2]); col.push(0.61 * b, 0.42 * b, b); }
   const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
   const pts = new THREE.Points(g, new THREE.PointsMaterial({ size: 0.1, vertexColors: true })); pts.layers.set(1); scene.add(pts);
 }
@@ -555,7 +670,7 @@ function buildRadar(P, T, tRing, tEst, name) {
   let cxx = 0, cxz = 0, czz = 0; for (let k = 0; k < n * n; k++) { const c = cell(k); if (d2(c, est) > 2.5) continue; const dx = c.x - est.x, dz = c.z - est.z; cxx += fin[k] * dx * dx; czz += fin[k] * dz * dz; cxz += fin[k] * dx * dz; } cxx /= w; czz /= w; cxz /= w;
   const tr = cxx + czz, det = cxx * czz - cxz * cxz, disc = Math.sqrt(Math.max(0, tr * tr / 4 - det));
   const ell = { a: 2.45 * Math.sqrt(tr / 2 + disc), b: 2.45 * Math.sqrt(Math.max(1e-4, tr / 2 - disc)), ang: 0.5 * Math.atan2(2 * cxz, cxx - czz) };
-  const surf = P.hg.at(est.x, est.z), depth = T.depth + 0.1, estY = surf - depth;
+  const surf = P.hg.at(est.x, est.z), depth = DEPTH_NOM, estY = surf - depth;   // nominal depth, as the live system
   const tex = beliefs.map(p => { let mx = 0; for (const v of p) mx = Math.max(mx, v); const d = new Uint8Array(n * n * 4); for (let k = 0; k < n * n; k++) { const u = Math.pow(p[k] / mx, 0.7); d[k * 4] = 255; d[k * 4 + 1] = lerp(170, 70, sstep(0.55, 1, u)); d[k * 4 + 2] = 70; d[k * 4 + 3] = 225 * u; } const tx = new THREE.DataTexture(d, n, n, THREE.RGBAFormat); tx.magFilter = tx.minFilter = THREE.LinearFilter; tx.needsUpdate = true; return tx; });
 
   const layer = new THREE.Group(); layer.position.y = LAYER_Y; scene.add(layer);
@@ -567,7 +682,7 @@ function buildRadar(P, T, tRing, tEst, name) {
   estG.add(new THREE.Mesh(new THREE.CircleGeometry(0.32, 32).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: C.detect, side: THREE.DoubleSide })));
   const pr = new THREE.Mesh(new THREE.RingGeometry(0.9, 1, 48).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: C.detect, transparent: true, side: THREE.DoubleSide, depthWrite: false })); estG.add(pr);
   { const pts = []; for (let i = 0; i < 72; i++) { const u = i / 72 * TAU, x = ell.a * Math.cos(u), z = ell.b * Math.sin(u); pts.push({ x: x * Math.cos(ell.ang) - z * Math.sin(ell.ang), z: x * Math.sin(ell.ang) + z * Math.cos(ell.ang) }); } estG.add(loopLine(pts, lineMat(C.detect, 0.95))); }
-  const estLbl = label(`${name} · candidate ping · ${P.name}`, 'detect ping', estG, [0, 0.6, 0]);
+  const estLbl = label(`${name} · candidate search region`, 'detect ping', estG, [0, 0.6, 0]);
   const beam = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.07, 40, 8, 1, true), new THREE.MeshBasicMaterial({ color: C.detect, transparent: true, opacity: 0.5, blending: THREE.AdditiveBlending, depthWrite: false }));
   beam.position.set(est.x, LAYER_Y + 20, est.z); scene.add(beam);
   const depthG = new THREE.Group(); scene.add(depthG);
@@ -581,7 +696,7 @@ function buildRadar(P, T, tRing, tEst, name) {
   for (const o of [sph, halo, plumb, dig]) { const c = o.clone(); c.layers.set(1); tabG.add(c); }
   const tabHalo = tabG.children[1];
   return {
-    est, estY, surf, depth, ell, scans, tabG,
+    name, est, estY, surf, depth, ell, scans, tabG,
     update(t) {
       const show = ui.radar && t >= tRing[0] - 0.3;
       layer.visible = show;
@@ -597,8 +712,8 @@ function buildRadar(P, T, tRing, tEst, name) {
     },
   };
 }
-const RAD1 = buildRadar(P1, T1, [21.2, 22.2, 23.2], 24.4, 'R1');
-const RAD2 = buildRadar(P2, T2, [55.4, 56.4, 57.4], 58.4, 'R2');
+const RAD1 = buildRadar(P1, T1, [21.2, 22.2, 23.2], 24.4, `${P1.name}-R1`);
+const RAD2 = buildRadar(P2, T2, [55.4, 56.4, 57.4], 58.4, `${P2.name}-R1`);
 
 // ================= buried people (storyboard truth, display only) =================
 const ghostMat = new THREE.MeshBasicMaterial({ color: 0xf2f5f7, transparent: true, opacity: 0.45, depthTest: false });
@@ -633,10 +748,10 @@ function packet(fromFn, to, t0, t1, color, size, text) {
   packets.push({ m, fromFn, to, t0, t1, lbl });
 }
 const dronePos3 = (i, t) => { const p = pathPos(i, t); return V(p.x, p.y + 0.6, p.z); };
-packet(() => V(RAD1.est.x, LAYER_Y, RAD1.est.z), DASH_POS, 25, 27.2, C.detect, 0.35, 'R1 ping → dashboard');
+packet(() => V(RAD1.est.x, LAYER_Y, RAD1.est.z), DASH_POS, 25, 27.2, C.detect, 0.35, `${RAD1.name} ping → dashboard`);
 for (let k = 0; k < 6; k++) packet(t => dronePos3(k % 3, 28), AGENT_POS, 28 + k * 0.35, 30.6 + k * 0.35, C.acoustic, 0.2, k === 0 ? 'audio clips → agent' : null);
 for (let i = 0; i < 3; i++) packet(() => AGENT_POS.clone(), dronePos3(i, 42), 41.6, 43, C.coord, 0.22, i === 0 ? `dispatch → ${P2.name}` : null);
-packet(() => V(RAD2.est.x, LAYER_Y, RAD2.est.z), DASH_POS, 58.6, 61, C.detect, 0.35, 'R2 ping → dashboard');
+packet(() => V(RAD2.est.x, LAYER_Y, RAD2.est.z), DASH_POS, 58.6, 61, C.detect, 0.35, `${RAD2.name} ping → dashboard`);
 for (let i = 0; i < 3; i++) packet(() => AGENT_POS.clone(), dronePos3(i, 74), 73.4, 75, C.coord, 0.22, i === 0 ? `dispatch → ${P3.name}` : null);
 const arc = (a, b, f) => V(lerp(a.x, b.x, f), lerp(a.y, b.y, f) + Math.sin(f * Math.PI) * Math.min(14, a.distanceTo(b) * 0.25), lerp(a.z, b.z, f));
 
@@ -702,8 +817,19 @@ const STANDv = V(STAND.x, opSurface(STAND.x, STAND.z), STAND.z);
 const toPing = EST1.clone().sub(STANDv).setY(0).normalize(), side = V(-toPing.z, 0, toPing.x);
 const add = (a, x, y, z) => a.clone().add(V(x, y, z));
 const mid = lerp;
-const CAM = [
+const PERCHv = V(PERCH.x, PERCH.y + 1, PERCH.z);
+const OCAM = [
   [0, add(B, -14, 6, 12), add(B, 0, 3, -6)],
+  [2.4, V(-34, 40, 64), V(-4, 0, 10)],
+  [6.4, V(46, 44, 30), V(0, 0, -6)],
+  [8.0, add(PERCHv, -10, 7, 10), PERCHv],
+  [9.4, add(PERCHv, -13, 10, 13), PERCHv],
+  [10.6, V(0, 96, 34), V(0, 0, -2)],
+  [OPEN, V(-30, 50, 42), V(-14, 0, -4)],
+  [OPEN + 1, V(-30, 50, 42), V(-14, 0, -4)],
+];
+const CAM = [
+  [0, V(-30, 50, 42), V(-14, 0, -4)],
   [4.5, add(P1v, -12, 20, 30), P1v],
   [8, add(P1v, 18, 15, 16), P1v],
   [12, add(P1v, 16, 17, -15), P1v],
@@ -718,24 +844,31 @@ const CAM = [
   [51, add(P2v, 15, 15, 15), P2v],
   [53.4, add(P2v, -10, 9, 13), add(P2v, 0, 1.5, 0)],
   [54.4, opAt(54.4).add(opDir(54.4).multiplyScalar(-6)).add(V(0, 3.2, 0)), opAt(54.4).add(opDir(54.4).multiplyScalar(6))],
-  [57.5, STANDv.clone().addScaledVector(toPing, -5.6).addScaledVector(side, 2.6).add(V(0, 5.2, 0)), EST1],
-  [64, STANDv.clone().addScaledVector(side, 5).addScaledVector(toPing, 0.5).add(V(0, 3.4, 0)), add(EST1, 0, 0.4, 0)],
-  [70, STANDv.clone().addScaledVector(side, 6).addScaledVector(toPing, -4).add(V(0, 4.5, 0)), EST1],
+  [57.5, STANDv.clone().addScaledVector(toPing, -6.2).addScaledVector(side, 2.6).add(V(0, 6.6, 0)), EST1],
+  [64, STANDv.clone().addScaledVector(side, 6.5).addScaledVector(toPing, -1.5).add(V(0, 5.6, 0)), add(EST1, 0, 0.4, 0)],
+  [70, STANDv.clone().addScaledVector(side, 7).addScaledVector(toPing, -5).add(V(0, 6.6, 0)), EST1],
   [75, V(-20, 58, 78), V(0, 0, 4)],
   [82, V(52, 62, 52), V(0, 0, 2)],
   [88, V(68, 56, -14), V(0, 0, 0)],
 ];
 const _cp = new THREE.Vector3(), _ct = new THREE.Vector3();
 const camFloor = (x, z) => { let y = H(x, z); for (const p of [P1, P2]) if (p.hg && Math.abs(x - p.x) < 11 && Math.abs(z - p.z) < 11) y = Math.max(y, p.hg.at(x, z)); return y; };
-function camAt(t) { let j = 0; while (j < CAM.length - 2 && CAM[j + 1][0] <= t) j++; const [ta, pa, qa] = CAM[j], [tb, pb, qb] = CAM[j + 1], u = sstep(0, 1, (t - ta) / (tb - ta)); _cp.lerpVectors(pa, pb, u); _ct.lerpVectors(qa, qb, u); _cp.y = Math.max(_cp.y, camFloor(_cp.x, _cp.z) + 2.2); }
+function camAt(t, K = CAM) { let j = 0; while (j < K.length - 2 && K[j + 1][0] <= t) j++; const [ta, pa, qa] = K[j], [tb, pb, qb] = K[j + 1], u = sstep(0, 1, (t - ta) / (tb - ta)); _cp.lerpVectors(pa, pb, u); _ct.lerpVectors(qa, qb, u); _cp.y = Math.max(_cp.y, camFloor(_cp.x, _cp.z) + 2.2); }
 
 // ================= captions =================
+const OCAPS = [
+  [0, SCN ? `Seed ${SEED}: the same site as the Isaac scene and the dashboard. No search zones are tasked yet, so the drones start with a recon flight. Flight is kinematic in the sim.` : `Random scenario #s${SEED}. No search zones are tasked yet, so the drones start with a recon flight. Flight is kinematic in the sim.`],
+  [2.4, 'Recon sweep at 14 m: the LiDAR builds a fresh map of the whole site. Satellite imagery is stale after a collapse.'],
+  [6.6, 'Perch and listen: d2 lands on a flat spot in the fresh map and listens with rotors off for about 20 s (compressed here). Rotor noise makes in-flight listening unreliable.'],
+  [9.4, 'The dashboard segments the fresh map into rubble mounds and proposes their outlines as search zones (dashed grey).'],
+  [11.8, `The operator taps Accept: ${PILES.length} zones are tasked (dashed white). The targeted search starts at ${P1.name}.`],
+];
 const CAPS = [
-  [0, SCN ? `Seed ${SEED}, the same site as the Isaac scene and the dashboard. Three drones launch from the staging area to the start pile, ${P1.name}. Flight is kinematic in the sim.` : `Random scenario #s${SEED}. Three drones launch from the staging area. They start on pile ${P1.name}. Flight is kinematic in the sim.`],
+  [0, `Targeted search. The drones fly from the recon to the first tasked zone, the start pile ${P1.name}.`],
   [6, 'Spinning LiDAR maps the pile from 9.5 m. Every return is a point in a shared 3D map.'],
   [14, 'Each 1 m cell around the pile is scored for slope and roughness. The drones land on flat green cells so the radar stays still.'],
   [19.5, 'Rotors off. The radars look for a breathing-like signal under the rubble, and their three ranges cross at one spot.'],
-  [24.4, 'Ping: a candidate search region, with a radar estimate of its depth. A candidate, not a confirmed person.'],
+  [24.4, `Ping ${RAD1.name}: a candidate search region, with its position and an approximate depth (nominal ≈1.5 m, not measured yet). A candidate, not a confirmed person.`],
   [25, 'The ping goes straight to the operator dashboard at the staging area.'],
   [28, `The operator sets off for ${P1.name}. Meanwhile the landed drones listen to the other piles and stream audio clips to the acoustic agent.`],
   [31, 'For each clip the agent detects voices, transcribes the speech, classifies other sounds and judges how human, how urgent and how reliable it is.'],
@@ -743,7 +876,8 @@ const CAPS = [
   [41.6, `Top priority is ${P2.name} (${QUEUE[0].cls}), then ${QUEUE[1].pile.name} and ${QUEUE[2].pile.name}. The coordinator sends the drones to ${P2.name}.`],
   [44, `At ${P2.name} the cycle repeats: LiDAR map, flat landing cells, radar scan.`],
   [54, `The operator reaches ${P1.name} and taps the ping on the dashboard.`],
-  [59.4, 'The ping opens the LiDAR model of the pile, with the candidate placed inside it: where on the pile, and the radar estimate of how deep.'],
+  [59.4, 'The ping opens the LiDAR model of the pile with the candidate placed inside it: where on the pile, at a nominal depth of about 1.5 m (assumed, not measured yet).'],
+  [61.6, `Dig order: the radar's breathing pattern at ${RAD1.name} is ${VIT[0].pat} (~${Math.round(VIT[0].rate)}/min)${VIT[0].note ? ', ' + VIT[0].note : ''}, so triage says ${VIT[0].tri}. An aid for rescuers ordering the dig, not a diagnosis.`],
   [64, 'The operator checks the spot on site, then digs at the candidate point.'],
   [72, `Whole system: audio sets the order, radar pins the spot, the operator digs. The drones move on to ${P3.name}, the next priority.`],
 ];
@@ -760,7 +894,7 @@ clipsEl.innerHTML = SOURCES.map((s, k) => {
   </div>`;
 }).join('');
 const clipEls = [...clipsEl.children];
-queueEl.innerHTML = `<div class="row done"><b>${P1.name}</b><span class="why">radar ping R1 · operator en route</span><span class="s">R1</span></div>` +
+queueEl.innerHTML = `<div class="row done"><b>${P1.name}</b><span class="why">radar ping ${RAD1.name} · operator en route</span><span class="s">ping</span></div>` +
   QUEUE.map((s, i) => `<div class="row ${i === 0 ? 'top' : ''}" hidden><b>${s.pile.name}</b><span class="why">${s.why}</span><span class="s">${s.score}</span></div>`).join('') +
   silentPiles.map(p => `<div class="row" hidden><b>${p.name}</b><span class="why">no sound heard · not cleared</span><span class="s">10</span></div>`).join('');
 const qRows = [...queueEl.children];
@@ -771,7 +905,7 @@ function updateAgent(t) {
   document.getElementById('agentState').textContent = st;
   const stage = t < 31 ? -1 : t < 40 ? Math.floor(((t - 31) % 1.45) / 0.29) : 4;
   document.querySelectorAll('.pipe span').forEach((s, i) => s.classList.toggle('on', i <= stage && t >= 31));
-  const dTxt = t >= 73.4 ? `Dispatch d1–d3 → ${P3.name} (priority ${QUEUE[1].score}) · ${P2.name} has ping R2` : `Dispatch d1–d3 → ${P2.name} (priority ${QUEUE[0].score})`; if (dispEl.textContent !== dTxt) dispEl.textContent = dTxt;
+  const dTxt = t >= 73.4 ? `Dispatch d1–d3 → ${P3.name} (priority ${QUEUE[1].score}) · ${P2.name} has ping ${RAD2.name}` : `Dispatch d1–d3 → ${P2.name} (priority ${QUEUE[0].score})`; if (dispEl.textContent !== dTxt) dispEl.textContent = dTxt;
   const showQ = t >= 40; clipsEl.hidden = showQ; queueEl.hidden = !showQ; dispEl.hidden = t < 41.6;
   clipEls.forEach((el, k) => {
     const t0 = CLIP_T[k]; el.hidden = t < t0; if (t < t0) return;
@@ -796,6 +930,8 @@ function drawMap(ctx, W, Hh, view, t, opts = {}) {
   const fs = Math.max(10, s * 1.6);
   for (const p of PILES) {
     const [x, y] = P(p.x, p.z); ctx.fillStyle = 'rgba(160,150,135,0.32)'; ctx.beginPath(); ctx.ellipse(x, y, 6.5 * s, 5.6 * s, p.rot, 0, TAU); ctx.fill();
+    const zs = zoneStatus(p, VT, t);
+    if (zs) { const st = ZSTY[zs]; ctx.save(); ctx.strokeStyle = st.css; ctx.lineWidth = Math.max(1.2, s * 0.22); ctx.setLineDash(st.dash ? [Math.max(3, s * 0.7), Math.max(2, s * 0.5)] : []); ctx.beginPath(); p.zone.forEach(([zx, zz], k) => { const [a, b] = P(zx, zz); if (k) ctx.lineTo(a, b); else ctx.moveTo(a, b); }); ctx.closePath(); ctx.stroke(); ctx.restore(); }
     ctx.fillStyle = '#8b9dab'; ctx.font = `500 ${fs}px "IBM Plex Mono", monospace`; ctx.textAlign = 'center'; ctx.fillText(p.name, x, y - 6.8 * s);
     const sc = p.source ? p.source.score : p.silent ? 10 : null;
     if (t >= 40 && sc != null && p !== P1) {
@@ -814,7 +950,8 @@ function drawMap(ctx, W, Hh, view, t, opts = {}) {
   }
   // base, drones, operator
   { const [x, y] = P(BASE.x, BASE.z); ctx.strokeStyle = '#6fd36f'; ctx.lineWidth = 1.5; ctx.strokeRect(x - 7 * s / 1.5, y - 3 * s, 14 * s / 1.5, 6 * s); }
-  drones.forEach((d, i) => { const p = pathPos(i, t), [x, y] = P(p.x, p.z); ctx.fillStyle = '#e4ebf0'; ctx.beginPath(); ctx.arc(x, y, Math.max(2.5, s * 0.8), 0, TAU); ctx.fill(); });
+  if (VT < OPEN) { ctx.save(); ctx.setLineDash([5, 5]); ctx.strokeStyle = 'rgba(111,211,111,0.35)'; ctx.lineWidth = 1.5; for (const lx of LANES) { const [a, b] = P(lx, 38), [c, d] = P(lx, -36); ctx.beginPath(); ctx.moveTo(a, b); ctx.lineTo(c, d); ctx.stroke(); } ctx.restore(); }
+  drones.forEach((d, i) => { const p = VT < OPEN ? reconPos(i, VT) : pathPos(i, t), [x, y] = P(p.x, p.z); ctx.fillStyle = '#e4ebf0'; ctx.beginPath(); ctx.arc(x, y, Math.max(2.5, s * 0.8), 0, TAU); ctx.fill(); });
   const op = opPose(t), [ox2, oy2] = P(op.x, op.z);
   if (t >= 28 && t < 54) { ctx.setLineDash([4, 4]); ctx.strokeStyle = 'rgba(90,169,255,0.6)'; ctx.beginPath(); ctx.moveTo(ox2, oy2); let started = false; for (const r of ROUTE) { if (r.s < op.dist) continue; const [x, y] = P(r.x, r.z); ctx.lineTo(x, y); started = true; } if (!started) ctx.lineTo(...P(STAND.x, STAND.z)); ctx.stroke(); ctx.setLineDash([]); }
   ctx.fillStyle = '#5aa9ff'; ctx.beginPath(); ctx.arc(ox2, oy2, Math.max(4, s * 1.1), 0, TAU); ctx.fill(); ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.5; ctx.stroke();
@@ -823,8 +960,14 @@ function drawMap(ctx, W, Hh, view, t, opts = {}) {
   if (t >= 41.6 && t < 47) { const [a, b] = P(P1.x, P1.z), [c, d] = P(P2.x, P2.z); ctx.setLineDash([5, 4]); ctx.strokeStyle = '#6fd36f'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(a, b); ctx.lineTo(c, d); ctx.stroke(); ctx.setLineDash([]); }
   // pings
   const pulse = (t * 0.8) % 1;
-  for (const [R2, tA, nm] of [[RAD1, 27.2, 'R1'], [RAD2, 61, 'R2']]) {
+  for (const [R2, tA, nm, k] of [[RAD1, 27.2, RAD1.name, 0], [RAD2, 61, RAD2.name, 1]]) {
     if (t < tA || !ui.radar) continue; const [x, y] = P(R2.est.x, R2.est.z), r = Math.max(5, s * 1.4);
+    if (t >= 60.2) { // dig-order triage ring (dashboard drawTriageRing): shape, not a new hue; double = immediate, dashed = delayed
+      const tri = VIT[k].tri; ctx.save(); ctx.strokeStyle = 'rgba(240,244,248,0.92)'; ctx.lineWidth = 2;
+      const ring = (rr, dash) => { ctx.setLineDash(dash); ctx.beginPath(); ctx.arc(x, y, rr, 0, TAU); ctx.stroke(); };
+      if (tri === 'immediate') { ring(r + 5, []); ring(r + 8.5, []); } else if (tri.startsWith('urgent')) ring(r + 6, []); else ring(r + 6, [5, 4]);
+      ctx.restore();
+    }
     ctx.strokeStyle = `rgba(255,69,69,${1 - pulse})`; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(x, y, r + pulse * r * 2.4, 0, TAU); ctx.stroke();
     ctx.fillStyle = '#ff4545'; ctx.beginPath(); ctx.arc(x, y, r, 0, TAU); ctx.fill(); ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.5; ctx.stroke();
     if (t < tA + 3) { ctx.fillStyle = 'rgba(60,8,8,0.9)'; ctx.font = `500 ${fs}px "IBM Plex Mono", monospace`; const txt = `new ping ${nm}`, w = ctx.measureText(txt).width; ctx.fillRect(x + r + 4, y - fs, w + 8, fs * 1.4); ctx.fillStyle = '#ffd0d0'; ctx.fillText(txt, x + r + 8, y + fs * 0.1); }
@@ -836,9 +979,14 @@ const VIEW_ALL = { x0: -36, x1: 36, z0: -36, z1: 52 };
 // ================= tablet =================
 const tabletEl = document.getElementById('tablet'), tabGL = document.getElementById('tabGL'), fingerEl = document.getElementById('finger');
 const tabPing = document.getElementById('tabPing'), tabYou = document.getElementById('tabYou');
-document.getElementById('tabTitle').textContent = `R1 · pile ${P1.name}`;
+const TAB_TITLE = RAD1.name;
 const compass = (() => { const a = Math.atan2(-(RAD1.est.z - P1.z), RAD1.est.x - P1.x) / D2R; return ['east', 'north-east', 'north', 'north-west', 'west', 'south-west', 'south', 'south-east'][((Math.round(a / 45) % 8) + 8) % 8]; })();
-document.getElementById('tabFacts').innerHTML = `<span>candidate depth (radar est.)<b>≈${RAD1.depth.toFixed(1)} m</b></span><span>flank<b>${compass}</b></span><span>95% region<b>${(2 * RAD1.ell.a).toFixed(1)}×${(2 * RAD1.ell.b).toFixed(1)} m</b></span><span>from you<b>${d2(STAND, RAD1.est).toFixed(1)} m</b></span>`;
+const TAB_FACTS = `<span>depth (nominal)<b>≈${RAD1.depth.toFixed(1)} m</b></span><span>flank<b>${compass}</b></span><span>95% region<b>${(2 * RAD1.ell.a).toFixed(1)}×${(2 * RAD1.ell.b).toFixed(1)} m</b></span><span>from you<b>${d2(STAND, RAD1.est).toFixed(1)} m</b></span>`;
+const RECON_FACTS = ok => `<span>mapped<b>whole site</b></span><span>proposed zones<b>${PILES.length}</b></span><span>perch listens<b>1 · d2</b></span><span>status<b>${ok ? 'tasked' : 'awaiting you'}</b></span>`;
+const vitRow = (k, nm) => `${nm} · ${VIT[k].pat} breathing (~${Math.round(VIT[k].rate)}/min)${VIT[k].note ? ' — ' + VIT[k].note : ''} · triage: <span class="tri">${VIT[k].tri}</span>`;
+document.getElementById('tabVital').innerHTML = `<h4><span>Dig order · radar breathing pattern</span><span>aid for rescuers</span></h4>
+  <div class="r1"><b>#1</b> ${vitRow(0, RAD1.name)} (aid, not diagnosis)</div><div class="r2">#2 ${vitRow(1, RAD2.name)}</div>`;
+const setTxt = (id, txt, html) => { const e = document.getElementById(id); if (html ? e.innerHTML !== txt : e.textContent !== txt) html ? (e.innerHTML = txt) : (e.textContent = txt); };
 const TAB0 = 56.6, TAP = 59.2, TAB1 = 64;
 const tabletOn = t => t >= TAB0 && t < TAB1;
 const tab3D = t => t >= TAP + 0.25 && t < TAB1;
@@ -869,12 +1017,14 @@ const _v = new THREE.Vector3(), _up = new THREE.Vector3(0, 1, 0), _q = new THREE
 const waveGeo = new THREE.SphereGeometry(1, 30, 10, 0, TAU, 0, 0.6);
 const rwaves = drones.map(() => [0, 1, 2].map(() => { const m = new THREE.Mesh(waveGeo, new THREE.MeshBasicMaterial({ color: C.radar, transparent: true, opacity: 0.2, side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending })); scene.add(m); return m; }));
 
-function update(t) {
-  const ci = Math.max(0, CHAPTERS.findIndex(c => t < c.t1)); const ch = CHAPTERS[t >= T_END ? CHAPTERS.length - 1 : ci];
+let VT = 0, tabMode0 = '';   // VT = current video time (drawMap and the zones read it)
+function update(v) {
+  VT = v; const t = storyT(v), open = v < OPEN;   // t = story time for everything below
+  const ci = Math.max(0, CHAPTERS.findIndex(c => v < c.t1)); const ch = CHAPTERS[v >= T_END ? CHAPTERS.length - 1 : ci];
   $('phaseNo').textContent = `${String(CHAPTERS.indexOf(ch) + 1).padStart(2, '0')} / ${CHAPTERS.length}`; $('phaseTitle').textContent = ch.name;
-  const cap = CAPS.filter(c => c[0] <= t).pop()[1]; if ($('caption').textContent !== cap) $('caption').textContent = cap;
-  $('time').textContent = `${fmt(t)} / ${fmt(T_END)}`;
-  chapBtns.forEach((b, i) => { const c = CHAPTERS[i], f = clamp((t - c.t0) / (c.t1 - c.t0), 0, 1); b.firstChild.style.width = f * 100 + '%'; b.classList.toggle('on', c === ch); b.classList.toggle('done', f >= 1); });
+  const cap = open ? OCAPS.filter(c => c[0] <= v).pop()[1] : CAPS.filter(c => c[0] <= t).pop()[1]; if ($('caption').textContent !== cap) $('caption').textContent = cap;
+  $('time').textContent = `${fmt(v)} / ${fmt(T_END)}`;
+  chapBtns.forEach((b, i) => { const c = CHAPTERS[i], f = clamp((v - c.t0) / (c.t1 - c.t0), 0, 1); b.firstChild.style.width = f * 100 + '%'; b.classList.toggle('on', c === ch); b.classList.toggle('done', f >= 1); });
 
   // drones
   drones.forEach((d, i) => {
@@ -887,11 +1037,27 @@ function update(t) {
     d.lidarMat.emissiveIntensity = surveying ? 1.6 : 0.4;
     const rad = radarOn(t); d.radarMat.emissiveIntensity = rad ? 1.2 + 0.6 * Math.sin(t * 8) : 0.25;
     d.micMat.emissiveIntensity = listening(t) ? 0.8 + 1.6 * Math.max(0, Math.sin(t * 5 + i)) : 0.2;
-    const st = t < 6 ? 'deploying' : surveying ? 'LiDAR sweep' : !ld ? (t < 19 ? 'landing' : t < 54 ? `to ${P2.name}` : `to ${P3.name}`) : rad ? 'radar dwell' : listening(t) ? 'listening' : 'landed';
+    const st = t < 6 ? `to ${P1.name}` : surveying ? 'LiDAR sweep' : !ld ? (t < 19 ? 'landing' : t < 54 ? `to ${P2.name}` : `to ${P3.name}`) : rad ? 'radar dwell' : listening(t) ? 'listening' : 'landed';
     if (d.span.textContent !== st) d.span.textContent = st;
     const dir = _v.set(pile.x - p.x, 2 - p.y, pile.z - p.z).normalize(); _q.setFromUnitVectors(_up, dir);
     rwaves[i].forEach((w, j) => { const on = rad && ui.radar; w.visible = on; if (!on) return; const f = (t * 0.7 + j / 3) % 1; w.position.copy(d.g.position); w.quaternion.copy(_q); w.scale.setScalar(0.5 + f * 10); w.material.opacity = 0.3 * (1 - f); });
   });
+
+  if (open) drones.forEach((d, i) => {   // recon opening: drones follow the recon keys instead of the story path
+    const p = reconPos(i, v), p2 = reconPos(i, v + 0.08), vx = (p2.x - p.x) / 0.08, vz = (p2.z - p.z) / 0.08, hs = Math.hypot(vx, vz);
+    d.g.position.set(p.x, p.y, p.z); if (hs > 0.3) d.g.rotation.set(0, Math.atan2(-vz, vx), 0); d.body.rotation.set(0, 0, -clamp(hs * 0.02, 0, 0.28));
+    const sit = (i === 1 && perched(v)) || v < 0.15, sweep = v >= 2.4 && v < 6.6, listen = i === 1 && perched(v);
+    d.rotors.forEach((r, j) => r.rotation.y = sit ? j * 0.7 : v * 50 + j);
+    d.lidarMat.emissiveIntensity = sweep ? 1.6 : 0.4; d.radarMat.emissiveIntensity = 0.25; d.micMat.emissiveIntensity = listen ? 0.8 + 1.6 * Math.max(0, Math.sin(v * 5 + i)) : 0.2;
+    const st = v < 2.4 ? 'launch' : sweep ? 'recon sweep' : listen ? 'perch · listening' : i === 1 && v < 8.1 ? 'to perch' : 'hover';
+    if (d.span.textContent !== st) d.span.textContent = st;
+  });
+  { const rn = rCountAt(v); reconCloud.visible = ui.lidar && rn > 0 && v < OPEN + 1; rcGeo.setDrawRange(0, rn); reconCloud.material.opacity = 1 - sstep(10.8, 12.8, v); }
+  for (const p of PILES) {
+    const zs = zoneStatus(p, v, t), st = zs && ZSTY[zs], zl = p.zoneLines;
+    zl.dashed.visible = !!(st && st.dash); zl.solid.visible = !!(st && !st.dash);
+    if (st) (st.dash ? zl.dashed : zl.solid).material.color.setHex(st.hex);
+  }
 
   // lidar
   const n = countAt(t); cloud.visible = ui.lidar && n > 0; cloudGeo.setDrawRange(0, n);
@@ -903,7 +1069,7 @@ function update(t) {
   RAD1.update(t); RAD2.update(t);
 
   // acoustics
-  waves.forEach(w => w.m.forEach((m, j) => { const on = ui.acoustic && t >= 19.5 && !(w.s.pile === P2 && t > 58.4); m.visible = on; if (!on) return; const per = w.s.kind === 'knock' ? 0.9 : w.s.kind === 'gen' ? 0.5 : 1.3, f = ((t / per) + j / 2) % 1; m.position.copy(w.surf); m.scale.setScalar(0.3 + f * (w.s.human > 0.5 ? 7 : 4)); m.material.opacity = 0.3 * (1 - f); }));
+  waves.forEach(w => w.m.forEach((m, j) => { const on = ui.acoustic && (open ? perched(v) && d2(w.s, PERCH) < 34 : t >= 19.5 && !(w.s.pile === P2 && t > 58.4)); m.visible = on; if (!on) return; const per = w.s.kind === 'knock' ? 0.9 : w.s.kind === 'gen' ? 0.5 : 1.3, f = ((t / per) + j / 2) % 1; m.position.copy(w.surf); m.scale.setScalar(0.3 + f * (w.s.human > 0.5 ? 7 : 4)); m.material.opacity = 0.3 * (1 - f); }));
   cones.forEach(c => {
     const human = c.s.human > 0.5, an = sstep(40, 41, t);
     c.m.visible = ui.acoustic && t >= c.tIn && (human || an < 1);
@@ -936,10 +1102,22 @@ function update(t) {
   // dashboard minimap
   const mw = mini.width, mh = mini.height; drawMap(mctx, mw, mh, VIEW_ALL, t);
   const flash = (t >= 27.2 && t < 29) || (t >= 61 && t < 63);
-  $('dashNote').innerHTML = flash ? '<b>new ping</b>' : t >= 61 ? '2 pings' : t >= 27.2 ? '1 ping' : '';
-  // tablet
-  tabletEl.hidden = !tabletOn(t);
-  if (!tabletEl.hidden) {
+  const dn = open ? (v < 9.4 ? 'recon' : v < 11.8 ? `${PILES.length} proposals` : `${PILES.length} zones tasked`) : flash ? '<b>new ping</b>' : t >= 61 ? '2 pings' : t >= 27.2 ? '1 ping' : '';
+  if ($('dashNote').innerHTML !== dn) $('dashNote').innerHTML = dn;
+  // tablet: the opening's Accept beat, or the story's ping / LiDAR / dig-order view
+  const openTab = v >= 10.35 && v < 12.9, mode = open ? (openTab ? 'recon' : '') : tabletOn(t) ? 'story' : '';
+  if (mode !== tabMode0) { tabMode0 = mode; if (mode) { $('tabTitle').textContent = mode === 'recon' ? 'proposed search zones' : TAB_TITLE; $('tabTitle').style.color = mode === 'recon' ? 'var(--fg)' : ''; $('tabFacts').innerHTML = mode === 'recon' ? RECON_FACTS(false) : TAB_FACTS; } }
+  tabletEl.hidden = !mode; $('tabAccept').hidden = mode !== 'recon';
+  if (mode === 'recon') {
+    tabletEl.style.opacity = sstep(10.35, 10.75, v) * (1 - sstep(12.5, 12.9, v)); tabGL.hidden = true; tabMap.hidden = false; $('tabMode').textContent = 'recon map';
+    drawMap(tctx, tabMap.width, tabMap.height, { x0: -36, x1: 36, z0: -34, z1: 34 }, t);
+    const ok = v >= 11.8, acc = $('tabAccept'), sr = $('tabScreen').getBoundingClientRect(), ar = acc.getBoundingClientRect();
+    acc.classList.toggle('done', ok); setTxt('tabAccept', ok ? `✓ ${PILES.length} zones tasked` : `Accept ${PILES.length} zones`);
+    if ((ok ? 'y' : 'n') !== acc.dataset.f) { acc.dataset.f = ok ? 'y' : 'n'; $('tabFacts').innerHTML = RECON_FACTS(ok); }
+    const tx = ar.left - sr.left + ar.width / 2, ty = ar.top - sr.top + ar.height / 2, u = sstep(10.7, 11.55, v);
+    fingerEl.hidden = v < 10.7 || v > 12.3; fingerEl.style.left = lerp(sr.width * 0.3, tx, u) + 'px'; fingerEl.style.top = lerp(sr.height * 1.05, ty, u) + 'px';
+    fingerEl.style.transform = `translate(-50%,-50%) scale(${v > 11.65 && v < 11.95 ? 0.75 : 1})`;
+  } else if (!tabletEl.hidden) {
     tabletEl.style.opacity = sstep(TAB0, TAB0 + 0.4, t) * (1 - sstep(TAB1 - 0.4, TAB1, t));
     const is3 = tab3D(t); tabGL.hidden = !is3; tabMap.hidden = is3; $('tabMode').textContent = is3 ? 'LiDAR model · pile ' + P1.name : 'map';
     if (!is3) {
@@ -950,8 +1128,8 @@ function update(t) {
       fingerEl.style.transform = `translate(-50%,-50%) scale(${t > TAP - 0.2 ? 0.75 : 1})`;
     } else fingerEl.hidden = true;
   }
-  labelR.domElement.style.visibility = tabletOn(t) ? 'hidden' : '';
-  if (follow) { camAt(t); camera.position.copy(_cp); controls.target.copy(_ct); }
+  labelR.domElement.style.visibility = tabletEl.hidden ? '' : 'hidden';
+  if (follow) { if (open) camAt(v, OCAM); else camAt(t); camera.position.copy(_cp); controls.target.copy(_ct); }
 }
 
 // ================= render loop =================
@@ -964,19 +1142,27 @@ function frame(now) {
   const dt = Math.min(0.25, Math.max(0, (now - last) / 1000)); last = now;
   if (playing) { T += dt * speed; if (T >= T_END) { T = T_END; setPlay(false); } }
   update(T); controls.update(); renderer.render(scene, camera);
-  if (!tabletEl.hidden && tab3D(T)) {
+  const ST = storyT(T);
+  if (!tabletEl.hidden && T >= OPEN && tab3D(ST)) {
     const r = tabGL.getBoundingClientRect(), a = app.getBoundingClientRect(), x = r.left - a.left, y = a.bottom - r.bottom;
-    const ang = T * 0.35, c = V(RAD1.est.x, RAD1.estY + 1.2, RAD1.est.z);
+    const ang = ST * 0.35, c = V(RAD1.est.x, RAD1.estY + 1.2, RAD1.est.z);
     cam2.position.set(c.x + Math.cos(ang) * 8.5, c.y + 5.5, c.z + Math.sin(ang) * 8.5); cam2.lookAt(c); cam2.aspect = r.width / Math.max(1, r.height); cam2.updateProjectionMatrix();
     renderer.setScissorTest(true); renderer.setScissor(x, y, r.width, r.height); renderer.setViewport(x, y, r.width, r.height);
     renderer.autoClear = false; renderer.setClearColor(0x070b0f, 1); renderer.clear(); const bg = scene.background, fog = scene.fog; scene.background = null; scene.fog = null;
     renderer.render(scene, cam2); scene.background = bg; scene.fog = fog; renderer.autoClear = true; renderer.setScissorTest(false); renderer.setViewport(0, 0, a.width, a.height);
     const proj = (p, el) => { const v = p.clone().project(cam2); el.style.left = ((v.x + 1) / 2 * r.width) + 'px'; el.style.top = ((1 - v.y) / 2 * r.height) + 'px'; };
-    tabPing.textContent = `R1 · candidate depth ≈${RAD1.depth.toFixed(1)} m`; proj(V(RAD1.est.x, RAD1.estY, RAD1.est.z), tabPing); proj(youMk.position, tabYou);
+    tabPing.textContent = `${RAD1.name} · depth ≈${RAD1.depth.toFixed(1)} m (nominal)`; proj(V(RAD1.est.x, RAD1.estY, RAD1.est.z), tabPing); proj(youMk.position, tabYou);
+    $('tabVital').hidden = ST < 60.2;
+    tabPing.style.transform = parseFloat(tabPing.style.left) + 12 + tabPing.offsetWidth > r.width ? 'translate(calc(-100% - 12px), -50%)' : '';   // flip left at the edge
   }
   const _lp = new THREE.Vector3(), yMax = 1 - 2 * 78 / Math.max(1, app.clientHeight);
   for (const o of allLabels) { let v = true; for (let p = o.parent; p; p = p.parent) if (!p.visible) { v = false; break; } if (v) { o.getWorldPosition(_lp).project(camera); if (_lp.y < -yMax) v = false; } o.element.style.visibility = v ? '' : 'hidden'; }
   labelR.render(scene, camera);
+  // R1-041: hide labels that would clip at the screen edge or sit under a HUD panel (caption, dashboard, agent, toggles)
+  const aw = app.clientWidth, ah = app.clientHeight;
+  const blk = ['top', 'dash', 'agent', 'layers', 'bar'].map(id => document.getElementById(id)).filter(e => e && !e.hidden).map(e => e.getBoundingClientRect()).filter(b => b.width > 0);
+  const vis = allLabels.filter(o => o.element.style.visibility !== 'hidden'), rects = vis.map(o => o.element.getBoundingClientRect());
+  vis.forEach((o, k) => { const r = rects[k]; if (r.left < 2 || r.right > aw - 2 || r.top < 2 || blk.some(b => r.left < b.right && r.right > b.left && r.top < b.bottom && r.bottom > b.top)) o.element.style.visibility = 'hidden'; });
 }
 function safeFrame(now) { try { frame(now); } catch (e) { console.error(e); window.__fail && window.__fail(e.message || String(e)); } }
 function raf(now) { safeFrame(now); requestAnimationFrame(raf); }
@@ -987,7 +1173,7 @@ setPlay(playing);
 window.seek = v => { T = v; setPlay(false); document.getElementById('bigPlay').hidden = true; };
 window.__bench = (n = 20) => { const gl = renderer.getContext(), px = new Uint8Array(4); update(T); renderer.render(scene, camera); gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px); const t0 = performance.now(); for (let i = 0; i < n; i++) { update(T); renderer.render(scene, camera); labelR.render(scene, camera); } gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px); const r = renderer.info.render; return { msPerFrame: +((performance.now() - t0) / n).toFixed(1), calls: r.calls, tris: r.triangles, pr: renderer.getPixelRatio(), w: innerWidth }; };
 window.__cam = (p, q) => { follow = false; followBtn.hidden = false; camera.position.set(...p); controls.target.set(...q); }; // debug: fixed camera (e.g. top-down, north up)
-window.__sweep = () => { const errs = []; for (let t = 0; t <= T_END; t += 0.25) { try { update(t); } catch (e) { errs.push(t + ': ' + e.message); if (errs.length > 3) break; } } update(T); return { seed: SEED, scenario: !!SCN, P1: P1.name, P2: P2.name, P3: P3.name, queue: QUEUE.map(q => q.pile.name + ':' + q.score), silent: silentPiles.map(p => p.name), errs }; };
+window.__sweep = () => { const errs = []; for (let t = 0; t <= T_END; t += 0.25) { try { update(t); } catch (e) { errs.push(t + ': ' + e.message); if (errs.length > 3) break; } } update(T); return { seed: SEED, scenario: !!SCN, T_END, reconPts: RNP, reconAt5: rCountAt(5), pings: [RAD1.name, RAD2.name], vital: $('tabVital').textContent.replace(/\s+/g, ' ').trim(), P1: P1.name, P2: P2.name, P3: P3.name, queue: QUEUE.map(q => q.pile.name + ':' + q.score), silent: silentPiles.map(p => p.name), errs }; };
 document.getElementById('loading').remove();
 last = performance.now(); safeFrame(last);
 requestAnimationFrame(raf);

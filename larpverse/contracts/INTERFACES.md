@@ -297,3 +297,26 @@ Breathing-pattern features measured from the slow-time signal of a radar candida
 - Dig order: `vitals.dig_score(v, p_mass, depth_m)` = `priority_weight x p_mass x clip(1 - depth_m / 4, 0.2, 1)`; no vitals -> the "assess" weight.
 - Pattern/hint claims need a >= 45-60 s dwell; a 20 s scan is rate-only (a caveat says so).
 - Wording rule (UI, decider, brief): "possible", "check", "aid"; never "diagnosis", "confirmed", or "injured" / "unconscious" / "child" as fact. `fast_small` = "fast, regular breathing (possible child, weak)".
+
+### Mission state fields (v1.3, from the mission builder; additive)
+
+- `mission`: `autonomous`, `dispatch_policy`, `radar`, `radar_penetration` (`legacy|literature`), `radar_reach_beneath_m`, `delivery` (`pod|land`), `scan_budget`, `scans_used`, `battery_reserve`, `battery_swaps`, `battery_swap` (`{to_pile, ends, since}` or `null`), `summary` (final text; `null` until done). `phase` adds `battery_swap`; `stage` adds `swap`. `acoustic_source` value `stub-from-truth` replaces `stub` (synthetic clips from hidden truth; a WARNING is logged).
+- `site`: `kind`, `geo` (`{lat, lon, bearing_deg, name}`), `staging`. `pings` are firm, stationary candidates.
+- `piles[]`: `polygon` (CCW `[[x, y]]`), `scans`, `radar_coverage`, `radar_coverage_shallow` (0–1, top 2 m), `radar_reach_m`, `nonhuman_listens`. A pile may appear twice in `mission.visited` (a revisit).
+- `radar_candidates[]`: `depth_m`, `depth_sigma`, `depth_source` (`radar_estimate|nominal`), `p_kind` (share of pile belief), `support` / `support_needed` (strong agreeing ranges / 3), `outliers` (ids of outvoted scans; flagged, never a veto), `t_found`, `visit`, and optional `vitals` + `dig_score`.
+- `scans[]`: `max_reliable_depth_m`, `vitals_look` (true for a 60 s dwell).
+- `acoustic_clips[]`: `vad_speech_ratio`, `association`, `association_conf`, `ambiguous_with`, `bearings` (`[{drone_id, origin, bearing_deg, width_deg, snr_db}]`), `notes`.
+- `drones[]`: `track` (last ≤ 200 `[x, y, z, t]`), `winch_len_m` (0 when the pod is stowed).
+- `decisions[].options[]`: `score`. Actions add `revisit`; flags add `battery_swap` and `scan_budget_used`.
+
+### Winch-lowered sensor pod (v1.3)
+
+The heavy drone delivers the radar and a 4-mic array on a pod lowered by winch onto the rubble surface (see the PLAN decisions log). A drone carries at most one pod.
+
+```jsonc
+"pods": [ { "drone_id": "d1", "xy": [x, y], "z": 4.2,            // pod position (surface z when resting)
+            "status": "stowed|lowering|scanning|raising",
+            "placement": 2, "of": 3,                              // placement index for the current lead
+            "lead": "a7", "t": 312.0 } ]
+```
+Scans made from a pod carry `scans[].delivery = "pod"` and have their origin at the pod's surface position (no air-gap path).

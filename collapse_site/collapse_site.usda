@@ -1,0 +1,3131 @@
+#usda 1.0
+(
+    customLayerData = {
+        dictionary larpverse = {
+            double core_extent_m = 105
+            double extent_m = 320
+            string frame = "x=east y=north z=up, metres"
+            string generator = "build_collapse_site.py"
+            string origin = "centre of scanned site"
+        }
+        dictionary renderSettings = {
+            bool "rtx:ambientOcclusion:enabled" = 1
+            double "rtx:ambientOcclusion:rayLength" = 3
+            bool "rtx:fog:enabled" = 1
+            float3 "rtx:fog:fogColor" = (0.78, 0.74, 0.68)
+            double "rtx:fog:fogColorIntensity" = 1
+            double "rtx:fog:fogDistanceDensity" = 0.35
+            double "rtx:fog:fogEndDist" = 900
+            double "rtx:fog:fogEndHeight" = 60
+            double "rtx:fog:fogHeightDensity" = 0.25
+            double "rtx:fog:fogStartDist" = 60
+            double "rtx:fog:fogStartHeight" = 0
+            bool "rtx:fog:fogZup:enabled" = 1
+            bool "rtx:indirectDiffuse:enabled" = 1
+            float3 "rtx:post:colorcorr:contrast" = (1.12, 1.12, 1.12)
+            bool "rtx:post:colorcorr:enabled" = 1
+            float3 "rtx:post:colorcorr:gain" = (1, 1, 1)
+            float3 "rtx:post:colorcorr:gamma" = (1, 1, 1)
+            float3 "rtx:post:colorcorr:offset" = (0, 0, 0)
+            float3 "rtx:post:colorcorr:saturation" = (1.08, 1.08, 1.08)
+            bool "rtx:post:histogram:enabled" = 0
+            bool "rtx:post:lensFlares:enabled" = 1
+            double "rtx:post:lensFlares:flareScale" = 0.04
+            double "rtx:post:tonemap:cameraShutter" = 50
+            double "rtx:post:tonemap:fNumber" = 5
+            double "rtx:post:tonemap:filmIso" = 100
+            int "rtx:post:tonemap:op" = 6
+            bool "rtx:post:tvNoise:enableFilmGrain" = 1
+            bool "rtx:post:tvNoise:enableGhostFlickering" = 0
+            bool "rtx:post:tvNoise:enableRandomSplotches" = 0
+            bool "rtx:post:tvNoise:enableScanlines" = 0
+            bool "rtx:post:tvNoise:enableScrollBug" = 0
+            bool "rtx:post:tvNoise:enableVerticalLines" = 0
+            bool "rtx:post:tvNoise:enableVignetting" = 1
+            bool "rtx:post:tvNoise:enableVignettingFlickering" = 0
+            bool "rtx:post:tvNoise:enableWaveDistortion" = 0
+            bool "rtx:post:tvNoise:enabled" = 1
+            double "rtx:post:tvNoise:grainAmount" = 0.025
+            double "rtx:post:tvNoise:grainSize" = 1.4
+            double "rtx:post:tvNoise:vignettingSize" = 107
+            double "rtx:post:tvNoise:vignettingStrength" = 0.55
+            bool "rtx:reflections:enabled" = 1
+            bool "rtx:shadows:enabled" = 1
+        }
+    }
+    defaultPrim = "CollapseSite"
+    doc = "Collapsed-building disaster site for Isaac Sim (Larpverse / AgentVerse 2026). Z-up, metres. Core 105 m reconstructed from top-down + oblique screenshots of a photogrammetry scan; surroundings (320 m x 320 m) procedurally extrapolated."
+    metersPerUnit = 1
+    subLayers = [
+        @./geo/terrain.usdc@,
+        @./geo/buildings.usdc@,
+        @./geo/debris.usdc@
+    ]
+    upAxis = "Z"
+)
+
+over "CollapseSite" (
+    kind = "assembly"
+)
+{
+    def Scope "Looks"
+    {
+        def Material "terrain_r0c0"
+        {
+            token outputs:mdl:displacement.connect = </CollapseSite/Looks/terrain_r0c0/OmniPBR.outputs:out>
+            token outputs:mdl:surface.connect = </CollapseSite/Looks/terrain_r0c0/OmniPBR.outputs:out>
+            token outputs:mdl:volume.connect = </CollapseSite/Looks/terrain_r0c0/OmniPBR.outputs:out>
+            token outputs:surface.connect = </CollapseSite/Looks/terrain_r0c0/PreviewSurface.outputs:surface>
+
+            def Shader "OmniPBR"
+            {
+                uniform token info:implementationSource = "sourceAsset"
+                uniform asset info:mdl:sourceAsset = @OmniPBR.mdl@
+                uniform token info:mdl:sourceAsset:subIdentifier = "OmniPBR"
+                float inputs:bump_factor = 1
+                asset inputs:diffuse_texture = @./textures/terrain_r0c0_albedo.jpg@ (
+                    colorSpace = "sRGB"
+                )
+                float inputs:metallic_constant = 0
+                asset inputs:normalmap_texture = @./textures/terrain_r0c0_normal.jpg@ (
+                    colorSpace = "raw"
+                )
+                float inputs:reflection_roughness_constant = 0.9
+                asset inputs:reflectionroughness_texture = @./textures/terrain_r0c0_rough.jpg@ (
+                    colorSpace = "raw"
+                )
+                float inputs:reflectionroughness_texture_influence = 1
+                float inputs:specular_level = 0.35
+                token outputs:out
+            }
+
+            def Shader "PreviewSurface"
+            {
+                uniform token info:id = "UsdPreviewSurface"
+                color3f inputs:diffuseColor.connect = </CollapseSite/Looks/terrain_r0c0/albedoTex.outputs:rgb>
+                float inputs:metallic = 0
+                normal3f inputs:normal.connect = </CollapseSite/Looks/terrain_r0c0/normalTex.outputs:rgb>
+                float inputs:roughness = 0.9
+                float inputs:roughness.connect = </CollapseSite/Looks/terrain_r0c0/roughTex.outputs:r>
+                token outputs:surface
+            }
+
+            def Shader "stReader"
+            {
+                uniform token info:id = "UsdPrimvarReader_float2"
+                string inputs:varname = "st"
+                float2 outputs:result
+            }
+
+            def Shader "albedoTex"
+            {
+                uniform token info:id = "UsdUVTexture"
+                asset inputs:file = @./textures/terrain_r0c0_albedo.jpg@
+                token inputs:sourceColorSpace = "sRGB"
+                float2 inputs:st.connect = </CollapseSite/Looks/terrain_r0c0/stReader.outputs:result>
+                token inputs:wrapS = "clamp"
+                token inputs:wrapT = "clamp"
+                float3 outputs:rgb
+            }
+
+            def Shader "normalTex"
+            {
+                uniform token info:id = "UsdUVTexture"
+                float4 inputs:bias = (-1, -1, -1, 0)
+                asset inputs:file = @./textures/terrain_r0c0_normal.jpg@
+                float4 inputs:scale = (2, 2, 2, 1)
+                token inputs:sourceColorSpace = "raw"
+                float2 inputs:st.connect = </CollapseSite/Looks/terrain_r0c0/stReader.outputs:result>
+                token inputs:wrapS = "clamp"
+                token inputs:wrapT = "clamp"
+                float3 outputs:rgb
+            }
+
+            def Shader "roughTex"
+            {
+                uniform token info:id = "UsdUVTexture"
+                asset inputs:file = @./textures/terrain_r0c0_rough.jpg@
+                token inputs:sourceColorSpace = "raw"
+                float2 inputs:st.connect = </CollapseSite/Looks/terrain_r0c0/stReader.outputs:result>
+                token inputs:wrapS = "clamp"
+                token inputs:wrapT = "clamp"
+                float outputs:r
+            }
+        }
+
+        def Material "terrain_r0c1"
+        {
+            token outputs:mdl:displacement.connect = </CollapseSite/Looks/terrain_r0c1/OmniPBR.outputs:out>
+            token outputs:mdl:surface.connect = </CollapseSite/Looks/terrain_r0c1/OmniPBR.outputs:out>
+            token outputs:mdl:volume.connect = </CollapseSite/Looks/terrain_r0c1/OmniPBR.outputs:out>
+            token outputs:surface.connect = </CollapseSite/Looks/terrain_r0c1/PreviewSurface.outputs:surface>
+
+            def Shader "OmniPBR"
+            {
+                uniform token info:implementationSource = "sourceAsset"
+                uniform asset info:mdl:sourceAsset = @OmniPBR.mdl@
+                uniform token info:mdl:sourceAsset:subIdentifier = "OmniPBR"
+                float inputs:bump_factor = 1
+                asset inputs:diffuse_texture = @./textures/terrain_r0c1_albedo.jpg@ (
+                    colorSpace = "sRGB"
+                )
+                float inputs:metallic_constant = 0
+                asset inputs:normalmap_texture = @./textures/terrain_r0c1_normal.jpg@ (
+                    colorSpace = "raw"
+                )
+                float inputs:reflection_roughness_constant = 0.9
+                asset inputs:reflectionroughness_texture = @./textures/terrain_r0c1_rough.jpg@ (
+                    colorSpace = "raw"
+                )
+                float inputs:reflectionroughness_texture_influence = 1
+                float inputs:specular_level = 0.35
+                token outputs:out
+            }
+
+            def Shader "PreviewSurface"
+            {
+                uniform token info:id = "UsdPreviewSurface"
+                color3f inputs:diffuseColor.connect = </CollapseSite/Looks/terrain_r0c1/albedoTex.outputs:rgb>
+                float inputs:metallic = 0
+                normal3f inputs:normal.connect = </CollapseSite/Looks/terrain_r0c1/normalTex.outputs:rgb>
+                float inputs:roughness = 0.9
+                float inputs:roughness.connect = </CollapseSite/Looks/terrain_r0c1/roughTex.outputs:r>
+                token outputs:surface
+            }
+
+            def Shader "stReader"
+            {
+                uniform token info:id = "UsdPrimvarReader_float2"
+                string inputs:varname = "st"
+                float2 outputs:result
+            }
+
+            def Shader "albedoTex"
+            {
+                uniform token info:id = "UsdUVTexture"
+                asset inputs:file = @./textures/terrain_r0c1_albedo.jpg@
+                token inputs:sourceColorSpace = "sRGB"
+                float2 inputs:st.connect = </CollapseSite/Looks/terrain_r0c1/stReader.outputs:result>
+                token inputs:wrapS = "clamp"
+                token inputs:wrapT = "clamp"
+                float3 outputs:rgb
+            }
+
+            def Shader "normalTex"
+            {
+                uniform token info:id = "UsdUVTexture"
+                float4 inputs:bias = (-1, -1, -1, 0)
+                asset inputs:file = @./textures/terrain_r0c1_normal.jpg@
+                float4 inputs:scale = (2, 2, 2, 1)
+                token inputs:sourceColorSpace = "raw"
+                float2 inputs:st.connect = </CollapseSite/Looks/terrain_r0c1/stReader.outputs:result>
+                token inputs:wrapS = "clamp"
+                token inputs:wrapT = "clamp"
+                float3 outputs:rgb
+            }
+
+            def Shader "roughTex"
+            {
+                uniform token info:id = "UsdUVTexture"
+                asset inputs:file = @./textures/terrain_r0c1_rough.jpg@
+                token inputs:sourceColorSpace = "raw"
+                float2 inputs:st.connect = </CollapseSite/Looks/terrain_r0c1/stReader.outputs:result>
+                token inputs:wrapS = "clamp"
+                token inputs:wrapT = "clamp"
+                float outputs:r
+            }
+        }
+
+        def Material "terrain_r0c2"
+        {
+            token outputs:mdl:displacement.connect = </CollapseSite/Looks/terrain_r0c2/OmniPBR.outputs:out>
+            token outputs:mdl:surface.connect = </CollapseSite/Looks/terrain_r0c2/OmniPBR.outputs:out>
+            token outputs:mdl:volume.connect = </CollapseSite/Looks/terrain_r0c2/OmniPBR.outputs:out>
+            token outputs:surface.connect = </CollapseSite/Looks/terrain_r0c2/PreviewSurface.outputs:surface>
+
+            def Shader "OmniPBR"
+            {
+                uniform token info:implementationSource = "sourceAsset"
+                uniform asset info:mdl:sourceAsset = @OmniPBR.mdl@
+                uniform token info:mdl:sourceAsset:subIdentifier = "OmniPBR"
+                float inputs:bump_factor = 1
+                asset inputs:diffuse_texture = @./textures/terrain_r0c2_albedo.jpg@ (
+                    colorSpace = "sRGB"
+                )
+                float inputs:metallic_constant = 0
+                asset inputs:normalmap_texture = @./textures/terrain_r0c2_normal.jpg@ (
+                    colorSpace = "raw"
+                )
+                float inputs:reflection_roughness_constant = 0.9
+                asset inputs:reflectionroughness_texture = @./textures/terrain_r0c2_rough.jpg@ (
+                    colorSpace = "raw"
+                )
+                float inputs:reflectionroughness_texture_influence = 1
+                float inputs:specular_level = 0.35
+                token outputs:out
+            }
+
+            def Shader "PreviewSurface"
+            {
+                uniform token info:id = "UsdPreviewSurface"
+                color3f inputs:diffuseColor.connect = </CollapseSite/Looks/terrain_r0c2/albedoTex.outputs:rgb>
+                float inputs:metallic = 0
+                normal3f inputs:normal.connect = </CollapseSite/Looks/terrain_r0c2/normalTex.outputs:rgb>
+                float inputs:roughness = 0.9
+                float inputs:roughness.connect = </CollapseSite/Looks/terrain_r0c2/roughTex.outputs:r>
+                token outputs:surface
+            }
+
+            def Shader "stReader"
+            {
+                uniform token info:id = "UsdPrimvarReader_float2"
+                string inputs:varname = "st"
+                float2 outputs:result
+            }
+
+            def Shader "albedoTex"
+            {
+                uniform token info:id = "UsdUVTexture"
+                asset inputs:file = @./textures/terrain_r0c2_albedo.jpg@
+                token inputs:sourceColorSpace = "sRGB"
+                float2 inputs:st.connect = </CollapseSite/Looks/terrain_r0c2/stReader.outputs:result>
+                token inputs:wrapS = "clamp"
+                token inputs:wrapT = "clamp"
+                float3 outputs:rgb
+            }
+
+            def Shader "normalTex"
+            {
+                uniform token info:id = "UsdUVTexture"
+                float4 inputs:bias = (-1, -1, -1, 0)
+                asset inputs:file = @./textures/terrain_r0c2_normal.jpg@
+                float4 inputs:scale = (2, 2, 2, 1)
+                token inputs:sourceColorSpace = "raw"
+                float2 inputs:st.connect = </CollapseSite/Looks/terrain_r0c2/stReader.outputs:result>
+                token inputs:wrapS = "clamp"
+                token inputs:wrapT = "clamp"
+                float3 outputs:rgb
+            }
+
+            def Shader "roughTex"
+            {
+                uniform token info:id = "UsdUVTexture"
+                asset inputs:file = @./textures/terrain_r0c2_rough.jpg@
+                token inputs:sourceColorSpace = "raw"
+                float2 inputs:st.connect = </CollapseSite/Looks/terrain_r0c2/stReader.outputs:result>
+                token inputs:wrapS = "clamp"
+                token inputs:wrapT = "clamp"
+                float outputs:r
+            }
+        }
+
+        def Material "terrain_r0c3"
+        {
+            token outputs:mdl:displacement.connect = </CollapseSite/Looks/terrain_r0c3/OmniPBR.outputs:out>
+            token outputs:mdl:surface.connect = </CollapseSite/Looks/terrain_r0c3/OmniPBR.outputs:out>
+            token outputs:mdl:volume.connect = </CollapseSite/Looks/terrain_r0c3/OmniPBR.outputs:out>
+            token outputs:surface.connect = </CollapseSite/Looks/terrain_r0c3/PreviewSurface.outputs:surface>
+
+            def Shader "OmniPBR"
+            {
+                uniform token info:implementationSource = "sourceAsset"
+                uniform asset info:mdl:sourceAsset = @OmniPBR.mdl@
+                uniform token info:mdl:sourceAsset:subIdentifier = "OmniPBR"
+                float inputs:bump_factor = 1
+                asset inputs:diffuse_texture = @./textures/terrain_r0c3_albedo.jpg@ (
+                    colorSpace = "sRGB"
+                )
+                float inputs:metallic_constant = 0
+                asset inputs:normalmap_texture = @./textures/terrain_r0c3_normal.jpg@ (
+                    colorSpace = "raw"
+                )
+                float inputs:reflection_roughness_constant = 0.9
+                asset inputs:reflectionroughness_texture = @./textures/terrain_r0c3_rough.jpg@ (
+                    colorSpace = "raw"
+                )
+                float inputs:reflectionroughness_texture_influence = 1
+                float inputs:specular_level = 0.35
+                token outputs:out
+            }
+
+            def Shader "PreviewSurface"
+            {
+                uniform token info:id = "UsdPreviewSurface"
+                color3f inputs:diffuseColor.connect = </CollapseSite/Looks/terrain_r0c3/albedoTex.outputs:rgb>
+                float inputs:metallic = 0
+                normal3f inputs:normal.connect = </CollapseSite/Looks/terrain_r0c3/normalTex.outputs:rgb>
+                float inputs:roughness = 0.9
+                float inputs:roughness.connect = </CollapseSite/Looks/terrain_r0c3/roughTex.outputs:r>
+                token outputs:surface
+            }
+
+            def Shader "stReader"
+            {
+                uniform token info:id = "UsdPrimvarReader_float2"
+                string inputs:varname = "st"
+                float2 outputs:result
+            }
+
+            def Shader "albedoTex"
+            {
+                uniform token info:id = "UsdUVTexture"
+                asset inputs:file = @./textures/terrain_r0c3_albedo.jpg@
+                token inputs:sourceColorSpace = "sRGB"
+                float2 inputs:st.connect = </CollapseSite/Looks/terrain_r0c3/stReader.outputs:result>
+                token inputs:wrapS = "clamp"
+                token inputs:wrapT = "clamp"
+                float3 outputs:rgb
+            }
+
+            def Shader "normalTex"
+            {
+                uniform token info:id = "UsdUVTexture"
+                float4 inputs:bias = (-1, -1, -1, 0)
+                asset inputs:file = @./textures/terrain_r0c3_normal.jpg@
+                float4 inputs:scale = (2, 2, 2, 1)
+                token inputs:sourceColorSpace = "raw"
+                float2 inputs:st.connect = </CollapseSite/Looks/terrain_r0c3/stReader.outputs:result>
+                token inputs:wrapS = "clamp"
+                token inputs:wrapT = "clamp"
+                float3 outputs:rgb
+            }
+
+            def Shader "roughTex"
+            {
+                uniform token info:id = "UsdUVTexture"
+                asset inputs:file = @./textures/terrain_r0c3_rough.jpg@
+                token inputs:sourceColorSpace = "raw"
+                float2 inputs:st.connect = </CollapseSite/Looks/terrain_r0c3/stReader.outputs:result>
+                token inputs:wrapS = "clamp"
+                token inputs:wrapT = "clamp"
+                float outputs:r
+            }
+        }
+
+        def Material "terrain_r1c0"
+        {
+            token outputs:mdl:displacement.connect = </CollapseSite/Looks/terrain_r1c0/OmniPBR.outputs:out>
+            token outputs:mdl:surface.connect = </CollapseSite/Looks/terrain_r1c0/OmniPBR.outputs:out>
+            token outputs:mdl:volume.connect = </CollapseSite/Looks/terrain_r1c0/OmniPBR.outputs:out>
+            token outputs:surface.connect = </CollapseSite/Looks/terrain_r1c0/PreviewSurface.outputs:surface>
+
+            def Shader "OmniPBR"
+            {
+                uniform token info:implementationSource = "sourceAsset"
+                uniform asset info:mdl:sourceAsset = @OmniPBR.mdl@
+                uniform token info:mdl:sourceAsset:subIdentifier = "OmniPBR"
+                float inputs:bump_factor = 1
+                asset inputs:diffuse_texture = @./textures/terrain_r1c0_albedo.jpg@ (
+                    colorSpace = "sRGB"
+                )
+                float inputs:metallic_constant = 0
+                asset inputs:normalmap_texture = @./textures/terrain_r1c0_normal.jpg@ (
+                    colorSpace = "raw"
+                )
+                float inputs:reflection_roughness_constant = 0.9
+                asset inputs:reflectionroughness_texture = @./textures/terrain_r1c0_rough.jpg@ (
+                    colorSpace = "raw"
+                )
+                float inputs:reflectionroughness_texture_influence = 1
+                float inputs:specular_level = 0.35
+                token outputs:out
+            }
+
+            def Shader "PreviewSurface"
+            {
+                uniform token info:id = "UsdPreviewSurface"
+                color3f inputs:diffuseColor.connect = </CollapseSite/Looks/terrain_r1c0/albedoTex.outputs:rgb>
+                float inputs:metallic = 0
+                normal3f inputs:normal.connect = </CollapseSite/Looks/terrain_r1c0/normalTex.outputs:rgb>
+                float inputs:roughness = 0.9
+                float inputs:roughness.connect = </CollapseSite/Looks/terrain_r1c0/roughTex.outputs:r>
+                token outputs:surface
+            }
+
+            def Shader "stReader"
+            {
+                uniform token info:id = "UsdPrimvarReader_float2"
+                string inputs:varname = "st"
+                float2 outputs:result
+            }
+
+            def Shader "albedoTex"
+            {
+                uniform token info:id = "UsdUVTexture"
+                asset inputs:file = @./textures/terrain_r1c0_albedo.jpg@
+                token inputs:sourceColorSpace = "sRGB"
+                float2 inputs:st.connect = </CollapseSite/Looks/terrain_r1c0/stReader.outputs:result>
+                token inputs:wrapS = "clamp"
+                token inputs:wrapT = "clamp"
+                float3 outputs:rgb
+            }
+
+            def Shader "normalTex"
+            {
+                uniform token info:id = "UsdUVTexture"
+                float4 inputs:bias = (-1, -1, -1, 0)
+                asset inputs:file = @./textures/terrain_r1c0_normal.jpg@
+                float4 inputs:scale = (2, 2, 2, 1)
+                token inputs:sourceColorSpace = "raw"
+                float2 inputs:st.connect = </CollapseSite/Looks/terrain_r1c0/stReader.outputs:result>
+                token inputs:wrapS = "clamp"
+                token inputs:wrapT = "clamp"
+                float3 outputs:rgb
+            }
+
+            def Shader "roughTex"
+            {
+                uniform token info:id = "UsdUVTexture"
+                asset inputs:file = @./textures/terrain_r1c0_rough.jpg@
+                token inputs:sourceColorSpace = "raw"
+                float2 inputs:st.connect = </CollapseSite/Looks/terrain_r1c0/stReader.outputs:result>
+                token inputs:wrapS = "clamp"
+                token inputs:wrapT = "clamp"
+                float outputs:r
+            }
+        }
+
+        def Material "terrain_r1c1"
+        {
+            token outputs:mdl:displacement.connect = </CollapseSite/Looks/terrain_r1c1/OmniPBR.outputs:out>
+            token outputs:mdl:surface.connect = </CollapseSite/Looks/terrain_r1c1/OmniPBR.outputs:out>
+            token outputs:mdl:volume.connect = </CollapseSite/Looks/terrain_r1c1/OmniPBR.outputs:out>
+            token outputs:surface.connect = </CollapseSite/Looks/terrain_r1c1/PreviewSurface.outputs:surface>
+
+            def Shader "OmniPBR"
+            {
+                uniform token info:implementationSource = "sourceAsset"
+                uniform asset info:mdl:sourceAsset = @OmniPBR.mdl@
+                uniform token info:mdl:sourceAsset:subIdentifier = "OmniPBR"
+                float inputs:bump_factor = 1
+                asset inputs:diffuse_texture = @./textures/terrain_r1c1_albedo.jpg@ (
+                    colorSpace = "sRGB"
+                )
+                float inputs:metallic_constant = 0
+                asset inputs:normalmap_texture = @./textures/terrain_r1c1_normal.jpg@ (
+                    colorSpace = "raw"
+                )
+                float inputs:reflection_roughness_constant = 0.9
+                asset inputs:reflectionroughness_texture = @./textures/terrain_r1c1_rough.jpg@ (
+                    colorSpace = "raw"
+                )
+                float inputs:reflectionroughness_texture_influence = 1
+                float inputs:specular_level = 0.35
+                token outputs:out
+            }
+
+            def Shader "PreviewSurface"
+            {
+                uniform token info:id = "UsdPreviewSurface"
+                color3f inputs:diffuseColor.connect = </CollapseSite/Looks/terrain_r1c1/albedoTex.outputs:rgb>
+                float inputs:metallic = 0
+                normal3f inputs:normal.connect = </CollapseSite/Looks/terrain_r1c1/normalTex.outputs:rgb>
+                float inputs:roughness = 0.9
+                float inputs:roughness.connect = </CollapseSite/Looks/terrain_r1c1/roughTex.outputs:r>
+                token outputs:surface
+            }
+
+            def Shader "stReader"
+            {
+                uniform token info:id = "UsdPrimvarReader_float2"
+                string inputs:varname = "st"
+                float2 outputs:result
+            }
+
+            def Shader "albedoTex"
+            {
+                uniform token info:id = "UsdUVTexture"
+                asset inputs:file = @./textures/terrain_r1c1_albedo.jpg@
+                token inputs:sourceColorSpace = "sRGB"
+                float2 inputs:st.connect = </CollapseSite/Looks/terrain_r1c1/stReader.outputs:result>
+                token inputs:wrapS = "clamp"
+                token inputs:wrapT = "clamp"
+                float3 outputs:rgb
+            }
+
+            def Shader "normalTex"
+            {
+                uniform token info:id = "UsdUVTexture"
+                float4 inputs:bias = (-1, -1, -1, 0)
+                asset inputs:file = @./textures/terrain_r1c1_normal.jpg@
+                float4 inputs:scale = (2, 2, 2, 1)
+                token inputs:sourceColorSpace = "raw"
+                float2 inputs:st.connect = </CollapseSite/Looks/terrain_r1c1/stReader.outputs:result>
+                token inputs:wrapS = "clamp"
+                token inputs:wrapT = "clamp"
+                float3 outputs:rgb
+            }
+
+            def Shader "roughTex"
+            {
+                uniform token info:id = "UsdUVTexture"
+                asset inputs:file = @./textures/terrain_r1c1_rough.jpg@
+                token inputs:sourceColorSpace = "raw"
+                float2 inputs:st.connect = </CollapseSite/Looks/terrain_r1c1/stReader.outputs:result>
+                token inputs:wrapS = "clamp"
+                token inputs:wrapT = "clamp"
+                float outputs:r
+            }
+        }
+
+        def Material "terrain_r1c2"
+        {
+            token outputs:mdl:displacement.connect = </CollapseSite/Looks/terrain_r1c2/OmniPBR.outputs:out>
+            token outputs:mdl:surface.connect = </CollapseSite/Looks/terrain_r1c2/OmniPBR.outputs:out>
+            token outputs:mdl:volume.connect = </CollapseSite/Looks/terrain_r1c2/OmniPBR.outputs:out>
+            token outputs:surface.connect = </CollapseSite/Looks/terrain_r1c2/PreviewSurface.outputs:surface>
+
+            def Shader "OmniPBR"
+            {
+                uniform token info:implementationSource = "sourceAsset"
+                uniform asset info:mdl:sourceAsset = @OmniPBR.mdl@
+                uniform token info:mdl:sourceAsset:subIdentifier = "OmniPBR"
+                float inputs:bump_factor = 1
+                asset inputs:diffuse_texture = @./textures/terrain_r1c2_albedo.jpg@ (
+                    colorSpace = "sRGB"
+                )
+                float inputs:metallic_constant = 0
+                asset inputs:normalmap_texture = @./textures/terrain_r1c2_normal.jpg@ (
+                    colorSpace = "raw"
+                )
+                float inputs:reflection_roughness_constant = 0.9
+                asset inputs:reflectionroughness_texture = @./textures/terrain_r1c2_rough.jpg@ (
+                    colorSpace = "raw"
+                )
+                float inputs:reflectionroughness_texture_influence = 1
+                float inputs:specular_level = 0.35
+                token outputs:out
+            }
+
+            def Shader "PreviewSurface"
+            {
+                uniform token info:id = "UsdPreviewSurface"
+                color3f inputs:diffuseColor.connect = </CollapseSite/Looks/terrain_r1c2/albedoTex.outputs:rgb>
+                float inputs:metallic = 0
+                normal3f inputs:normal.connect = </CollapseSite/Looks/terrain_r1c2/normalTex.outputs:rgb>
+                float inputs:roughness = 0.9
+                float inputs:roughness.connect = </CollapseSite/Looks/terrain_r1c2/roughTex.outputs:r>
+                token outputs:surface
+            }
+
+            def Shader "stReader"
+            {
+                uniform token info:id = "UsdPrimvarReader_float2"
+                string inputs:varname = "st"
+                float2 outputs:result
+            }
+
+            def Shader "albedoTex"
+            {
+                uniform token info:id = "UsdUVTexture"
+                asset inputs:file = @./textures/terrain_r1c2_albedo.jpg@
+                token inputs:sourceColorSpace = "sRGB"
+                float2 inputs:st.connect = </CollapseSite/Looks/terrain_r1c2/stReader.outputs:result>
+                token inputs:wrapS = "clamp"
+                token inputs:wrapT = "clamp"
+                float3 outputs:rgb
+            }
+
+            def Shader "normalTex"
+            {
+                uniform token info:id = "UsdUVTexture"
+                float4 inputs:bias = (-1, -1, -1, 0)
+                asset inputs:file = @./textures/terrain_r1c2_normal.jpg@
+                float4 inputs:scale = (2, 2, 2, 1)
+                token inputs:sourceColorSpace = "raw"
+                float2 inputs:st.connect = </CollapseSite/Looks/terrain_r1c2/stReader.outputs:result>
+                token inputs:wrapS = "clamp"
+                token inputs:wrapT = "clamp"
+                float3 outputs:rgb
+            }
+
+            def Shader "roughTex"
+            {
+                uniform token info:id = "UsdUVTexture"
+                asset inputs:file = @./textures/terrain_r1c2_rough.jpg@
+                token inputs:sourceColorSpace = "raw"
+                float2 inputs:st.connect = </CollapseSite/Looks/terrain_r1c2/stReader.outputs:result>
+                token inputs:wrapS = "clamp"
+                token inputs:wrapT = "clamp"
+                float outputs:r
+            }
+        }
+
+        def Material "terrain_r1c3"
+        {
+            token outputs:mdl:displacement.connect = </CollapseSite/Looks/terrain_r1c3/OmniPBR.outputs:out>
+            token outputs:mdl:surface.connect = </CollapseSite/Looks/terrain_r1c3/OmniPBR.outputs:out>
+            token outputs:mdl:volume.connect = </CollapseSite/Looks/terrain_r1c3/OmniPBR.outputs:out>
+            token outputs:surface.connect = </CollapseSite/Looks/terrain_r1c3/PreviewSurface.outputs:surface>
+
+            def Shader "OmniPBR"
+            {
+                uniform token info:implementationSource = "sourceAsset"
+                uniform asset info:mdl:sourceAsset = @OmniPBR.mdl@
+                uniform token info:mdl:sourceAsset:subIdentifier = "OmniPBR"
+                float inputs:bump_factor = 1
+                asset inputs:diffuse_texture = @./textures/terrain_r1c3_albedo.jpg@ (
+                    colorSpace = "sRGB"
+                )
+                float inputs:metallic_constant = 0
+                asset inputs:normalmap_texture = @./textures/terrain_r1c3_normal.jpg@ (
+                    colorSpace = "raw"
+                )
+                float inputs:reflection_roughness_constant = 0.9
+                asset inputs:reflectionroughness_texture = @./textures/terrain_r1c3_rough.jpg@ (
+                    colorSpace = "raw"
+                )
+                float inputs:reflectionroughness_texture_influence = 1
+                float inputs:specular_level = 0.35
+                token outputs:out
+            }
+
+            def Shader "PreviewSurface"
+            {
+                uniform token info:id = "UsdPreviewSurface"
+                color3f inputs:diffuseColor.connect = </CollapseSite/Looks/terrain_r1c3/albedoTex.outputs:rgb>
+                float inputs:metallic = 0
+                normal3f inputs:normal.connect = </CollapseSite/Looks/terrain_r1c3/normalTex.outputs:rgb>
+                float inputs:roughness = 0.9
+                float inputs:roughness.connect = </CollapseSite/Looks/terrain_r1c3/roughTex.outputs:r>
+                token outputs:surface
+            }
+
+            def Shader "stReader"
+            {
+                uniform token info:id = "UsdPrimvarReader_float2"
+                string inputs:varname = "st"
+                float2 outputs:result
+            }
+
+            def Shader "albedoTex"
+            {
+                uniform token info:id = "UsdUVTexture"
+                asset inputs:file = @./textures/terrain_r1c3_albedo.jpg@
+                token inputs:sourceColorSpace = "sRGB"
+                float2 inputs:st.connect = </CollapseSite/Looks/terrain_r1c3/stReader.outputs:result>
+                token inputs:wrapS = "clamp"
+                token inputs:wrapT = "clamp"
+                float3 outputs:rgb
+            }
+
+            def Shader "normalTex"
+            {
+                uniform token info:id = "UsdUVTexture"
+                float4 inputs:bias = (-1, -1, -1, 0)
+                asset inputs:file = @./textures/terrain_r1c3_normal.jpg@
+                float4 inputs:scale = (2, 2, 2, 1)
+                token inputs:sourceColorSpace = "raw"
+                float2 inputs:st.connect = </CollapseSite/Looks/terrain_r1c3/stReader.outputs:result>
+                token inputs:wrapS = "clamp"
+                token inputs:wrapT = "clamp"
+                float3 outputs:rgb
+            }
+
+            def Shader "roughTex"
+            {
+                uniform token info:id = "UsdUVTexture"
+                asset inputs:file = @./textures/terrain_r1c3_rough.jpg@
+                token inputs:sourceColorSpace = "raw"
+                float2 inputs:st.connect = </CollapseSite/Looks/terrain_r1c3/stReader.outputs:result>
+                token inputs:wrapS = "clamp"
+                token inputs:wrapT = "clamp"
+                float outputs:r
+            }
+        }
+
+        def Material "terrain_r2c0"
+        {
+            token outputs:mdl:displacement.connect = </CollapseSite/Looks/terrain_r2c0/OmniPBR.outputs:out>
+            token outputs:mdl:surface.connect = </CollapseSite/Looks/terrain_r2c0/OmniPBR.outputs:out>
+            token outputs:mdl:volume.connect = </CollapseSite/Looks/terrain_r2c0/OmniPBR.outputs:out>
+            token outputs:surface.connect = </CollapseSite/Looks/terrain_r2c0/PreviewSurface.outputs:surface>
+
+            def Shader "OmniPBR"
+            {
+                uniform token info:implementationSource = "sourceAsset"
+                uniform asset info:mdl:sourceAsset = @OmniPBR.mdl@
+                uniform token info:mdl:sourceAsset:subIdentifier = "OmniPBR"
+                float inputs:bump_factor = 1
+                asset inputs:diffuse_texture = @./textures/terrain_r2c0_albedo.jpg@ (
+                    colorSpace = "sRGB"
+                )
+                float inputs:metallic_constant = 0
+                asset inputs:normalmap_texture = @./textures/terrain_r2c0_normal.jpg@ (
+                    colorSpace = "raw"
+                )
+                float inputs:reflection_roughness_constant = 0.9
+                asset inputs:reflectionroughness_texture = @./textures/terrain_r2c0_rough.jpg@ (
+                    colorSpace = "raw"
+                )
+                float inputs:reflectionroughness_texture_influence = 1
+                float inputs:specular_level = 0.35
+                token outputs:out
+            }
+
+            def Shader "PreviewSurface"
+            {
+                uniform token info:id = "UsdPreviewSurface"
+                color3f inputs:diffuseColor.connect = </CollapseSite/Looks/terrain_r2c0/albedoTex.outputs:rgb>
+                float inputs:metallic = 0
+                normal3f inputs:normal.connect = </CollapseSite/Looks/terrain_r2c0/normalTex.outputs:rgb>
+                float inputs:roughness = 0.9
+                float inputs:roughness.connect = </CollapseSite/Looks/terrain_r2c0/roughTex.outputs:r>
+                token outputs:surface
+            }
+
+            def Shader "stReader"
+            {
+                uniform token info:id = "UsdPrimvarReader_float2"
+                string inputs:varname = "st"
+                float2 outputs:result
+            }
+
+            def Shader "albedoTex"
+            {
+                uniform token info:id = "UsdUVTexture"
+                asset inputs:file = @./textures/terrain_r2c0_albedo.jpg@
+                token inputs:sourceColorSpace = "sRGB"
+                float2 inputs:st.connect = </CollapseSite/Looks/terrain_r2c0/stReader.outputs:result>
+                token inputs:wrapS = "clamp"
+                token inputs:wrapT = "clamp"
+                float3 outputs:rgb
+            }
+
+            def Shader "normalTex"
+            {
+                uniform token info:id = "UsdUVTexture"
+                float4 inputs:bias = (-1, -1, -1, 0)
+                asset inputs:file = @./textures/terrain_r2c0_normal.jpg@
+                float4 inputs:scale = (2, 2, 2, 1)
+                token inputs:sourceColorSpace = "raw"
+                float2 inputs:st.connect = </CollapseSite/Looks/terrain_r2c0/stReader.outputs:result>
+                token inputs:wrapS = "clamp"
+                token inputs:wrapT = "clamp"
+                float3 outputs:rgb
+            }
+
+            def Shader "roughTex"
+            {
+                uniform token info:id = "UsdUVTexture"
+                asset inputs:file = @./textures/terrain_r2c0_rough.jpg@
+                token inputs:sourceColorSpace = "raw"
+                float2 inputs:st.connect = </CollapseSite/Looks/terrain_r2c0/stReader.outputs:result>
+                token inputs:wrapS = "clamp"
+                token inputs:wrapT = "clamp"
+                float outputs:r
+            }
+        }
+
+        def Material "terrain_r2c1"
+        {
+            token outputs:mdl:displacement.connect = </CollapseSite/Looks/terrain_r2c1/OmniPBR.outputs:out>
+            token outputs:mdl:surface.connect = </CollapseSite/Looks/terrain_r2c1/OmniPBR.outputs:out>
+            token outputs:mdl:volume.connect = </CollapseSite/Looks/terrain_r2c1/OmniPBR.outputs:out>
+            token outputs:surface.connect = </CollapseSite/Looks/terrain_r2c1/PreviewSurface.outputs:surface>
+
+            def Shader "OmniPBR"
+            {
+                uniform token info:implementationSource = "sourceAsset"
+                uniform asset info:mdl:sourceAsset = @OmniPBR.mdl@
+                uniform token info:mdl:sourceAsset:subIdentifier = "OmniPBR"
+                float inputs:bump_factor = 1
+                asset inputs:diffuse_texture = @./textures/terrain_r2c1_albedo.jpg@ (
+                    colorSpace = "sRGB"
+                )
+                float inputs:metallic_constant = 0
+                asset inputs:normalmap_texture = @./textures/terrain_r2c1_normal.jpg@ (
+                    colorSpace = "raw"
+                )
+                float inputs:reflection_roughness_constant = 0.9
+                asset inputs:reflectionroughness_texture = @./textures/terrain_r2c1_rough.jpg@ (
+                    colorSpace = "raw"
+                )
+                float inputs:reflectionroughness_texture_influence = 1
+                float inputs:specular_level = 0.35
+                token outputs:out
+            }
+
+            def Shader "PreviewSurface"
+            {
+                uniform token info:id = "UsdPreviewSurface"
+                color3f inputs:diffuseColor.connect = </CollapseSite/Looks/terrain_r2c1/albedoTex.outputs:rgb>
+                float inputs:metallic = 0
+                normal3f inputs:normal.connect = </CollapseSite/Looks/terrain_r2c1/normalTex.outputs:rgb>
+                float inputs:roughness = 0.9
+                float inputs:roughness.connect = </CollapseSite/Looks/terrain_r2c1/roughTex.outputs:r>
+                token outputs:surface
+            }
+
+            def Shader "stReader"
+            {
+                uniform token info:id = "UsdPrimvarReader_float2"
+                string inputs:varname = "st"
+                float2 outputs:result
+            }
+
+            def Shader "albedoTex"
+            {
+                uniform token info:id = "UsdUVTexture"
+                asset inputs:file = @./textures/terrain_r2c1_albedo.jpg@
+                token inputs:sourceColorSpace = "sRGB"
+                float2 inputs:st.connect = </CollapseSite/Looks/terrain_r2c1/stReader.outputs:result>
+                token inputs:wrapS = "clamp"
+                token inputs:wrapT = "clamp"
+                float3 outputs:rgb
+            }
+
+            def Shader "normalTex"
+            {
+                uniform token info:id = "UsdUVTexture"
+                float4 inputs:bias = (-1, -1, -1, 0)
+                asset inputs:file = @./textures/terrain_r2c1_normal.jpg@
+                float4 inputs:scale = (2, 2, 2, 1)
+                token inputs:sourceColorSpace = "raw"
+                float2 inputs:st.connect = </CollapseSite/Looks/terrain_r2c1/stReader.outputs:result>
+                token inputs:wrapS = "clamp"
+                token inputs:wrapT = "clamp"
+                float3 outputs:rgb
+            }
+
+            def Shader "roughTex"
+            {
+                uniform token info:id = "UsdUVTexture"
+                asset inputs:file = @./textures/terrain_r2c1_rough.jpg@
+                token inputs:sourceColorSpace = "raw"
+                float2 inputs:st.connect = </CollapseSite/Looks/terrain_r2c1/stReader.outputs:result>
+                token inputs:wrapS = "clamp"
+                token inputs:wrapT = "clamp"
+                float outputs:r
+            }
+        }
+
+        def Material "terrain_r2c2"
+        {
+            token outputs:mdl:displacement.connect = </CollapseSite/Looks/terrain_r2c2/OmniPBR.outputs:out>
+            token outputs:mdl:surface.connect = </CollapseSite/Looks/terrain_r2c2/OmniPBR.outputs:out>
+            token outputs:mdl:volume.connect = </CollapseSite/Looks/terrain_r2c2/OmniPBR.outputs:out>
+            token outputs:surface.connect = </CollapseSite/Looks/terrain_r2c2/PreviewSurface.outputs:surface>
+
+            def Shader "OmniPBR"
+            {
+                uniform token info:implementationSource = "sourceAsset"
+                uniform asset info:mdl:sourceAsset = @OmniPBR.mdl@
+                uniform token info:mdl:sourceAsset:subIdentifier = "OmniPBR"
+                float inputs:bump_factor = 1
+                asset inputs:diffuse_texture = @./textures/terrain_r2c2_albedo.jpg@ (
+                    colorSpace = "sRGB"
+                )
+                float inputs:metallic_constant = 0
+                asset inputs:normalmap_texture = @./textures/terrain_r2c2_normal.jpg@ (
+                    colorSpace = "raw"
+                )
+                float inputs:reflection_roughness_constant = 0.9
+                asset inputs:reflectionroughness_texture = @./textures/terrain_r2c2_rough.jpg@ (
+                    colorSpace = "raw"
+                )
+                float inputs:reflectionroughness_texture_influence = 1
+                float inputs:specular_level = 0.35
+                token outputs:out
+            }
+
+            def Shader "PreviewSurface"
+            {
+                uniform token info:id = "UsdPreviewSurface"
+                color3f inputs:diffuseColor.connect = </CollapseSite/Looks/terrain_r2c2/albedoTex.outputs:rgb>
+                float inputs:metallic = 0
+                normal3f inputs:normal.connect = </CollapseSite/Looks/terrain_r2c2/normalTex.outputs:rgb>
+                float inputs:roughness = 0.9
+                float inputs:roughness.connect = </CollapseSite/Looks/terrain_r2c2/roughTex.outputs:r>
+                token outputs:surface
+            }
+
+            def Shader "stReader"
+            {
+                uniform token info:id = "UsdPrimvarReader_float2"
+                string inputs:varname = "st"
+                float2 outputs:result
+            }
+
+            def Shader "albedoTex"
+            {
+                uniform token info:id = "UsdUVTexture"
+                asset inputs:file = @./textures/terrain_r2c2_albedo.jpg@
+                token inputs:sourceColorSpace = "sRGB"
+                float2 inputs:st.connect = </CollapseSite/Looks/terrain_r2c2/stReader.outputs:result>
+                token inputs:wrapS = "clamp"
+                token inputs:wrapT = "clamp"
+                float3 outputs:rgb
+            }
+
+            def Shader "normalTex"
+            {
+                uniform token info:id = "UsdUVTexture"
+                float4 inputs:bias = (-1, -1, -1, 0)
+                asset inputs:file = @./textures/terrain_r2c2_normal.jpg@
+                float4 inputs:scale = (2, 2, 2, 1)
+                token inputs:sourceColorSpace = "raw"
+                float2 inputs:st.connect = </CollapseSite/Looks/terrain_r2c2/stReader.outputs:result>
+                token inputs:wrapS = "clamp"
+                token inputs:wrapT = "clamp"
+                float3 outputs:rgb
+            }
+
+            def Shader "roughTex"
+            {
+                uniform token info:id = "UsdUVTexture"
+                asset inputs:file = @./textures/terrain_r2c2_rough.jpg@
+                token inputs:sourceColorSpace = "raw"
+                float2 inputs:st.connect = </CollapseSite/Looks/terrain_r2c2/stReader.outputs:result>
+                token inputs:wrapS = "clamp"
+                token inputs:wrapT = "clamp"
+                float outputs:r
+            }
+        }
+
+        def Material "terrain_r2c3"
+        {
+            token outputs:mdl:displacement.connect = </CollapseSite/Looks/terrain_r2c3/OmniPBR.outputs:out>
+            token outputs:mdl:surface.connect = </CollapseSite/Looks/terrain_r2c3/OmniPBR.outputs:out>
+            token outputs:mdl:volume.connect = </CollapseSite/Looks/terrain_r2c3/OmniPBR.outputs:out>
+            token outputs:surface.connect = </CollapseSite/Looks/terrain_r2c3/PreviewSurface.outputs:surface>
+
+            def Shader "OmniPBR"
+            {
+                uniform token info:implementationSource = "sourceAsset"
+                uniform asset info:mdl:sourceAsset = @OmniPBR.mdl@
+                uniform token info:mdl:sourceAsset:subIdentifier = "OmniPBR"
+                float inputs:bump_factor = 1
+                asset inputs:diffuse_texture = @./textures/terrain_r2c3_albedo.jpg@ (
+                    colorSpace = "sRGB"
+                )
+                float inputs:metallic_constant = 0
+                asset inputs:normalmap_texture = @./textures/terrain_r2c3_normal.jpg@ (
+                    colorSpace = "raw"
+                )
+                float inputs:reflection_roughness_constant = 0.9
+                asset inputs:reflectionroughness_texture = @./textures/terrain_r2c3_rough.jpg@ (
+                    colorSpace = "raw"
+                )
+                float inputs:reflectionroughness_texture_influence = 1
+                float inputs:specular_level = 0.35
+                token outputs:out
+            }
+
+            def Shader "PreviewSurface"
+            {
+                uniform token info:id = "UsdPreviewSurface"
+                color3f inputs:diffuseColor.connect = </CollapseSite/Looks/terrain_r2c3/albedoTex.outputs:rgb>
+                float inputs:metallic = 0
+                normal3f inputs:normal.connect = </CollapseSite/Looks/terrain_r2c3/normalTex.outputs:rgb>
+                float inputs:roughness = 0.9
+                float inputs:roughness.connect = </CollapseSite/Looks/terrain_r2c3/roughTex.outputs:r>
+                token outputs:surface
+            }
+
+            def Shader "stReader"
+            {
+                uniform token info:id = "UsdPrimvarReader_float2"
+                string inputs:varname = "st"
+                float2 outputs:result
+            }
+
+            def Shader "albedoTex"
+            {
+                uniform token info:id = "UsdUVTexture"
+                asset inputs:file = @./textures/terrain_r2c3_albedo.jpg@
+                token inputs:sourceColorSpace = "sRGB"
+                float2 inputs:st.connect = </CollapseSite/Looks/terrain_r2c3/stReader.outputs:result>
+                token inputs:wrapS = "clamp"
+                token inputs:wrapT = "clamp"
+                float3 outputs:rgb
+            }
+
+            def Shader "normalTex"
+            {
+                uniform token info:id = "UsdUVTexture"
+                float4 inputs:bias = (-1, -1, -1, 0)
+                asset inputs:file = @./textures/terrain_r2c3_normal.jpg@
+                float4 inputs:scale = (2, 2, 2, 1)
+                token inputs:sourceColorSpace = "raw"
+                float2 inputs:st.connect = </CollapseSite/Looks/terrain_r2c3/stReader.outputs:result>
+                token inputs:wrapS = "clamp"
+                token inputs:wrapT = "clamp"
+                float3 outputs:rgb
+            }
+
+            def Shader "roughTex"
+            {
+                uniform token info:id = "UsdUVTexture"
+                asset inputs:file = @./textures/terrain_r2c3_rough.jpg@
+                token inputs:sourceColorSpace = "raw"
+                float2 inputs:st.connect = </CollapseSite/Looks/terrain_r2c3/stReader.outputs:result>
+                token inputs:wrapS = "clamp"
+                token inputs:wrapT = "clamp"
+                float outputs:r
+            }
+        }
+
+        def Material "terrain_r3c0"
+        {
+            token outputs:mdl:displacement.connect = </CollapseSite/Looks/terrain_r3c0/OmniPBR.outputs:out>
+            token outputs:mdl:surface.connect = </CollapseSite/Looks/terrain_r3c0/OmniPBR.outputs:out>
+            token outputs:mdl:volume.connect = </CollapseSite/Looks/terrain_r3c0/OmniPBR.outputs:out>
+            token outputs:surface.connect = </CollapseSite/Looks/terrain_r3c0/PreviewSurface.outputs:surface>
+
+            def Shader "OmniPBR"
+            {
+                uniform token info:implementationSource = "sourceAsset"
+                uniform asset info:mdl:sourceAsset = @OmniPBR.mdl@
+                uniform token info:mdl:sourceAsset:subIdentifier = "OmniPBR"
+                float inputs:bump_factor = 1
+                asset inputs:diffuse_texture = @./textures/terrain_r3c0_albedo.jpg@ (
+                    colorSpace = "sRGB"
+                )
+                float inputs:metallic_constant = 0
+                asset inputs:normalmap_texture = @./textures/terrain_r3c0_normal.jpg@ (
+                    colorSpace = "raw"
+                )
+                float inputs:reflection_roughness_constant = 0.9
+                asset inputs:reflectionroughness_texture = @./textures/terrain_r3c0_rough.jpg@ (
+                    colorSpace = "raw"
+                )
+                float inputs:reflectionroughness_texture_influence = 1
+                float inputs:specular_level = 0.35
+                token outputs:out
+            }
+
+            def Shader "PreviewSurface"
+            {
+                uniform token info:id = "UsdPreviewSurface"
+                color3f inputs:diffuseColor.connect = </CollapseSite/Looks/terrain_r3c0/albedoTex.outputs:rgb>
+                float inputs:metallic = 0
+                normal3f inputs:normal.connect = </CollapseSite/Looks/terrain_r3c0/normalTex.outputs:rgb>
+                float inputs:roughness = 0.9
+                float inputs:roughness.connect = </CollapseSite/Looks/terrain_r3c0/roughTex.outputs:r>
+                token outputs:surface
+            }
+
+            def Shader "stReader"
+            {
+                uniform token info:id = "UsdPrimvarReader_float2"
+                string inputs:varname = "st"
+                float2 outputs:result
+            }
+
+            def Shader "albedoTex"
+            {
+                uniform token info:id = "UsdUVTexture"
+                asset inputs:file = @./textures/terrain_r3c0_albedo.jpg@
+                token inputs:sourceColorSpace = "sRGB"
+                float2 inputs:st.connect = </CollapseSite/Looks/terrain_r3c0/stReader.outputs:result>
+                token inputs:wrapS = "clamp"
+                token inputs:wrapT = "clamp"
+                float3 outputs:rgb
+            }
+
+            def Shader "normalTex"
+            {
+                uniform token info:id = "UsdUVTexture"
+                float4 inputs:bias = (-1, -1, -1, 0)
+                asset inputs:file = @./textures/terrain_r3c0_normal.jpg@
+                float4 inputs:scale = (2, 2, 2, 1)
+                token inputs:sourceColorSpace = "raw"
+                float2 inputs:st.connect = </CollapseSite/Looks/terrain_r3c0/stReader.outputs:result>
+                token inputs:wrapS = "clamp"
+                token inputs:wrapT = "clamp"
+                float3 outputs:rgb
+            }
+
+            def Shader "roughTex"
+            {
+                uniform token info:id = "UsdUVTexture"
+                asset inputs:file = @./textures/terrain_r3c0_rough.jpg@
+                token inputs:sourceColorSpace = "raw"
+                float2 inputs:st.connect = </CollapseSite/Looks/terrain_r3c0/stReader.outputs:result>
+                token inputs:wrapS = "clamp"
+                token inputs:wrapT = "clamp"
+                float outputs:r
+            }
+        }
+
+        def Material "terrain_r3c1"
+        {
+            token outputs:mdl:displacement.connect = </CollapseSite/Looks/terrain_r3c1/OmniPBR.outputs:out>
+            token outputs:mdl:surface.connect = </CollapseSite/Looks/terrain_r3c1/OmniPBR.outputs:out>
+            token outputs:mdl:volume.connect = </CollapseSite/Looks/terrain_r3c1/OmniPBR.outputs:out>
+            token outputs:surface.connect = </CollapseSite/Looks/terrain_r3c1/PreviewSurface.outputs:surface>
+
+            def Shader "OmniPBR"
+            {
+                uniform token info:implementationSource = "sourceAsset"
+                uniform asset info:mdl:sourceAsset = @OmniPBR.mdl@
+                uniform token info:mdl:sourceAsset:subIdentifier = "OmniPBR"
+                float inputs:bump_factor = 1
+                asset inputs:diffuse_texture = @./textures/terrain_r3c1_albedo.jpg@ (
+                    colorSpace = "sRGB"
+                )
+                float inputs:metallic_constant = 0
+                asset inputs:normalmap_texture = @./textures/terrain_r3c1_normal.jpg@ (
+                    colorSpace = "raw"
+                )
+                float inputs:reflection_roughness_constant = 0.9
+                asset inputs:reflectionroughness_texture = @./textures/terrain_r3c1_rough.jpg@ (
+                    colorSpace = "raw"
+                )
+                float inputs:reflectionroughness_texture_influence = 1
+                float inputs:specular_level = 0.35
+                token outputs:out
+            }
+
+            def Shader "PreviewSurface"
+            {
+                uniform token info:id = "UsdPreviewSurface"
+                color3f inputs:diffuseColor.connect = </CollapseSite/Looks/terrain_r3c1/albedoTex.outputs:rgb>
+                float inputs:metallic = 0
+                normal3f inputs:normal.connect = </CollapseSite/Looks/terrain_r3c1/normalTex.outputs:rgb>
+                float inputs:roughness = 0.9
+                float inputs:roughness.connect = </CollapseSite/Looks/terrain_r3c1/roughTex.outputs:r>
+                token outputs:surface
+            }
+
+            def Shader "stReader"
+            {
+                uniform token info:id = "UsdPrimvarReader_float2"
+                string inputs:varname = "st"
+                float2 outputs:result
+            }
+
+            def Shader "albedoTex"
+            {
+                uniform token info:id = "UsdUVTexture"
+                asset inputs:file = @./textures/terrain_r3c1_albedo.jpg@
+                token inputs:sourceColorSpace = "sRGB"
+                float2 inputs:st.connect = </CollapseSite/Looks/terrain_r3c1/stReader.outputs:result>
+                token inputs:wrapS = "clamp"
+                token inputs:wrapT = "clamp"
+                float3 outputs:rgb
+            }
+
+            def Shader "normalTex"
+            {
+                uniform token info:id = "UsdUVTexture"
+                float4 inputs:bias = (-1, -1, -1, 0)
+                asset inputs:file = @./textures/terrain_r3c1_normal.jpg@
+                float4 inputs:scale = (2, 2, 2, 1)
+                token inputs:sourceColorSpace = "raw"
+                float2 inputs:st.connect = </CollapseSite/Looks/terrain_r3c1/stReader.outputs:result>
+                token inputs:wrapS = "clamp"
+                token inputs:wrapT = "clamp"
+                float3 outputs:rgb
+            }
+
+            def Shader "roughTex"
+            {
+                uniform token info:id = "UsdUVTexture"
+                asset inputs:file = @./textures/terrain_r3c1_rough.jpg@
+                token inputs:sourceColorSpace = "raw"
+                float2 inputs:st.connect = </CollapseSite/Looks/terrain_r3c1/stReader.outputs:result>
+                token inputs:wrapS = "clamp"
+                token inputs:wrapT = "clamp"
+                float outputs:r
+            }
+        }
+
+        def Material "terrain_r3c2"
+        {
+            token outputs:mdl:displacement.connect = </CollapseSite/Looks/terrain_r3c2/OmniPBR.outputs:out>
+            token outputs:mdl:surface.connect = </CollapseSite/Looks/terrain_r3c2/OmniPBR.outputs:out>
+            token outputs:mdl:volume.connect = </CollapseSite/Looks/terrain_r3c2/OmniPBR.outputs:out>
+            token outputs:surface.connect = </CollapseSite/Looks/terrain_r3c2/PreviewSurface.outputs:surface>
+
+            def Shader "OmniPBR"
+            {
+                uniform token info:implementationSource = "sourceAsset"
+                uniform asset info:mdl:sourceAsset = @OmniPBR.mdl@
+                uniform token info:mdl:sourceAsset:subIdentifier = "OmniPBR"
+                float inputs:bump_factor = 1
+                asset inputs:diffuse_texture = @./textures/terrain_r3c2_albedo.jpg@ (
+                    colorSpace = "sRGB"
+                )
+                float inputs:metallic_constant = 0
+                asset inputs:normalmap_texture = @./textures/terrain_r3c2_normal.jpg@ (
+                    colorSpace = "raw"
+                )
+                float inputs:reflection_roughness_constant = 0.9
+                asset inputs:reflectionroughness_texture = @./textures/terrain_r3c2_rough.jpg@ (
+                    colorSpace = "raw"
+                )
+                float inputs:reflectionroughness_texture_influence = 1
+                float inputs:specular_level = 0.35
+                token outputs:out
+            }
+
+            def Shader "PreviewSurface"
+            {
+                uniform token info:id = "UsdPreviewSurface"
+                color3f inputs:diffuseColor.connect = </CollapseSite/Looks/terrain_r3c2/albedoTex.outputs:rgb>
+                float inputs:metallic = 0
+                normal3f inputs:normal.connect = </CollapseSite/Looks/terrain_r3c2/normalTex.outputs:rgb>
+                float inputs:roughness = 0.9
+                float inputs:roughness.connect = </CollapseSite/Looks/terrain_r3c2/roughTex.outputs:r>
+                token outputs:surface
+            }
+
+            def Shader "stReader"
+            {
+                uniform token info:id = "UsdPrimvarReader_float2"
+                string inputs:varname = "st"
+                float2 outputs:result
+            }
+
+            def Shader "albedoTex"
+            {
+                uniform token info:id = "UsdUVTexture"
+                asset inputs:file = @./textures/terrain_r3c2_albedo.jpg@
+                token inputs:sourceColorSpace = "sRGB"
+                float2 inputs:st.connect = </CollapseSite/Looks/terrain_r3c2/stReader.outputs:result>
+                token inputs:wrapS = "clamp"
+                token inputs:wrapT = "clamp"
+                float3 outputs:rgb
+            }
+
+            def Shader "normalTex"
+            {
+                uniform token info:id = "UsdUVTexture"
+                float4 inputs:bias = (-1, -1, -1, 0)
+                asset inputs:file = @./textures/terrain_r3c2_normal.jpg@
+                float4 inputs:scale = (2, 2, 2, 1)
+                token inputs:sourceColorSpace = "raw"
+                float2 inputs:st.connect = </CollapseSite/Looks/terrain_r3c2/stReader.outputs:result>
+                token inputs:wrapS = "clamp"
+                token inputs:wrapT = "clamp"
+                float3 outputs:rgb
+            }
+
+            def Shader "roughTex"
+            {
+                uniform token info:id = "UsdUVTexture"
+                asset inputs:file = @./textures/terrain_r3c2_rough.jpg@
+                token inputs:sourceColorSpace = "raw"
+                float2 inputs:st.connect = </CollapseSite/Looks/terrain_r3c2/stReader.outputs:result>
+                token inputs:wrapS = "clamp"
+                token inputs:wrapT = "clamp"
+                float outputs:r
+            }
+        }
+
+        def Material "terrain_r3c3"
+        {
+            token outputs:mdl:displacement.connect = </CollapseSite/Looks/terrain_r3c3/OmniPBR.outputs:out>
+            token outputs:mdl:surface.connect = </CollapseSite/Looks/terrain_r3c3/OmniPBR.outputs:out>
+            token outputs:mdl:volume.connect = </CollapseSite/Looks/terrain_r3c3/OmniPBR.outputs:out>
+            token outputs:surface.connect = </CollapseSite/Looks/terrain_r3c3/PreviewSurface.outputs:surface>
+
+            def Shader "OmniPBR"
+            {
+                uniform token info:implementationSource = "sourceAsset"
+                uniform asset info:mdl:sourceAsset = @OmniPBR.mdl@
+                uniform token info:mdl:sourceAsset:subIdentifier = "OmniPBR"
+                float inputs:bump_factor = 1
+                asset inputs:diffuse_texture = @./textures/terrain_r3c3_albedo.jpg@ (
+                    colorSpace = "sRGB"
+                )
+                float inputs:metallic_constant = 0
+                asset inputs:normalmap_texture = @./textures/terrain_r3c3_normal.jpg@ (
+                    colorSpace = "raw"
+                )
+                float inputs:reflection_roughness_constant = 0.9
+                asset inputs:reflectionroughness_texture = @./textures/terrain_r3c3_rough.jpg@ (
+                    colorSpace = "raw"
+                )
+                float inputs:reflectionroughness_texture_influence = 1
+                float inputs:specular_level = 0.35
+                token outputs:out
+            }
+
+            def Shader "PreviewSurface"
+            {
+                uniform token info:id = "UsdPreviewSurface"
+                color3f inputs:diffuseColor.connect = </CollapseSite/Looks/terrain_r3c3/albedoTex.outputs:rgb>
+                float inputs:metallic = 0
+                normal3f inputs:normal.connect = </CollapseSite/Looks/terrain_r3c3/normalTex.outputs:rgb>
+                float inputs:roughness = 0.9
+                float inputs:roughness.connect = </CollapseSite/Looks/terrain_r3c3/roughTex.outputs:r>
+                token outputs:surface
+            }
+
+            def Shader "stReader"
+            {
+                uniform token info:id = "UsdPrimvarReader_float2"
+                string inputs:varname = "st"
+                float2 outputs:result
+            }
+
+            def Shader "albedoTex"
+            {
+                uniform token info:id = "UsdUVTexture"
+                asset inputs:file = @./textures/terrain_r3c3_albedo.jpg@
+                token inputs:sourceColorSpace = "sRGB"
+                float2 inputs:st.connect = </CollapseSite/Looks/terrain_r3c3/stReader.outputs:result>
+                token inputs:wrapS = "clamp"
+                token inputs:wrapT = "clamp"
+                float3 outputs:rgb
+            }
+
+            def Shader "normalTex"
+            {
+                uniform token info:id = "UsdUVTexture"
+                float4 inputs:bias = (-1, -1, -1, 0)
+                asset inputs:file = @./textures/terrain_r3c3_normal.jpg@
+                float4 inputs:scale = (2, 2, 2, 1)
+                token inputs:sourceColorSpace = "raw"
+                float2 inputs:st.connect = </CollapseSite/Looks/terrain_r3c3/stReader.outputs:result>
+                token inputs:wrapS = "clamp"
+                token inputs:wrapT = "clamp"
+                float3 outputs:rgb
+            }
+
+            def Shader "roughTex"
+            {
+                uniform token info:id = "UsdUVTexture"
+                asset inputs:file = @./textures/terrain_r3c3_rough.jpg@
+                token inputs:sourceColorSpace = "raw"
+                float2 inputs:st.connect = </CollapseSite/Looks/terrain_r3c3/stReader.outputs:result>
+                token inputs:wrapS = "clamp"
+                token inputs:wrapT = "clamp"
+                float outputs:r
+            }
+        }
+
+        def Material "facade_A"
+        {
+            token outputs:mdl:displacement.connect = </CollapseSite/Looks/facade_A/OmniPBR.outputs:out>
+            token outputs:mdl:surface.connect = </CollapseSite/Looks/facade_A/OmniPBR.outputs:out>
+            token outputs:mdl:volume.connect = </CollapseSite/Looks/facade_A/OmniPBR.outputs:out>
+            token outputs:surface.connect = </CollapseSite/Looks/facade_A/PreviewSurface.outputs:surface>
+
+            def Shader "OmniPBR"
+            {
+                uniform token info:implementationSource = "sourceAsset"
+                uniform asset info:mdl:sourceAsset = @OmniPBR.mdl@
+                uniform token info:mdl:sourceAsset:subIdentifier = "OmniPBR"
+                float inputs:bump_factor = 0.8
+                asset inputs:diffuse_texture = @./textures/facade_A_albedo.jpg@ (
+                    colorSpace = "sRGB"
+                )
+                float inputs:metallic_constant = 0
+                asset inputs:normalmap_texture = @./textures/facade_A_normal.png@ (
+                    colorSpace = "raw"
+                )
+                float inputs:reflection_roughness_constant = 0.82
+                float inputs:specular_level = 0.35
+                token outputs:out
+            }
+
+            def Shader "PreviewSurface"
+            {
+                uniform token info:id = "UsdPreviewSurface"
+                color3f inputs:diffuseColor.connect = </CollapseSite/Looks/facade_A/albedoTex.outputs:rgb>
+                float inputs:metallic = 0
+                normal3f inputs:normal.connect = </CollapseSite/Looks/facade_A/normalTex.outputs:rgb>
+                float inputs:roughness = 0.82
+                token outputs:surface
+            }
+
+            def Shader "stReader"
+            {
+                uniform token info:id = "UsdPrimvarReader_float2"
+                string inputs:varname = "st"
+                float2 outputs:result
+            }
+
+            def Shader "albedoTex"
+            {
+                uniform token info:id = "UsdUVTexture"
+                asset inputs:file = @./textures/facade_A_albedo.jpg@
+                token inputs:sourceColorSpace = "sRGB"
+                float2 inputs:st.connect = </CollapseSite/Looks/facade_A/stReader.outputs:result>
+                token inputs:wrapS = "repeat"
+                token inputs:wrapT = "repeat"
+                float3 outputs:rgb
+            }
+
+            def Shader "normalTex"
+            {
+                uniform token info:id = "UsdUVTexture"
+                float4 inputs:bias = (-1, -1, -1, 0)
+                asset inputs:file = @./textures/facade_A_normal.png@
+                float4 inputs:scale = (2, 2, 2, 1)
+                token inputs:sourceColorSpace = "raw"
+                float2 inputs:st.connect = </CollapseSite/Looks/facade_A/stReader.outputs:result>
+                token inputs:wrapS = "repeat"
+                token inputs:wrapT = "repeat"
+                float3 outputs:rgb
+            }
+        }
+
+        def Material "facade_B"
+        {
+            token outputs:mdl:displacement.connect = </CollapseSite/Looks/facade_B/OmniPBR.outputs:out>
+            token outputs:mdl:surface.connect = </CollapseSite/Looks/facade_B/OmniPBR.outputs:out>
+            token outputs:mdl:volume.connect = </CollapseSite/Looks/facade_B/OmniPBR.outputs:out>
+            token outputs:surface.connect = </CollapseSite/Looks/facade_B/PreviewSurface.outputs:surface>
+
+            def Shader "OmniPBR"
+            {
+                uniform token info:implementationSource = "sourceAsset"
+                uniform asset info:mdl:sourceAsset = @OmniPBR.mdl@
+                uniform token info:mdl:sourceAsset:subIdentifier = "OmniPBR"
+                float inputs:bump_factor = 0.8
+                asset inputs:diffuse_texture = @./textures/facade_B_albedo.jpg@ (
+                    colorSpace = "sRGB"
+                )
+                float inputs:metallic_constant = 0
+                asset inputs:normalmap_texture = @./textures/facade_B_normal.png@ (
+                    colorSpace = "raw"
+                )
+                float inputs:reflection_roughness_constant = 0.82
+                float inputs:specular_level = 0.35
+                token outputs:out
+            }
+
+            def Shader "PreviewSurface"
+            {
+                uniform token info:id = "UsdPreviewSurface"
+                color3f inputs:diffuseColor.connect = </CollapseSite/Looks/facade_B/albedoTex.outputs:rgb>
+                float inputs:metallic = 0
+                normal3f inputs:normal.connect = </CollapseSite/Looks/facade_B/normalTex.outputs:rgb>
+                float inputs:roughness = 0.82
+                token outputs:surface
+            }
+
+            def Shader "stReader"
+            {
+                uniform token info:id = "UsdPrimvarReader_float2"
+                string inputs:varname = "st"
+                float2 outputs:result
+            }
+
+            def Shader "albedoTex"
+            {
+                uniform token info:id = "UsdUVTexture"
+                asset inputs:file = @./textures/facade_B_albedo.jpg@
+                token inputs:sourceColorSpace = "sRGB"
+                float2 inputs:st.connect = </CollapseSite/Looks/facade_B/stReader.outputs:result>
+                token inputs:wrapS = "repeat"
+                token inputs:wrapT = "repeat"
+                float3 outputs:rgb
+            }
+
+            def Shader "normalTex"
+            {
+                uniform token info:id = "UsdUVTexture"
+                float4 inputs:bias = (-1, -1, -1, 0)
+                asset inputs:file = @./textures/facade_B_normal.png@
+                float4 inputs:scale = (2, 2, 2, 1)
+                token inputs:sourceColorSpace = "raw"
+                float2 inputs:st.connect = </CollapseSite/Looks/facade_B/stReader.outputs:result>
+                token inputs:wrapS = "repeat"
+                token inputs:wrapT = "repeat"
+                float3 outputs:rgb
+            }
+        }
+
+        def Material "facade_balcony"
+        {
+            token outputs:mdl:displacement.connect = </CollapseSite/Looks/facade_balcony/OmniPBR.outputs:out>
+            token outputs:mdl:surface.connect = </CollapseSite/Looks/facade_balcony/OmniPBR.outputs:out>
+            token outputs:mdl:volume.connect = </CollapseSite/Looks/facade_balcony/OmniPBR.outputs:out>
+            token outputs:surface.connect = </CollapseSite/Looks/facade_balcony/PreviewSurface.outputs:surface>
+
+            def Shader "OmniPBR"
+            {
+                uniform token info:implementationSource = "sourceAsset"
+                uniform asset info:mdl:sourceAsset = @OmniPBR.mdl@
+                uniform token info:mdl:sourceAsset:subIdentifier = "OmniPBR"
+                float inputs:bump_factor = 0.8
+                asset inputs:diffuse_texture = @./textures/facade_balcony_albedo.jpg@ (
+                    colorSpace = "sRGB"
+                )
+                float inputs:metallic_constant = 0
+                asset inputs:normalmap_texture = @./textures/facade_balcony_normal.png@ (
+                    colorSpace = "raw"
+                )
+                float inputs:reflection_roughness_constant = 0.82
+                float inputs:specular_level = 0.35
+                token outputs:out
+            }
+
+            def Shader "PreviewSurface"
+            {
+                uniform token info:id = "UsdPreviewSurface"
+                color3f inputs:diffuseColor.connect = </CollapseSite/Looks/facade_balcony/albedoTex.outputs:rgb>
+                float inputs:metallic = 0
+                normal3f inputs:normal.connect = </CollapseSite/Looks/facade_balcony/normalTex.outputs:rgb>
+                float inputs:roughness = 0.82
+                token outputs:surface
+            }
+
+            def Shader "stReader"
+            {
+                uniform token info:id = "UsdPrimvarReader_float2"
+                string inputs:varname = "st"
+                float2 outputs:result
+            }
+
+            def Shader "albedoTex"
+            {
+                uniform token info:id = "UsdUVTexture"
+                asset inputs:file = @./textures/facade_balcony_albedo.jpg@
+                token inputs:sourceColorSpace = "sRGB"
+                float2 inputs:st.connect = </CollapseSite/Looks/facade_balcony/stReader.outputs:result>
+                token inputs:wrapS = "repeat"
+                token inputs:wrapT = "repeat"
+                float3 outputs:rgb
+            }
+
+            def Shader "normalTex"
+            {
+                uniform token info:id = "UsdUVTexture"
+                float4 inputs:bias = (-1, -1, -1, 0)
+                asset inputs:file = @./textures/facade_balcony_normal.png@
+                float4 inputs:scale = (2, 2, 2, 1)
+                token inputs:sourceColorSpace = "raw"
+                float2 inputs:st.connect = </CollapseSite/Looks/facade_balcony/stReader.outputs:result>
+                token inputs:wrapS = "repeat"
+                token inputs:wrapT = "repeat"
+                float3 outputs:rgb
+            }
+        }
+
+        def Material "facade_A_warm"
+        {
+            token outputs:mdl:displacement.connect = </CollapseSite/Looks/facade_A_warm/OmniPBR.outputs:out>
+            token outputs:mdl:surface.connect = </CollapseSite/Looks/facade_A_warm/OmniPBR.outputs:out>
+            token outputs:mdl:volume.connect = </CollapseSite/Looks/facade_A_warm/OmniPBR.outputs:out>
+            token outputs:surface.connect = </CollapseSite/Looks/facade_A_warm/PreviewSurface.outputs:surface>
+
+            def Shader "OmniPBR"
+            {
+                uniform token info:implementationSource = "sourceAsset"
+                uniform asset info:mdl:sourceAsset = @OmniPBR.mdl@
+                uniform token info:mdl:sourceAsset:subIdentifier = "OmniPBR"
+                float inputs:bump_factor = 0.8
+                asset inputs:diffuse_texture = @./textures/facade_A_warm_albedo.jpg@ (
+                    colorSpace = "sRGB"
+                )
+                float inputs:metallic_constant = 0
+                asset inputs:normalmap_texture = @./textures/facade_A_warm_normal.png@ (
+                    colorSpace = "raw"
+                )
+                float inputs:reflection_roughness_constant = 0.82
+                float inputs:specular_level = 0.35
+                token outputs:out
+            }
+
+            def Shader "PreviewSurface"
+            {
+                uniform token info:id = "UsdPreviewSurface"
+                color3f inputs:diffuseColor.connect = </CollapseSite/Looks/facade_A_warm/albedoTex.outputs:rgb>
+                float inputs:metallic = 0
+                normal3f inputs:normal.connect = </CollapseSite/Looks/facade_A_warm/normalTex.outputs:rgb>
+                float inputs:roughness = 0.82
+                token outputs:surface
+            }
+
+            def Shader "stReader"
+            {
+                uniform token info:id = "UsdPrimvarReader_float2"
+                string inputs:varname = "st"
+                float2 outputs:result
+            }
+
+            def Shader "albedoTex"
+            {
+                uniform token info:id = "UsdUVTexture"
+                asset inputs:file = @./textures/facade_A_warm_albedo.jpg@
+                token inputs:sourceColorSpace = "sRGB"
+                float2 inputs:st.connect = </CollapseSite/Looks/facade_A_warm/stReader.outputs:result>
+                token inputs:wrapS = "repeat"
+                token inputs:wrapT = "repeat"
+                float3 outputs:rgb
+            }
+
+            def Shader "normalTex"
+            {
+                uniform token info:id = "UsdUVTexture"
+                float4 inputs:bias = (-1, -1, -1, 0)
+                asset inputs:file = @./textures/facade_A_warm_normal.png@
+                float4 inputs:scale = (2, 2, 2, 1)
+                token inputs:sourceColorSpace = "raw"
+                float2 inputs:st.connect = </CollapseSite/Looks/facade_A_warm/stReader.outputs:result>
+                token inputs:wrapS = "repeat"
+                token inputs:wrapT = "repeat"
+                float3 outputs:rgb
+            }
+        }
+
+        def Material "facade_B_tile"
+        {
+            token outputs:mdl:displacement.connect = </CollapseSite/Looks/facade_B_tile/OmniPBR.outputs:out>
+            token outputs:mdl:surface.connect = </CollapseSite/Looks/facade_B_tile/OmniPBR.outputs:out>
+            token outputs:mdl:volume.connect = </CollapseSite/Looks/facade_B_tile/OmniPBR.outputs:out>
+            token outputs:surface.connect = </CollapseSite/Looks/facade_B_tile/PreviewSurface.outputs:surface>
+
+            def Shader "OmniPBR"
+            {
+                uniform token info:implementationSource = "sourceAsset"
+                uniform asset info:mdl:sourceAsset = @OmniPBR.mdl@
+                uniform token info:mdl:sourceAsset:subIdentifier = "OmniPBR"
+                float inputs:bump_factor = 0.8
+                asset inputs:diffuse_texture = @./textures/facade_B_tile_albedo.jpg@ (
+                    colorSpace = "sRGB"
+                )
+                float inputs:metallic_constant = 0
+                asset inputs:normalmap_texture = @./textures/facade_B_tile_normal.png@ (
+                    colorSpace = "raw"
+                )
+                float inputs:reflection_roughness_constant = 0.82
+                float inputs:specular_level = 0.35
+                token outputs:out
+            }
+
+            def Shader "PreviewSurface"
+            {
+                uniform token info:id = "UsdPreviewSurface"
+                color3f inputs:diffuseColor.connect = </CollapseSite/Looks/facade_B_tile/albedoTex.outputs:rgb>
+                float inputs:metallic = 0
+                normal3f inputs:normal.connect = </CollapseSite/Looks/facade_B_tile/normalTex.outputs:rgb>
+                float inputs:roughness = 0.82
+                token outputs:surface
+            }
+
+            def Shader "stReader"
+            {
+                uniform token info:id = "UsdPrimvarReader_float2"
+                string inputs:varname = "st"
+                float2 outputs:result
+            }
+
+            def Shader "albedoTex"
+            {
+                uniform token info:id = "UsdUVTexture"
+                asset inputs:file = @./textures/facade_B_tile_albedo.jpg@
+                token inputs:sourceColorSpace = "sRGB"
+                float2 inputs:st.connect = </CollapseSite/Looks/facade_B_tile/stReader.outputs:result>
+                token inputs:wrapS = "repeat"
+                token inputs:wrapT = "repeat"
+                float3 outputs:rgb
+            }
+
+            def Shader "normalTex"
+            {
+                uniform token info:id = "UsdUVTexture"
+                float4 inputs:bias = (-1, -1, -1, 0)
+                asset inputs:file = @./textures/facade_B_tile_normal.png@
+                float4 inputs:scale = (2, 2, 2, 1)
+                token inputs:sourceColorSpace = "raw"
+                float2 inputs:st.connect = </CollapseSite/Looks/facade_B_tile/stReader.outputs:result>
+                token inputs:wrapS = "repeat"
+                token inputs:wrapT = "repeat"
+                float3 outputs:rgb
+            }
+        }
+
+        def Material "facade_A_pale"
+        {
+            token outputs:mdl:displacement.connect = </CollapseSite/Looks/facade_A_pale/OmniPBR.outputs:out>
+            token outputs:mdl:surface.connect = </CollapseSite/Looks/facade_A_pale/OmniPBR.outputs:out>
+            token outputs:mdl:volume.connect = </CollapseSite/Looks/facade_A_pale/OmniPBR.outputs:out>
+            token outputs:surface.connect = </CollapseSite/Looks/facade_A_pale/PreviewSurface.outputs:surface>
+
+            def Shader "OmniPBR"
+            {
+                uniform token info:implementationSource = "sourceAsset"
+                uniform asset info:mdl:sourceAsset = @OmniPBR.mdl@
+                uniform token info:mdl:sourceAsset:subIdentifier = "OmniPBR"
+                float inputs:bump_factor = 0.8
+                asset inputs:diffuse_texture = @./textures/facade_A_pale_albedo.jpg@ (
+                    colorSpace = "sRGB"
+                )
+                float inputs:metallic_constant = 0
+                asset inputs:normalmap_texture = @./textures/facade_A_pale_normal.png@ (
+                    colorSpace = "raw"
+                )
+                float inputs:reflection_roughness_constant = 0.82
+                float inputs:specular_level = 0.35
+                token outputs:out
+            }
+
+            def Shader "PreviewSurface"
+            {
+                uniform token info:id = "UsdPreviewSurface"
+                color3f inputs:diffuseColor.connect = </CollapseSite/Looks/facade_A_pale/albedoTex.outputs:rgb>
+                float inputs:metallic = 0
+                normal3f inputs:normal.connect = </CollapseSite/Looks/facade_A_pale/normalTex.outputs:rgb>
+                float inputs:roughness = 0.82
+                token outputs:surface
+            }
+
+            def Shader "stReader"
+            {
+                uniform token info:id = "UsdPrimvarReader_float2"
+                string inputs:varname = "st"
+                float2 outputs:result
+            }
+
+            def Shader "albedoTex"
+            {
+                uniform token info:id = "UsdUVTexture"
+                asset inputs:file = @./textures/facade_A_pale_albedo.jpg@
+                token inputs:sourceColorSpace = "sRGB"
+                float2 inputs:st.connect = </CollapseSite/Looks/facade_A_pale/stReader.outputs:result>
+                token inputs:wrapS = "repeat"
+                token inputs:wrapT = "repeat"
+                float3 outputs:rgb
+            }
+
+            def Shader "normalTex"
+            {
+                uniform token info:id = "UsdUVTexture"
+                float4 inputs:bias = (-1, -1, -1, 0)
+                asset inputs:file = @./textures/facade_A_pale_normal.png@
+                float4 inputs:scale = (2, 2, 2, 1)
+                token inputs:sourceColorSpace = "raw"
+                float2 inputs:st.connect = </CollapseSite/Looks/facade_A_pale/stReader.outputs:result>
+                token inputs:wrapS = "repeat"
+                token inputs:wrapT = "repeat"
+                float3 outputs:rgb
+            }
+        }
+
+        def Material "metal_white"
+        {
+            token outputs:mdl:displacement.connect = </CollapseSite/Looks/metal_white/OmniPBR.outputs:out>
+            token outputs:mdl:surface.connect = </CollapseSite/Looks/metal_white/OmniPBR.outputs:out>
+            token outputs:mdl:volume.connect = </CollapseSite/Looks/metal_white/OmniPBR.outputs:out>
+            token outputs:surface.connect = </CollapseSite/Looks/metal_white/PreviewSurface.outputs:surface>
+
+            def Shader "OmniPBR"
+            {
+                uniform token info:implementationSource = "sourceAsset"
+                uniform asset info:mdl:sourceAsset = @OmniPBR.mdl@
+                uniform token info:mdl:sourceAsset:subIdentifier = "OmniPBR"
+                float inputs:bump_factor = 0.8
+                asset inputs:diffuse_texture = @./textures/metal_white_albedo.jpg@ (
+                    colorSpace = "sRGB"
+                )
+                float inputs:metallic_constant = 0
+                asset inputs:normalmap_texture = @./textures/metal_white_normal.png@ (
+                    colorSpace = "raw"
+                )
+                float inputs:reflection_roughness_constant = 0.55
+                float inputs:specular_level = 0.35
+                token outputs:out
+            }
+
+            def Shader "PreviewSurface"
+            {
+                uniform token info:id = "UsdPreviewSurface"
+                color3f inputs:diffuseColor.connect = </CollapseSite/Looks/metal_white/albedoTex.outputs:rgb>
+                float inputs:metallic = 0
+                normal3f inputs:normal.connect = </CollapseSite/Looks/metal_white/normalTex.outputs:rgb>
+                float inputs:roughness = 0.55
+                token outputs:surface
+            }
+
+            def Shader "stReader"
+            {
+                uniform token info:id = "UsdPrimvarReader_float2"
+                string inputs:varname = "st"
+                float2 outputs:result
+            }
+
+            def Shader "albedoTex"
+            {
+                uniform token info:id = "UsdUVTexture"
+                asset inputs:file = @./textures/metal_white_albedo.jpg@
+                token inputs:sourceColorSpace = "sRGB"
+                float2 inputs:st.connect = </CollapseSite/Looks/metal_white/stReader.outputs:result>
+                token inputs:wrapS = "repeat"
+                token inputs:wrapT = "repeat"
+                float3 outputs:rgb
+            }
+
+            def Shader "normalTex"
+            {
+                uniform token info:id = "UsdUVTexture"
+                float4 inputs:bias = (-1, -1, -1, 0)
+                asset inputs:file = @./textures/metal_white_normal.png@
+                float4 inputs:scale = (2, 2, 2, 1)
+                token inputs:sourceColorSpace = "raw"
+                float2 inputs:st.connect = </CollapseSite/Looks/metal_white/stReader.outputs:result>
+                token inputs:wrapS = "repeat"
+                token inputs:wrapT = "repeat"
+                float3 outputs:rgb
+            }
+        }
+
+        def Material "metal_green"
+        {
+            token outputs:mdl:displacement.connect = </CollapseSite/Looks/metal_green/OmniPBR.outputs:out>
+            token outputs:mdl:surface.connect = </CollapseSite/Looks/metal_green/OmniPBR.outputs:out>
+            token outputs:mdl:volume.connect = </CollapseSite/Looks/metal_green/OmniPBR.outputs:out>
+            token outputs:surface.connect = </CollapseSite/Looks/metal_green/PreviewSurface.outputs:surface>
+
+            def Shader "OmniPBR"
+            {
+                uniform token info:implementationSource = "sourceAsset"
+                uniform asset info:mdl:sourceAsset = @OmniPBR.mdl@
+                uniform token info:mdl:sourceAsset:subIdentifier = "OmniPBR"
+                float inputs:bump_factor = 0.8
+                asset inputs:diffuse_texture = @./textures/metal_green_albedo.jpg@ (
+                    colorSpace = "sRGB"
+                )
+                float inputs:metallic_constant = 0
+                asset inputs:normalmap_texture = @./textures/metal_green_normal.png@ (
+                    colorSpace = "raw"
+                )
+                float inputs:reflection_roughness_constant = 0.55
+                float inputs:specular_level = 0.35
+                token outputs:out
+            }
+
+            def Shader "PreviewSurface"
+            {
+                uniform token info:id = "UsdPreviewSurface"
+                color3f inputs:diffuseColor.connect = </CollapseSite/Looks/metal_green/albedoTex.outputs:rgb>
+                float inputs:metallic = 0
+                normal3f inputs:normal.connect = </CollapseSite/Looks/metal_green/normalTex.outputs:rgb>
+                float inputs:roughness = 0.55
+                token outputs:surface
+            }
+
+            def Shader "stReader"
+            {
+                uniform token info:id = "UsdPrimvarReader_float2"
+                string inputs:varname = "st"
+                float2 outputs:result
+            }
+
+            def Shader "albedoTex"
+            {
+                uniform token info:id = "UsdUVTexture"
+                asset inputs:file = @./textures/metal_green_albedo.jpg@
+                token inputs:sourceColorSpace = "sRGB"
+                float2 inputs:st.connect = </CollapseSite/Looks/metal_green/stReader.outputs:result>
+                token inputs:wrapS = "repeat"
+                token inputs:wrapT = "repeat"
+                float3 outputs:rgb
+            }
+
+            def Shader "normalTex"
+            {
+                uniform token info:id = "UsdUVTexture"
+                float4 inputs:bias = (-1, -1, -1, 0)
+                asset inputs:file = @./textures/metal_green_normal.png@
+                float4 inputs:scale = (2, 2, 2, 1)
+                token inputs:sourceColorSpace = "raw"
+                float2 inputs:st.connect = </CollapseSite/Looks/metal_green/stReader.outputs:result>
+                token inputs:wrapS = "repeat"
+                token inputs:wrapT = "repeat"
+                float3 outputs:rgb
+            }
+        }
+
+        def Material "plaster_light"
+        {
+            token outputs:mdl:displacement.connect = </CollapseSite/Looks/plaster_light/OmniPBR.outputs:out>
+            token outputs:mdl:surface.connect = </CollapseSite/Looks/plaster_light/OmniPBR.outputs:out>
+            token outputs:mdl:volume.connect = </CollapseSite/Looks/plaster_light/OmniPBR.outputs:out>
+            token outputs:surface.connect = </CollapseSite/Looks/plaster_light/PreviewSurface.outputs:surface>
+
+            def Shader "OmniPBR"
+            {
+                uniform token info:implementationSource = "sourceAsset"
+                uniform asset info:mdl:sourceAsset = @OmniPBR.mdl@
+                uniform token info:mdl:sourceAsset:subIdentifier = "OmniPBR"
+                float inputs:bump_factor = 0.8
+                asset inputs:diffuse_texture = @./textures/plaster_light_albedo.jpg@ (
+                    colorSpace = "sRGB"
+                )
+                float inputs:metallic_constant = 0
+                asset inputs:normalmap_texture = @./textures/plaster_light_normal.png@ (
+                    colorSpace = "raw"
+                )
+                float inputs:reflection_roughness_constant = 0.9
+                float inputs:specular_level = 0.35
+                token outputs:out
+            }
+
+            def Shader "PreviewSurface"
+            {
+                uniform token info:id = "UsdPreviewSurface"
+                color3f inputs:diffuseColor.connect = </CollapseSite/Looks/plaster_light/albedoTex.outputs:rgb>
+                float inputs:metallic = 0
+                normal3f inputs:normal.connect = </CollapseSite/Looks/plaster_light/normalTex.outputs:rgb>
+                float inputs:roughness = 0.9
+                token outputs:surface
+            }
+
+            def Shader "stReader"
+            {
+                uniform token info:id = "UsdPrimvarReader_float2"
+                string inputs:varname = "st"
+                float2 outputs:result
+            }
+
+            def Shader "albedoTex"
+            {
+                uniform token info:id = "UsdUVTexture"
+                asset inputs:file = @./textures/plaster_light_albedo.jpg@
+                token inputs:sourceColorSpace = "sRGB"
+                float2 inputs:st.connect = </CollapseSite/Looks/plaster_light/stReader.outputs:result>
+                token inputs:wrapS = "repeat"
+                token inputs:wrapT = "repeat"
+                float3 outputs:rgb
+            }
+
+            def Shader "normalTex"
+            {
+                uniform token info:id = "UsdUVTexture"
+                float4 inputs:bias = (-1, -1, -1, 0)
+                asset inputs:file = @./textures/plaster_light_normal.png@
+                float4 inputs:scale = (2, 2, 2, 1)
+                token inputs:sourceColorSpace = "raw"
+                float2 inputs:st.connect = </CollapseSite/Looks/plaster_light/stReader.outputs:result>
+                token inputs:wrapS = "repeat"
+                token inputs:wrapT = "repeat"
+                float3 outputs:rgb
+            }
+        }
+
+        def Material "plaster_grey"
+        {
+            token outputs:mdl:displacement.connect = </CollapseSite/Looks/plaster_grey/OmniPBR.outputs:out>
+            token outputs:mdl:surface.connect = </CollapseSite/Looks/plaster_grey/OmniPBR.outputs:out>
+            token outputs:mdl:volume.connect = </CollapseSite/Looks/plaster_grey/OmniPBR.outputs:out>
+            token outputs:surface.connect = </CollapseSite/Looks/plaster_grey/PreviewSurface.outputs:surface>
+
+            def Shader "OmniPBR"
+            {
+                uniform token info:implementationSource = "sourceAsset"
+                uniform asset info:mdl:sourceAsset = @OmniPBR.mdl@
+                uniform token info:mdl:sourceAsset:subIdentifier = "OmniPBR"
+                float inputs:bump_factor = 0.8
+                asset inputs:diffuse_texture = @./textures/plaster_grey_albedo.jpg@ (
+                    colorSpace = "sRGB"
+                )
+                float inputs:metallic_constant = 0
+                asset inputs:normalmap_texture = @./textures/plaster_grey_normal.png@ (
+                    colorSpace = "raw"
+                )
+                float inputs:reflection_roughness_constant = 0.9
+                float inputs:specular_level = 0.35
+                token outputs:out
+            }
+
+            def Shader "PreviewSurface"
+            {
+                uniform token info:id = "UsdPreviewSurface"
+                color3f inputs:diffuseColor.connect = </CollapseSite/Looks/plaster_grey/albedoTex.outputs:rgb>
+                float inputs:metallic = 0
+                normal3f inputs:normal.connect = </CollapseSite/Looks/plaster_grey/normalTex.outputs:rgb>
+                float inputs:roughness = 0.9
+                token outputs:surface
+            }
+
+            def Shader "stReader"
+            {
+                uniform token info:id = "UsdPrimvarReader_float2"
+                string inputs:varname = "st"
+                float2 outputs:result
+            }
+
+            def Shader "albedoTex"
+            {
+                uniform token info:id = "UsdUVTexture"
+                asset inputs:file = @./textures/plaster_grey_albedo.jpg@
+                token inputs:sourceColorSpace = "sRGB"
+                float2 inputs:st.connect = </CollapseSite/Looks/plaster_grey/stReader.outputs:result>
+                token inputs:wrapS = "repeat"
+                token inputs:wrapT = "repeat"
+                float3 outputs:rgb
+            }
+
+            def Shader "normalTex"
+            {
+                uniform token info:id = "UsdUVTexture"
+                float4 inputs:bias = (-1, -1, -1, 0)
+                asset inputs:file = @./textures/plaster_grey_normal.png@
+                float4 inputs:scale = (2, 2, 2, 1)
+                token inputs:sourceColorSpace = "raw"
+                float2 inputs:st.connect = </CollapseSite/Looks/plaster_grey/stReader.outputs:result>
+                token inputs:wrapS = "repeat"
+                token inputs:wrapT = "repeat"
+                float3 outputs:rgb
+            }
+        }
+
+        def Material "plaster_beige"
+        {
+            token outputs:mdl:displacement.connect = </CollapseSite/Looks/plaster_beige/OmniPBR.outputs:out>
+            token outputs:mdl:surface.connect = </CollapseSite/Looks/plaster_beige/OmniPBR.outputs:out>
+            token outputs:mdl:volume.connect = </CollapseSite/Looks/plaster_beige/OmniPBR.outputs:out>
+            token outputs:surface.connect = </CollapseSite/Looks/plaster_beige/PreviewSurface.outputs:surface>
+
+            def Shader "OmniPBR"
+            {
+                uniform token info:implementationSource = "sourceAsset"
+                uniform asset info:mdl:sourceAsset = @OmniPBR.mdl@
+                uniform token info:mdl:sourceAsset:subIdentifier = "OmniPBR"
+                float inputs:bump_factor = 0.8
+                asset inputs:diffuse_texture = @./textures/plaster_beige_albedo.jpg@ (
+                    colorSpace = "sRGB"
+                )
+                float inputs:metallic_constant = 0
+                asset inputs:normalmap_texture = @./textures/plaster_beige_normal.png@ (
+                    colorSpace = "raw"
+                )
+                float inputs:reflection_roughness_constant = 0.9
+                float inputs:specular_level = 0.35
+                token outputs:out
+            }
+
+            def Shader "PreviewSurface"
+            {
+                uniform token info:id = "UsdPreviewSurface"
+                color3f inputs:diffuseColor.connect = </CollapseSite/Looks/plaster_beige/albedoTex.outputs:rgb>
+                float inputs:metallic = 0
+                normal3f inputs:normal.connect = </CollapseSite/Looks/plaster_beige/normalTex.outputs:rgb>
+                float inputs:roughness = 0.9
+                token outputs:surface
+            }
+
+            def Shader "stReader"
+            {
+                uniform token info:id = "UsdPrimvarReader_float2"
+                string inputs:varname = "st"
+                float2 outputs:result
+            }
+
+            def Shader "albedoTex"
+            {
+                uniform token info:id = "UsdUVTexture"
+                asset inputs:file = @./textures/plaster_beige_albedo.jpg@
+                token inputs:sourceColorSpace = "sRGB"
+                float2 inputs:st.connect = </CollapseSite/Looks/plaster_beige/stReader.outputs:result>
+                token inputs:wrapS = "repeat"
+                token inputs:wrapT = "repeat"
+                float3 outputs:rgb
+            }
+
+            def Shader "normalTex"
+            {
+                uniform token info:id = "UsdUVTexture"
+                float4 inputs:bias = (-1, -1, -1, 0)
+                asset inputs:file = @./textures/plaster_beige_normal.png@
+                float4 inputs:scale = (2, 2, 2, 1)
+                token inputs:sourceColorSpace = "raw"
+                float2 inputs:st.connect = </CollapseSite/Looks/plaster_beige/stReader.outputs:result>
+                token inputs:wrapS = "repeat"
+                token inputs:wrapT = "repeat"
+                float3 outputs:rgb
+            }
+        }
+
+        def Material "plaster_pink"
+        {
+            token outputs:mdl:displacement.connect = </CollapseSite/Looks/plaster_pink/OmniPBR.outputs:out>
+            token outputs:mdl:surface.connect = </CollapseSite/Looks/plaster_pink/OmniPBR.outputs:out>
+            token outputs:mdl:volume.connect = </CollapseSite/Looks/plaster_pink/OmniPBR.outputs:out>
+            token outputs:surface.connect = </CollapseSite/Looks/plaster_pink/PreviewSurface.outputs:surface>
+
+            def Shader "OmniPBR"
+            {
+                uniform token info:implementationSource = "sourceAsset"
+                uniform asset info:mdl:sourceAsset = @OmniPBR.mdl@
+                uniform token info:mdl:sourceAsset:subIdentifier = "OmniPBR"
+                float inputs:bump_factor = 0.8
+                asset inputs:diffuse_texture = @./textures/plaster_pink_albedo.jpg@ (
+                    colorSpace = "sRGB"
+                )
+                float inputs:metallic_constant = 0
+                asset inputs:normalmap_texture = @./textures/plaster_pink_normal.png@ (
+                    colorSpace = "raw"
+                )
+                float inputs:reflection_roughness_constant = 0.9
+                float inputs:specular_level = 0.35
+                token outputs:out
+            }
+
+            def Shader "PreviewSurface"
+            {
+                uniform token info:id = "UsdPreviewSurface"
+                color3f inputs:diffuseColor.connect = </CollapseSite/Looks/plaster_pink/albedoTex.outputs:rgb>
+                float inputs:metallic = 0
+                normal3f inputs:normal.connect = </CollapseSite/Looks/plaster_pink/normalTex.outputs:rgb>
+                float inputs:roughness = 0.9
+                token outputs:surface
+            }
+
+            def Shader "stReader"
+            {
+                uniform token info:id = "UsdPrimvarReader_float2"
+                string inputs:varname = "st"
+                float2 outputs:result
+            }
+
+            def Shader "albedoTex"
+            {
+                uniform token info:id = "UsdUVTexture"
+                asset inputs:file = @./textures/plaster_pink_albedo.jpg@
+                token inputs:sourceColorSpace = "sRGB"
+                float2 inputs:st.connect = </CollapseSite/Looks/plaster_pink/stReader.outputs:result>
+                token inputs:wrapS = "repeat"
+                token inputs:wrapT = "repeat"
+                float3 outputs:rgb
+            }
+
+            def Shader "normalTex"
+            {
+                uniform token info:id = "UsdUVTexture"
+                float4 inputs:bias = (-1, -1, -1, 0)
+                asset inputs:file = @./textures/plaster_pink_normal.png@
+                float4 inputs:scale = (2, 2, 2, 1)
+                token inputs:sourceColorSpace = "raw"
+                float2 inputs:st.connect = </CollapseSite/Looks/plaster_pink/stReader.outputs:result>
+                token inputs:wrapS = "repeat"
+                token inputs:wrapT = "repeat"
+                float3 outputs:rgb
+            }
+        }
+
+        def Material "roof_concrete"
+        {
+            token outputs:mdl:displacement.connect = </CollapseSite/Looks/roof_concrete/OmniPBR.outputs:out>
+            token outputs:mdl:surface.connect = </CollapseSite/Looks/roof_concrete/OmniPBR.outputs:out>
+            token outputs:mdl:volume.connect = </CollapseSite/Looks/roof_concrete/OmniPBR.outputs:out>
+            token outputs:surface.connect = </CollapseSite/Looks/roof_concrete/PreviewSurface.outputs:surface>
+
+            def Shader "OmniPBR"
+            {
+                uniform token info:implementationSource = "sourceAsset"
+                uniform asset info:mdl:sourceAsset = @OmniPBR.mdl@
+                uniform token info:mdl:sourceAsset:subIdentifier = "OmniPBR"
+                float inputs:bump_factor = 0.8
+                asset inputs:diffuse_texture = @./textures/roof_concrete_albedo.jpg@ (
+                    colorSpace = "sRGB"
+                )
+                float inputs:metallic_constant = 0
+                asset inputs:normalmap_texture = @./textures/roof_concrete_normal.png@ (
+                    colorSpace = "raw"
+                )
+                float inputs:reflection_roughness_constant = 0.85
+                float inputs:specular_level = 0.35
+                token outputs:out
+            }
+
+            def Shader "PreviewSurface"
+            {
+                uniform token info:id = "UsdPreviewSurface"
+                color3f inputs:diffuseColor.connect = </CollapseSite/Looks/roof_concrete/albedoTex.outputs:rgb>
+                float inputs:metallic = 0
+                normal3f inputs:normal.connect = </CollapseSite/Looks/roof_concrete/normalTex.outputs:rgb>
+                float inputs:roughness = 0.85
+                token outputs:surface
+            }
+
+            def Shader "stReader"
+            {
+                uniform token info:id = "UsdPrimvarReader_float2"
+                string inputs:varname = "st"
+                float2 outputs:result
+            }
+
+            def Shader "albedoTex"
+            {
+                uniform token info:id = "UsdUVTexture"
+                asset inputs:file = @./textures/roof_concrete_albedo.jpg@
+                token inputs:sourceColorSpace = "sRGB"
+                float2 inputs:st.connect = </CollapseSite/Looks/roof_concrete/stReader.outputs:result>
+                token inputs:wrapS = "repeat"
+                token inputs:wrapT = "repeat"
+                float3 outputs:rgb
+            }
+
+            def Shader "normalTex"
+            {
+                uniform token info:id = "UsdUVTexture"
+                float4 inputs:bias = (-1, -1, -1, 0)
+                asset inputs:file = @./textures/roof_concrete_normal.png@
+                float4 inputs:scale = (2, 2, 2, 1)
+                token inputs:sourceColorSpace = "raw"
+                float2 inputs:st.connect = </CollapseSite/Looks/roof_concrete/stReader.outputs:result>
+                token inputs:wrapS = "repeat"
+                token inputs:wrapT = "repeat"
+                float3 outputs:rgb
+            }
+        }
+
+        def Material "roof_green"
+        {
+            token outputs:mdl:displacement.connect = </CollapseSite/Looks/roof_green/OmniPBR.outputs:out>
+            token outputs:mdl:surface.connect = </CollapseSite/Looks/roof_green/OmniPBR.outputs:out>
+            token outputs:mdl:volume.connect = </CollapseSite/Looks/roof_green/OmniPBR.outputs:out>
+            token outputs:surface.connect = </CollapseSite/Looks/roof_green/PreviewSurface.outputs:surface>
+
+            def Shader "OmniPBR"
+            {
+                uniform token info:implementationSource = "sourceAsset"
+                uniform asset info:mdl:sourceAsset = @OmniPBR.mdl@
+                uniform token info:mdl:sourceAsset:subIdentifier = "OmniPBR"
+                float inputs:bump_factor = 0.8
+                asset inputs:diffuse_texture = @./textures/roof_green_albedo.jpg@ (
+                    colorSpace = "sRGB"
+                )
+                float inputs:metallic_constant = 0
+                asset inputs:normalmap_texture = @./textures/roof_green_normal.png@ (
+                    colorSpace = "raw"
+                )
+                float inputs:reflection_roughness_constant = 0.85
+                float inputs:specular_level = 0.35
+                token outputs:out
+            }
+
+            def Shader "PreviewSurface"
+            {
+                uniform token info:id = "UsdPreviewSurface"
+                color3f inputs:diffuseColor.connect = </CollapseSite/Looks/roof_green/albedoTex.outputs:rgb>
+                float inputs:metallic = 0
+                normal3f inputs:normal.connect = </CollapseSite/Looks/roof_green/normalTex.outputs:rgb>
+                float inputs:roughness = 0.85
+                token outputs:surface
+            }
+
+            def Shader "stReader"
+            {
+                uniform token info:id = "UsdPrimvarReader_float2"
+                string inputs:varname = "st"
+                float2 outputs:result
+            }
+
+            def Shader "albedoTex"
+            {
+                uniform token info:id = "UsdUVTexture"
+                asset inputs:file = @./textures/roof_green_albedo.jpg@
+                token inputs:sourceColorSpace = "sRGB"
+                float2 inputs:st.connect = </CollapseSite/Looks/roof_green/stReader.outputs:result>
+                token inputs:wrapS = "repeat"
+                token inputs:wrapT = "repeat"
+                float3 outputs:rgb
+            }
+
+            def Shader "normalTex"
+            {
+                uniform token info:id = "UsdUVTexture"
+                float4 inputs:bias = (-1, -1, -1, 0)
+                asset inputs:file = @./textures/roof_green_normal.png@
+                float4 inputs:scale = (2, 2, 2, 1)
+                token inputs:sourceColorSpace = "raw"
+                float2 inputs:st.connect = </CollapseSite/Looks/roof_green/stReader.outputs:result>
+                token inputs:wrapS = "repeat"
+                token inputs:wrapT = "repeat"
+                float3 outputs:rgb
+            }
+        }
+
+        def Material "roof_red"
+        {
+            token outputs:mdl:displacement.connect = </CollapseSite/Looks/roof_red/OmniPBR.outputs:out>
+            token outputs:mdl:surface.connect = </CollapseSite/Looks/roof_red/OmniPBR.outputs:out>
+            token outputs:mdl:volume.connect = </CollapseSite/Looks/roof_red/OmniPBR.outputs:out>
+            token outputs:surface.connect = </CollapseSite/Looks/roof_red/PreviewSurface.outputs:surface>
+
+            def Shader "OmniPBR"
+            {
+                uniform token info:implementationSource = "sourceAsset"
+                uniform asset info:mdl:sourceAsset = @OmniPBR.mdl@
+                uniform token info:mdl:sourceAsset:subIdentifier = "OmniPBR"
+                float inputs:bump_factor = 0.8
+                asset inputs:diffuse_texture = @./textures/roof_red_albedo.jpg@ (
+                    colorSpace = "sRGB"
+                )
+                float inputs:metallic_constant = 0
+                asset inputs:normalmap_texture = @./textures/roof_red_normal.png@ (
+                    colorSpace = "raw"
+                )
+                float inputs:reflection_roughness_constant = 0.85
+                float inputs:specular_level = 0.35
+                token outputs:out
+            }
+
+            def Shader "PreviewSurface"
+            {
+                uniform token info:id = "UsdPreviewSurface"
+                color3f inputs:diffuseColor.connect = </CollapseSite/Looks/roof_red/albedoTex.outputs:rgb>
+                float inputs:metallic = 0
+                normal3f inputs:normal.connect = </CollapseSite/Looks/roof_red/normalTex.outputs:rgb>
+                float inputs:roughness = 0.85
+                token outputs:surface
+            }
+
+            def Shader "stReader"
+            {
+                uniform token info:id = "UsdPrimvarReader_float2"
+                string inputs:varname = "st"
+                float2 outputs:result
+            }
+
+            def Shader "albedoTex"
+            {
+                uniform token info:id = "UsdUVTexture"
+                asset inputs:file = @./textures/roof_red_albedo.jpg@
+                token inputs:sourceColorSpace = "sRGB"
+                float2 inputs:st.connect = </CollapseSite/Looks/roof_red/stReader.outputs:result>
+                token inputs:wrapS = "repeat"
+                token inputs:wrapT = "repeat"
+                float3 outputs:rgb
+            }
+
+            def Shader "normalTex"
+            {
+                uniform token info:id = "UsdUVTexture"
+                float4 inputs:bias = (-1, -1, -1, 0)
+                asset inputs:file = @./textures/roof_red_normal.png@
+                float4 inputs:scale = (2, 2, 2, 1)
+                token inputs:sourceColorSpace = "raw"
+                float2 inputs:st.connect = </CollapseSite/Looks/roof_red/stReader.outputs:result>
+                token inputs:wrapS = "repeat"
+                token inputs:wrapT = "repeat"
+                float3 outputs:rgb
+            }
+        }
+
+        def Material "roof_white"
+        {
+            token outputs:mdl:displacement.connect = </CollapseSite/Looks/roof_white/OmniPBR.outputs:out>
+            token outputs:mdl:surface.connect = </CollapseSite/Looks/roof_white/OmniPBR.outputs:out>
+            token outputs:mdl:volume.connect = </CollapseSite/Looks/roof_white/OmniPBR.outputs:out>
+            token outputs:surface.connect = </CollapseSite/Looks/roof_white/PreviewSurface.outputs:surface>
+
+            def Shader "OmniPBR"
+            {
+                uniform token info:implementationSource = "sourceAsset"
+                uniform asset info:mdl:sourceAsset = @OmniPBR.mdl@
+                uniform token info:mdl:sourceAsset:subIdentifier = "OmniPBR"
+                float inputs:bump_factor = 0.8
+                asset inputs:diffuse_texture = @./textures/roof_white_albedo.jpg@ (
+                    colorSpace = "sRGB"
+                )
+                float inputs:metallic_constant = 0
+                asset inputs:normalmap_texture = @./textures/roof_white_normal.png@ (
+                    colorSpace = "raw"
+                )
+                float inputs:reflection_roughness_constant = 0.55
+                float inputs:specular_level = 0.35
+                token outputs:out
+            }
+
+            def Shader "PreviewSurface"
+            {
+                uniform token info:id = "UsdPreviewSurface"
+                color3f inputs:diffuseColor.connect = </CollapseSite/Looks/roof_white/albedoTex.outputs:rgb>
+                float inputs:metallic = 0
+                normal3f inputs:normal.connect = </CollapseSite/Looks/roof_white/normalTex.outputs:rgb>
+                float inputs:roughness = 0.55
+                token outputs:surface
+            }
+
+            def Shader "stReader"
+            {
+                uniform token info:id = "UsdPrimvarReader_float2"
+                string inputs:varname = "st"
+                float2 outputs:result
+            }
+
+            def Shader "albedoTex"
+            {
+                uniform token info:id = "UsdUVTexture"
+                asset inputs:file = @./textures/roof_white_albedo.jpg@
+                token inputs:sourceColorSpace = "sRGB"
+                float2 inputs:st.connect = </CollapseSite/Looks/roof_white/stReader.outputs:result>
+                token inputs:wrapS = "repeat"
+                token inputs:wrapT = "repeat"
+                float3 outputs:rgb
+            }
+
+            def Shader "normalTex"
+            {
+                uniform token info:id = "UsdUVTexture"
+                float4 inputs:bias = (-1, -1, -1, 0)
+                asset inputs:file = @./textures/roof_white_normal.png@
+                float4 inputs:scale = (2, 2, 2, 1)
+                token inputs:sourceColorSpace = "raw"
+                float2 inputs:st.connect = </CollapseSite/Looks/roof_white/stReader.outputs:result>
+                token inputs:wrapS = "repeat"
+                token inputs:wrapT = "repeat"
+                float3 outputs:rgb
+            }
+        }
+
+        def Material "roof_metal"
+        {
+            token outputs:mdl:displacement.connect = </CollapseSite/Looks/roof_metal/OmniPBR.outputs:out>
+            token outputs:mdl:surface.connect = </CollapseSite/Looks/roof_metal/OmniPBR.outputs:out>
+            token outputs:mdl:volume.connect = </CollapseSite/Looks/roof_metal/OmniPBR.outputs:out>
+            token outputs:surface.connect = </CollapseSite/Looks/roof_metal/PreviewSurface.outputs:surface>
+
+            def Shader "OmniPBR"
+            {
+                uniform token info:implementationSource = "sourceAsset"
+                uniform asset info:mdl:sourceAsset = @OmniPBR.mdl@
+                uniform token info:mdl:sourceAsset:subIdentifier = "OmniPBR"
+                float inputs:bump_factor = 0.8
+                asset inputs:diffuse_texture = @./textures/roof_metal_albedo.jpg@ (
+                    colorSpace = "sRGB"
+                )
+                float inputs:metallic_constant = 0
+                asset inputs:normalmap_texture = @./textures/roof_metal_normal.png@ (
+                    colorSpace = "raw"
+                )
+                float inputs:reflection_roughness_constant = 0.55
+                float inputs:specular_level = 0.35
+                token outputs:out
+            }
+
+            def Shader "PreviewSurface"
+            {
+                uniform token info:id = "UsdPreviewSurface"
+                color3f inputs:diffuseColor.connect = </CollapseSite/Looks/roof_metal/albedoTex.outputs:rgb>
+                float inputs:metallic = 0
+                normal3f inputs:normal.connect = </CollapseSite/Looks/roof_metal/normalTex.outputs:rgb>
+                float inputs:roughness = 0.55
+                token outputs:surface
+            }
+
+            def Shader "stReader"
+            {
+                uniform token info:id = "UsdPrimvarReader_float2"
+                string inputs:varname = "st"
+                float2 outputs:result
+            }
+
+            def Shader "albedoTex"
+            {
+                uniform token info:id = "UsdUVTexture"
+                asset inputs:file = @./textures/roof_metal_albedo.jpg@
+                token inputs:sourceColorSpace = "sRGB"
+                float2 inputs:st.connect = </CollapseSite/Looks/roof_metal/stReader.outputs:result>
+                token inputs:wrapS = "repeat"
+                token inputs:wrapT = "repeat"
+                float3 outputs:rgb
+            }
+
+            def Shader "normalTex"
+            {
+                uniform token info:id = "UsdUVTexture"
+                float4 inputs:bias = (-1, -1, -1, 0)
+                asset inputs:file = @./textures/roof_metal_normal.png@
+                float4 inputs:scale = (2, 2, 2, 1)
+                token inputs:sourceColorSpace = "raw"
+                float2 inputs:st.connect = </CollapseSite/Looks/roof_metal/stReader.outputs:result>
+                token inputs:wrapS = "repeat"
+                token inputs:wrapT = "repeat"
+                float3 outputs:rgb
+            }
+        }
+
+        def Material "rubble"
+        {
+            token outputs:mdl:displacement.connect = </CollapseSite/Looks/rubble/OmniPBR.outputs:out>
+            token outputs:mdl:surface.connect = </CollapseSite/Looks/rubble/OmniPBR.outputs:out>
+            token outputs:mdl:volume.connect = </CollapseSite/Looks/rubble/OmniPBR.outputs:out>
+            token outputs:surface.connect = </CollapseSite/Looks/rubble/PreviewSurface.outputs:surface>
+
+            def Shader "OmniPBR"
+            {
+                uniform token info:implementationSource = "sourceAsset"
+                uniform asset info:mdl:sourceAsset = @OmniPBR.mdl@
+                uniform token info:mdl:sourceAsset:subIdentifier = "OmniPBR"
+                float inputs:bump_factor = 0.8
+                asset inputs:diffuse_texture = @./textures/rubble_albedo.jpg@ (
+                    colorSpace = "sRGB"
+                )
+                float inputs:metallic_constant = 0
+                asset inputs:normalmap_texture = @./textures/rubble_normal.png@ (
+                    colorSpace = "raw"
+                )
+                float inputs:reflection_roughness_constant = 0.95
+                float inputs:specular_level = 0.35
+                token outputs:out
+            }
+
+            def Shader "PreviewSurface"
+            {
+                uniform token info:id = "UsdPreviewSurface"
+                color3f inputs:diffuseColor.connect = </CollapseSite/Looks/rubble/albedoTex.outputs:rgb>
+                float inputs:metallic = 0
+                normal3f inputs:normal.connect = </CollapseSite/Looks/rubble/normalTex.outputs:rgb>
+                float inputs:roughness = 0.95
+                token outputs:surface
+            }
+
+            def Shader "stReader"
+            {
+                uniform token info:id = "UsdPrimvarReader_float2"
+                string inputs:varname = "st"
+                float2 outputs:result
+            }
+
+            def Shader "albedoTex"
+            {
+                uniform token info:id = "UsdUVTexture"
+                asset inputs:file = @./textures/rubble_albedo.jpg@
+                token inputs:sourceColorSpace = "sRGB"
+                float2 inputs:st.connect = </CollapseSite/Looks/rubble/stReader.outputs:result>
+                token inputs:wrapS = "repeat"
+                token inputs:wrapT = "repeat"
+                float3 outputs:rgb
+            }
+
+            def Shader "normalTex"
+            {
+                uniform token info:id = "UsdUVTexture"
+                float4 inputs:bias = (-1, -1, -1, 0)
+                asset inputs:file = @./textures/rubble_normal.png@
+                float4 inputs:scale = (2, 2, 2, 1)
+                token inputs:sourceColorSpace = "raw"
+                float2 inputs:st.connect = </CollapseSite/Looks/rubble/stReader.outputs:result>
+                token inputs:wrapS = "repeat"
+                token inputs:wrapT = "repeat"
+                float3 outputs:rgb
+            }
+        }
+
+        def Material "concrete"
+        {
+            token outputs:mdl:displacement.connect = </CollapseSite/Looks/concrete/OmniPBR.outputs:out>
+            token outputs:mdl:surface.connect = </CollapseSite/Looks/concrete/OmniPBR.outputs:out>
+            token outputs:mdl:volume.connect = </CollapseSite/Looks/concrete/OmniPBR.outputs:out>
+            token outputs:surface.connect = </CollapseSite/Looks/concrete/PreviewSurface.outputs:surface>
+
+            def Shader "OmniPBR"
+            {
+                uniform token info:implementationSource = "sourceAsset"
+                uniform asset info:mdl:sourceAsset = @OmniPBR.mdl@
+                uniform token info:mdl:sourceAsset:subIdentifier = "OmniPBR"
+                float inputs:bump_factor = 0.8
+                asset inputs:diffuse_texture = @./textures/concrete_albedo.jpg@ (
+                    colorSpace = "sRGB"
+                )
+                float inputs:metallic_constant = 0
+                asset inputs:normalmap_texture = @./textures/concrete_normal.png@ (
+                    colorSpace = "raw"
+                )
+                float inputs:reflection_roughness_constant = 0.9
+                float inputs:specular_level = 0.35
+                token outputs:out
+            }
+
+            def Shader "PreviewSurface"
+            {
+                uniform token info:id = "UsdPreviewSurface"
+                color3f inputs:diffuseColor.connect = </CollapseSite/Looks/concrete/albedoTex.outputs:rgb>
+                float inputs:metallic = 0
+                normal3f inputs:normal.connect = </CollapseSite/Looks/concrete/normalTex.outputs:rgb>
+                float inputs:roughness = 0.9
+                token outputs:surface
+            }
+
+            def Shader "stReader"
+            {
+                uniform token info:id = "UsdPrimvarReader_float2"
+                string inputs:varname = "st"
+                float2 outputs:result
+            }
+
+            def Shader "albedoTex"
+            {
+                uniform token info:id = "UsdUVTexture"
+                asset inputs:file = @./textures/concrete_albedo.jpg@
+                token inputs:sourceColorSpace = "sRGB"
+                float2 inputs:st.connect = </CollapseSite/Looks/concrete/stReader.outputs:result>
+                token inputs:wrapS = "repeat"
+                token inputs:wrapT = "repeat"
+                float3 outputs:rgb
+            }
+
+            def Shader "normalTex"
+            {
+                uniform token info:id = "UsdUVTexture"
+                float4 inputs:bias = (-1, -1, -1, 0)
+                asset inputs:file = @./textures/concrete_normal.png@
+                float4 inputs:scale = (2, 2, 2, 1)
+                token inputs:sourceColorSpace = "raw"
+                float2 inputs:st.connect = </CollapseSite/Looks/concrete/stReader.outputs:result>
+                token inputs:wrapS = "repeat"
+                token inputs:wrapT = "repeat"
+                float3 outputs:rgb
+            }
+        }
+
+        def Material "debris_atlas"
+        {
+            token outputs:mdl:displacement.connect = </CollapseSite/Looks/debris_atlas/OmniPBR.outputs:out>
+            token outputs:mdl:surface.connect = </CollapseSite/Looks/debris_atlas/OmniPBR.outputs:out>
+            token outputs:mdl:volume.connect = </CollapseSite/Looks/debris_atlas/OmniPBR.outputs:out>
+            token outputs:surface.connect = </CollapseSite/Looks/debris_atlas/PreviewSurface.outputs:surface>
+
+            def Shader "OmniPBR"
+            {
+                uniform token info:implementationSource = "sourceAsset"
+                uniform asset info:mdl:sourceAsset = @OmniPBR.mdl@
+                uniform token info:mdl:sourceAsset:subIdentifier = "OmniPBR"
+                float inputs:bump_factor = 0.8
+                asset inputs:diffuse_texture = @./textures/debris_atlas_albedo.jpg@ (
+                    colorSpace = "sRGB"
+                )
+                float inputs:metallic_constant = 0
+                asset inputs:normalmap_texture = @./textures/debris_atlas_normal.png@ (
+                    colorSpace = "raw"
+                )
+                float inputs:reflection_roughness_constant = 0.9
+                float inputs:specular_level = 0.35
+                token outputs:out
+            }
+
+            def Shader "PreviewSurface"
+            {
+                uniform token info:id = "UsdPreviewSurface"
+                color3f inputs:diffuseColor.connect = </CollapseSite/Looks/debris_atlas/albedoTex.outputs:rgb>
+                float inputs:metallic = 0
+                normal3f inputs:normal.connect = </CollapseSite/Looks/debris_atlas/normalTex.outputs:rgb>
+                float inputs:roughness = 0.9
+                token outputs:surface
+            }
+
+            def Shader "stReader"
+            {
+                uniform token info:id = "UsdPrimvarReader_float2"
+                string inputs:varname = "st"
+                float2 outputs:result
+            }
+
+            def Shader "albedoTex"
+            {
+                uniform token info:id = "UsdUVTexture"
+                asset inputs:file = @./textures/debris_atlas_albedo.jpg@
+                token inputs:sourceColorSpace = "sRGB"
+                float2 inputs:st.connect = </CollapseSite/Looks/debris_atlas/stReader.outputs:result>
+                token inputs:wrapS = "repeat"
+                token inputs:wrapT = "repeat"
+                float3 outputs:rgb
+            }
+
+            def Shader "normalTex"
+            {
+                uniform token info:id = "UsdUVTexture"
+                float4 inputs:bias = (-1, -1, -1, 0)
+                asset inputs:file = @./textures/debris_atlas_normal.png@
+                float4 inputs:scale = (2, 2, 2, 1)
+                token inputs:sourceColorSpace = "raw"
+                float2 inputs:st.connect = </CollapseSite/Looks/debris_atlas/stReader.outputs:result>
+                token inputs:wrapS = "repeat"
+                token inputs:wrapT = "repeat"
+                float3 outputs:rgb
+            }
+        }
+
+        def Material "scan_roofs"
+        {
+            token outputs:mdl:displacement.connect = </CollapseSite/Looks/scan_roofs/OmniPBR.outputs:out>
+            token outputs:mdl:surface.connect = </CollapseSite/Looks/scan_roofs/OmniPBR.outputs:out>
+            token outputs:mdl:volume.connect = </CollapseSite/Looks/scan_roofs/OmniPBR.outputs:out>
+            token outputs:surface.connect = </CollapseSite/Looks/scan_roofs/PreviewSurface.outputs:surface>
+
+            def Shader "OmniPBR"
+            {
+                uniform token info:implementationSource = "sourceAsset"
+                uniform asset info:mdl:sourceAsset = @OmniPBR.mdl@
+                uniform token info:mdl:sourceAsset:subIdentifier = "OmniPBR"
+                float inputs:bump_factor = 0.8
+                asset inputs:diffuse_texture = @./textures/scan_roofs_albedo.jpg@ (
+                    colorSpace = "sRGB"
+                )
+                float inputs:metallic_constant = 0
+                asset inputs:normalmap_texture = @./textures/scan_roofs_normal.png@ (
+                    colorSpace = "raw"
+                )
+                float inputs:reflection_roughness_constant = 0.8
+                float inputs:specular_level = 0.35
+                token outputs:out
+            }
+
+            def Shader "PreviewSurface"
+            {
+                uniform token info:id = "UsdPreviewSurface"
+                color3f inputs:diffuseColor.connect = </CollapseSite/Looks/scan_roofs/albedoTex.outputs:rgb>
+                float inputs:metallic = 0
+                normal3f inputs:normal.connect = </CollapseSite/Looks/scan_roofs/normalTex.outputs:rgb>
+                float inputs:roughness = 0.8
+                token outputs:surface
+            }
+
+            def Shader "stReader"
+            {
+                uniform token info:id = "UsdPrimvarReader_float2"
+                string inputs:varname = "st"
+                float2 outputs:result
+            }
+
+            def Shader "albedoTex"
+            {
+                uniform token info:id = "UsdUVTexture"
+                asset inputs:file = @./textures/scan_roofs_albedo.jpg@
+                token inputs:sourceColorSpace = "sRGB"
+                float2 inputs:st.connect = </CollapseSite/Looks/scan_roofs/stReader.outputs:result>
+                token inputs:wrapS = "clamp"
+                token inputs:wrapT = "clamp"
+                float3 outputs:rgb
+            }
+
+            def Shader "normalTex"
+            {
+                uniform token info:id = "UsdUVTexture"
+                float4 inputs:bias = (-1, -1, -1, 0)
+                asset inputs:file = @./textures/scan_roofs_normal.png@
+                float4 inputs:scale = (2, 2, 2, 1)
+                token inputs:sourceColorSpace = "raw"
+                float2 inputs:st.connect = </CollapseSite/Looks/scan_roofs/stReader.outputs:result>
+                token inputs:wrapS = "clamp"
+                token inputs:wrapT = "clamp"
+                float3 outputs:rgb
+            }
+        }
+
+        def Material "ground_far"
+        {
+            token outputs:mdl:displacement.connect = </CollapseSite/Looks/ground_far/OmniPBR.outputs:out>
+            token outputs:mdl:surface.connect = </CollapseSite/Looks/ground_far/OmniPBR.outputs:out>
+            token outputs:mdl:volume.connect = </CollapseSite/Looks/ground_far/OmniPBR.outputs:out>
+            token outputs:surface.connect = </CollapseSite/Looks/ground_far/PreviewSurface.outputs:surface>
+
+            def Shader "OmniPBR"
+            {
+                uniform token info:implementationSource = "sourceAsset"
+                uniform asset info:mdl:sourceAsset = @OmniPBR.mdl@
+                uniform token info:mdl:sourceAsset:subIdentifier = "OmniPBR"
+                float inputs:bump_factor = 0.8
+                asset inputs:diffuse_texture = @./textures/ground_far_albedo.jpg@ (
+                    colorSpace = "sRGB"
+                )
+                float inputs:metallic_constant = 0
+                asset inputs:normalmap_texture = @./textures/ground_far_normal.png@ (
+                    colorSpace = "raw"
+                )
+                float inputs:reflection_roughness_constant = 0.95
+                float inputs:specular_level = 0.35
+                token outputs:out
+            }
+
+            def Shader "PreviewSurface"
+            {
+                uniform token info:id = "UsdPreviewSurface"
+                color3f inputs:diffuseColor.connect = </CollapseSite/Looks/ground_far/albedoTex.outputs:rgb>
+                float inputs:metallic = 0
+                normal3f inputs:normal.connect = </CollapseSite/Looks/ground_far/normalTex.outputs:rgb>
+                float inputs:roughness = 0.95
+                token outputs:surface
+            }
+
+            def Shader "stReader"
+            {
+                uniform token info:id = "UsdPrimvarReader_float2"
+                string inputs:varname = "st"
+                float2 outputs:result
+            }
+
+            def Shader "albedoTex"
+            {
+                uniform token info:id = "UsdUVTexture"
+                asset inputs:file = @./textures/ground_far_albedo.jpg@
+                token inputs:sourceColorSpace = "sRGB"
+                float2 inputs:st.connect = </CollapseSite/Looks/ground_far/stReader.outputs:result>
+                token inputs:wrapS = "repeat"
+                token inputs:wrapT = "repeat"
+                float3 outputs:rgb
+            }
+
+            def Shader "normalTex"
+            {
+                uniform token info:id = "UsdUVTexture"
+                float4 inputs:bias = (-1, -1, -1, 0)
+                asset inputs:file = @./textures/ground_far_normal.png@
+                float4 inputs:scale = (2, 2, 2, 1)
+                token inputs:sourceColorSpace = "raw"
+                float2 inputs:st.connect = </CollapseSite/Looks/ground_far/stReader.outputs:result>
+                token inputs:wrapS = "repeat"
+                token inputs:wrapT = "repeat"
+                float3 outputs:rgb
+            }
+        }
+
+        def Material "rebar"
+        {
+            token outputs:mdl:displacement.connect = </CollapseSite/Looks/rebar/OmniPBR.outputs:out>
+            token outputs:mdl:surface.connect = </CollapseSite/Looks/rebar/OmniPBR.outputs:out>
+            token outputs:mdl:volume.connect = </CollapseSite/Looks/rebar/OmniPBR.outputs:out>
+            token outputs:surface.connect = </CollapseSite/Looks/rebar/PreviewSurface.outputs:surface>
+
+            def Shader "OmniPBR"
+            {
+                uniform token info:implementationSource = "sourceAsset"
+                uniform asset info:mdl:sourceAsset = @OmniPBR.mdl@
+                uniform token info:mdl:sourceAsset:subIdentifier = "OmniPBR"
+                color3f inputs:diffuse_color_constant = (0.22, 0.13, 0.08)
+                float inputs:metallic_constant = 0.7
+                float inputs:reflection_roughness_constant = 0.55
+                float inputs:specular_level = 0.35
+                token outputs:out
+            }
+
+            def Shader "PreviewSurface"
+            {
+                uniform token info:id = "UsdPreviewSurface"
+                color3f inputs:diffuseColor = (0.22, 0.13, 0.08)
+                float inputs:metallic = 0.7
+                float inputs:roughness = 0.55
+                token outputs:surface
+            }
+        }
+
+        def Material "car_white"
+        {
+            token outputs:mdl:displacement.connect = </CollapseSite/Looks/car_white/OmniPBR.outputs:out>
+            token outputs:mdl:surface.connect = </CollapseSite/Looks/car_white/OmniPBR.outputs:out>
+            token outputs:mdl:volume.connect = </CollapseSite/Looks/car_white/OmniPBR.outputs:out>
+            token outputs:surface.connect = </CollapseSite/Looks/car_white/PreviewSurface.outputs:surface>
+
+            def Shader "OmniPBR"
+            {
+                uniform token info:implementationSource = "sourceAsset"
+                uniform asset info:mdl:sourceAsset = @OmniPBR.mdl@
+                uniform token info:mdl:sourceAsset:subIdentifier = "OmniPBR"
+                color3f inputs:diffuse_color_constant = (0.62, 0.62, 0.6)
+                float inputs:metallic_constant = 0.4
+                float inputs:reflection_roughness_constant = 0.45
+                float inputs:specular_level = 0.35
+                token outputs:out
+            }
+
+            def Shader "PreviewSurface"
+            {
+                uniform token info:id = "UsdPreviewSurface"
+                color3f inputs:diffuseColor = (0.62, 0.62, 0.6)
+                float inputs:metallic = 0.4
+                float inputs:roughness = 0.45
+                token outputs:surface
+            }
+        }
+
+        def Material "car_silver"
+        {
+            token outputs:mdl:displacement.connect = </CollapseSite/Looks/car_silver/OmniPBR.outputs:out>
+            token outputs:mdl:surface.connect = </CollapseSite/Looks/car_silver/OmniPBR.outputs:out>
+            token outputs:mdl:volume.connect = </CollapseSite/Looks/car_silver/OmniPBR.outputs:out>
+            token outputs:surface.connect = </CollapseSite/Looks/car_silver/PreviewSurface.outputs:surface>
+
+            def Shader "OmniPBR"
+            {
+                uniform token info:implementationSource = "sourceAsset"
+                uniform asset info:mdl:sourceAsset = @OmniPBR.mdl@
+                uniform token info:mdl:sourceAsset:subIdentifier = "OmniPBR"
+                color3f inputs:diffuse_color_constant = (0.42, 0.43, 0.45)
+                float inputs:metallic_constant = 0.4
+                float inputs:reflection_roughness_constant = 0.45
+                float inputs:specular_level = 0.35
+                token outputs:out
+            }
+
+            def Shader "PreviewSurface"
+            {
+                uniform token info:id = "UsdPreviewSurface"
+                color3f inputs:diffuseColor = (0.42, 0.43, 0.45)
+                float inputs:metallic = 0.4
+                float inputs:roughness = 0.45
+                token outputs:surface
+            }
+        }
+
+        def Material "car_red"
+        {
+            token outputs:mdl:displacement.connect = </CollapseSite/Looks/car_red/OmniPBR.outputs:out>
+            token outputs:mdl:surface.connect = </CollapseSite/Looks/car_red/OmniPBR.outputs:out>
+            token outputs:mdl:volume.connect = </CollapseSite/Looks/car_red/OmniPBR.outputs:out>
+            token outputs:surface.connect = </CollapseSite/Looks/car_red/PreviewSurface.outputs:surface>
+
+            def Shader "OmniPBR"
+            {
+                uniform token info:implementationSource = "sourceAsset"
+                uniform asset info:mdl:sourceAsset = @OmniPBR.mdl@
+                uniform token info:mdl:sourceAsset:subIdentifier = "OmniPBR"
+                color3f inputs:diffuse_color_constant = (0.38, 0.06, 0.05)
+                float inputs:metallic_constant = 0.4
+                float inputs:reflection_roughness_constant = 0.45
+                float inputs:specular_level = 0.35
+                token outputs:out
+            }
+
+            def Shader "PreviewSurface"
+            {
+                uniform token info:id = "UsdPreviewSurface"
+                color3f inputs:diffuseColor = (0.38, 0.06, 0.05)
+                float inputs:metallic = 0.4
+                float inputs:roughness = 0.45
+                token outputs:surface
+            }
+        }
+
+        def Material "car_blue"
+        {
+            token outputs:mdl:displacement.connect = </CollapseSite/Looks/car_blue/OmniPBR.outputs:out>
+            token outputs:mdl:surface.connect = </CollapseSite/Looks/car_blue/OmniPBR.outputs:out>
+            token outputs:mdl:volume.connect = </CollapseSite/Looks/car_blue/OmniPBR.outputs:out>
+            token outputs:surface.connect = </CollapseSite/Looks/car_blue/PreviewSurface.outputs:surface>
+
+            def Shader "OmniPBR"
+            {
+                uniform token info:implementationSource = "sourceAsset"
+                uniform asset info:mdl:sourceAsset = @OmniPBR.mdl@
+                uniform token info:mdl:sourceAsset:subIdentifier = "OmniPBR"
+                color3f inputs:diffuse_color_constant = (0.08, 0.14, 0.3)
+                float inputs:metallic_constant = 0.4
+                float inputs:reflection_roughness_constant = 0.45
+                float inputs:specular_level = 0.35
+                token outputs:out
+            }
+
+            def Shader "PreviewSurface"
+            {
+                uniform token info:id = "UsdPreviewSurface"
+                color3f inputs:diffuseColor = (0.08, 0.14, 0.3)
+                float inputs:metallic = 0.4
+                float inputs:roughness = 0.45
+                token outputs:surface
+            }
+        }
+
+        def Material "car_dark"
+        {
+            token outputs:mdl:displacement.connect = </CollapseSite/Looks/car_dark/OmniPBR.outputs:out>
+            token outputs:mdl:surface.connect = </CollapseSite/Looks/car_dark/OmniPBR.outputs:out>
+            token outputs:mdl:volume.connect = </CollapseSite/Looks/car_dark/OmniPBR.outputs:out>
+            token outputs:surface.connect = </CollapseSite/Looks/car_dark/PreviewSurface.outputs:surface>
+
+            def Shader "OmniPBR"
+            {
+                uniform token info:implementationSource = "sourceAsset"
+                uniform asset info:mdl:sourceAsset = @OmniPBR.mdl@
+                uniform token info:mdl:sourceAsset:subIdentifier = "OmniPBR"
+                color3f inputs:diffuse_color_constant = (0.06, 0.06, 0.07)
+                float inputs:metallic_constant = 0.4
+                float inputs:reflection_roughness_constant = 0.45
+                float inputs:specular_level = 0.35
+                token outputs:out
+            }
+
+            def Shader "PreviewSurface"
+            {
+                uniform token info:id = "UsdPreviewSurface"
+                color3f inputs:diffuseColor = (0.06, 0.06, 0.07)
+                float inputs:metallic = 0.4
+                float inputs:roughness = 0.45
+                token outputs:surface
+            }
+        }
+    }
+
+    def Xform "Lights"
+    {
+        def DistantLight "Sun"
+        {
+            float inputs:angle = 0.53
+            color3f inputs:color = (1, 0.94, 0.86)
+            float inputs:intensity = 2600
+            matrix4d xformOp:transform = ( (0.37460659341591196, 0.9271838545667873, -0, 0), (-0.5708313798007189, 0.2306308479691594, 0.7880107536067218, 0), (0.7306308479691594, -0.2951940239837197, 0.6156614753256583, 0), (73.06308479691594, -29.51940239837197, 61.56614753256583, 1) )
+            uniform token[] xformOpOrder = ["xformOp:transform"]
+        }
+
+        def DomeLight "Sky"
+        {
+            color3f inputs:color = (0.72, 0.82, 1)
+            float inputs:intensity = 750
+        }
+    }
+
+    def Xform "Cameras"
+    {
+        def Camera "TopDown"
+        {
+            float2 clippingRange = (0.1, 5000)
+            float focalLength = 28
+            float horizontalAperture = 36
+            float verticalAperture = 20.25
+            matrix4d xformOp:transform = ( (1, 0, -0, 0), (0, 0.9999999990548205, 0.000043478260828470455, 0), (0, -0.000043478260828470455, 0.9999999990548205, 0), (0, 0, 230, 1) )
+            uniform token[] xformOpOrder = ["xformOp:transform"]
+        }
+
+        def Camera "Oblique_South"
+        {
+            float2 clippingRange = (0.1, 5000)
+            float focalLength = 24
+            float horizontalAperture = 36
+            float verticalAperture = 20.25
+            matrix4d xformOp:transform = ( (0.9968152785361251, 0.07974522228289, -0, 0), (-0.04750334785208254, 0.5937918481510318, 0.8032152096494601, 0), (0.06405257543449429, -0.8006571929311787, 0.5956889515407969, 0), (10, -125, 95, 1) )
+            uniform token[] xformOpOrder = ["xformOp:transform"]
+        }
+
+        def Camera "Oblique_NNW"
+        {
+            float2 clippingRange = (0.1, 5000)
+            float focalLength = 24
+            float horizontalAperture = 36
+            float verticalAperture = 20.25
+            matrix4d xformOp:transform = ( (-0.9015230574682735, -0.4327310675847713, 0, 0), (0.190542518870973, -0.3969635809811938, 0.8978382169839353, 0), (-0.38852249015386586, 0.8094218544872206, 0.440325488841048, 0), (-55, 120, 70, 1) )
+            uniform token[] xformOpOrder = ["xformOp:transform"]
+        }
+
+        def Camera "Low_East"
+        {
+            float2 clippingRange = (0.1, 5000)
+            float focalLength = 24
+            float horizontalAperture = 36
+            float verticalAperture = 20.25
+            matrix4d xformOp:transform = ( (-0.11043152607484653, 0.9938837346736189, 0, 0), (-0.1589048225542998, -0.017656091394922198, 0.987136018897923, 0), (0.9810984330931158, 0.1090109370103462, 0.15988270761517442, 0), (135, 15, 26, 1) )
+            uniform token[] xformOpOrder = ["xformOp:transform"]
+        }
+
+        def Camera "Wide_Establishing"
+        {
+            float2 clippingRange = (0.1, 5000)
+            float focalLength = 26
+            float horizontalAperture = 36
+            float verticalAperture = 20.25
+            matrix4d xformOp:transform = ( (0.7384854939281259, -0.6742693640213324, 0, 0), (0.30811168933422145, 0.3374556597470044, 0.8894891031374845, 0), (-0.5997552518764169, -0.6568747996741708, 0.4569563823820319, 0), (-210, -230, 160, 1) )
+            uniform token[] xformOpOrder = ["xformOp:transform"]
+        }
+
+        def Camera "Drone_Orbit_A2"
+        {
+            float2 clippingRange = (0.1, 5000)
+            float focalLength = 20
+            float horizontalAperture = 36
+            float verticalAperture = 20.25
+            matrix4d xformOp:transform = ( (0.7071067811865476, -0.7071067811865476, 0, 0), (0.33129457822453967, 0.33129457822453967, 0.8834522085987725, 0), (-0.6246950475544243, -0.6246950475544243, 0.4685212856658182, 0), (-40, -40, 35, 1) )
+            uniform token[] xformOpOrder = ["xformOp:transform"]
+        }
+    }
+}
+

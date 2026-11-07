@@ -4,7 +4,7 @@
 
 **What it does not support:** sensing through rubble, or listening with the rotors on. Direction of arrival (DoA) is tested on real DREGON recordings (section 5). It is not tested against our own 0.3 m 6-mic array.
 
-Code under test: commit `eb8cdba` (acoustic BL-3). `models.py`, `agent.py`, `dsp.py`, `run.py` and `scene.py` were frozen into `data/audio_real/code_snapshot/eb8cdba/`. Other agents were editing `acoustic/` while these runs went on, so the snapshot keeps every number on one version. `models.py` + `agent.py` sha1 prefix: `50ad3f88`. The before/after rows use the earlier commit `8eb6d30`.
+Code under test: sections 1-4 and the head-to-head measure commit `eb8cdba` (acoustic BL-3). `models.py`, `agent.py`, `dsp.py`, `run.py` and `scene.py` were frozen into `data/audio_real/code_snapshot/<rev>/`, because other agents were editing `acoustic/` during the runs. **Section 6 re-measures the current pipeline, `26de7e9` (assoc-v11, = HEAD for `acoustic/`).** It takes the fixes requested below and puts the same clips through `run.recognise` and `run.class_human_floor`. Results files are keyed by sha1 of models + agent + run: `64c986c4` for eb8cdba, `ee9c0186` for 26de7e9, `46c24738` for 8eb6d30.
 
 ## Data (all under `data/audio_real/`, gitignored; details and licences in `SOURCE.md`)
 
@@ -117,6 +117,40 @@ The fallback scorer's clip priority ranks human above non-human with AUC 0.92 on
 - The array is DREGON's 0.15 m cube, not our 0.3 m ring.
 - No knock or burial: the source is a loudspeaker in a room.
 
+### 6. After the fix: 26de7e9 (assoc-v11) on the same clips
+
+`validate_real` now calls the pipeline's own per-clip path: `run.recognise` (VAD, YAMNet with the new knock rhythm/group score and the human-minus-animal feature, Whisper gated on VAD or a voice/shout class), then `agent.fallback_judge`, then `run.class_human_floor` (human floor 0.45 when YAMNet names voice or shout without dog evidence, or knocking with a knock pattern). All 2,406 clips were re-run.
+
+| Set (n pos/neg) | Before: eb8cdba, agent P / R / F1, AUC | **After: 26de7e9** | Teammate rule |
+|---|---|---|---|
+| ESC-50 (48/120) | 0.88 / 0.31 / 0.46, 0.92 | **0.69 / 0.71 / 0.70**, 0.88 | 0.84 / 0.33 / 0.48, 0.88 |
+| Teammate clips (13/30) | 0.91 / 0.77 / 0.83, 0.97 | 0.79 / 0.85 / 0.81, 0.97 | 0.73 / 0.85 / 0.79, 0.89 |
+| DroneAudioSet rotors off (87/21) | 0.94 / 0.70 / 0.80, 0.84 | 0.90 / 0.76 / 0.82, 0.79 | 1.00 / 0.74 / 0.85, 0.91 |
+| DroneAudioSet + rotor 0 dB (87/21) | 0.91 / 0.33 / 0.49, 0.76 | 0.90 / 0.43 / 0.58, 0.73 | 1.00 / 0.14 / 0.24, 0.83 |
+| DroneAudioSet + rotor +10 dB (87/21) | 0.91 / 0.49 / 0.64, 0.80 | 0.91 / 0.56 / 0.70, 0.77 | 1.00 / 0.47 / 0.64, 0.87 |
+| ESC-50 + rotor 0 dB (48/120) | 0.64 / 0.15 / 0.24, 0.81 | 0.56 / 0.19 / 0.28, 0.80 | 0.00 / 0.00 / -, 0.62 |
+| Teammate clips + rotor 0 dB (13/30) | 0.78 / 0.54 / 0.64, 0.90 | 0.69 / 0.69 / 0.69, 0.89 | 0.50 / 0.31 / 0.38, 0.77 |
+| DroneAudioSet rotors on, -1 dB (22/5) | 0.80 / 0.18 / 0.30, 0.57 | 0.90 / 0.41 / 0.56, 0.61 | 1.00 / 0.27 / 0.43, 0.82 |
+
+- **Recall is up on every set.** Real knocks went 0.17 -> 0.75, coughs 0.08 -> 0.67, crying babies 0.75 -> 0.92, breathing 0.25 -> 0.50, speech rotors off 0.89 -> 0.94. With every recogniser tool the same, the head-to-head verdict holds: ours now beats the teammate rule on F1 on every real set except DroneAudioSet rotors off (0.82 vs 0.85).
+- **Whisper on shouted calls is fixed.** "help" is transcribed in 7/13 of the teammate's "help me" clips, against 2/13 before (6/13 was the ungated ceiling). Rotors off, the median segment WER is 0.35, against 0.28 before.
+- **Precision fell, mostly on ESC-50: 0.88 -> 0.69.** There are 15 false flags out of 120 non-human clips:
+  - 5 of the 12 helicopter clips
+  - 4 door creaks
+  - 3 engines
+  - 2 glass breaks
+  - 1 fire
+  Only 6 of the 15 come from the 0.45 floor. The rest come from the new knock-group and human-minus-animal features. On DroneAudioSet rotors off, 7 of the 21 non-human windows are now flagged, against 4 before. These are the "nonhumansounds" programme (rain, horn, phone, glass, vehicle, tap), which YAMNet classes as knocking 7/21 times.
+- **Ranking got slightly worse.** Priority AUC fell 0.92 -> 0.88 on ESC-50 and 0.84 -> 0.79 on DroneAudioSet. On ESC-50, 12 of the 15 false leads reach the dispatch threshold (`grid_mission.PRIORITY_MIN = 20`). Their median priority is 31, above the true leads' 24.
+
+**Is that acceptable for a triage aid that feeds radar?** Yes, with one condition.
+- **A false lead is cheap. A miss is not.** A false lead costs one radar-pod placement: minutes of drone time and a "no ping" that the radar step reports honestly. A missed person is never revisited, because a quiet pile is only "not cleared".
+- **The trade on ESC-50.** Going from 0.31 to 0.71 recall finds 19 more of the 48 human sounds, at the cost of 13 more false flags among the 120 non-human clips. In a typical listen that means about 1 extra pod placement for every 1.5 extra survivors heard.
+- **The condition: rotor-like sources.** Helicopter clips are now flagged 42% of the time, and a real site has other drones and helicopters overhead.
+  - With a fixed radar budget (`scan_budget`), a run of rotor false leads would push real leads out of the queue.
+  - On ESC-50 those false leads also outrank true ones (median priority 31 vs 24).
+- **So keep the fix, and add a rotor veto before the demo.** Our own drones' positions are known. Null or skip bearings that point at a hovering drone, and veto `knocking`/`voice` clips with strong blade-pass harmonicity (`hum_harmonicity`). Then re-run `validate_real` to check that ESC-50 helicopter false leads drop without losing the knock and cough gains.
+
 ## Head-to-head: ours vs the teammate pipeline
 
 | | Ours (`acoustic/`) | Teammate (`acoustic/acoustic_pipeline.py`, branch `acoustic-voice-detection`) |
@@ -189,6 +223,10 @@ Port these from the teammate pipeline, each with evidence:
    - Her 300-2000 Hz band: it suits her 0.1 m array, not our 0.3 m one.
 
 ## Requests (for the owners of `acoustic/models.py` / `acoustic/agent.py`; not edited here)
+
+Status at 26de7e9: items 1-3 and the human-minus-animal half of item 4 have landed (section 6). New item 0 comes first.
+
+0. **Rotor veto.** ESC-50 helicopter clips are flagged human 5/12 after the fix, and false leads outrank true ones on ESC-50 (median priority 31 vs 24). Null or skip bearings toward our own hovering drones, and veto voice/knocking clips with strong blade-pass harmonicity. Then re-run `validate_real run` (about 15 min for all clips).
 
 1. **Agent VAD gate under noise (`agent.fallback_judge`).**
    - Problem: speech evidence is scaled by VAD, so under rotor noise most correctly classified human clips fall below 0.4.

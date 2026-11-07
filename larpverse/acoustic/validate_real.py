@@ -439,7 +439,7 @@ def fetch_esc50(per_class):
 # =========================================================================== run
 SNAP_FILES = ("__init__.py", "models.py", "agent.py", "scene.py", "dsp.py", "run.py")
 # commit under test: acoustic BL-3 by default; VALIDATE_REV=<rev> evaluates another (before/after)
-CODE_REV = os.environ.get("VALIDATE_REV", "eb8cdba")
+CODE_REV = os.environ.get("VALIDATE_REV", "26de7e9")   # assoc-v11; "before" results: eb8cdba
 SNAP = os.path.join(DATA, "code_snapshot", CODE_REV)
 
 
@@ -461,7 +461,7 @@ def snapshot(rev=None):
             open(os.path.join(d, f), "wb").write(src)
         open(taken, "w").write(want + "\n")
     h = hashlib.sha1()
-    for f in ("models.py", "agent.py"):
+    for f in ("models.py", "agent.py", "run.py"):
         h.update(open(os.path.join(d, f), "rb").read())
     return h.hexdigest()[:8]
 
@@ -491,6 +491,8 @@ NEUTRAL_DOA = {"drones_agreeing": 3, "drones_listening": 3, "tri_err_m": 1.0, "t
                "assigned": True, "association": "confident", "association_conf": 0.9,
                "ambiguous_with": [], "overlap_frac": 0.0}
 HUMAN_CLASSES = ("voice", "shout", "knocking")
+VERSION_GROUPS = ["esc", "fv", "so", "esc_mix|high|+0", "fv_mix|high|+0", "das_mix|high|+0", "das_mix|high|+10",
+                  "dws|90db-room1-1m-low"]
 
 
 WIN_S = 5.0
@@ -672,16 +674,26 @@ def load_clip(c):
 
 
 def analyse(c, x, whisper="base.en"):
-    agent, models = code()
-    vad = models.vad_speech_ratio(x)
-    cls, scores, heur, top = models.classify(x, vad)
-    text = models.transcribe(x, whisper) if vad >= 0.15 else ""
+    """One clip through the pipeline under test: run.recognise (VAD, YAMNet + heuristics, gated
+    Whisper) -> agent.fallback_judge -> run.class_human_floor, exactly as run.analyse does per clip.
+    Older commits without run.recognise use their own per-clip steps (eb8cdba: VAD-gated Whisper)."""
+    agent, models, _scene, _dsp, run = code(full=True)
+    why = None
+    if hasattr(run, "recognise"):
+        r = run.recognise(x, whisper)
+        vad, cls, scores, heur, top, text, why = (r[k] for k in ("vad", "cls", "scores", "heur", "top", "text", "why"))
+    else:
+        vad = models.vad_speech_ratio(x)
+        cls, scores, heur, top = models.classify(x, vad)
+        text = models.transcribe(x, whisper) if vad >= 0.15 else ""
     feat = {"clip_id": c["id"], "pile_id": "X", "drone_id": "d1", "duration_s": round(len(x) / 16000, 1),
             "continuous": False, "bearing_deg": 0.0, "width_deg": 25.0, "snr_db": 10.0,
             "vad_speech_ratio": vad, "transcript": text, "sound_class": cls, "class_scores": scores,
             "heuristics": heur, "yamnet_top": [[lbl, sc] for lbl, sc in top], "doa": dict(NEUTRAL_DOA)}
-    j = agent.fallback_judge(feat)
-    out = {"id": c["id"], "vad": vad, "cls": cls, "scores": scores, "heur": heur,
+    j = dict(agent.fallback_judge(feat), by="fallback")
+    if hasattr(run, "class_human_floor"):
+        j = run.class_human_floor(feat, j)
+    out = {"id": c["id"], "vad": vad, "cls": cls, "scores": scores, "heur": heur, "why": why,
            "top": [[lbl, sc] for lbl, sc in top], "text": text, "human": j["human"],
            "urgency": j["urgency"], "reliability": j["reliability"], "priority": agent.clip_priority(j)}
     if c.get("asr") or c.get("kw_expected"):     # speech clips: also transcribe without the VAD gate
@@ -1572,7 +1584,7 @@ def cmd_report(args):
     summ["code_version"] = VERSION
     summ["synth"] = synth_summary()
     summ["dregon"] = dregon_summary()
-    # other commits evaluated on the clean sets (VALIDATE_REV=<rev> run --only ...)
+    # other commits on the same clips (VALIDATE_REV=<rev> run ...): before/after per group
     import hashlib
     vers = {}
     sdir = os.path.join(DATA, "code_snapshot")
@@ -1580,23 +1592,28 @@ def cmd_report(args):
         d = os.path.join(sdir, rev, "acoustic_snap")
         if os.path.exists(os.path.join(d, "models.py")):
             h = hashlib.sha1()
-            for f in ("models.py", "agent.py"):
+            for f in ("models.py", "agent.py", "run.py"):
                 h.update(open(os.path.join(d, f), "rb").read())
             vers[h.hexdigest()[:8]] = rev
     man = {c["id"]: c for c in json.load(open(MANIFEST))}
+    if os.path.exists(RESULTS_FV):
+        for line in open(RESULTS_FV):
+            r = json.loads(line)
+            if r["id"] in man:
+                man[r["id"]].update({k: v for k, v in r.items() if k != "id"})
     summ["versions"] = {}
     for hsh, rev in vers.items():
         path = os.path.join(DATA, f"results-{hsh}.jsonl")
         if not os.path.exists(path):
             continue
-        rr = []
+        rr = {}
         for line in open(path):
             r = json.loads(line)
             r["human_score"] = r.pop("human")
-            rr.append(dict(man[r["id"]], **r))
-        summ["versions"][rev] = {g: detection([r for r in rr if r["set"] == g]) for g in ("esc", "so", "fv")
-                                 if any(r["set"] == g for r in rr)}
-    print(f"code under test: acoustic/models.py + agent.py sha1 {VERSION}; {len(rows)} clips")
+            if r["id"] in man and not man[r["id"]].get("asr"):
+                rr.setdefault(group_key(dict(man[r["id"]], **r)), []).append(dict(man[r["id"]], **r))
+        summ["versions"][rev] = {g: detection(v) for g, v in rr.items() if g in VERSION_GROUPS}
+    print(f"code under test: acoustic snapshot {CODE_REV} (models + agent + run sha1 {VERSION}); {len(rows)} clips")
     print_tables(summ)
     if args.plot:
         plot(summ, rows, args.plot)
@@ -1639,12 +1656,28 @@ def print_tables(summ):
             print(f"- {g} share flagged [ours, F.V., n]: {summ['fv_compare'][g]['by_label']}")
     print("\n## 'help' keyword on teammate voice clips:", json.dumps(summ["fv_keywords"], indent=1))
     if summ.get("versions"):
-        print("\n## Code versions on the clean sets (agent P / R / F1, AUC; per-label share flagged)")
-        for rev, dd in summ["versions"].items():
-            for g, d in dd.items():
-                a = d["agent"]
-                print(f"- {rev} {g}: {_f(a['precision'])} / {_f(a['recall'])} / {_f(a['f1'])}, AUC {_f(d['auc_priority'])}; "
-                      + ", ".join(f"{k} {v['flag_agent']:.2f}" for k, v in d["by_label"].items()))
+        revs = list(summ["versions"])
+        print("\n## Code versions on identical clips (agent P / R / F1, priority AUC); teammate rule for reference")
+        print("| group | n | " + " | ".join(revs) + " | teammate rule |")
+        print("|---|---|" + "---|" * (len(revs) + 1))
+        for g in VERSION_GROUPS:
+            cells, n = [], ""
+            for rev in revs:
+                d = summ["versions"][rev].get(g)
+                if d:
+                    a = d["agent"]
+                    n = f"{d['n_pos']}/{d['n_neg']}"
+                    cells.append(f"{_f(a['precision'])} / {_f(a['recall'])} / {_f(a['f1'])}, {_f(d['auc_priority'])}")
+                else:
+                    cells.append("-")
+            fv = summ.get("fv_compare", {}).get(g)
+            fvc = f"{_f(fv['fv']['precision'])} / {_f(fv['fv']['recall'])} / {_f(fv['fv']['f1'])}, {_f(fv['fv_auc'])}" if fv else "-"
+            print(f"| {g} | {n} | " + " | ".join(cells) + f" | {fvc} |")
+        for rev in revs:
+            for g in ("esc", "fv", "so"):
+                d = summ["versions"][rev].get(g)
+                if d:
+                    print(f"- {rev} {g} flagged share: " + ", ".join(f"{k} {v['flag_agent']:.2f}" for k, v in d["by_label"].items()))
     if summ.get("dregon"):
         d = summ["dregon"]
         c = d["convention_check"]

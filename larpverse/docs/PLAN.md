@@ -161,6 +161,7 @@ Give each session one workstream and point it at this file plus `contracts/INTER
 | BL-21 | P0 | Technical report (docs/TECHNICAL_REPORT.md + abstract) | builder — running |
 | BL-22 | P1 | Visual consistency batch 4 (animation + isaac/overlay) + grid MP4 re-record | builder — running |
 | BL-23 | P1 | Expanded Weiguan map from the Isaac teammate (Weiguan + surrounding collapsed buildings): mesh/heightmap import → scenario sectors | waiting on teammate push; importer being built |
+| BL-24 | P0 | Operator tasking: operator circles search zones before launch; drones search only those; coverage tracking; no re-search without new evidence; outside-zone acoustic → zone suggestions (ops server scripts/serve.py + contract v1.2 + sim/tasking.py + dashboard Plan-search mode + Isaac zone overlay) | builders — running |
 | BL-11 | P1 | KEY SAVED 19:58 → Gemini audio builder records live runs. Once GEMINI_API_KEY exists: record a seed-7 Gemini run and commit its replay cache (un-ignore one curated file) so the demo replays offline | blocked on key |
 
 ## Decisions log
@@ -187,3 +188,5 @@ Give each session one workstream and point it at this file plus `contracts/INTER
 | 2026-11-07 | Gemini usage unlimited (temporary hackathon key); use live for audio analysis, prioritisation and decisions; cache for offline replay | user | user |
 | 2026-11-07 | Expanded Weiguan map comes from the Isaac teammate; we build the importer + procedural fallback | teammate already doing it | user |
 | 2026-11-07 | Up to 10 concurrent agents (user: use the budget; heavy jobs still gated by heavy.sh) | speed | user |
+| 2026-11-07 | Search areas are operator-tasked zones drawn on the dashboard before launch (sim default = rubble outlines); zones aren't re-searched without new evidence | user: realistic + avoids repeat searches | user |
+| 2026-11-07 | Dev server is now scripts/serve.py (static + /api/tasking), same port 8765 | dashboard needs to save tasking | orchestrator |

@@ -39,7 +39,8 @@ def _norm(x, target_rms=0.05):
 
 
 # --------------------------------------------------------------------------- VAD
-def vad_speech_ratio(x, thr=0.5) -> float:
+def vad_probs(x) -> np.ndarray:
+    """Silero speech probability per 512-sample (32 ms) frame."""
     import onnxruntime as ort
     if "vad" not in _cache:
         so = ort.SessionOptions()
@@ -58,7 +59,20 @@ def vad_speech_ratio(x, thr=0.5) -> float:
         out, state = s.run(None, {"input": inp, "state": state, "sr": sr})
         ctx = inp[:, -64:]
         probs.append(float(out[0, 0]))
-    return round(float(np.mean(np.array(probs) > thr)) if probs else 0.0, 3)
+    return np.array(probs)
+
+
+def vad_speech_ratio(x, thr=0.5) -> float:
+    p = vad_probs(x)
+    return round(float(np.mean(p > thr)) if len(p) else 0.0, 3)
+
+
+def block_speech(x, blk: int, thr=0.5) -> np.ndarray:
+    """Speech-frame share per consecutive block of `blk` samples (the clip's 0.5 s blocks)."""
+    p = vad_probs(x) > thr
+    nb = int(np.ceil(len(x) / blk))
+    centre = (np.arange(len(p)) * 512 + 256) // blk
+    return np.array([float(p[centre == j].mean()) if np.any(centre == j) else 0.0 for j in range(nb)])
 
 
 # --------------------------------------------------------------------------- YAMNet
@@ -95,8 +109,10 @@ def knock_periodicity(x) -> float:
 
     Onsets are peaks of a 10 ms envelope (>150 Hz) rising 4x above the median. The score
     counts intervals within +-10 % of the most common interval: it needs >= 3 such repeats
-    to rise above 0 and saturates at 5, scaled by their share of all intervals. Random
-    debris ticks or speech give low scores."""
+    to rise above 0 and saturates at 5, scaled by their share of all intervals and by the share
+    of onsets in knock-like groups (2-5 evenly spaced onsets 0.12-0.6 s apart, groups split at
+    0.5 s gaps). Debris bursts
+    (many dense irregular ticks) or speech give low scores."""
     from scipy.signal import find_peaks
     b, a = sps.butter(2, 150 / (FS / 2), "high")
     e = np.abs(sps.lfilter(b, a, x))
@@ -112,7 +128,18 @@ def knock_periodicity(x) -> float:
     if len(ioi) < 3:
         return 0.0
     count = max(int(np.sum(np.abs(ioi - c) <= 0.1 * c)) for c in ioi)
-    return round(float(np.clip((count - 2) / 3, 0, 1) * count / len(ioi)), 3)
+    # deliberate knocking comes in short groups (2-5 knocks); settling debris is a dense burst of
+    # many irregular ticks. Weight by the share of onsets that sit in knock-sized groups.
+    t = pk / 100.0
+    groups = np.split(t, np.where(np.diff(t) > 0.5)[0] + 1)
+
+
+    def knock_group(g):          # 2-5 onsets, evenly spaced 0.12-0.6 s apart
+        d = np.diff(g)
+        return 2 <= len(g) <= 5 and d.min() >= 0.12 and d.max() <= 0.6 and d.max() <= 1.4 * d.min()
+
+    share = sum(len(g) for g in groups if knock_group(g)) / len(t)
+    return round(float(np.clip((count - 2) / 3, 0, 1) * count / len(ioi) * share), 3)
 
 
 def hum_harmonicity(x) -> float:
@@ -158,7 +185,9 @@ def transcribe(x, model="base.en") -> str:
                                    download_root=os.path.join(MODEL_DIR, "whisper"))
     segs, _ = _cache[key].transcribe(_norm(x, 0.1), language="en", beam_size=1, temperature=0.0,
                                      condition_on_previous_text=False, vad_filter=False)
-    words = [s.text.strip() for s in segs if not (s.no_speech_prob > 0.6 and s.avg_logprob < -1.0)]
+    # a segment must look like speech to Whisper itself: low no-speech probability AND a
+    # reasonable average log-probability (hallucinations on barks/knocks fail one or the other)
+    words = [s.text.strip() for s in segs if s.no_speech_prob < 0.6 and s.avg_logprob > -1.0]
     text = re.sub(r"\s+", " ", " ".join(words)).strip()
     if text.lower().strip(" .!") in HALLUCINATIONS:
         return ""

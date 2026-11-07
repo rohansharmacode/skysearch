@@ -173,3 +173,71 @@ At every dispatch gate (after a listen) the coordinator builds scored options an
 ```
 
 `context` passed to the decider: `{t, current_pile, visited, pile_budget, budget_left, priority_min, pings: [{id, pile_id, status, p_mass}], piles: [{id, status, priority, why}], fleet: [{id, battery, state}]}`. `dispatch` options are only offered while pile budget is left; `rescan_current` (re-run the radar at the current pile) only when it has no firm ping and has not been rescanned.
+
+## acoustic/v1 pile-association fields (BL-3, additive)
+
+Written by `acoustic/run.py` (`ALGO_VERSION` in `acoustic/dsp.py`); every v1 field keeps its meaning.
+
+```jsonc
+{
+  "algo": "assoc-v7",                          // localisation/association version (cache keys should include it)
+  "clips": [ {
+    "association": "confident",                // confident | ambiguous
+    "association_conf": 0.97,                  // 0-1: bearing likelihood of this pile over all nine piles
+                                               //  x (1 - 0.5 x rival-block share) x (1 - 0.5 x overlapped share)
+    "ambiguous_with": ["B3"],                  // piles that explain the same bearings almost as well
+    "reliability": 0.81,                       // agent reliability x (0.5 + 0.5 x association_conf); <= 0.45 if ambiguous
+    "reliability_agent": 0.84,                 // the agent's own value before the association factor
+    "doa_agree": "2/3",                        // drones whose bearing is within min(15 deg, gate) of the pile centre
+    "heuristics": { "knock_periodicity": 0.62, "hum_harmonicity": 0.2 },
+    "notes": [ "suppressed cross-talk from A3 (2 blocks)", "transcript dropped: dog clip with VAD 0.26" ]
+  } ],
+  "piles": [ { "association": "ambiguous",     // association of the top clip (absent for silent piles)
+               "why": "Lead (ambiguous direction; could be B3): Voice saying ..." } ]
+}
+```
+
+- `ambiguous` = fewer than two drones agree, the pile is not the most likely pile for the measured bearings, its association confidence is below 0.6, or most of the clip overlaps a more strongly associated source. Status stays `lead` / `radar_ping` (the status enum is unchanged); `why` starts with "Lead (ambiguous direction ...)"; clip priority is capped at 19 (below the grid mission's `priority_min` 20), so an ambiguous lead is listed but never triggers a dispatch on its own.
+- Visited / excluded piles still take part in association, so their sources are nulled and never reported as clips.
+- `transcript` is empty unless the clip looks like speech (VAD >= 0.3, >= 0.5 for non-speech classes, Whisper `no_speech_prob` < 0.6 and `avg_logprob` > -1.0) and does not repeat another pile's talker.
+
+## Operator tasking (v1.2): search zones drawn before deployment
+
+The operator outlines the areas to search on the dashboard before launch. The dashboard POSTs the outlines to the local ops server (`scripts/serve.py`), which validates them and writes `dashboard/data/tasking.json` atomically. The mission reads the file at start and re-reads it each step, so new zones can be added mid-mission. In the simulation, if no tasking exists, the default zones are the scenario's rubble outlines: a convex hull of each pile's pieces plus a 2 m margin, marked `source: "scenario-default"`.
+
+```jsonc
+// dashboard/data/tasking.json  (GET/POST http://127.0.0.1:8765/api/tasking)
+{
+  "schema": "larpverse.tasking/v1",
+  "revision": 3,                       // bumped by the server on every POST
+  "source": "operator",                // or "scenario-default"
+  "updated_at": "2026-11-07T21:05:00",
+  "zones": [
+    { "id": "Z1", "name": "A2 east face", "polygon": [[x, y], …],   // site metres, 3..400 vertices
+      "priority": 1,                   // optional operator priority (1 = first)
+      "status": "tasked",              // operator side: tasked | cancelled
+      "note": "bedrooms were here" }
+  ]
+}
+```
+
+The mission reports progress in `state.json` without changing the operator's file:
+
+```jsonc
+"zones": [
+  { "id": "Z1", "name": "A2 east face", "polygon": [...],
+    "status": "unsearched|surveying|scanning|searched_no_ping|ping|lead|beyond_radar_reach|cancelled",
+    "coverage": { "lidar_mapped": 0.0-1.0, "radar_reached": 0.0-1.0, "listened": true },
+    "pings": ["A2-R1"], "last_searched_t": 412.0,
+    "retask_reason": null }            // set when the zone is reopened by new evidence
+],
+"zone_suggestions": [                  // acoustic leads outside every tasked zone, for the operator to accept
+  { "id": "S1", "centre": [x, y], "radius_m": 6, "why": "voice 'help' heard by d1 and d3, bearing overlap",
+    "evidence": ["a7"] }
+]
+```
+
+Rules:
+- The mission searches only inside tasked zones.
+- A zone marked `searched_no_ping` or `ping` is not revisited unless new evidence arrives: a new acoustic clip associated with it, or an operator re-task. The reason is recorded in `retask_reason`.
+- No detection is not proof of absence. A searched zone without a ping is shown as "searched — not cleared".

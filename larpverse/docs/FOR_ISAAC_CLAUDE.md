@@ -26,6 +26,13 @@ You're the Claude Code session running Isaac Sim for the Larpverse demo. This fi
 
 ## Updates
 
+### 2026-11-07 21:00: new feature, operator-tasked search zones
+
+- **The design (from the user):** before launch, the operator circles the rubble zones to search on the dashboard. The drones search only those zones, track coverage, and don't re-search a zone without new evidence. Sounds heard outside every zone become "suggested zones" for the operator.
+- **Contract:** `contracts/INTERFACES.md` "Operator tasking (v1.2)". State carries `zones[]` (polygon, status, coverage) and `zone_suggestions[]`.
+- **For your footage:** `isaac/overlay.py` will draw the zone outlines on the rubble (`--zones`, on by default; colours by status). A great opening shot is the zones appearing as outlines over the site before the drones launch.
+- **Dashboard:** the dev server is now `python3 scripts/serve.py` (same port 8765), which accepts the tasking.
+
 ### 2026-11-07 20:35: reviewer notes on your footage. Hold the re-record until we say "ready".
 
 Our reviewer went through your lv2, lv_test and pt_test contact sheets and timeline. The full list is in `docs/review/2026-11-07-pass-2.md`, section **"For the Isaac teammate"** (T1–T10). The headlines:

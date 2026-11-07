@@ -1,5 +1,25 @@
 # From the Isaac Sim session (newest first)
 
+### 2026-11-07 21:10: brief follow-ups (11eb199), and a regression you should know about
+
+**Regression fixed: path-traced lines were back to 0.5 m tubes.** Your merge took `photoreal.dress()` from 68036c8, which sets `LINE_W = 0.006` but leaves `overlay.LINE_MESH` off. In RTX and path tracing, BasisCurves ignore that width and render as ~0.5 m yellow tubes (pt1 contact sheet). `dress()` now turns `LINE_MESH` on again (6–12 cm flat ribbons, as verified in pt2 at 85f7109). Please keep that line when you merge.
+
+**New cameras for the shot list (§5.4, review T4):** `--rec-cams … ,mid,map`
+- `mid` (or `mid:A2` to stay on one pile): 36 m out, 25° down, 35 mm lens on the 20.955 mm aperture (33° horizontal), on the active pile, with a slow ±6° drift for parallax. It sits WSW of the pile, so it's cross-lit by the SW sun. Use it for landing and radar (shots 5–6).
+- `map`: straight down at 80 m, north up, east right, lens fitted to the site bounds (grid: 9.7 mm, whole site in frame). Sites too big for a 7 mm lens at 80 m get a higher camera instead (collapse site: 205 m). This is the ending shot that mirrors the dashboard (shot 9).
+- `wide` and `map` use `isaac.site.bounds(sc)`, so they fit the collapse site. The grid keeps the exact orbit we recorded in lv2/pt2.
+
+**Burn-in helper:** `photoreal.project(row, P)` (numpy only) turns world points into pixels for one `cameras.jsonl` row. It uses square pixels, the horizontal aperture fitted to the width and the principal point at the centre, which is how Kit renders a USD camera. It returns `(uv, depth)`; depth ≤ 0 means behind the camera. `scripts/cut_video.py` can import it, or copy it, to place pile/zone IDs and ping tags.
+
+**Checks (no GPU):** offline with usd-core, every rig's target projects to (960, 540) at 1920×1080; `mid` is 36.0 m out at 25.0° down; `map` has all four bound corners in frame, east to the right, north up. `run_mission.py --dry-run --max-steps 60` PASS, and `tests/test_isaac_dryrun.py` 6 passed.
+
+**Re-record command when you post READY** (L40S real-time first, then a path-traced pass of the chosen windows):
+`--seed 7 --photoreal 1 --overlay usd --show-truth --record OUT --rec-cams director,wide,mid,map,chase:d1,fpv:d2,top --rec-res 1920x1080 --rec-fps 30 --rec-speed 6 --rec-warp 4 --rec-stop-t 380 --frames --out OUT_dash`, gated on `timeline.csv` (A2 ping before t 110, at least one dispatch).
+
+**Media:** the 60 s path-traced draft cut of pt2 (A2 insufficient evidence → A3 ping → dispatch to B2, dashboard inserts) is at `larpverse/media/isaac/pt2/larpverse_grid_pathtraced_60s.mp4`. Its A3 shots are hazy; the haze settings from 3adca99 address that for the re-record.
+
+**Licence variant (§5.8), status:** not a texture swap. `buildtex.py` derives the whole library from the scan photo (roof crops, texsynth exemplars), and `terrain_lowres.py` composites the photo into the core terrain tiles. So a scan-free core means re-running the generator with the photo weight at zero, plus non-photo roof and facade textures. Proposal: `collapse_site_noscan.usda`, a small override layer on `collapse_site.usda` that re-points the core terrain tiles and `scan_roofs` to regenerated textures. Tell us if pp would rather do it in the generator.
+
 ### 2026-11-07 21:00: ISAAC_BRIEF.md pass (branch `larpverse-isaac`, rebased on `larpverse-sensing` 451feeb)
 
 **Branch:** `larpverse-isaac` now starts from `larpverse-sensing`, because your tree already has every GPU-verified `isaac/` change: ribbons, Recorder, `--rec-windows`, `timeline.csv` and path tracing. On top of that it carries only the GPU media (lv2/pt2 timelines, dashboard state, contact sheets) plus the brief items below. Delivered as a merge commit (3adca99, parents: the old `larpverse-isaac` tip 277b520 and sensing 451feeb) whose tree equals the rebased result, so there was no force-push and no history was lost.

@@ -153,6 +153,10 @@ Give each session one workstream and point it at this file plus `contracts/INTER
 | BL-14 | P1 | Isaac handoff batch (R1-030…038): done by orchestrator, except R1-033 (needs final story), R1-037 (GPU label), R1-038 (depth wording after R1-006) | mostly done |
 | BL-12 | P1 | Acoustic real-data validation (DroneAudioSet / ESC-50): detection P/R, Whisper under drone noise, vs SNR | builder — running |
 | BL-15 | P0 | One-command demo (scripts/demo.sh) + dashboard replay recording + docs/DEMO.md runbook | builder — running |
+| BL-16 | P0 | Gemini audio pipeline: open-model background/novelty filter → Gemini multilingual audio analysis → sector priorities (user design) | builder — running |
+| BL-17 | P0 | Case-study map: Weiguan Jinlong collapse, Tainan 2016 (23.0051432 N, 120.2608904 E) — georeferenced basemap in dashboard | dashboard builder |
+| BL-18 | P0 | Radar penetration realism: ~0.5–3 m through rubble, 10–20 dB/m concrete; coverage + 'beyond radar reach' | mission builder |
+| BL-19 | P1 | Weiguan model in Isaac: Sketchfab 'VR-Weiguan Collapsed Building' (NCKU Museum, photogrammetry, 1M tris, licence/download not stated) — needs permission; else procedural stand-in of the toppled 16-storey U-shaped block | blocked on licence |
 | BL-11 | P1 | Once GEMINI_API_KEY exists: record a seed-7 Gemini run and commit its replay cache (un-ignore one curated file) so the demo replays offline | blocked on key |
 
 ## Decisions log
@@ -170,3 +174,6 @@ Give each session one workstream and point it at this file plus `contracts/INTER
 | 2026-11-07 | usd-core allowed in .venv for offline pxr checks | lets us validate stage code without a GPU | orchestrator |
 | 2026-11-07 | Isaac adapter defaults to --radar dsp | review R1-005/034: model radar never pings A3 | orchestrator |
 | 2026-11-07 | Storyboard MP4s published as a pre-release on the team repo (larpverse-storyboard) | >100 MB, can't go in git; teammate needs them | orchestrator |
+| 2026-11-07 | Case study = Weiguan Jinlong building collapse, Tainan, 6 Feb 2016; site frame anchored at 23.0051432 N, 120.2608904 E | user | user |
+| 2026-11-07 | Audio pipeline = open-model novelty filter first, only outliers sent to Gemini (multilingual), then prioritisation | user design | user |
+| 2026-11-07 | Radar modelled with realistic penetration (≈3 m max reliable); deep victims become acoustic-only leads | physics: 10–20 dB/m concrete at 0.4–2 GHz | orchestrator |

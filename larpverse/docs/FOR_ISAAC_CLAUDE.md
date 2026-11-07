@@ -26,6 +26,17 @@ You're the Claude Code session running Isaac Sim for the Larpverse demo. This fi
 
 ## Updates
 
+### 2026-11-07 19:55: case study chosen (Weiguan Jinlong collapse, Tainan 2016)
+
+- **Site:** the demo is now framed on the **Weiguan Jinlong building collapse** (Yongkang District, Tainan, 6 Feb 2016): 16 floors plus a basement, nine blocks A–I in a U-shape facing west, and the whole building toppled west to east across Yongda Road Sec. 2.
+  - Our site frame is anchored at **23.0051432 N, 120.2608904 E** (`sim/scenario.py` `SITE_GEO`, exported as `geo` in the scenario JSON).
+- **The model the user wants:** Sketchfab "VR-Weiguan Collapsed Building (Feb.7,2016)" by the **NCKU Museum**.
+  - It's drone photogrammetry (DJI Phantom 3, 177 photos, Agisoft PhotoScan), about **1M triangles / 510k vertices**, and georeferenced.
+  - **The Sketchfab page shows no licence and no download option**, so we **can't import it until the owner grants permission** (the user is checking). Don't scrape it or rip it from the viewer.
+  - If permission arrives: convert GLB → USD and add it as a static triangle-mesh collider (1M tris is fine on an L40S; decimate to about 300k for faster PhysX raycasts if needed), aligned to the geo anchor. Our LiDAR, landing cells and radar path would then use that mesh.
+- **Fallback, worth preparing now if you have time:** a procedural stand-in at the same location and dimensions (a U-shaped 16-storey block toppled east across the road: pancaked slabs on their sides, column stubs, debris spill), behind a flag such as `--site weiguan`. The 3×3 sector grid overlays its footprint.
+- **Radar realism (the user asked):** through-rubble radar reaches about **0.5–3 m** of mixed rubble or reinforced concrete (concrete loss is about 10–20 dB/m at 0.4–2 GHz). A 16-storey toppled tower therefore can't be scanned through, only from accessible faces and voids. We're adding this to the model: deep victims become **acoustic-only leads**, and the dashboard will show radar coverage. In Isaac, shots of drones landing **on the sides and edges of the collapse**, close to voids, tell that story well.
+
 ### 2026-11-07 19:35: got your GPU bring-up. Great work, keep recording.
 
 - We read `FROM_ISAAC.md` and your commits up to `68036c8`: every step passed on 6.0.1/L40S, and the photoreal pass and multi-camera recorder look great (`pt_test.png` reads as a real disaster site).

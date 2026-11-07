@@ -1,19 +1,19 @@
 #!/usr/bin/env bash
 # One-command Larpverse demo: seed-7 autonomous grid mission in realtime-ish mode -> dashboard -> handover brief.
 #
-#   scripts/demo.sh                 # speed 6 (~3.5 min wall), best available backends
-#   scripts/demo.sh --speed 10      # faster (~2.5 min)
-#   scripts/demo.sh --fast          # no realtime pacing (~1.5 min compute), e.g. to regenerate frames for a replay
+#   scripts/demo.sh                 # speed 4 (~3.3 min wall), best available backends
+#   scripts/demo.sh --speed 6       # faster (~2.3 min; measured 134 s with warm caches)
+#   scripts/demo.sh --fast          # no realtime pacing (~1.5 min compute, cold caches), e.g. to regenerate frames for a replay
 #   scripts/demo.sh --slam          # also build pile maps with LiDAR SLAM (cached; changes the run, see docs/DEMO.md)
 #   scripts/demo.sh --stub          # force the synthetic acoustic stub
 #   scripts/demo.sh --no-gemini     # force the argmax decider / template brief even if a key exists
 #
-# Env overrides: DEMO_SEED (7), DEMO_SPEED (6), DEMO_START_PILE (seeded default), DEMO_PORT (8765).
+# Env overrides: DEMO_SEED (7), DEMO_SPEED (4), DEMO_START_PILE (seeded default), DEMO_PORT (8765).
 # Writes dashboard/data/{state.json,pointcloud.bin,frames/state_XXXX.json,brief.md}. Leaves no background processes.
 set -euo pipefail
 ROOT=$(cd "$(dirname "$0")/.." && pwd); cd "$ROOT"
 
-SEED=${DEMO_SEED:-7}; SPEED=${DEMO_SPEED:-6}; PORT=${DEMO_PORT:-8765}; START=${DEMO_START_PILE:-}
+SEED=${DEMO_SEED:-7}; SPEED=${DEMO_SPEED:-4}; PORT=${DEMO_PORT:-8765}; START=${DEMO_START_PILE:-}
 REALTIME=1; SLAM=""; FORCE_STUB=""; NO_GEMINI=""
 while [ $# -gt 0 ]; do case "$1" in
   --speed) SPEED=${2:?--speed needs a number}; shift 2 ;;
@@ -81,7 +81,7 @@ echo
 bold "Dashboard: $URL      (open it now; it polls state.json every second)"
 if [ -n "$REALTIME" ]; then
   awk -v s="$SPEED" 'BEGIN { if (s + 0 <= 0) exit 1 }' || die "--speed must be a positive number"
-  echo "Mission  : realtime x$SPEED (~$(awk -v s="$SPEED" 'BEGIN { printf "%.1f", (750 / s + 90) / 60 }') min incl. compute; ~750 s of mission time). Ctrl-C stops it."
+  echo "Mission  : realtime x$SPEED (~$(awk -v s="$SPEED" 'BEGIN { printf "%.1f", (745 / s + 15) / 60 }') min with warm caches; 745 s of mission time). Ctrl-C stops it."
 else echo "Mission  : --fast (no pacing): the dashboard jumps; use scripts/record_dashboard.py --live for a paced replay"; fi
 echo "Command  : scripts/heavy.sh $PY ${ARGS[*]}"
 echo

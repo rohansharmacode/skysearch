@@ -24,6 +24,10 @@ COLS = "ABC"
 BASE_XY = (0.0, -47.0)                     # staging area (coordinator, operator dashboard, acoustic agent)
 SITE_BOUNDS = (-36.0, -54.0, 36.0, 36.0)   # xmin, ymin, xmax, ymax
 DRONE_PADS = [(-2.6, -49.0), (0.0, -49.0), (2.6, -49.0)]
+# Case study anchor: Weiguan Jinlong building collapse, Yongkang District, Tainan (6 Feb 2016).
+# zh.wikipedia 維冠金龍大樓: 23.0051432 N, 120.2608904 E. Site frame origin = this point; x east, y north.
+SITE_GEO = {"lat": 23.0051432, "lon": 120.2608904, "bearing_deg": 0.0,
+            "name": "Weiguan Jinlong collapse, Yongkang District, Tainan (2016)"}
 SOUND_KINDS = ["voice", "weak_voice", "knock", "dog", "generator", "settling"]
 TRANSCRIPTS = {   # what a TTS voice says for the synthetic human sources (truth; the pipeline must recover it)
     "voice": "Help! Can anyone hear me? My leg is trapped.",
@@ -113,7 +117,7 @@ class Scenario:
     def public_dict(self):
         return {
             "schema": "larpverse.scenario/v1", "seed": self.seed, "spacing": SPACING,
-            "bounds": list(SITE_BOUNDS), "base_xy": list(BASE_XY), "drone_pads": [list(p) for p in DRONE_PADS],
+            "bounds": list(SITE_BOUNDS), "geo": dict(SITE_GEO), "base_xy": list(BASE_XY), "drone_pads": [list(p) for p in DRONE_PADS],
             "start_pile": self.truth["start_pile"],   # where the mission begins: an operator choice, not truth
             "noise": [list(map(float, v)) for v in self._noise],
             "piles": [{**{k: v for k, v in asdict(p).items() if k != "pieces"},

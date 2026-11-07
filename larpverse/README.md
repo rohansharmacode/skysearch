@@ -7,7 +7,7 @@ Built for the AgentVerse 2026 robotics track. Three drones search a 3×3 grid of
 3. **Acoustic agent:** with rotors off, the drones listen to the other piles. The pipeline is Silero VAD, Whisper speech-to-text, YAMNet sound classes and SRP-PHAT direction finding. An agent (Gemini, or a rule-based fallback) scores how human and how urgent each sound is, and ranks the piles.
 4. **Dispatch:** the coordinator sends the fleet to the next pile, and the cycle repeats. The operator dashboard shows pings, priorities, transcripts and every decision, and opens the LiDAR model of a pile with the ping placed inside it.
 
-Isaac Sim provides the 3D world, the drone bodies and the LiDAR geometry. The same seeded scenario drives Isaac, the numpy simulator and the dashboard. The Isaac adapter has been tested without a GPU only; nothing has run on Isaac yet. See [docs/ISAAC_HANDOFF.md](docs/ISAAC_HANDOFF.md).
+Isaac Sim provides the 3D world, the drone bodies and the LiDAR geometry. The same seeded scenario drives Isaac, the numpy simulator and the dashboard. The Isaac adapter runs on a GPU: Isaac Sim 6.0.1 with Isaac Lab 3.0 on a Brev L40S passed every bring-up step, with photoreal rubble and multi-camera recording ([docs/FROM_ISAAC.md](docs/FROM_ISAAC.md)). See [docs/ISAAC_HANDOFF.md](docs/ISAAC_HANDOFF.md).
 
 ## Quickstart (CPU, no GPU needed)
 

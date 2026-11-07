@@ -26,6 +26,7 @@ ap.add_argument("--drones", type=int, default=5)
 ap.add_argument("--port", type=int, default=8090, help="dashboard port (8080 is taken by code-server on the Brev launchable)")
 ap.add_argument("--cam_res", type=int, default=128)
 ap.add_argument("--tree_stride", type=int, default=2, help="use every Nth tree (raise if the stage is slow)")
+ap.add_argument("--diag_view", action="store_true", help="render the overview/viewport from a ladder of views, print a table, exit")
 
 from isaaclab.app import AppLauncher  # noqa: E402
 AppLauncher.add_app_launcher_args(ap)
@@ -136,7 +137,7 @@ def build_stage(w: World, cfg: Config, n_drones):
                                                               clipping_range=(0.1, 1.0e4))))
             for i in range(n_drones)]
     overview = Camera(CameraCfg(prim_path="/World/Cams/overview", update_period=0, height=360, width=640,
-                                data_types=["rgb"], spawn=sim_utils.PinholeCameraCfg(focal_length=18.0, clipping_range=(0.1, 1.0e5))))
+                                data_types=["rgb", "distance_to_image_plane"], spawn=sim_utils.PinholeCameraCfg(focal_length=18.0, clipping_range=(0.1, 1.0e5))))
     sim.reset()
     eye, tgt = [cfg.area / 2, -cfg.area * 0.25, cfg.area * 0.55], [cfg.area / 2, cfg.area * 0.45, 0.0]
     sim.set_camera_view(eye, tgt)
@@ -186,6 +187,59 @@ def calibrate(sim, cam, calib):
     return M_unit
 
 
+def diag_view(sim, cfg):
+    """Why is the far overview / Kit viewport black? Render a ladder of views and variants in one run.
+    Prints one line per case: overview rgb mean, depth median (inf = camera sees nothing), viewport file size."""
+    import omni.usd
+    from pxr import UsdGeom, Gf
+    from omni.kit.viewport.utility import get_active_viewport, capture_viewport_to_file
+    ov, c = build_stage.overview, cfg.area / 2
+    out = os.path.join(ROOT, "out", "diag"); os.makedirs(out, exist_ok=True)
+    stage = omni.usd.get_context().get_stage()
+
+    def shot(name, eye, tgt, steps=30):
+        q = look_at_quat(eye, tgt) if abs(eye[0] - tgt[0]) + abs(eye[1] - tgt[1]) > 1e-6 else [1.0, 0, 0, 0]
+        for path in ("/World/Cams/overview", "/OmniverseKit_Persp"):
+            P.XformPrim(path, reset_xform_op_properties=True).set_world_poses(positions=[eye], orientations=[q])
+        for _ in range(steps):
+            sim.step()
+        ov.update(dt=sim.get_physics_dt())
+        rgb = ov.data.output["rgb"][0].cpu().numpy()[..., :3]
+        dep = ov.data.output["distance_to_image_plane"][0].cpu().numpy()
+        f = os.path.join(out, f"{name}_viewport.png")
+        capture_viewport_to_file(get_active_viewport(), f)
+        for _ in range(10):
+            sim.step()
+        import matplotlib.pyplot as plt
+        plt.imsave(os.path.join(out, f"{name}_overview.png"), rgb)
+        fin = np.isfinite(dep)
+        print(f"[diag] {name:28s} rgb_mean={rgb.mean():6.1f} depth_median={np.median(dep[fin]) if fin.any() else float('inf'):8.1f} "
+              f"finite_px={fin.mean():.2f} viewport_png={os.path.getsize(f) if os.path.exists(f) else -1}", flush=True)
+
+    # 1) straight down, rising: same as the passing probe, but in the real forest scene
+    for z in (60, 200, 550):
+        shot(f"down_z{z}", [c, c, float(z)], [c, c, 0.0])
+    # 2) oblique, getting further away
+    for k in (0.1, 0.3, 0.55):
+        shot(f"oblique_{k}", [c, c - cfg.area * k * 0.5, cfg.area * k], [c, c + cfg.area * 0.1, 0.0])
+    # 3) the production overview pose
+    eye, tgt = [c, -cfg.area * 0.25, cfg.area * 0.55], [c, cfg.area * 0.45, 0.0]
+    shot("prod_overview", eye, tgt)
+    # 4) same pose, trees hidden
+    for root in ("/World/Trees",):
+        UsdGeom.Imageable(stage.GetPrimAtPath(root)).MakeInvisible()
+    shot("prod_overview_no_trees", eye, tgt)
+    UsdGeom.Imageable(stage.GetPrimAtPath("/World/Trees")).MakeVisible()
+    # 5) same pose, much brighter sun
+    stage.GetPrimAtPath("/World/Sun").GetAttribute("inputs:intensity").Set(20000.0)
+    shot("prod_overview_bright_sun", eye, tgt)
+    # 6) far clip check on the viewport camera
+    cam = UsdGeom.Camera(stage.GetPrimAtPath("/OmniverseKit_Persp"))
+    print("[diag] persp clippingRange", cam.GetClippingRangeAttr().Get(), "focal", cam.GetFocalLengthAttr().Get(), flush=True)
+    cam.GetClippingRangeAttr().Set(Gf.Vec2f(1.0, 1.0e6))
+    shot("prod_overview_clip1e6", eye, tgt)
+
+
 def overlays(scen):
     if draw is None:
         return
@@ -217,6 +271,10 @@ def main():
     w = scen.world
     sim, people, deer, drones, cams, calib = build_stage(w, cfg, cfg.n_drones)
     IsaacWorld.M_unit = calibrate(sim, cams[0], calib)
+    if a.diag_view:
+        diag_view(sim, cfg)
+        simulation_app.close()
+        return
     live = LiveServer(scen, Renderer(scen), a.port); live.start()
     last, n_det = 0, 0
     while simulation_app.is_running():

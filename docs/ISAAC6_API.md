@@ -180,11 +180,37 @@ Unchanged from 5.x, but it only works **while simulating** (after `sim.reset()`)
 `SimulationCfg(enable_scene_query_support=True)`; otherwise it silently returns `{'hit': False}`.
 Only prims with collision APIs are hit (spawner `collision_props`, or `GeomPrim(..., apply_collision_apis=True)`).
 
-## Open issue (not solved yet)
+## Open issue: far overview and Kit viewport render black (not solved yet)
 
-RGB from the **far, oblique overview camera and the Kit viewport** (`/OmniverseKit_Persp`, which is what
-`/viewer` streams) came out **all black** in `isaac_bridge.py`, even though the pose reads back correctly
-(eye (500, −250, 550), quat (0.899, 0.437, 0, 0)). In the small probe scene, a straight-down camera moved with
-`XformPrim` renders fine at 20–800 m (mean pixel 100–220). Not yet ruled out: lighting at the 1 km forest
-scale, the experimental-material forest occluding the view, and the viewport needing its own refresh.
-Next step: snapshot the overview at shorter range and with trees disabled (`--tree_stride 1000`).
+What we know (all measured on the L40S):
+* Read back with `XformPrim.get_world_poses()`, the overview camera `/World/Cams/overview` and the viewport camera
+  `/OmniverseKit_Persp` are where we put them: eye (500, −250, 550), quat (0.899, 0.437, 0, 0) = pitched 52°
+  down towards +y, which is correct for a USD camera looking down −Z. RGB mean is still 0.0 and the viewport
+  PNG is uniformly black.
+* In the small probe scene, a camera moved with `XformPrim` renders correctly at 20, 60, 200 and 800 m straight
+  down (depth = height, mean pixel 100–220). Clipping ranges are fine (persp 0.01–1e7, sensors 0.1–1e4/1e5),
+  and `metersPerUnit` = 1.0.
+* The drone cameras are re-posed every frame and work. The overview and viewport are posed **once** and fail.
+  The probe camera that worked was also posed once, so "posed once" alone does not explain it.
+
+Candidate causes, most likely first, each with the check that settles it:
+1. **Livestream viewport only renders for a connected client.** With `--livestream 2` and no browser on
+   `/viewer`, the Kit viewport may never draw, so `capture_viewport_to_file` saves black. This would only
+   explain the viewport, not the overview sensor. *Check:* open `/viewer`, then trigger a snapshot.
+2. **Forest-scale scene, not the camera.** Untested in the probe: 2,500 experimental cylinders plus the 1.2 km
+   cuboid ground seen obliquely from 800 m. *Check:* `--diag_view` (below) renders the same pose with trees
+   hidden, and straight down at 60/200/550 m inside the real scene.
+3. **Lighting/exposure at distance.** The bridge uses Dome 1500 + Distant 2500; the probe used Distant 3000
+   + GroundPlaneCfg. *Check:* `--diag_view` repeats the shot with the sun at 20,000.
+4. **Something re-applies the camera pose after our single set** (e.g. a sensor offset or a viewport-manager
+   reset), with USD read-back still showing our value. *Check:* `--diag_view` re-poses the camera right before
+   every shot and reports `depth_median` (`inf` means the render camera sees nothing at all).
+   *Workaround if so:* re-set the overview and viewport pose every frame, the way the drone cameras are.
+5. Far clip on the viewport camera. Unlikely (it reads 1e7), but `--diag_view` sets it to 1e6 explicitly.
+
+**One-run diagnostic** (about 3 min on the GPU; saves PNGs to `/workspace/skysearch/out/diag/`):
+```
+cd /workspace/isaaclab && ./isaaclab.sh -p /workspace/skysearch/isaac/isaac_bridge.py --headless --enable_cameras --diag_view
+```
+Each `[diag]` line shows `rgb_mean`, `depth_median`, `finite_px` and the viewport PNG size. The first case that
+turns non-black identifies the cause.

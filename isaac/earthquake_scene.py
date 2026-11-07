@@ -40,6 +40,8 @@ ap.add_argument("--rec_cams", default="", help="extra recording cameras, comma l
                 "(collapse = a person's eye height in the corridor, looking at the damage). Saved to <record>/isaac_<name>/")
 ap.add_argument("--stop_t", type=float, default=0.0, help="--record: stop at this mission time (s) instead of at handoff")
 ap.add_argument("--drone_light", type=float, default=12000.0, help="intensity of the small search light on each scout/crevice drone (0 = off)")
+ap.add_argument("--look", type=int, default=1, help="1 = photoreal materials/sky/models/cinematic camera (isaac/look.py)")
+ap.add_argument("--hdri", type=float, default=900.0, help="HDRI sky dome intensity when --look 1")
 ap.add_argument("--probe_frames", type=int, default=0, help="record this many ticks, print brightness, exit (lighting check)")
 
 from isaaclab.app import AppLauncher  # noqa: E402
@@ -272,6 +274,10 @@ def build_stage(scen, cfg, Q=None):
         debris = []
     else:
         debris = drop_debris(cfg, b, a.debris)
+    if a.look:                                  # photoreal look (isaac/look.py); visual only
+        sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+        import look
+        look.apply(scen, cfg, a, W3, OUT, log=lambda m: print(m, flush=True))
     sim.reset()
     if Q is not None:
         Q.after_reset(sim)
@@ -476,7 +482,11 @@ def main():
                 tgt = eye + np.array([math.cos(focus.heading), -math.sin(focus.heading), -0.25])
                 P.XformPrim("/World/Cams/drone").set_world_poses(positions=[eye], orientations=[look_at_quat(eye, tgt)])
             # viewport + recording camera, re-posed every frame (docs/ISAAC6_API.md, open issue 4)
-            eye, tgt = view_pose(k / FPS, b, cfg)
+            if a.look:
+                import look
+                eye, tgt = look.camera(k / FPS, scen, cfg, W3)
+            else:
+                eye, tgt = view_pose(k / FPS, b, cfg)
             if shake:
                 eye = list(np.array(eye) + np.random.normal(0, shake * 2, 3))
             if quaking:                      # the ground (and so the building and the camera crew) moves

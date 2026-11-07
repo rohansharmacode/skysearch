@@ -68,7 +68,7 @@ export function demoState() {
     radar_candidates: [
       { id: 'A2-R1', pile_id: 'A2', xy: R1, z_est: +(H(...R1) - 1.6).toFixed(2), cov: [[0.09, 0.02], [0.02, 0.06]], p_mass: 0.94, breathing_hz: 0.27, kind: 'stationary', status: 'candidate', evidence: ['s1', 's2', 's3'], depth_source: 'radar', depth_m: 1.6, depth_sigma: 0.3, support: '3/3',
         vitals: { rate_bpm: 16.2, rate_ci: [14.8, 17.9], cv: 0.07, depth_rel: 0.95, depth_rel_conf: 0.1, apnea_events_per_min: 0, movement: 0.04, sqi: 0.68,
-          pattern: 'regular_calm', pattern_conf: 0.61, pattern_reason: 'regular, rate 16/min within 11-20', triage_hint: 'delayed',
+          pattern: 'calm', pattern_conf: 0.61, pattern_reason: 'regular, rate 16/min within 11-20', triage_hint: 'delayed',
           triage_reason: 'regular breathing in the normal range (respiration only; perfusion and responsiveness unknown)',
           caveats: ['aid for rescuers, not a diagnosis: radar sees chest-wall motion only (no perfusion, mental status or airway)', 'pattern is inferred from one scan window; re-scan to confirm before acting on it', 'demo data: illustrative values'] } },
       { id: 'A3-R1', pile_id: 'A3', xy: R2, z_est: +(H(...R2) - 1.5).toFixed(2), cov: [[0.3, 0.05], [0.05, 0.22]], p_mass: 0.62, breathing_hz: 0.28, kind: 'stationary', status: 'insufficient_evidence', evidence: ['s4', 's5'], depth_source: 'nominal', support: '2/3' },

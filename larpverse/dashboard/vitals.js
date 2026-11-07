@@ -8,12 +8,35 @@ const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '
 // Triage chips. rank = dig-order weight (sim/vitals.py TRIAGE_RANK); "assess" sits mid-table on purpose.
 export const TRIAGE = {
   immediate: { key: 'immediate', label: 'immediate', rank: 1.0, tip: 'START respiratory criterion: breathing over 30/min. Dig first, confirm on site.' },
-  urgent: { key: 'urgent', label: 'urgent', rank: 0.85, tip: 'Irregular, paused, slow or fast-irregular breathing: possible airway problem or reduced responsiveness. Check soon.' },
+  urgent: { key: 'urgent', label: 'urgent', rank: 0.85, tip: 'Rapid, slow or irregular breathing with pauses: possible injury, reduced responsiveness or airway problem. Check soon.' },
   assess: { key: 'assess', label: 'assess', rank: 0.55, tip: 'No usable breathing pattern from this scan: needs a longer or better scan.' },
   delayed: { key: 'delayed', label: 'delayed', rank: 0.35, tip: 'Regular breathing in the normal range (respiration only: perfusion and responsiveness are unknown).' },
 };
+// Survivor CONDITION from the breathing pattern (no age inference). New classes from sim/vitals.py, plus the legacy
+// pattern names mapped onto them so older runs still read correctly.
+export const CONDITION = {
+  calm: { key: 'calm', what: 'Calm, regular breathing', means: 'no breathing distress seen', act: 'routine', hint: 'delayed' },
+  distressed_tachypnea: { key: 'distressed_tachypnea', what: 'Rapid shallow breathing', means: 'possible injury/distress', act: 'check', hint: 'urgent' },
+  unconscious_slow: { key: 'unconscious_slow', what: 'Slow breathing', means: 'possibly unconscious', act: 'check urgently', hint: 'urgent' },
+  irregular_apneic: { key: 'irregular_apneic', what: 'Irregular breathing with pauses', means: 'possible airway problem', act: 'check urgently', hint: 'urgent' },
+  unclear: { key: 'unclear', what: 'Breathing pattern unclear', means: 'signal too weak or too short', act: 'rescan', hint: 'assess' },
+};
+const LEGACY = { regular_calm: 'calm', rapid_shallow: 'distressed_tachypnea', fast_small: 'distressed_tachypnea', slow_deep: 'unconscious_slow', irregular_with_pauses: 'irregular_apneic' };
+export function conditionOf(v) {
+  const k = String(v?.condition ?? v?.pattern ?? '').toLowerCase();
+  if (!k) return null;
+  return CONDITION[k] || CONDITION[LEGACY[k]] || { ...CONDITION.unclear, what: k.replace(/_/g, ' ') };
+}
+// "Rapid shallow breathing, 32/min — possible injury/distress — check"
+export function conditionLabel(v, c) {
+  const k = conditionOf(v), r = rateOf(v, c), rt = r ? `, ${Math.round(r)}/min` : '';
+  if (!k) return r ? `Breathing-like signal${rt} — no pattern analysis — assess` : null;
+  return `${k.what}${rt} — ${k.means} — ${k.act}`;
+}
 export function triageOf(v) {
-  const h = String(v?.triage_hint || '').toLowerCase().trim();
+  const k = conditionOf(v);
+  let h = String(v?.triage_hint || '').toLowerCase().trim();
+  if (!h && k) h = k.key === 'distressed_tachypnea' && (rateOf(v) ?? 0) > 30 ? 'immediate' : k.hint;
   if (!h || h === 'assess') return { ...TRIAGE.assess, sub: v ? '' : 'no pattern yet' };
   if (h === 'urgent' || /^immediate\s*\(check\)/.test(h)) return { ...TRIAGE.urgent, sub: 'check' };
   if (h.startsWith('immediate')) return { ...TRIAGE.immediate, sub: '' };
@@ -21,15 +44,13 @@ export function triageOf(v) {
   if (h.startsWith('delayed') || h === 'minor') return { ...TRIAGE.delayed, sub: '' };
   return { ...TRIAGE.assess, sub: '' };
 }
-export const PATTERN = {
-  rapid_shallow: 'rapid, shallow — possible distress',
-  irregular_with_pauses: 'irregular with pauses',
-  regular_calm: 'calm, regular',
-  fast_small: 'fast, small — possible child (low confidence)',
-  slow_deep: 'slow — possible reduced responsiveness',
-  unclear: 'pattern unclear — rescan',
-};
-export const patternLabel = v => (v?.pattern ? PATTERN[v.pattern] || String(v.pattern).replace(/_/g, ' ') : null);
+// Confidence indicator: five segments + a word, from pattern_conf (0-1).
+export function confMeter(conf) {
+  if (conf == null || !Number.isFinite(+conf)) return '<span class="cm none" title="no pattern confidence reported">confidence —</span>';
+  const c = clamp(+conf), n = Math.round(c * 5), w = c >= 0.7 ? 'high' : c >= 0.45 ? 'moderate' : 'low';
+  return `<span class="cm c-${w}" title="pattern confidence ${c.toFixed(2)} (signal quality × evidence)" aria-label="${w} confidence ${c.toFixed(2)}">`
+    + Array.from({ length: 5 }, (_, k) => `<i${k < n ? ' class="on"' : ''}></i>`).join('') + `<span>${w} confidence ${c.toFixed(2)}</span></span>`;
+}
 export const rateOf = (v, c) => v?.rate_bpm ?? (c?.breathing_hz ? c.breathing_hz * 60 : null);
 
 // Dig-order score = triage weight (shrunk towards "assess" by pattern_conf, like sim/vitals.priority_weight)
@@ -55,10 +76,10 @@ function measuredWave(v) {
 function synthWave(v, c, n, win) {
   const rate = rateOf(v, c); if (!rate) return null;
   const r = rng(c.id || 'x'), g = () => (r() + r() + r() - 1.5) * 1.15;
-  const pat = v?.pattern, cv = clamp(+(v?.cv ?? (pat === 'irregular_with_pauses' ? 0.25 : 0.05)), 0, 0.6);
-  let amp = v?.depth_rel != null ? clamp(+v.depth_rel, 0.3, 1.3) : pat === 'rapid_shallow' ? 0.6 : pat === 'fast_small' ? 0.5 : pat === 'slow_deep' ? 1.15 : 0.9;
+  const pat = conditionOf(v)?.key, cv = clamp(+(v?.cv ?? (pat === 'irregular_apneic' ? 0.25 : 0.05)), 0, 0.6);
+  let amp = v?.depth_rel != null ? clamp(+v.depth_rel, 0.3, 1.3) : pat === 'distressed_tachypnea' ? 0.6 : pat === 'unconscious_slow' ? 1.15 : 0.9;
   let nPause = Math.round((+(v?.apnea_events_per_min ?? 0)) * win / 60);
-  if (!nPause && (+(v?.apnea_events_per_min ?? 0) > 0 || (pat === 'irregular_with_pauses' && v?.apnea_events_per_min == null))) nPause = 1;
+  if (!nPause && (+(v?.apnea_events_per_min ?? 0) > 0 || (pat === 'irregular_apneic' && v?.apnea_events_per_min == null))) nPause = 1;
   nPause = Math.min(nPause, 2);
   const pauses = Array.from({ length: nPause }, (_, k) => win * (k + 0.55) / (nPause + 0.3));
   const breaths = []; let t = 0, pi = 0;
@@ -90,10 +111,10 @@ export function spark(c, { w = 96, h = 24, win = 40, stroke = 'currentColor', cl
   const tip = meas ? 'Radar breathing waveform (displacement at the ping range)'
     : `Pattern illustration, synthesised from ${rate ? Math.round(rate) + '/min' : 'the rate'}` + (v?.cv != null ? `, variability ${(+v.cv).toFixed(2)}` : '')
       + (v?.apnea_events_per_min ? `, ${(+v.apnea_events_per_min).toFixed(1)} pauses/min` : '') + ': not the measured waveform';
-  const rateOnly = !meas && !v?.pattern;
+  const rateOnly = !meas && !conditionOf(v);
   return { measured: !!meas, rateOnly, label: meas ? 'radar waveform' : rateOnly ? 'rate only' : 'pattern illustration',
     tip: rateOnly ? `Rate only (${rate ? Math.round(rate) + '/min' : '—'}): no breathing-pattern analysis, so this regular shape is NOT a pattern` : tip,
-    svg: `<svg class="${cls}" viewBox="0 0 ${w} ${h}" width="${w}" height="${h}" role="img" aria-label="${esc(tip)}"><title>${esc(tip)}</title><path d="${d}" fill="none" stroke="${stroke}" stroke-width="1.4"${!meas && !v?.pattern ? ' stroke-dasharray="2 2.5" opacity="0.7"' : ''} stroke-linejoin="round" stroke-linecap="round"/></svg>` };
+    svg: `<svg class="${cls}" viewBox="0 0 ${w} ${h}" width="${w}" height="${h}" role="img" aria-label="${esc(tip)}"><title>${esc(tip)}</title><path d="${d}" fill="none" stroke="${stroke}" stroke-width="1.4"${rateOnly ? ' stroke-dasharray="2 2.5" opacity="0.7"' : ''} stroke-linejoin="round" stroke-linecap="round"/></svg>` };
 }
 
 export const ALWAYS = 'Aid for rescuers, not a diagnosis: radar sees chest-wall motion only (no perfusion, responsiveness or airway).';

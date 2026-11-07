@@ -6,7 +6,7 @@
 // #ping=<id> opens that ping's detail view. A missing state file shows the demo state.
 import { demoState, demoCloud } from './demo.js';
 import { createTasking, reconText } from './tasking.js';
-import { digScore, triageOf, patternLabel, rateOf, spark, caveatsOf, triageChip, drawTriageRing, ALWAYS } from './vitals.js';
+import { digScore, triageOf, conditionOf, conditionLabel, confMeter, rateOf, spark, caveatsOf, triageChip, drawTriageRing, ALWAYS } from './vitals.js';
 
 const params = new URLSearchParams(location.search);
 const STATE_URL = (() => {
@@ -696,17 +696,18 @@ function renderCands(grid) {
   $('cands').innerHTML = DIG.map(d => {
     const { c, di, triage: t, weak } = d, v = c.vitals || null, mv = c.kind === 'moving';
     const lab = mv ? 'moving track' : weak ? 'insufficient evidence' : 'candidate region';
-    const pl = patternLabel(v), rate = rateOf(v, c), sp = spark(c, { w: 92, h: 24 });
+    const pl = conditionLabel(v, c), cond = conditionOf(v), rate = rateOf(v, c), sp = spark(c, { w: 92, h: 24 });
     const ci = v?.rate_ci?.length === 2 && v.rate_ci[0] != null ? ` (${f0(v.rate_ci[0])}–${f0(v.rate_ci[1])})` : '';
     const cav = caveatsOf(c);
     return `<button class="dig ${weak ? 'weak' : ''} t-${t.key}" data-id="${esc(c.id)}" title="${esc(cav.map(k => '• ' + k).join('\n'))}">
       <span class="rk">${d.rank}</span>
       <span class="l1"><i class="mk"></i><b>${esc(c.id)}</b><small>${lab}</small>${triageChip(t)}</span>
       <span class="sp${sp?.rateOnly ? ' ro' : ''}">${sp ? sp.svg + `<small>${esc(sp.label)}</small>` : '<small>no breathing signal</small>'}</span>
-      <span class="l2">${pl ? `<span class="pat p-${esc(v.pattern)}">${esc(pl)}</span>` : `<span class="pat none">${v ? 'pattern not reported' : 'no breathing-pattern analysis'}</span>`}${v?.pattern_conf != null ? ` <span class="cf" title="pattern confidence">conf ${f2(v.pattern_conf)}</span>` : ''}</span>
-      <span class="l3">${rate ? `<b>${f0(rate)}</b>/min${esc(ci)} · ` : ''}depth <b>${esc(di.short)}</b> · ${weak ? `<span class="sup">${esc(supText(c))}</span>` : `belief share <b>${f2(c.p_mass)}</b>`}</span>
-      <span class="l4"><span class="cv">${cav.length} caveat${cav.length === 1 ? '' : 's'} (hover)</span><span class="go">3D view →</span></span></button>`;
-  }).join('') + `<p class="dignote">Ranked by ${anyV ? 'breathing-pattern triage hint (weighted by pattern confidence)' : 'triage hint (none yet: all “assess”)'} × localisation certainty × depth. ${esc(ALWAYS)} Every ping is a candidate search region, not a confirmed person.</p>`;
+      <span class="l2 ${cond ? 'k-' + cond.key : 'none'}">${esc(pl || 'No breathing signal at this ping')}</span>
+      <span class="l5">${v ? confMeter(v.pattern_conf) : '<span class="cm none">no pattern analysis</span>'}</span>
+      <span class="l3">depth <b>${esc(di.short)}</b> · ${weak ? `<span class="sup">${esc(supText(c))}</span>` : `belief share <b>${f2(c.p_mass)}</b>`}${v?.rate_ci?.length === 2 && v.rate_ci[0] != null ? ` · rate 95% ${f0(v.rate_ci[0])}–${f0(v.rate_ci[1])}` : ''}</span>
+      <span class="l4"><span class="aid">Aid, not a diagnosis</span><span class="cv">${cav.length} caveat${cav.length === 1 ? '' : 's'}</span><span class="go">3D view →</span></span></button>`;
+  }).join('') + `<p class="dignote">Ranked by ${anyV ? 'the condition read from the breathing pattern (weighted by its confidence)' : 'condition (none analysed yet: all “assess”)'} × localisation certainty × depth. ${esc(ALWAYS)} Every ping is a candidate search region, not a confirmed person.</p>`;
 }
 $('cands').addEventListener('click', e => { const b = e.target.closest('[data-id]'); if (b) openDetail((S.radar_candidates || []).find(c => c.id === b.dataset.id)); });
 
@@ -831,18 +832,20 @@ function hmAt(x, y) {
 function vitalsCard(c, di) {
   if (!DIG_BY.has(c.id)) computeDig();
   const dg = DIG_BY.get(c.id), v = c.vitals || null, t = dg?.triage || triageOf(v), rate = rateOf(v, c), sp = spark(c, { w: 300, h: 46, win: 45 });
-  const pl = patternLabel(v), cav = caveatsOf(c);
+  const pl = conditionLabel(v, c), cond = conditionOf(v), cav = caveatsOf(c);
   const kv = [];
   if (rate) kv.push(['Rate', `${f0(rate)}/min${v?.rate_ci?.[0] != null ? ` <small>95% ${f0(v.rate_ci[0])}–${f0(v.rate_ci[1])}</small>` : v ? '' : ' <small>periodic radar return</small>'}`]);
   if (v?.cv != null) kv.push(['Variability', `${f2(v.cv)} <small>breath-to-breath CV</small>`]);
   if (v?.apnea_events_per_min != null) kv.push(['Pauses > 10 s', `${f1(v.apnea_events_per_min)}/min`]);
   if (v?.movement != null) kv.push(['Movement', `${f0(100 * v.movement)}% <small>of the window</small>`]);
-  if (v?.depth_rel != null) kv.push(['Chest excursion', `${f1(v.depth_rel)}× calm adult <small>LOW confidence${v.depth_rel_conf != null ? ' (' + f2(v.depth_rel_conf) + ')' : ''}</small>`]);
-  if (v?.pattern_conf != null) kv.push(['Pattern confidence', f2(v.pattern_conf) + (v.sqi != null ? ` <small>signal quality ${f2(v.sqi)}</small>` : '')]);
+  if (v?.depth_rel != null) kv.push(['Chest excursion', `${f1(v.depth_rel)}× a calm resting breath <small>LOW confidence${v.depth_rel_conf != null ? ' (' + f2(v.depth_rel_conf) + ')' : ''}</small>`]);
+  if (v?.sqi != null) kv.push(['Signal quality', f2(v.sqi)]);
   if (dg) kv.push(['Dig order', `#${dg.rank} of ${DIG.length} <small>triage ${f2(dg.tri)} × localisation ${f2(dg.loc)} × depth ${f2(dg.acc)}</small>`]);
   return `<div class="vt">
       <div class="tile dtile"><h5>Depth</h5><b>${esc(di.short.replace(/\s*\((nominal|radar estimate)\)$/, ''))}</b><small>${esc(di.nominal ? 'nominal: assumed, not measured' : 'radar estimate, below the LiDAR surface')}</small></div>
-      <div class="tile btile"><h5>Breathing pattern ${triageChip(t)}</h5><b class="pat">${esc(pl || (v ? 'pattern not reported' : 'not analysed in this run'))}</b>
+      <div class="tile btile"><h5>Condition (breathing) ${triageChip(t)}</h5><b class="pat ${cond ? 'k-' + cond.key : ''}">${esc(pl || 'No breathing signal at this ping')}</b>
+        ${v ? confMeter(v.pattern_conf) : '<span class="cm none">not analysed in this run: rate only</span>'}
+        <small class="aidn">Aid for rescuers, not a diagnosis.</small>
         ${sp ? `<div class="bsp">${sp.svg}<small title="${esc(sp.tip)}">${esc(sp.label)}${sp.measured ? '' : sp.rateOnly ? ': periodic radar return, no pattern analysis; the shape is not a pattern' : ': shape from rate, variability and pauses, not the measured waveform'}</small></div>` : '<small>no periodic signal</small>'}</div>
     </div>
     ${kv.length ? `<dl class="vkv">${kv.map(([k, x]) => `<dt>${k}</dt><dd>${x}</dd>`).join('')}</dl>` : ''}

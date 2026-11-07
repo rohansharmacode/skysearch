@@ -16,7 +16,7 @@
     <div class="brand"><i></i>Larpverse</div>
     <div class="pill" id="phase">phase</div>
     <div class="site" id="siteName">Rubble site</div>
-    <button class="case" id="caseBtn" aria-expanded="false" aria-controls="casePop"><span class="long">Case study: Weiguan Jinlong collapse, Tainan, 2016</span><span class="short">Case study: Tainan 2016</span></button>
+    <button class="case" id="caseBtn" aria-expanded="false" aria-controls="casePop"><span class="long">Case study (layout synthetic): Weiguan Jinlong collapse, Tainan, 2016</span><span class="short">Case study (layout synthetic)</span></button>
     <div class="meta"><span id="simT">t = 0.0 s</span><span id="conn" class="conn">connecting</span></div>
   </header>
   <div id="banner" role="status" hidden></div>
@@ -40,11 +40,12 @@
       <button class="tog key" id="helpBtn" aria-expanded="false" aria-controls="help"><span class="long">? How to read this map</span><span class="short">? Map key</span></button>
       <button class="tog" id="layersBtn" aria-expanded="false" aria-controls="layers">Layers ▾</button>
       <div id="layers">
-        <div class="seg" role="group" aria-label="Basemap"><span>Basemap</span><button class="tog" data-bm="map" aria-pressed="true">Map</button><button class="tog" data-bm="sat" aria-pressed="false">Satellite</button><button class="tog" data-bm="relief" aria-pressed="false">LiDAR relief</button></div>
+        <div class="seg" role="group" aria-label="Basemap"><span>Basemap</span><button class="tog" data-bm="relief" aria-pressed="true">LiDAR relief</button><button class="tog" data-bm="map" aria-pressed="false">Map</button><button class="tog" data-bm="sat" aria-pressed="false">Satellite</button></div>
         <button class="tog" data-k="belief" aria-pressed="true">Radar belief</button>
         <button class="tog" data-k="rings" aria-pressed="false">Range rings</button>
         <button class="tog" data-k="acoustic" aria-pressed="true">Acoustic cones</button>
         <button class="tog" data-k="sites" aria-pressed="true">Landing sites</button>
+        <button class="tog" data-k="reach" aria-pressed="true">Radar reach</button>
         <button class="tog" data-k="piles" aria-pressed="true" id="togPiles" hidden>Piles &amp; dispatch</button>
       </div>
     </div>
@@ -58,6 +59,7 @@
     <div id="legend" class="float">
       <span><i class="dot red"></i>Radar ping (candidate region)</span>
       <span class="lx"><i class="ring"></i>Insufficient evidence</span>
+      <span class="lx"><i class="tring"></i>Triage ring (dig order)</span>
       <span><i class="wedge"></i>Heard a human-like sound</span>
       <span class="lx"><i class="tri"></i>Drone</span>
       <span class="lx"><i class="sq"></i>Landing site</span>
@@ -72,15 +74,17 @@
         <li><i class="k-badge">64</i><div><b>Acoustic priority 0–100</b>: how urgently the acoustic agent wants a pile searched, from what the drones heard. It orders the search; it is not proof.</div></li>
         <li><i class="k-chip" style="color:#ff4545">PING</i><div>Radar found a breathing-like return at this pile.</div></li>
         <li><i class="k-chip" style="color:#22c3d6">LEAD</i><div>Acoustic lead: a human-like sound (voice, knocking) was heard from this pile.</div></li>
-        <li><i class="k-chip" style="color:#8a9caa">NON-HUMAN</i><div>Only a dog, engine or debris was heard. Dismissed as a lead, but <b>not cleared</b>.</div></li>
+        <li><i class="k-chip" style="color:#8a9caa">NON-HUMAN</i><div><b>Non-human sound · not cleared</b>: only a dog, engine or debris was heard. Dismissed as an acoustic lead, but the pile is <b>not cleared</b>.</div></li>
         <li><i class="k-chip" style="color:#8a9caa">NOT CLEARED</i><div>Nothing heard. Silence is not absence.</div></li>
         <li><i class="k-dot"></i><div><b>Radar ping</b>: red dot, pulsing, with its 95% region. Its <b>belief share</b> is the share of this pile's radar belief at that spot, not the chance that someone is there. Click it for the 3D LiDAR view.</div></li>
+        <li><i class="k-tri-rings"><i class="r2"></i><i class="r1"></i><i class="rd"></i><i class="ro"></i></i><div><b>Triage ring</b> around a ping (dig order, from its breathing pattern): <b>double</b> = immediate, <b>solid</b> = urgent, <b>dashed</b> = delayed, <b>dotted</b> = assess (no usable pattern). <b>#1</b> is dug first. An aid for rescuers, not a diagnosis.</div></li>
+        <li><i class="k-hatch"></i><div><b>Hatched part of a searched pile</b>: beyond radar reach from the sites the drones scanned from (≈3 m of rubble). Only acoustic leads cover it: not cleared.</div></li>
         <li><i class="k-weak"></i><div><b>Insufficient evidence</b>: hollow orange, dashed. Too few radar ranges agree (e.g. 2 of 3): rescan before acting on it.</div></li>
         <li><i class="k-cone"></i><div><b>Yellow cone</b>: direction a landed drone heard a human-like sound from (its apex is the drone). Grey short cones are non-human sounds. Pick a listen in the Acoustic agent panel to see its cones.</div></li>
-        <li><i class="k-tri"></i><div><b>Drone</b> (white; yellow while listening with rotors off). <i class="k-sq-inline"></i> green squares are landing sites the drones chose from the LiDAR map.</div></li>
+        <li><i class="k-tri"></i><div><b>Drone</b> (white; hollow with a small "ear" ring while landed and listening, rotors off). <i class="k-sq-inline"></i> green squares are landing sites the drones chose from the LiDAR map.</div></li>
         <li><i class="k-arrow"></i><div><b>Dispatch</b>: where the coordinator sent the fleet next, and why (see Dispatch decisions).</div></li>
         <li><i class="k-stage"></i><div><b>Staging</b>: the operator's console and the drone pads.</div></li>
-        <li><i class="k-geo">N</i><div><b>Basemap</b>: the real case-study site (OpenStreetMap or satellite imagery), with the site frame anchored at the building (the N arrow, top right, shows true north). The shaded mounds on top are the drones' LiDAR map of the (synthetic) rubble. Without network the map falls back to the LiDAR relief.</div></li>
+        <li><i class="k-geo">N</i><div><b>Basemap</b>: by default the drones' LiDAR relief of the (synthetic) rubble. <i>Map</i> and <i>Satellite</i> show the real case-study site (OpenStreetMap or imagery, dimmed) with the site frame anchored at the building (the N arrow, top right, shows true north). The pile layout is synthetic: nothing here marks where real victims were. Without network the map falls back to the LiDAR relief.</div></li>
       </ul>
       <p class="lead small">Depth is shown as <b>(nominal)</b> when it is an assumed 1.5 m rather than measured, and as <b>± (radar estimate)</b> when the radar measured it.</p>
     </div>
@@ -135,6 +139,7 @@
     <div class="facts">
       <div class="dhead"><h3 id="dTitle">R1</h3><button class="btn" id="dClose" aria-label="Close">Close</button></div>
       <div class="status" id="dStatus"></div>
+      <div id="dVitals"></div>
       <dl id="dFacts"></dl>
       <div id="dHeard"></div>
       <h4>Radar evidence</h4>

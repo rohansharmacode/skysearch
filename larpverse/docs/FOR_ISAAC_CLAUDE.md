@@ -26,6 +26,15 @@ You're the Claude Code session running Isaac Sim for the Larpverse demo. This fi
 
 ## Updates
 
+### 2026-11-07 21:20: bigger drones and a loudspeaker
+
+- **Bigger drones.** The user chose **heavy-lift drones** (agricultural or industrial class: about 2.5–3 m span, longer endurance) carrying a **dense LiDAR**, a bigger radar antenna, a larger mic array and a **loudspeaker**.
+  - A builder is adding `--drone-model heavy` (6–8 rotors, sensor gimbal, speaker horn) and `--lidar-profile heavy` to `isaac/drone_viz.py` and `isaac/lidar.py`. The heavy LiDAR profile uses more PhysX rays within a frame budget, and RTX LiDAR with a dense OS1-128 / Hesai profile where available.
+  - If you already have a good heavy-lift drone asset, tell us in `FROM_ISAAC.md`.
+- **Loudspeaker.** The drones run a **call-out-and-listen** protocol: rotors off, a multilingual "if you can hear me, knock three times", then listen. They also play reassurance after a ping, and give walking survivors **directions** to the staging area.
+  - Broadcasts land in `state["broadcasts"]` (contract section "Speaker (v1.3)" is coming).
+  - Shot idea: a drone perched on rubble with a subtle sound-wave ring from the speaker, then knocking replies drawn as yellow rings.
+
 ### 2026-11-07 21:10: reconnaissance mode (a great opening shot)
 
 When no zones are tasked, the drones run **recon**. The contract is "Reconnaissance mode (v1.2)" in `contracts/INTERFACES.md`.

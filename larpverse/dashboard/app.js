@@ -1,25 +1,37 @@
 // Larpverse operator console. Reads data/state.json (contracts/INTERFACES.md, v1 + v1.1 grid extensions) every second.
 // Works with the single-pile v1 state (sim/coordinator.py) and the 3x3 grid state (sim/grid_mission.py).
-// ?state=data/<path>.json reads another state file (only relative paths under dashboard/data/; default data/state.json);
-// the point cloud is resolved relative to that file's folder. ?poll=<ms> sets the poll interval (min 100 ms).
+// ?state=data/<path>.json reads another state file (only relative paths under dashboard/data/ or dashboard/fixtures/;
+// default data/state.json); ?data=data/<dir> is an alias for ?state=data/<dir>/state.json (R2-001).
+// The point cloud is resolved relative to that file's folder. ?poll=<ms> sets the poll interval (min 100 ms).
 // #ping=<id> opens that ping's detail view. A missing state file shows the demo state.
 import { demoState, demoCloud } from './demo.js';
+import { digScore, triageOf, patternLabel, rateOf, spark, caveatsOf, triageChip, drawTriageRing, ALWAYS } from './vitals.js';
 
 const params = new URLSearchParams(location.search);
 const STATE_URL = (() => {
-  const q = params.get('state');
-  return q && /^data\/(?:[\w-]+\/)*[\w-]+(?:\.[\w-]+)*\.json$/.test(q) && !q.split('/').includes('..') ? q : 'data/state.json';
+  const d = params.get('data'), q = params.get('state') || (d ? d.replace(/\/+$/, '') + '/state.json' : null);
+  return q && /^(?:data|fixtures)\/(?:[\w-]+\/)*[\w-]+(?:\.[\w-]+)*\.json$/.test(q) && !q.split('/').includes('..') ? q : 'data/state.json';
 })();
-const DATA = STATE_URL.slice(0, STATE_URL.lastIndexOf('/'));
+const DATA = STATE_URL.slice(0, STATE_URL.lastIndexOf('/')).replace(/\/frames$/, '');   // frames/state_NNNN.json share the run's pointcloud.bin
 const POLL_MS = Math.max(100, +params.get('poll') || 1000), DEMO_POLL_MS = Math.max(POLL_MS, 5000);
 const COL = { detect: '#ff4545', cone: '#ffe14a', coord: '#6fd36f', radar: '#ff9f43', teal: '#22c3d6', good: '#4fd18b', bad: '#ff6464', fg: '#e3eaef', muted: '#8a9caa', grid: 'rgba(150,180,200,0.10)' };
 // status -> [long label, short label (small map scale), colour]
 const STATUS = {
   unvisited: ['unvisited', 'unvisited', COL.muted], surveying: ['surveying', 'survey', COL.coord], scanning: ['radar scan', 'scan', COL.radar],
-  ping: ['ping', 'ping', COL.detect], lead: ['acoustic lead', 'lead', COL.teal], radar_ping: ['acoustic lead', 'lead', COL.teal],
-  dismissed_nonhuman: ['non-human', 'non-human', '#6d7d89'], no_signal_not_cleared: ['not cleared', 'not cleared', COL.muted],
+  ping: ['ping', 'ping', COL.detect], lead: ['acoustic lead', 'lead', COL.teal], radar_ping: ['ping', 'ping', COL.detect],   // R2-017
+  dismissed_nonhuman: ['non-human sound · not cleared', 'non-human', COL.muted, 'non-human · not cleared'], no_signal_not_cleared: ['not cleared', 'not cleared', COL.muted],   // R2-006
+  uncertain_sound: ['uncertain sound · not cleared', 'uncertain', COL.muted, 'uncertain · not cleared'],
 };
 const st = s => STATUS[s] || [s, s, COL.muted];
+// A lead whose evidence is only ambiguous / low-association clips reads "ambiguous lead" (pile.association, the
+// "Lead (ambiguous" why prefix, or every human-like clip of that pile with association != confident or conf < 0.6).
+function pileAmb(p) {
+  if (p.association === 'ambiguous' || /^Lead \(ambiguous/.test(p.why || '')) return true;
+  if (p.association === 'confident' || !['lead', 'radar_ping'].includes(p.status)) return false;
+  const cl = (S?.acoustic_clips || []).filter(c => c.pile_id === p.id && (c.scores?.human ?? 0) >= 0.4 && c.forwarded !== false);
+  return cl.length > 0 && cl.every(c => isAmb(c) || (c.association_conf != null && c.association_conf < 0.6));
+}
+const pst = p => { const v = st(p.status); return pileAmb(p) && ['lead', 'radar_ping'].includes(p.status) ? ['ambiguous lead', 'amb. lead', v[2], 'ambiguous lead'] : v; };
 const $ = id => document.getElementById(id);
 const f0 = v => (v == null ? '—' : (+v).toFixed(0));
 const f1 = v => (v == null ? '—' : (+v).toFixed(1));
@@ -29,11 +41,13 @@ const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '
 let S = null;                 // current state
 let cloud = null, cloudKey = null;
 let live = false, lastRaw = null;
-const layers = { belief: true, rings: false, acoustic: true, sites: true, piles: true };
+const layers = { belief: true, rings: false, acoustic: true, sites: true, piles: true, reach: true };
 const isGrid = () => Array.isArray(S?.piles) && S.piles.length > 0;
 // UI state that survives re-renders
 let selListen = null;                                  // null = follow the latest listen
 const openRows = new Set(), openWhy = new Set(), decOpen = new Map();
+let dismOpen = false;
+let DIG = [], DIG_BY = new Map();       // dig order (ranked pings), recomputed per state
 
 // ---------------- data ----------------
 async function poll() {
@@ -160,7 +174,7 @@ const TILES = {
     filter: 'brightness(0.7) saturate(0.85)',
     attr: 'Imagery © <a href="https://www.esri.com/" target="_blank" rel="noopener">Esri</a>, Maxar, Earthstar Geographics, and the GIS User Community' },
 };
-let basemap = 'map';
+let basemap = 'relief';   // R2-016: the synthetic piles should not sit on real street labels by default
 const tileCache = new Map(), tileStat = { map: { ok: 0, fail: 0 }, sat: { ok: 0, fail: 0 } };
 let tileVer = 0;
 function tile(mode, z, x, y) {
@@ -205,7 +219,7 @@ function drawBasemap() {
   if (!tilesOn()) return false;
   const key = [basemap, view.cx, view.cy, view.scale, W, Hh, dpr, tileVer, JSON.stringify(S?.site?.geo || null)].join('|');
   if (key !== bmKey) { bmKey = key; renderTiles(basemap); }
-  ctx.drawImage(bmCv, 0, 0, W, Hh); return true;
+  ctx.globalAlpha = basemap === 'map' ? 0.55 : 0.8; ctx.drawImage(bmCv, 0, 0, W, Hh); ctx.globalAlpha = 1; return true;
 }
 function renderBasemapUI() {
   document.querySelectorAll('[data-bm]').forEach(b => { b.setAttribute('aria-pressed', b.dataset.bm === basemap); b.classList.toggle('dead', tilesDead(b.dataset.bm)); b.title = tilesDead(b.dataset.bm) ? 'Map tiles unavailable (offline): showing the LiDAR relief' : ''; });
@@ -411,7 +425,10 @@ function draw(now = performance.now()) {
       ctx.strokeStyle = `rgba(255,69,69,${1 - pulse})`; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(x, y, 7 + pulse * 22, 0, Math.PI * 2); ctx.stroke();
       ctx.fillStyle = COL.detect; ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill(); ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.5; ctx.stroke();
     }
-    const txt = weak ? `${c.id} · ${supText(c)}` : small ? c.id : `${c.id} · belief share ${f2(c.p_mass)}`;
+    const dg = DIG_BY.get(c.id), t = dg?.triage, rk = dg ? `#${dg.rank} ` : '';
+    if (t) drawTriageRing(ctx, x, y, t);   // triage = ring style around the red ping (dig order), never a new hue
+    const tri = t && c.vitals ? ` · ${t.label}` : '';
+    const txt = small ? `${rk}${c.id}${tri}` : weak ? `${rk}${c.id}${tri} · ${supText(c)}` : `${rk}${c.id}${tri || ' · belief share ' + f2(c.p_mass)}`;
     qLabel(txt, x + 12, y - 10, weak ? '#ffd9a6' : '#ffd0d0', weak ? 'rgba(58,35,6,0.92)' : 'rgba(60,8,8,0.88)', 1, weak ? 'rgba(255,159,67,0.7)' : null);
   }
   // drones; drones close together in the same state share one label ("d1–d3 · docked")
@@ -419,7 +436,11 @@ function draw(now = performance.now()) {
   for (const d of S.drones || []) {
     const [x, y] = toPx(d.pose[0], d.pose[1]), yaw = (d.pose[3] ?? 0) * Math.PI / 180;
     ctx.save(); ctx.translate(x, y); ctx.rotate(-yaw); ctx.beginPath(); ctx.moveTo(10, 0); ctx.lineTo(-6, 6); ctx.lineTo(-3, 0); ctx.lineTo(-6, -6); ctx.closePath();
-    ctx.fillStyle = d.state === 'listening' ? COL.cone : COL.fg; ctx.fill(); ctx.strokeStyle = '#0b1016'; ctx.lineWidth = 1.5; ctx.stroke(); ctx.restore();
+    if (d.state === 'listening') {   // R2-022: white outline + a small "ear" ring, not the human-audio yellow
+      ctx.fillStyle = '#0b1016'; ctx.fill(); ctx.strokeStyle = COL.fg; ctx.lineWidth = 1.6; ctx.stroke(); ctx.restore();
+      ctx.save(); ctx.strokeStyle = 'rgba(227,234,239,0.8)'; ctx.lineWidth = 1.2; ctx.beginPath(); ctx.arc(x, y, 13, -0.35 * Math.PI, 0.35 * Math.PI); ctx.stroke();
+      ctx.beginPath(); ctx.arc(x, y, 13, 0.65 * Math.PI, 1.35 * Math.PI); ctx.stroke(); ctx.restore();
+    } else { ctx.fillStyle = COL.fg; ctx.fill(); ctx.strokeStyle = '#0b1016'; ctx.lineWidth = 1.5; ctx.stroke(); ctx.restore(); }
     const g = groups.find(g => g.state === d.state && Math.hypot(g.lx - x, g.ly - y) < 26);
     if (g) { g.ids.push(d.id); g.x = Math.min(g.x, x); g.lx = x; g.ly = y; } else groups.push({ state: d.state, ids: [d.id], x, y, lx: x, ly: y });
   }
@@ -450,8 +471,9 @@ function drawGridLayer(now) {
     const latest = k === ds.length - 1, to = pileById(d.to_pile);
     arrow(pileById(d.from_pile).xy, to.xy, COL.coord, latest ? 0.95 : 0.35, latest ? `dispatch → ${d.to_pile}${to.priority != null && !short ? ' · priority ' + to.priority : ''}` : null);
   });
+  if (layers.reach) for (const p of S.piles) drawReach(p, short);
   for (const p of S.piles) {
-    const [x, y] = toPx(...p.xy), [lng, sht, col] = st(p.status), txt = (short ? sht : lng).toUpperCase(), isActive = p.id === active;
+    const [x, y] = toPx(...p.xy), [lng0, sht, col, mapLng] = pst(p), lng = mapLng || lng0, txt = (short ? sht : lng).toUpperCase(), isActive = p.id === active;
     ctx.save();
     ctx.beginPath(); ctx.arc(x, y, 8.5 * view.scale, 0, Math.PI * 2);
     ctx.strokeStyle = col; ctx.globalAlpha = isActive ? 0.95 : 0.45; ctx.lineWidth = isActive ? 2.4 : 1.2;
@@ -474,10 +496,53 @@ function drawGridLayer(now) {
         roundRect(bx, ty - 14, bw, 18, 9); ctx.fill(); ctx.fillStyle = '#04161a'; ctx.fillText(pt, bx + 5, ty);
       }
       ctx.font = '500 10.5px "IBM Plex Mono", monospace';
-      ctx.fillStyle = 'rgba(11,16,22,0.88)'; ctx.fillRect(x - cw / 2 - 5, ty + 7, cw + 10, 15); ctx.strokeStyle = col; ctx.lineWidth = 1; ctx.setLineDash(p.association === 'ambiguous' ? [3, 2] : []); ctx.strokeRect(x - cw / 2 - 5, ty + 7, cw + 10, 15); ctx.setLineDash([]);
+      ctx.fillStyle = 'rgba(11,16,22,0.88)'; ctx.fillRect(x - cw / 2 - 5, ty + 7, cw + 10, 15); ctx.strokeStyle = col; ctx.lineWidth = 1; ctx.setLineDash(pileAmb(p) ? [3, 2] : []); ctx.strokeRect(x - cw / 2 - 5, ty + 7, cw + 10, 15); ctx.setLineDash([]);
       ctx.fillStyle = col; ctx.fillText(txt, x - cw / 2, ty + 18);
     } });
   }
+}
+// Radar reach (piles[].radar_coverage): hatch the part of a searched pile the radar could not reach from the sites
+// it scanned from. The in-reach area is drawn as discs around those sensor positions, sized so the hatched share of
+// the pile matches 1 - radar_coverage; without radar_coverage the disc radius is the nominal reach (~3 m).
+const PILE_R = 9, hatchCv = document.createElement('canvas'), reachCache = new Map();
+const DISC = (() => { const o = []; for (let i = -PILE_R; i <= PILE_R; i += 0.75) for (let j = -PILE_R; j <= PILE_R; j += 0.75) if (i * i + j * j <= PILE_R * PILE_R) o.push([i, j]); return o; })();
+function reachGeom(p) {
+  const m = S.mission || {}, vis = m.visited || [];
+  if (!vis.includes(p.id)) return null;
+  const cov = p.radar_coverage;
+  if (cov == null && p.id === m.active_pile && m.stage === 'pile') return null;          // still scanning
+  let pts = (S.scans || []).filter(o => o.pile_id === p.id && o.sensor_pose && !o.doppler_moving).map(o => [o.sensor_pose[0], o.sensor_pose[1]]);
+  if (!pts.length) pts = (S.landing_sites || []).filter(l => l.pile_id === p.id && l.status === 'used').map(l => l.xy);
+  if (!pts.length || (cov != null && cov >= 0.98)) return null;
+  const key = `${p.id}|${cov}|${pts.map(q => q.join(',')).join(';')}`;
+  if (reachCache.has(key)) return reachCache.get(key);
+  const rel = pts.map(q => [q[0] - p.xy[0], q[1] - p.xy[1]]);
+  const covered = R => DISC.filter(([i, j]) => rel.some(([a, b]) => (i - a) ** 2 + (j - b) ** 2 <= R * R)).length / DISC.length;
+  let R;
+  if (cov != null) { let lo = 0, hi = 2 * PILE_R + 12; for (let k = 0; k < 22; k++) { const mid = (lo + hi) / 2; covered(mid) < cov ? lo = mid : hi = mid; } R = (lo + hi) / 2; }
+  else R = Math.min(m.radar_reach_beneath_m ?? 3, 3.5);
+  const g = covered(R) > 0.98 ? null : { R, pts, beyond: cov != null ? 1 - cov : 1 - covered(R) };
+  reachCache.set(key, g); if (reachCache.size > 200) reachCache.clear();
+  return g;
+}
+function drawReach(p, short) {
+  const g = reachGeom(p); if (!g) return;
+  const s = view.scale, half = PILE_R * s + 2, size = Math.ceil(2 * half), [cx, cy] = toPx(...p.xy);
+  if (size < 8 || size > 4000) return;
+  hatchCv.width = size * dpr; hatchCv.height = size * dpr;
+  const h = hatchCv.getContext('2d'); h.setTransform(dpr, 0, 0, dpr, 0, 0); h.clearRect(0, 0, size, size);
+  h.save(); h.beginPath(); h.arc(half, half, PILE_R * s, 0, Math.PI * 2); h.clip();
+  h.fillStyle = 'rgba(11,16,22,0.28)'; h.fillRect(0, 0, size, size);
+  h.strokeStyle = 'rgba(205,218,228,0.42)'; h.lineWidth = 1; h.beginPath();
+  for (let k = -size; k < size; k += 7) { h.moveTo(k, size); h.lineTo(k + size, 0); }
+  h.stroke(); h.restore();
+  h.globalCompositeOperation = 'destination-out'; h.fillStyle = '#000';
+  for (const q of g.pts) { const [px, py] = toPx(...q); h.beginPath(); h.arc(px - cx + half, py - cy + half, g.R * s, 0, Math.PI * 2); h.fill(); }
+  h.globalCompositeOperation = 'source-over';
+  ctx.drawImage(hatchCv, cx - half, cy - half, size, size);
+  const t = short ? 'beyond radar reach' : `beyond radar reach — acoustic leads only${p.radar_coverage != null ? ` (${f0(100 * g.beyond)}%)` : ''}`;
+  ctx.font = FONT_L; const w = ctx.measureText(t).width;
+  qLabel(t, cx - w / 2, cy + PILE_R * s + 15, '#c3d0d9', 'rgba(11,16,22,0.84)', 8, 'rgba(205,218,228,0.35)');
 }
 function roundRect(x, y, w, h, r) { ctx.beginPath(); ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r); ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath(); }
 function scaleBar() {
@@ -554,24 +619,37 @@ function renderBanner() {
   } else b.hidden = true;
 }
 
-function renderCands(grid) {
+// Dig order: radar pings ranked by breathing-pattern triage x localisation certainty x depth (vitals.js).
+function computeDig() {
   const cands = S.radar_candidates || [];
-  $('nCand').textContent = cands.length;
-  $('candsTitle').textContent = grid ? 'Radar pings' : 'Radar candidates';
-  const surf = c => (S.heightmap ? hmAt(c.xy[0], c.xy[1]) : null);
-  if (!cands.length) { $('cands').innerHTML = '<p class="empty">No radar candidates yet. No detection is not proof of absence.</p>'; return; }
-  $('cands').innerHTML = cands.map(c => {
-    const e = c.cov ? ellipse(c) : null, weak = isWeak(c), mv = c.kind === 'moving', di = depthInfo(c, surf(c));
+  DIG = cands.map(c => {
+    const surf = S.heightmap ? hmAt(c.xy[0], c.xy[1]) : null, di = depthInfo(c, surf), e = c.cov ? ellipse(c) : null;
+    return { c, di, e, ...digScore(c, di, e) };
+  }).sort((a, b) => b.score - a.score || (b.c.p_mass ?? 0) - (a.c.p_mass ?? 0) || a.c.id.localeCompare(b.c.id));
+  DIG.forEach((d, k) => { d.rank = k + 1; });
+  DIG_BY = new Map(DIG.map(d => [d.c.id, d]));
+}
+function renderCands(grid) {
+  computeDig();
+  $('nCand').textContent = DIG.length;
+  $('candsTitle').textContent = 'Dig order';
+  $('candsTitle').title = grid ? 'Radar pings, ranked' : 'Radar candidates, ranked';
+  if (!DIG.length) { $('cands').innerHTML = '<p class="empty">No radar pings yet. No detection is not proof of absence.</p>'; return; }
+  const anyV = DIG.some(d => d.c.vitals);
+  $('cands').innerHTML = DIG.map(d => {
+    const { c, di, triage: t, weak } = d, v = c.vitals || null, mv = c.kind === 'moving';
     const lab = mv ? 'moving track' : weak ? 'insufficient evidence' : 'candidate region';
-    if (grid) return `<button class="prow ${weak ? 'weak' : ''}" data-id="${esc(c.id)}"><i class="mk"></i>
-      <span class="l1"><b>${esc(c.id)}</b><small>${lab}</small></span><span class="go">3D view →</span>
-      <span class="l2">${weak ? `<span class="sup">${esc(supText(c))}</span>` : `belief share <b>${f2(c.p_mass)}</b>`} · depth <b>${esc(di.short)}</b>${c.breathing_hz ? ` · ${(c.breathing_hz * 60).toFixed(0)}/min` : ''}</span></button>`;
-    return `<button class="cand ${weak ? 'weak' : ''} ${mv ? 'moving' : ''}" data-id="${esc(c.id)}">
-      <div class="t"><span>${esc(c.id)}${c.pile_id ? ` <small class="pl">pile ${esc(c.pile_id)}</small>` : ''}</span><small>${lab}</small></div>
-      <div class="kv">${weak ? `<span>support<b class="sup">${esc(supText(c))}</b></span>` : `<span>belief share<b>${f2(c.p_mass)}</b></span>`}<span>breathing<b>${c.breathing_hz ? (c.breathing_hz * 60).toFixed(0) + '/min' : '—'}</b></span><span>depth<b>${esc(di.short)}</b></span>
-      <span>95% region<b>${e ? f1(2 * e.rx) + '×' + f1(2 * e.ry) : '—'}</b></span><span>evidence<b>${(c.evidence || []).length} scans</b></span><span>at<b>${f1(c.xy[0])}, ${f1(c.xy[1])}</b></span></div>
-      <div class="go">Open LiDAR view →</div></button>`;
-  }).join('');
+    const pl = patternLabel(v), rate = rateOf(v, c), sp = spark(c, { w: 92, h: 24 });
+    const ci = v?.rate_ci?.length === 2 && v.rate_ci[0] != null ? ` (${f0(v.rate_ci[0])}–${f0(v.rate_ci[1])})` : '';
+    const cav = caveatsOf(c);
+    return `<button class="dig ${weak ? 'weak' : ''} t-${t.key}" data-id="${esc(c.id)}" title="${esc(cav.map(k => '• ' + k).join('\n'))}">
+      <span class="rk">${d.rank}</span>
+      <span class="l1"><i class="mk"></i><b>${esc(c.id)}</b><small>${lab}</small>${triageChip(t)}</span>
+      <span class="sp${sp?.rateOnly ? ' ro' : ''}">${sp ? sp.svg + `<small>${esc(sp.label)}</small>` : '<small>no breathing signal</small>'}</span>
+      <span class="l2">${pl ? `<span class="pat p-${esc(v.pattern)}">${esc(pl)}</span>` : `<span class="pat none">${v ? 'pattern not reported' : 'no breathing-pattern analysis'}</span>`}${v?.pattern_conf != null ? ` <span class="cf" title="pattern confidence">conf ${f2(v.pattern_conf)}</span>` : ''}</span>
+      <span class="l3">${rate ? `<b>${f0(rate)}</b>/min${esc(ci)} · ` : ''}depth <b>${esc(di.short)}</b> · ${weak ? `<span class="sup">${esc(supText(c))}</span>` : `belief share <b>${f2(c.p_mass)}</b>`}</span>
+      <span class="l4"><span class="cv">${cav.length} caveat${cav.length === 1 ? '' : 's'} (hover)</span><span class="go">3D view →</span></span></button>`;
+  }).join('') + `<p class="dignote">Ranked by ${anyV ? 'breathing-pattern triage hint (weighted by pattern confidence)' : 'triage hint (none yet: all “assess”)'} × localisation certainty × depth. ${esc(ALWAYS)} Every ping is a candidate search region, not a confirmed person.</p>`;
 }
 $('cands').addEventListener('click', e => { const b = e.target.closest('[data-id]'); if (b) openDetail((S.radar_candidates || []).find(c => c.id === b.dataset.id)); });
 
@@ -581,11 +659,11 @@ function renderPiles() {
   const rest = S.piles.filter(p => !vis.includes(p.id)).sort((a, b) => (b.priority ?? -1) - (a.priority ?? -1) || a.id.localeCompare(b.id));
   const topUnvisited = done ? null : rest.find(p => p.priority != null && p.priority >= pmin);
   $('pilesTitle').textContent = done ? 'Open leads for ground teams' : 'Pile priority';
-  $('nPiles').textContent = `${vis.length} searched`;
+  $('nPiles').textContent = `${vis.length}/${S.piles.length}`; $('nPiles').title = `${vis.length} of ${S.piles.length} piles searched by the drones`;   // R2-018
   const row = p => {
-    const [txt, , col] = st(p.status);
+    const [txt, , col] = pst(p), amb = pileAmb(p);
     return `<div class="row ${p === topUnvisited ? 'top' : ''} ${vis.includes(p.id) ? 'done' : ''} ${openRows.has(p.id) ? 'open' : ''}" data-pile="${esc(p.id)}" title="Click to expand">
-      <b>${esc(p.id)}</b><span class="why"><span class="chip" style="color:${col};border-color:${col}">${esc(txt)}</span>${p.association === 'ambiguous' ? '<span class="chip amb">ambiguous direction</span>' : ''} ${esc(p.why)}</span>
+      <b>${esc(p.id)}</b><span class="why"><span class="chip" style="color:${col};border-color:${col}${amb ? ';border-style:dashed' : ''}">${esc(txt)}</span>${amb ? '<span class="chip amb" title="The drones\' bearings do not single out this pile: the sound may come from a neighbour">ambiguous direction</span>' : ''} ${esc(p.why)}</span>
       <span class="s">${p.priority ?? '—'}</span></div>`;
   };
   $('piles').innerHTML = (visited.length ? `<div class="sub">Searched by the drones</div>${visited.map(row).join('')}` : '')
@@ -636,17 +714,51 @@ function renderClips() {
   $('listens').innerHTML = L.length > 1 ? L.map(l => { const t = clips.find(c => (c.listen ?? 0) === l)?.t;
     return `<button role="tab" data-l="${l}" aria-selected="${l === cur}">Listen ${l}${t != null ? ' · t ' + f0(t) + ' s' : ''}${l === L[L.length - 1] ? ' (latest)' : ''}</button>`; }).join('') : '';
   const list = clips.filter(c => (c.listen ?? 0) === cur).sort((a, b) => (b.priority ?? 0) - (a.priority ?? 0));
-  $('clips').innerHTML = list.length ? list.map(c => {
-    const h = c.scores?.human ?? 0, nonhuman = h < 0.4, by = byInfo(c.by);
-    return `<div class="clip ${nonhuman ? 'nonhuman' : ''} ${isAmb(c) ? 'amb' : ''}">
+  const keep = list.filter(c => !isDismissed(c)), dism = list.filter(isDismissed);
+  $('clips').innerHTML = !list.length ? '<p class="empty">Listening starts once the drones have landed and the radar phase at the first pile is over.</p>'
+    : keep.map(c => {
+      const h = c.scores?.human ?? 0, nonhuman = h < 0.4, by = audioBy(c);
+      return `<div class="clip ${nonhuman ? 'nonhuman' : ''} ${isAmb(c) ? 'amb' : ''}">
       <div class="hd"><span><b>${esc(c.pile_id)}</b> · listen ${c.listen ?? '—'}${c.t != null ? ' · t ' + f0(c.t) + ' s' : ''}</span><span><span class="cls">${esc(c.class)}</span> <span class="by ${by.cls}" title="${esc(by.tip)}">${esc(by.txt)}</span></span></div>
-      ${c.transcript ? `<q>${esc(c.transcript)}</q>` : ''}
-      <div class="prov">${provenance(c)}</div>${ambChip(c)}
+      ${clipSpeech(c)}
+      <div class="prov">${provenance(c)}${c.novelty != null ? ` · novelty ${f1(c.novelty)}` : ''}${c.audio_analysis && c.by ? ` · judge ${esc(byInfo(c.by).txt)}` : ''}</div>${ambChip(c)}
       <div class="scores"><span>human${bar(h)}</span><span>urgency${bar(c.scores?.urgency)}</span><span>reliability${bar(c.scores?.reliability)}</span><span class="pr" title="acoustic priority 0-100">${c.priority ?? '—'}<small>priority</small></span></div>
       ${c.rationale ? `<div class="why ${openWhy.has(c.id) ? 'open' : ''}" data-clip="${esc(c.id)}" title="Click to expand">${esc(c.rationale)}</div>` : ''}</div>`;
-  }).join('') : '<p class="empty">Listening starts once the drones have landed and the radar phase at the first pile is over.</p>';
+    }).join('') + (dism.length ? `<details class="dism"${dismOpen ? ' open' : ''}><summary>Dismissed (non-human) · ${dism.length}</summary>
+      ${dism.map(c => { const by = audioBy(c), why = (Array.isArray(c.dismissed) && c.dismissed.length ? c.dismissed.join(', ') : `${c.class} (human ${f2(c.scores?.human)})`);
+        return `<div class="drow" title="${esc(c.rationale || '')}"><b>${esc(c.pile_id)}</b><span class="cls">${esc(c.class)}</span><span class="dw">${esc(why)}${c.novelty != null ? ` · novelty ${f1(c.novelty)}` : ''}</span><span class="by ${by.cls}" title="${esc(by.tip)}">${esc(by.txt)}</span></div>`; }).join('')}
+      <p class="dnote">Dismissed as acoustic leads only: these piles are <b>not cleared</b>.</p></details>` : '');
+}
+// Clips dismissed before the analyser (stage 1 not forwarded) or judged non-human: collapsed, never "cleared".
+const isDismissed = c => c.forwarded === false || (c.scores?.human ?? 0) < 0.4;
+// Provenance of the audio analysis (language / transcript / translation / distress): Gemini or the local fallback.
+function audioBy(c) {
+  const b = String(c.audio_analysis?.by || '').toLowerCase();
+  if (b === 'gemini') return { cls: 'llm', txt: 'Gemini', tip: `Audio analysed by Gemini${c.audio_analysis.model ? ' (' + c.audio_analysis.model + ')' : ''}: language, transcript, translation, distress` };
+  if (b) return { cls: 'fb', txt: 'fallback', tip: 'Local fallback: Whisper + multilingual distress keywords (no Gemini call)' };
+  return byInfo(c.by);
+}
+const LANG = { zh: 'Mandarin', 'zh-tw': 'Mandarin (Taiwan)', 'zh-hant': 'Mandarin (Traditional)', cmn: 'Mandarin', nan: 'Taiwanese Hokkien', 'nan-tw': 'Taiwanese Hokkien', hak: 'Hakka',
+  en: 'English', id: 'Indonesian', vi: 'Vietnamese', tl: 'Tagalog', fil: 'Filipino', th: 'Thai', ja: 'Japanese', ko: 'Korean', es: 'Spanish' };
+function langOf(c) {
+  const l0 = Array.isArray(c.languages) && c.languages[0], code = (l0?.code || c.language || '').trim();
+  if (!code) return null;
+  const nm = l0?.name && l0.name !== code ? l0.name : LANG[code.toLowerCase()] || LANG[code.toLowerCase().split('-')[0]] || code;
+  const more = Array.isArray(c.languages) && c.languages.length > 1 ? ` +${c.languages.length - 1}` : '';
+  return { code, name: nm, txt: `${nm} · ${code}${more}`, en: /^en(\b|-)/i.test(code) };
+}
+const DISTRESS = { call_for_help: 'call for help', trapped: 'trapped', injured: 'injured', cant_breathe: "can't breathe", child: 'child', multiple_people: 'several people', bleeding: 'bleeding', pain: 'pain' };
+// Language chip, original transcript, English translation and distress tags (all optional).
+function clipSpeech(c) {
+  const lg = langOf(c), orig = c.transcript_original || c.transcript || '', tr = (c.translation || '').trim();
+  const showTr = tr && tr !== orig.trim() && !(lg?.en);
+  const dist = Array.isArray(c.distress) ? c.distress : [];
+  return (lg || dist.length ? `<div class="lang">${lg ? `<span class="lg" title="Language detected by ${esc(audioBy(c).txt)}">${esc(lg.txt)}</span>` : ''}${dist.map(d => `<span class="ds" title="Distress indicator reported by the audio analysis (${esc(audioBy(c).txt)}); not verified">${esc(DISTRESS[d] || String(d).replace(/_/g, ' '))}</span>`).join('')}</div>` : '')
+    + (orig ? `<q${lg ? ` lang="${esc(lg.code)}"` : ''}>${esc(orig)}</q>` : '')
+    + (showTr ? `<div class="tr"><span>EN</span>${esc(tr)}</div>` : '');
 }
 $('listens').addEventListener('click', e => { const b = e.target.closest('[data-l]'); if (!b) return; const l = +b.dataset.l, L = listensOf(); selListen = l === L[L.length - 1] ? null : l; renderClips(); draw(); });
+$('clips').addEventListener('toggle', e => { if (e.target.matches?.('details.dism')) dismOpen = e.target.open; }, true);
 $('clips').addEventListener('click', e => { const w = e.target.closest('.why'); if (!w) return; const id = w.dataset.clip; openWhy.has(id) ? openWhy.delete(id) : openWhy.add(id); w.classList.toggle('open'); });
 
 function hmAt(x, y) {
@@ -656,6 +768,29 @@ function hmAt(x, y) {
 }
 
 // ---------------- detail: LiDAR view with depth ping ----------------
+// Depth and breathing side by side, then the vitals numbers, the triage reason and every caveat.
+function vitalsCard(c, di) {
+  if (!DIG_BY.has(c.id)) computeDig();
+  const dg = DIG_BY.get(c.id), v = c.vitals || null, t = dg?.triage || triageOf(v), rate = rateOf(v, c), sp = spark(c, { w: 300, h: 46, win: 45 });
+  const pl = patternLabel(v), cav = caveatsOf(c);
+  const kv = [];
+  if (rate) kv.push(['Rate', `${f0(rate)}/min${v?.rate_ci?.[0] != null ? ` <small>95% ${f0(v.rate_ci[0])}–${f0(v.rate_ci[1])}</small>` : v ? '' : ' <small>periodic radar return</small>'}`]);
+  if (v?.cv != null) kv.push(['Variability', `${f2(v.cv)} <small>breath-to-breath CV</small>`]);
+  if (v?.apnea_events_per_min != null) kv.push(['Pauses > 10 s', `${f1(v.apnea_events_per_min)}/min`]);
+  if (v?.movement != null) kv.push(['Movement', `${f0(100 * v.movement)}% <small>of the window</small>`]);
+  if (v?.depth_rel != null) kv.push(['Chest excursion', `${f1(v.depth_rel)}× calm adult <small>LOW confidence${v.depth_rel_conf != null ? ' (' + f2(v.depth_rel_conf) + ')' : ''}</small>`]);
+  if (v?.pattern_conf != null) kv.push(['Pattern confidence', f2(v.pattern_conf) + (v.sqi != null ? ` <small>signal quality ${f2(v.sqi)}</small>` : '')]);
+  if (dg) kv.push(['Dig order', `#${dg.rank} of ${DIG.length} <small>triage ${f2(dg.tri)} × localisation ${f2(dg.loc)} × depth ${f2(dg.acc)}</small>`]);
+  return `<div class="vt">
+      <div class="tile dtile"><h5>Depth</h5><b>${esc(di.short.replace(/\s*\((nominal|radar estimate)\)$/, ''))}</b><small>${esc(di.nominal ? 'nominal: assumed, not measured' : 'radar estimate, below the LiDAR surface')}</small></div>
+      <div class="tile btile"><h5>Breathing pattern ${triageChip(t)}</h5><b class="pat">${esc(pl || (v ? 'pattern not reported' : 'not analysed in this run'))}</b>
+        ${sp ? `<div class="bsp">${sp.svg}<small title="${esc(sp.tip)}">${esc(sp.label)}${sp.measured ? '' : sp.rateOnly ? ': periodic radar return, no pattern analysis; the shape is not a pattern' : ': shape from rate, variability and pauses, not the measured waveform'}</small></div>` : '<small>no periodic signal</small>'}</div>
+    </div>
+    ${kv.length ? `<dl class="vkv">${kv.map(([k, x]) => `<dt>${k}</dt><dd>${x}</dd>`).join('')}</dl>` : ''}
+    ${v?.triage_reason || v?.pattern_reason ? `<p class="vwhy">${esc(v.triage_reason || '')}${v.pattern_reason ? `<small>${esc(v.pattern_reason)}</small>` : ''}</p>` : ''}
+    <details class="vcav"${v ? '' : ' open'}><summary>Caveats (${cav.length})</summary><ul>${cav.map(k => `<li>${esc(k)}</li>`).join('')}</ul></details>`;
+}
+
 let viewer = null;
 async function openDetail(c) {
   if (!c) return;
@@ -667,10 +802,9 @@ async function openDetail(c) {
   $('dStatus').className = 'status' + (weak || moving ? ' weak' : '');
   const pile = c.pile_id ? pileById(c.pile_id) : null;
   const rows = [
-    ...(pile ? [['Pile', `${esc(pile.id)} · ${esc(st(pile.status)[0])}${pile.priority != null ? ' · acoustic priority ' + pile.priority : ''}`]] : []),
+    ...(pile ? [['Pile', `${esc(pile.id)} · ${esc(pst(pile)[0])}${pile.priority != null ? ' · acoustic priority ' + pile.priority : ''}`]] : []),
     ['Position (E, N)', `${f1(c.xy[0])}, ${f1(c.xy[1])} m`],
     ['Surface (LiDAR)', `${f1(surf)} m`],
-    ['Depth', `${esc(di.long)}<small>${esc(di.note)}</small>`],
     ['95% region', e ? `${f1(2 * e.rx)} × ${f1(2 * e.ry)} m` : '—'],
     weak ? ['Radar support', `<span style="color:var(--radar)">${esc(supText(c))}</span><small>too few independent ranges agree for a fix; belief share not shown</small>`]
       : ['Belief share', `${f2(c.p_mass)}<small>share of this pile's radar belief at this spot; not the probability that a person is there</small>`],
@@ -678,11 +812,12 @@ async function openDetail(c) {
     ['Motion', moving ? 'Doppler shows bulk motion' : 'stationary'],
   ];
   $('dFacts').innerHTML = rows.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join('');
+  $('dVitals').innerHTML = vitalsCard(c, di);
   // What was heard at this pile, with provenance (R1-029)
-  const heard = (S.acoustic_clips || []).filter(a => c.pile_id && a.pile_id === c.pile_id && (a.scores?.human ?? 0) >= 0.4).sort((a, b) => (a.listen ?? 0) - (b.listen ?? 0));
+  const heard = (S.acoustic_clips || []).filter(a => c.pile_id && a.pile_id === c.pile_id && !isDismissed(a)).sort((a, b) => (a.listen ?? 0) - (b.listen ?? 0));
   $('dHeard').innerHTML = !isGrid() ? '' : `<h4>Heard at this pile</h4>` + (heard.length ? heard.map(a => {
-    const p = pileById(a.pile_id), dist = p && a.origin ? Math.hypot(p.xy[0] - a.origin[0], p.xy[1] - a.origin[1]) : null, by = byInfo(a.by);
-    return `<div class="heard">${a.transcript ? `<q>${esc(a.transcript)}</q>` : ''}
+    const p = pileById(a.pile_id), dist = p && a.origin ? Math.hypot(p.xy[0] - a.origin[0], p.xy[1] - a.origin[1]) : null, by = audioBy(a);
+    return `<div class="heard">${clipSpeech(a)}
       <span><span class="cls">${esc(a.class)}</span> · priority ${a.priority ?? '—'} · listen ${a.listen ?? '—'}${a.t != null ? ' (t ' + f0(a.t) + ' s)' : ''} · <span class="by ${by.cls}" title="${esc(by.tip)}">${esc(by.txt)}</span></span>
       <span class="prov">${provenance(a)}${dist != null ? ` · from ${f0(dist)} m away` : ''}</span>${ambChip(a)}</div>`;
   }).join('') : '<p class="empty">Nothing human-like was heard from this pile.</p>');
@@ -696,7 +831,8 @@ async function openDetail(c) {
   try {
     viewer ||= await import('./viewer3d.js').then(m => m.createViewer($('v3d')));
     $('vhint').hidden = false;
-    viewer.show({ cloud, center: [c.xy[0], c.xy[1]], surf, z, ellipse: e, id: c.id, depthLabel: di.long, weak: weak || moving });
+    const tv = c.vitals ? ' · ' + (DIG_BY.get(c.id)?.triage || triageOf(c.vitals)).label + ' (aid)' : '';
+    viewer.show({ cloud, center: [c.xy[0], c.xy[1]], surf, z, ellipse: e, id: c.id, depthLabel: di.long + tv, weak: weak || moving });
   } catch (err) {
     $('v3d').innerHTML = '<div class="v3dmsg">3D view unavailable: three.js could not load (offline?). The facts on the right still apply.</div>';
     $('vhint').hidden = true;

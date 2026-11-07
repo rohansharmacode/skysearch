@@ -163,6 +163,9 @@ Give each session one workstream and point it at this file plus `contracts/INTER
 | BL-23 | P1 | Expanded Weiguan map from the Isaac teammate (Weiguan + surrounding collapsed buildings): mesh/heightmap import → scenario sectors | waiting on teammate push; importer being built |
 | BL-24 | P0 | Operator tasking: operator circles search zones before launch; drones search only those; coverage tracking; no re-search without new evidence; outside-zone acoustic → zone suggestions (ops server scripts/serve.py + contract v1.2 + sim/tasking.py + dashboard Plan-search mode + Isaac zone overlay) | builders — running |
 | BL-25 | P0 | Recon mode when no zones: coverage-path LiDAR mapping (fresh map; satellite is stale) + perch-and-listen (rotors off) + mound segmentation → zone proposals → operator accepts (auto-accept in --autonomous) | tasking builder (sim/recon.py) + dashboard + overlay |
+| BL-26 | P1 | Heavy-lift (agri/industrial class) drone platform: specs, dense LiDAR (32–128 ch, 0.3–1.3 M pts/s), bigger landing footprint, endurance; Isaac heavy drone model + dense LiDAR profile | builder — running |
+| BL-27 | P1 | Drone loudspeaker: multilingual call-out-and-listen (responsiveness → triage), reassurance after pings, guidance directions for walking survivors (A* to staging), operator broadcasts (LLM text only after operator confirms) | builder — running |
+| BL-21 | P0 | Technical report | DRAFT 893bd37 (~11k words; placeholders until builders land) |
 | BL-11 | P1 | KEY SAVED 19:58 → Gemini audio builder records live runs. Once GEMINI_API_KEY exists: record a seed-7 Gemini run and commit its replay cache (un-ignore one curated file) so the demo replays offline | blocked on key |
 
 ## Decisions log
@@ -192,3 +195,5 @@ Give each session one workstream and point it at this file plus `contracts/INTER
 | 2026-11-07 | Search areas are operator-tasked zones drawn on the dashboard before launch (sim default = rubble outlines); zones aren't re-searched without new evidence | user: realistic + avoids repeat searches | user |
 | 2026-11-07 | Dev server is now scripts/serve.py (static + /api/tasking), same port 8765 | dashboard needs to save tasking | orchestrator |
 | 2026-11-07 | No zones → recon: map the site + perch-and-listen, then propose zones; in-flight listening only for loud events (rotor ego-noise) | user: more data, realistic when satellite imagery is stale | user |
+| 2026-11-07 | Platform = heavy-lift (agri/industrial) drones with dense LiDAR, bigger radar antenna, larger mic array, loudspeaker | user: bigger batteries + better sensors | user |
+| 2026-11-07 | Speaker broadcasts use vetted multilingual templates; LLM-translated operator text only after the operator confirms | never auto-broadcast unreviewed LLM text to victims | orchestrator |

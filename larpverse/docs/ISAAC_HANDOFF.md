@@ -92,7 +92,7 @@ python -m sim.scenario --seed 7 --out scenario.json --truth-out scenario_truth.j
 | Option | Use when | Notes |
 |---|---|---|
 | **Your RTX desktop or laptop** | RTX 4080-class or better, 16 GB+ VRAM, 32 GB RAM, recent NVIDIA driver | Best for recording footage in the GUI |
-| **Brev cloud, 1× L40S** (~$1–2/hr) | No suitable local GPU | The "Isaac Sim Launchable" ships **Isaac Sim 5.1**. Use headless mode with livestream, or record with Movie Capture |
+| **Brev cloud, 1× L40S** (~$1–2/hr) | No suitable local GPU | The team's Brev box runs **Isaac Sim 6.0.1 + Isaac Lab 3.0** (verified; see `docs/ISAAC_VERIFIED_APIS.md`). Use headless mode with livestream, or `--record` |
 | A100 / H100 | **Not supported** | They have no RT cores |
 
 - **Use whichever version your machine already has (4.5, 5.1 or 6.x), and only read docs for that version.** APIs were renamed between 5.x and 6.0, so mixing tutorials wastes hours.

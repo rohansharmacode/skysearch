@@ -42,7 +42,7 @@ We did **not** invent through-rubble radar, acoustic search, or LiDAR SLAM. Thos
 **survey → land → radar → ping → listen → rank → dispatch → repeat**
 
 1. **Survey.** The three drones orbit the pile with a spinning LiDAR. KISS-ICP SLAM registers the scans into a pile map.
-2. **Land.** Every 1 m cell is scored for slope, roughness, step and clearance. Drones land on the flat cells.
+2. **Land.** Every 0.5 m cell is scored by a plane fit over its 1.5 m neighbourhood (slope, roughness, step, clearance). Drones land on the flat cells.
 3. **Radar.** Rotors off, each landed drone scans for a respiration-like signal: range FFT → phase → 0.1–0.5 Hz band-pass → spectral peak → CFAR. Each detection is a range, i.e. a ring.
 4. **Localise and plan.** A grid Bayes filter fuses the rings. If they disagree, the planner moves one drone to the cell with the highest expected information gain and rescans (seed 7: "Relocate d1 → L15 … EIG 0.56 nats").
 5. **Ping.** When three ranges agree, the region becomes a ping: position, 95% region, belief share. **Depth is not measured**: it is shown as "assumed 1.5 m", because the ranges cannot separate depth from position.

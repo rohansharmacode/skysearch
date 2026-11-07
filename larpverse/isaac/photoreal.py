@@ -507,7 +507,18 @@ class Recorder:
             if d is None or getattr(d, "size", 0) == 0:
                 continue
             img = np.asarray(d)[..., :3]
-            Image.fromarray(img).save(os.path.join(self.out, name, f"f{idx:05d}.png"))
+            Image.fromarray(img).save(os.path.join(self.out, name, f"f{idx:05d}.png"), compress_level=1)
             ok += 1
         self.n += ok > 0
         return ok
+
+    def note(self, idx, state, pile):
+        """timeline.csv: video frame -> mission time, phase, active pile, pings so far (for cutting the shots)."""
+        f = os.path.join(self.out, "timeline.csv")
+        new = not os.path.exists(f)
+        with open(f, "a") as fh:
+            if new:
+                fh.write("frame,t,phase,pile,pings,clips,dispatches\n")
+            fh.write(f"{idx},{float(state.get('t', 0)):.2f},{state.get('phase')},{pile},"
+                     f"{len(state.get('radar_candidates') or [])},{len(state.get('acoustic_clips') or [])},"
+                     f"{len(state.get('dispatch') or [])}\n")

@@ -367,6 +367,7 @@ def main(argv=None):
                 app.update()
                 if rec is not None and frame % max(1, a.rec_every) == 0:
                     rec.capture(frame // max(1, a.rec_every))
+                    rec.note(frame // max(1, a.rec_every), cur, active)
                 if virtual:
                     clock_v += rdt_v
             else:

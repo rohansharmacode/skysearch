@@ -54,7 +54,46 @@ class USARLive:
         self.queue = []
         self.paused = False
         self.png = b""
+        self.msg = ""
+        self._busy = False
         self.reset()
+
+    # ---- used by an external loop (isaac/earthquake_scene.py drives the stepping) ----
+    def drain(self):
+        """Apply queued button presses. Returns True if the scenario was restarted."""
+        restarted = False
+        while self.queue:
+            k, a = self.queue.pop(0)
+            restarted |= k == "reset"
+            self.msg = self.apply(k, a)
+        return restarted
+
+    def publish_async(self, extra=None):
+        """Render the dashboard from a snapshot of the scenario in a background thread."""
+        if self._busy:
+            return
+        import pickle
+        snap = pickle.loads(pickle.dumps(self.scen))
+        breath, pos = list(self.r.breath), dict(self.r.pos)
+        self._busy = True
+
+        def work():
+            try:
+                r = USARRenderer(snap, speed_label="live · Isaac Sim") if not hasattr(self, "_r2") else self._r2
+                self._r2 = r
+                r.s, r.breath, r.pos, r._last_note = snap, breath, pos, snap.fleet.t
+                r.rgb_img = None if extra is None else extra.get("rgb")
+                buf = io.BytesIO()
+                r.frame().savefig(buf, format="png", dpi=72, facecolor="#0E1117")
+                self.png = buf.getvalue()
+            finally:
+                self._busy = False
+        threading.Thread(target=work, daemon=True).start()
+
+    def serve(self):
+        httpd = ThreadingHTTPServer(("0.0.0.0", self.port), self.handler())
+        threading.Thread(target=httpd.serve_forever, daemon=True).start()
+        print(f"SkySearch USAR mission control on http://0.0.0.0:{self.port}", flush=True)
 
     def reset(self):
         self.scen = USARScenario(self.cfg, random_events=False)
@@ -152,9 +191,7 @@ class USARLive:
         return H
 
     def run(self):
-        httpd = ThreadingHTTPServer(("0.0.0.0", self.port), self.handler())
-        threading.Thread(target=httpd.serve_forever, daemon=True).start()
-        print(f"SkySearch USAR mission control on http://0.0.0.0:{self.port}", flush=True)
+        self.serve()
         self.loop()
 
 

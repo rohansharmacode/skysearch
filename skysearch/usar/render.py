@@ -457,24 +457,36 @@ class USARRenderer:
         ex = (cs * cfg.cell, ce * cfg.cell, re_ * cfg.cell, rs * cfg.cell)
         q = (d.health or {}).get("RGB", 1.0) if d.alive else 0.0
         q = 1.0 if q is None else q
-        ax.imshow(img, extent=ex, interpolation="bilinear")
-        for sv in b.survivors:
-            if ex[0] <= sv["pos"][0] <= ex[1] and ex[3] <= sv["pos"][1] <= ex[2]:
-                rr, cc = b.line_cells(self.P(d), sv["pos"])
-                if not (b.clear[rr[1:-1], cc[1:-1]] < 0.12).any():
-                    ax.add_patch(Ellipse(sv["pos"], 0.5, 0.9, angle=30, color="#D7A27C", zorder=3))
-        for dc in b.decoys:
-            if ex[0] <= dc["pos"][0] <= ex[1] and ex[3] <= dc["pos"][1] <= ex[2]:
-                ax.add_patch(Ellipse(dc["pos"], 0.45, 0.8, angle=-20, color="#9E9E9E", zorder=3))
-        fog = np.ones((8, 8, 4)) * np.array([0.62, 0.63, 0.65, 0.0])
-        fog[..., 3] = np.clip(1 - q, 0, 0.97)
-        rng = np.random.default_rng(int(f.t * 10))
-        fog[..., :3] += rng.normal(0, 0.03, (8, 8, 1))
-        ax.imshow(np.clip(fog, 0, 1), extent=ex, interpolation="bicubic", zorder=4)
-        ax.set_xlim(ex[0], ex[1]); ax.set_ylim(ex[2], ex[3])
-        ax.set_title(f"RGB camera · visibility {q * 100:.0f}%", color="#FFCA28" if q < 0.6 else "#B0BEC5", fontsize=8.5, pad=3)
-        for sp in ax.spines.values():
-            sp.set_color("#37474F")
+        real = getattr(self, "rgb_img", None)
+        if real is not None:                      # rendered by Isaac Sim from this drone's camera
+            ax.imshow(real, extent=ex, interpolation="bilinear", aspect="auto")
+            ax.set_xlim(ex[0], ex[1]); ax.set_ylim(ex[2], ex[3])
+            fog = np.zeros((4, 4, 4)); fog[..., :3] = 0.62; fog[..., 3] = np.clip(1 - q, 0, 0.95)
+            ax.imshow(fog, extent=ex, interpolation="bicubic", zorder=4, aspect="auto")
+            ax.set_title(f"RGB camera (Isaac render) · visibility {q * 100:.0f}%", color="#FFCA28" if q < 0.6 else "#B0BEC5",
+                         fontsize=8.5, pad=3)
+            for sp in ax.spines.values():
+                sp.set_color("#37474F")
+            real = True
+        if real is not True:
+            ax.imshow(img, extent=ex, interpolation="bilinear")
+            for sv in b.survivors:
+                if ex[0] <= sv["pos"][0] <= ex[1] and ex[3] <= sv["pos"][1] <= ex[2]:
+                    rr, cc = b.line_cells(self.P(d), sv["pos"])
+                    if not (b.clear[rr[1:-1], cc[1:-1]] < 0.12).any():
+                        ax.add_patch(Ellipse(sv["pos"], 0.5, 0.9, angle=30, color="#D7A27C", zorder=3))
+            for dc in b.decoys:
+                if ex[0] <= dc["pos"][0] <= ex[1] and ex[3] <= dc["pos"][1] <= ex[2]:
+                    ax.add_patch(Ellipse(dc["pos"], 0.45, 0.8, angle=-20, color="#9E9E9E", zorder=3))
+            fog = np.ones((8, 8, 4)) * np.array([0.62, 0.63, 0.65, 0.0])
+            fog[..., 3] = np.clip(1 - q, 0, 0.97)
+            rng = np.random.default_rng(int(f.t * 10))
+            fog[..., :3] += rng.normal(0, 0.03, (8, 8, 1))
+            ax.imshow(np.clip(fog, 0, 1), extent=ex, interpolation="bicubic", zorder=4)
+            ax.set_xlim(ex[0], ex[1]); ax.set_ylim(ex[2], ex[3])
+            ax.set_title(f"RGB camera · visibility {q * 100:.0f}%", color="#FFCA28" if q < 0.6 else "#B0BEC5", fontsize=8.5, pad=3)
+            for sp in ax.spines.values():
+                sp.set_color("#37474F")
         # LiDAR scan (scouts), radar map (S3 in smoke) or microphone bearings (micros)
         ax2 = fig.add_axes([x0 + w + 0.012, y0, w, h], facecolor="#0B0F15", zorder=5); ax2.set_xticks([]); ax2.set_yticks([])
         for sp in ax2.spines.values():

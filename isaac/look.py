@@ -146,7 +146,7 @@ def apply(scen, cfg, a, W3, OUT, log=print):
         dome.GetAttribute("inputs:color").Set(Gf.Vec3f(1.0, 1.0, 1.0)) if dome.GetAttribute("inputs:color") else None
     # -- materials -------------------------------------------------------------------------
     mats = {k: make_mdl(k, v, s) for k, v, s in (
-        ("walls", "plaster", (0.5, 0.5)), ("rubble", "concrete_rough", (0.7, 0.7)),
+        ("walls", a.wall_mdl if getattr(a, "wall_mdl", "") in MDL else "concrete_smooth", (0.35, 0.35)), ("rubble", "concrete_rough", (0.7, 0.7)),
         ("slab", "concrete_formed", (0.6, 0.6)), ("floor", "carpet", (0.4, 0.4)),
         ("ground", "asphalt", (0.25, 0.25)), ("debris", "concrete_rough", (1.0, 1.0)))}
     counts = {
@@ -185,7 +185,7 @@ def apply(scen, cfg, a, W3, OUT, log=print):
     open_ = np.argwhere((b.clear >= 2.0) & (b.clear < OUT) & (b.room_id >= 0))
     taken = [np.asarray(s["pos"], float) for s in b.survivors] + [np.asarray(dd["pos"], float) for dd in b.decoys]
     nf = 0
-    if len(open_):
+    if len(open_) and not getattr(a, "collapse", False):     # --collapse brings its own (dynamic) furniture
         for r in np.unique(b.room_id[b.room_id >= 0]):
             cells = open_[b.room_id[open_[:, 0], open_[:, 1]] == r]
             for _ in range(min(3, len(cells))):

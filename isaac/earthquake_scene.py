@@ -42,6 +42,7 @@ ap.add_argument("--stop_t", type=float, default=0.0, help="--record: stop at thi
 ap.add_argument("--drone_light", type=float, default=12000.0, help="intensity of the small search light on each scout/crevice drone (0 = off)")
 ap.add_argument("--look", type=int, default=1, help="1 = photoreal materials/sky/models/cinematic camera (isaac/look.py)")
 ap.add_argument("--hdri", type=float, default=900.0, help="HDRI sky dome intensity when --look 1")
+ap.add_argument("--wall_mdl", default="concrete_smooth", help="--look 1: wall material key in look.MDL (concrete_smooth, concrete_formed, plaster)")
 ap.add_argument("--probe_frames", type=int, default=0, help="record this many ticks, print brightness, exit (lighting check)")
 
 from isaaclab.app import AppLauncher  # noqa: E402

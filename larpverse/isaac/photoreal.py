@@ -368,6 +368,11 @@ def sky_and_sun(stage, a, nv, log):
 
 
 def dress(stage, sc, a, log=print):
+    try:                                              # thin glowing lines and fine points, not tubes and balls
+        from isaac import overlay as _ov
+        _ov.LINE_W, _ov.POINT_W, _ov.MAX_SCANS = 0.006, 0.035, 3
+    except Exception as e:
+        log(f"[photoreal] overlay scale unchanged ({type(e).__name__}: {e})")
     """Call right after scene.build(stage, sc) and before PhysX loads the stage."""
     nv, isa = _roots(a)
     M = mdl_paths(nv)

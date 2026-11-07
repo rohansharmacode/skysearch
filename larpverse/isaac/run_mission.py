@@ -64,6 +64,13 @@ def _base_parser():
     ap.add_argument("--no-scan-textures", dest="scan_textures", action="store_false",
                     help="drop the albedo maps derived from the third-party photogrammetry screenshots (licence unknown)")
     ap.add_argument("--radar", choices=["model", "dsp"], default="dsp", help="dsp needs scipy in Isaac's python")
+    g = ap.add_argument_group("mission (passed to sim.grid_mission.GridMission when it supports them)")
+    g.add_argument("--platform", default=None, help="sim/platform.py preset: legacy_small | heavy_sar | industrial_sar")
+    g.add_argument("--penetration", default=None, help="radar through-rubble model (sim/radar_dsp.py): literature | legacy")
+    g.add_argument("--delivery", choices=["pod", "land"], default=None,
+                   help="radar delivery: pod = winch-lowered pod (drawn hanging/resting), land = the drone perches")
+    g.add_argument("--no-autonomous", dest="autonomous", action="store_false",
+                   help="legacy fixed loop: 3 piles, no battery swaps, no revisits")
     ap.add_argument("--speed", type=float, default=4.0, help="sim-seconds per wall-second")
     ap.add_argument("--show-truth", action="store_true", help="draw ground-truth victim ghosts (display only)")
     ap.add_argument("--replay", default=None, help="dir with frames/state_XXXX.json (or the frames dir itself)")
@@ -206,8 +213,10 @@ def load_mission(a, log):
         return ReplayMission(a.replay, a.out, a.seed, a.start_pile, a.site)
     try:
         from isaac.site import mission_for_site
+        extra = {k: getattr(a, k) for k in ("platform", "penetration", "delivery") if getattr(a, k, None) is not None}
+        extra["autonomous"] = getattr(a, "autonomous", True)
         return mission_for_site(a.site, seed=a.seed, start_pile=a.start_pile, radar=a.radar, out_dir=a.out,
-                                frames=a.frames, verbose=not a.quiet)
+                                frames=a.frames, verbose=not a.quiet, log=log, **extra)
     except Exception:
         err = traceback.format_exc()
         fb = os.path.join(a.out, "frames")
@@ -339,6 +348,8 @@ def main(argv=None):
         drones = {i: DroneViz(stage, f"/World/Drones/{i}", did=i, scale=a.drone_scale, asset=a.drone_asset,
                               model=a.drone_model)
                   for i in ids}
+    from isaac.pods import NullPods, PodViz
+    pods = NullPods() if a.dry_run else PodViz(stage, ids)
     from isaac.site import base_xy
     overlay = Overlay(make_backend("null" if a.dry_run else a.overlay, stage, dd), surface, pile_xy,
                       base_xy=base_xy(sc))
@@ -483,6 +494,7 @@ def main(argv=None):
                                 show = new_pts[np.hypot(new_pts[:, 0] - c[0], new_pts[:, 1] - c[1]) < LIDAR_DRAW_R]
                             if len(show):
                                 overlay.add_points(show)
+            pods.update(cur, poses)                    # winch-lowered radar pods (state.pods / winch_len_m)
             if dust is not None:
                 dust.update(poses, surface)
 
@@ -527,6 +539,7 @@ def main(argv=None):
         "overlay_updates": overlay.updates, "camera_updates": cam.updates,
         "state_json": state_path if state_path and os.path.exists(state_path) else None,
         "mission": type(mission).__name__, "launcher": a.launcher, "site": site_name(sc),
+        "pods_max_visible": pods.max_visible,
         "recorded_frames": rec.n if rec is not None else 0,
     }
     say("summary " + json.dumps(summary))

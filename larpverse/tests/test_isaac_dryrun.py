@@ -136,3 +136,26 @@ def test_isaac_dryrun_collapse_heavy(tmp_path):
     assert state["staging"]["xy"] == [-56.0, -152.5]
     assert len(state.get("piles", [])) > 120
     assert not any(m == "pxr" or m.startswith(("pxr.", "omni.")) or m == "omni" for m in sys.modules)
+
+
+def test_pod_targets_and_mission_passthrough(tmp_path):
+    """Winch pods from state.pods / drones[].winch_len_m; --platform/--delivery/--penetration reach GridMission
+    (unknown ones are dropped with a log line until the mission supports them)."""
+    from isaac.pods import POD_SIZE, NullPods, pod_targets
+
+    poses = {"d1": (1.0, 2.0, 12.0, 0, "scanning", 0, 0), "d2": (5.0, 5.0, 10.0, 0, "flying", 0, 0),
+             "d3": (9.0, 9.0, 8.0, 0, "flying", 0, 0)}
+    st = {"pods": [{"drone_id": "d1", "xy": [1.2, 2.1], "z": 3.5, "status": "resting"},
+                   {"drone_id": "d2", "xy": [5, 5], "z": None, "status": "stowed"}],
+          "drones": [{"id": "d1", "winch_len_m": 8.2}, {"id": "d2", "winch_len_m": 0.0}, {"id": "d3", "winch_len_m": 4.0}]}
+    tg = pod_targets(st, poses)
+    assert tg["d1"] == (1.2, 2.1, 3.5, "resting") and "d2" not in tg
+    assert tg["d3"][2] == 8.0 - 4.0 - POD_SIZE[2]
+    np_ = NullPods()
+    np_.update(st, poses)
+    assert np_.max_visible == 2
+
+    from isaac.run_mission import main
+    s = main(["--dry-run", "--platform", "heavy_sar", "--delivery", "pod", "--penetration", "literature",
+              "--max-steps", "20", "--out", str(tmp_path / "d"), "--quiet"])
+    assert s["steps"] == 20 and "pods_max_visible" in s

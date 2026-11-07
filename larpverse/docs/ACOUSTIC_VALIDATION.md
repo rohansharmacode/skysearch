@@ -2,7 +2,7 @@
 
 **What this supports:** the recognisers in `acoustic/` work on real recordings. Silero VAD, the YAMNet class groups with the knock/hum heuristics, faster-whisper base.en and the agent's deterministic fallback scorer separate human sounds from non-human sounds and rank them, on real speech, screams, crying, knocks, dogs, engines and ambient noise, when the rotors are off. It also compares our pipeline head-to-head with the teammate pipeline (F. Valisalo, branch `acoustic-voice-detection`) and recommends one.
 
-**What it does not support:** sensing through rubble, or listening with the rotors on. There is no real-data DoA validation, because none of the data has DoA ground truth (see Caveats).
+**What it does not support:** sensing through rubble, or listening with the rotors on. Direction of arrival (DoA) is tested on real DREGON recordings (section 5). It is not tested against our own 0.3 m 6-mic array.
 
 Code under test: commit `eb8cdba` (acoustic BL-3). `models.py`, `agent.py`, `dsp.py`, `run.py` and `scene.py` were frozen into `data/audio_real/code_snapshot/eb8cdba/`. Other agents were editing `acoustic/` while these runs went on, so the snapshot keeps every number on one version. `models.py` + `agent.py` sha1 prefix: `50ad3f88`. The before/after rows use the earlier commit `8eb6d30`.
 
@@ -86,9 +86,36 @@ scripts/heavy.sh .venv-audio/bin/python -m acoustic.validate_real synth --family
 
 The fallback scorer's clip priority ranks human above non-human with AUC 0.92 on ESC-50, 0.84 on DroneAudioSet rotors off (0.86-1.00 in the 8 other settings) and 0.97 on the teammate clips. With rotor noise it falls to 0.76 at 0 dB and 0.60 at -10 dB. The top of the ranking is clean: a human sound with keywords scores up to 52-60, and no non-human clip scores above 33.
 
-### 5. Direction of arrival
+### 5. Real DoA (DREGON)
 
-There is no real-data result. DroneAudioSet gives speaker distances but no azimuths, and its 8-channel arrays have no published geometry in the dataset card. DREGON has DoA ground truth but was not downloaded (multi-GB zips); see Requests. The synthetic results below are the only DoA numbers.
+**Data.** DREGON (Strauss et al., IROS 2018, https://dregon.inria.fr) records with a real 8-mic array (about 0.15 m cube, `micPos.txt`) on a quadrotor, with Vicon ground-truth source directions. Licence: "freely available for personal, educational and academic use only", with citation. That allows this academic validation but is not an open licence, so the data stays local; see `SOURCE.md`. We downloaded 397 MB: the clean static recordings, a motors-off flight, two real free flights and a hovering noise-only recording.
+
+**Method** (`validate_real dregon eval`, code = HEAD c7cb47c, byte-identical to eb8cdba for `acoustic/`):
+- Our DoA front end runs unchanged: `dsp.SrpModel` on the mics' x-y offsets, then `dsp.gcc_blocks` and `dsp.clean`, at 16 kHz.
+- It estimates azimuth only. The whole-window map is used for the 1.3 s static clips, and masked 0.5 s blocks for flights, against the mean Vicon azimuth in each block.
+- Error is the strongest CLEAN component's distance from ground truth. A block with no component counts as a miss in "within 10 deg"; the median and p90 cover blocks that have an estimate.
+- The angle convention was checked with an independent 3D SRP-PHAT search over azimuth and elevation on the static clips. It agrees with DREGON's labels to a median 0.5 deg (azimuth) and 1.0 deg (elevation).
+
+| Condition | n | Median / p90 error (deg) | Within 10 deg |
+|---|---|---|---|
+| Rotors off, static loudspeaker (24 positions x 8 utterances, az 45-90 deg, el 0/-15/-30 deg, 1.2/2.4 m) | 192 | 0.0 / 2.0 | **1.00** |
+| Rotors off, motors-off "flight" carried by hand (white noise, 0.5 s blocks) | 140 | 1.7 / 5.3 | **0.90** |
+| Static + real hovering rotor noise, +10 / 0 / -10 / -20 dB | 192 each | 1.0/3.0, 1.0/5.3, 3.0/11.9, 11.0/79.2 | 1.00 / 0.96 / 0.79 / 0.31 |
+| Same at -10 dB, elevation 0 / -15 / -30 deg | 64 each | 2.0/8.0, 2.0/6.0, 8.0/52.4 | 0.94 / 0.86 / 0.58 |
+| Rotors on, real free flight, speech high (SNR -12.8 dB) | 95 | 18.4 / 84.9 | 0.24 |
+| Rotors on, real free flight, speech low (SNR -16.2 dB) | 112 | 25.6 / 107.5 | 0.17 |
+
+**What this means.**
+- With the rotors off, our SRP-PHAT is accurate on a real array: every static clip is within 10 deg, and 90% of 0.5 s blocks while the drone is carried around.
+- With the rotors on it is not usable at real in-flight SNRs. Under a quarter of blocks are within 10 deg, and about a third of blocks yield no component at all.
+- Steep elevations hurt more: at -30 deg the 2D azimuth-only model degrades first.
+- This backs the design decision to land and stop the rotors before listening.
+
+**Limits.**
+- The static positions cover one azimuth quadrant (45-90 deg).
+- The free-flight blocks include take-off and landing, and the source is silent in TIMIT pauses.
+- The array is DREGON's 0.15 m cube, not our 0.3 m ring.
+- No knock or burial: the source is a loudspeaker in a room.
 
 ## Head-to-head: ours vs the teammate pipeline
 
@@ -178,5 +205,8 @@ Port these from the teammate pipeline, each with evidence:
    - Re-tune with `validate_real run` (about 1 min on the clean sets).
 3. **Whisper gate.** `VAD >= 0.15` skips 6/13 shouted "help me" clips (VAD 0.00-0.09). Gate on VAD or YAMNet voice/shout instead. Keep the logprob/no-speech filter: without it, 0 dB rotor noise produces fluent invented text.
 4. **Port items 1 and 2 of the Recommendation into `models.py` / `dsp.py`.** Re-run `validate_real` and `eval_assign` afterwards.
-5. **DoA on real data.** Approve downloading a DREGON subset (Inria, 8-mic cube with DoA ground truth; a few hundred MB if only the "speech, source static" recordings are taken). That would give a real-data DoA error.
+5. **DoA on real data: done (section 5).**
+   - Rotors off: median 0-1.7 deg, 90-100% within 10 deg.
+   - Real flight: 17-24% within 10 deg.
+   - Optional follow-up: a 3D (azimuth x elevation) SRP grid in `dsp.SrpModel` for sources well below the array. At -30 deg elevation and -10 dB, within-10 is 0.58 against 0.94 at 0 deg.
 6. **`data/audio_real/fleurs/` (47 MB).** Written by `acoustic/eval_gemini fetch`, not by this task. Its SOURCE.md is there. It is listed here so the data owner knows.

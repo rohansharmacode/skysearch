@@ -46,10 +46,18 @@ def victim_z(sc, v, surface=None):
     return float(fn(x, y)) - float(v["depth"])
 
 
-def mission_for_site(site: str, **kw):
-    """GridMission on ``site`` (grid | weiguan | mesh:<path>); kw go to the GridMission constructor."""
+def mission_for_site(site: str, log=None, **kw):
+    """GridMission on ``site`` (grid | weiguan | collapse | mesh:<path>); kw go to the GridMission constructor.
+    Keywords this GridMission does not accept yet (e.g. ``delivery`` before the mission agent adds it) are
+    dropped with a log line, so the adapter runs against older and newer mission code alike."""
     import sim.grid_mission as gm
-    if site == "grid" or "site" in inspect.signature(gm.GridMission.__init__).parameters:
+    params = inspect.signature(gm.GridMission.__init__).parameters
+    dropped = [k for k in kw if k not in params]
+    for k in dropped:
+        kw.pop(k)
+    if dropped and log:
+        log(f"GridMission does not take {dropped} yet; ignoring them")
+    if site == "grid" or "site" in params:
         return gm.GridMission(**({"site": site} if site != "grid" else {}), **kw)
     from sim.scenario import make_scenario as _make
 

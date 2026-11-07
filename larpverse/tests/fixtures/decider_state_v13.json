@@ -1,0 +1,82 @@
+{
+  "_note": "Hand-made v1.3 state for tests/test_agents.py: pods + delivery, vitals + dig_score, revisit, battery swap, scan budget, zones, recon proposals. Not a mission output; no truth fields except the leaked 'physio' the decider must strip.",
+  "schema": "larpverse.state/v1",
+  "t": 612.0,
+  "phase": "done",
+  "mission": {"kind": "grid", "seed": 7, "visited": ["A2", "A3", "B2", "A3"], "stage": "done",
+              "delivery": "pod", "scan_budget": 24, "scans_used": 24, "battery_reserve": 0.25,
+              "battery_swaps": 1, "battery_swap": null, "priority_min": 20},
+  "piles": [
+    {"id": "A2", "xy": [-20.0, 0.0], "status": "ping", "priority": null},
+    {"id": "A3", "xy": [-20.0, -22.0], "status": "lead", "priority": 64, "why": "Voice saying \"help, over here\"; human 0.88"},
+    {"id": "B2", "xy": [0.0, 0.0], "status": "ping", "priority": 55},
+    {"id": "C3", "xy": [20.0, -22.0], "status": "lead", "priority": 41, "why": "Knocking, periodic; human 0.7"},
+    {"id": "A1", "xy": [-20.0, 22.0], "status": "no_signal_not_cleared", "priority": 8},
+    {"id": "C1", "xy": [20.0, 22.0], "status": "dismissed_nonhuman", "priority": 8}
+  ],
+  "scans": [
+    {"scan_id": "s1", "pile_id": "A2", "delivery": "pod", "sensor_pose": [-18.0, 0.5, 3.1, 0.0]},
+    {"scan_id": "s2", "pile_id": "A2", "delivery": "pod", "sensor_pose": [-21.5, 1.0, 3.4, 0.0]},
+    {"scan_id": "s3", "pile_id": "A2", "delivery": "pod", "sensor_pose": [-19.0, -1.5, 2.9, 0.0]},
+    {"scan_id": "s4", "pile_id": "B2", "delivery": "pod", "sensor_pose": [1.0, 1.0, 4.0, 0.0]},
+    {"scan_id": "s5", "pile_id": "B2", "delivery": "pod", "sensor_pose": [-1.0, 0.5, 4.2, 0.0]}
+  ],
+  "pods": [{"drone_id": "d1", "xy": [-1.0, 0.5], "z": 4.2, "status": "stowed", "placement": 2, "of": 2, "lead": "a7", "t": 540.0}],
+  "radar_candidates": [
+    {"id": "B2-R1", "pile_id": "B2", "xy": [-0.5, 1.5], "z_est": 2.0, "depth_m": 1.2, "cov": [[0.3, 0], [0, 0.2]],
+     "p_mass": 0.8, "status": "candidate", "kind": "stationary", "evidence": ["s4", "s5"],
+     "vitals": {"version": "vitals-v1", "pattern": "regular_calm", "rate_bpm": 14.2, "triage_hint": "delayed",
+                "pattern_conf": 0.7, "duration_s": 60.0, "condition": "calm, regular breathing, 14/min -> stable for now",
+                "caveats": ["aid for rescuers, not a diagnosis: ..."]},
+     "dig_score": 0.21},
+    {"id": "A2-R1", "pile_id": "A2", "xy": [-18.2, 0.4], "z_est": 1.5, "depth_m": 1.5, "cov": [[0.2, 0], [0, 0.1]],
+     "p_mass": 0.9, "status": "candidate", "kind": "stationary", "evidence": ["s1", "s2", "s3"],
+     "vitals": {"version": "vitals-v1", "pattern": "irregular_with_pauses", "rate_bpm": 11.8, "apnea_events": 1,
+                "triage_hint": "immediate (check)", "pattern_conf": 0.62, "duration_s": 60.0},
+     "dig_score": 0.48},
+    {"id": "A3-R1", "pile_id": "A3", "xy": [-22.0, -21.0], "z_est": 1.0, "cov": [[1.0, 0], [0, 1.0]],
+     "p_mass": 0.3, "status": "insufficient_evidence", "kind": "stationary", "evidence": ["s9"]}
+  ],
+  "zones": [
+    {"id": "Z1", "name": "A2 east face", "status": "ping", "pings": ["A2-R1"], "proposal": "P1"},
+    {"id": "Z2", "name": "A3 mound", "status": "searched_no_ping", "pings": []},
+    {"id": "Z3", "name": "B2 core", "status": "beyond_radar_reach", "pings": []}
+  ],
+  "zone_proposals": [
+    {"id": "P1", "kind": "rubble_mound", "score": 0.9, "acoustic_leads": ["a3"], "why": "already tasked as Z1"},
+    {"id": "P2", "kind": "rubble_mound", "score": 0.82, "acoustic_leads": ["a7"], "area_m2": 310,
+     "height_max_m": 6.2, "why": "mound 6 m high; voice-like clip heard from it at a perch"},
+    {"id": "P3", "kind": "rubble_mound", "score": 0.95, "acoustic_leads": [], "area_m2": 120, "why": "tall slab pile, silent"}
+  ],
+  "zone_suggestions": [{"id": "S1", "centre": [10.0, -30.0], "radius_m": 6, "why": "knocking heard by d1 and d3", "evidence": ["a9"]}],
+  "recon": {"status": "done", "mapped_fraction": 0.93, "perches": []},
+  "heightmap": {"origin": [-30, -30], "res": 1.0, "w": 60, "h": 60, "z": null},
+  "physio": {"B2": "calm"},
+  "decision": {
+    "context": {"t": 480.0, "current_pile": "B2", "visited": ["A2", "A3", "B2"], "pile_budget": null,
+                "budget_left": null, "scan_budget_left": 9, "priority_min": 20, "delivery": "pod",
+                "pings": [{"id": "A2-R1", "pile_id": "A2", "status": "candidate", "p_mass": 0.9, "dig_score": 0.48,
+                           "vitals": {"pattern": "irregular_with_pauses", "rate_bpm": 11.8, "apnea_events": 1,
+                                      "triage_hint": "immediate (check)", "pattern_conf": 0.62, "duration_s": 60.0,
+                                      "caveats": ["long caveat prose the prompt does not need"]}}],
+                "piles": [{"id": "A3", "status": "lead", "priority": 64, "why": "Voice saying help"},
+                          {"id": "C3", "status": "lead", "priority": 41, "why": "Knocking"}],
+                "fleet": [{"id": "d1", "battery": 0.31, "state": "landed"}],
+                "zone_proposals": [{"id": "P2", "score": 0.82, "why": "mound 6 m high"}],
+                "physio": {"B2": "calm"}},
+    "options": [
+      {"id": "o1", "action": "dispatch", "pile_id": "C3", "priority": 41, "score": 41, "travel_s": 160.0,
+       "battery_after_min": 0.74, "evidence": "knocking (human 0.7, priority 41, fallback)", "flags": ["battery_swap"],
+       "placements": [[19.0, -21.0], [21.5, -22.5], [20.0, -24.0]]},
+      {"id": "o2", "action": "revisit", "pile_id": "A3", "priority": 64, "score": 32.0, "travel_s": 110.0,
+       "battery_after_min": 0.7, "evidence": "radar at A3 after 3 scans: no firm fix | acoustic: voice \"help\"",
+       "flags": ["battery_swap", "no_firm_ping"], "placements": [[-21.0, -20.5], [-23.0, -22.0]]},
+      {"id": "o3", "action": "stop", "pile_id": null, "priority": null, "score": null, "travel_s": null,
+       "battery_after_min": 0.31, "evidence": "return to the staging area", "flags": []}
+    ],
+    "budget_stop_options": [
+      {"id": "o1", "action": "stop", "pile_id": null, "priority": null, "score": null, "travel_s": null,
+       "battery_after_min": 0.5, "evidence": "return to the staging area", "flags": ["pile_budget_used", "scan_budget_used"]}
+    ]
+  }
+}

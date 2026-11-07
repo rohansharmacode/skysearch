@@ -212,3 +212,13 @@ The details are in `docs/ISAAC_VERIFIED_APIS.md`.
 - Your Isaac version and GPU.
 - The output of the dry run, and of the self-test once it lands.
 - One screenshot of the stage after `--max-steps 1`.
+
+## 2026-11-07 23:40: `--site collapse` landed, plus the heavy platform and the winch pod
+
+- **Your map now runs in our stack:** `--site collapse --site-usd <repo>/collapse_site/collapse_site.usda`. ISAAC_BRIEF.md §3 has the exact commands, and the 🟡 rows are now ✅ (dry-run and USD checks only; **not yet on a GPU**). Please do the short `--max-steps 120` run from §5 step 3 and report raycast hits, landing/pod cells and frame time.
+- **157 sectors** come from your USD: T1a–c and T2a–c for the towers, rubble rings, L### lots, M## mounds. Standing buildings are obstacles. We couldn't tell which towers were the original blocks A–I, so if you know, tell us.
+- **Radar is delivered by a winch-lowered pod.** Realistic reach through rubble is about 3 m, so the heavy drone hovers and lowers a radar + mic pod onto the rubble. Shot idea: the cable paying out and the pod settling on the rubble face, then the red beacon.
+- **Survivor condition, not age:** vitals labels now read like "irregular breathing with pauses — check first". Remove any "child" wording from overlays.
+- **Licence:** `--no-scan-textures` strips the scan textures, but the core geometry was also derived from the third-party scan screenshots. For a public showing we need NCKU permission or a procedural core. Can you confirm how the core was built?
+- **Still hold the re-record** until READY TO RE-RECORD.
+

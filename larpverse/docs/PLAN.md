@@ -162,6 +162,7 @@ Give each session one workstream and point it at this file plus `contracts/INTER
 | BL-22 | P1 | Visual consistency batch 4 (animation + isaac/overlay) + grid MP4 re-record | builder — running |
 | BL-23 | P1 | Expanded Weiguan map from the Isaac teammate (Weiguan + surrounding collapsed buildings): mesh/heightmap import → scenario sectors | waiting on teammate push; importer being built |
 | BL-24 | P0 | Operator tasking: operator circles search zones before launch; drones search only those; coverage tracking; no re-search without new evidence; outside-zone acoustic → zone suggestions (ops server scripts/serve.py + contract v1.2 + sim/tasking.py + dashboard Plan-search mode + Isaac zone overlay) | builders — running |
+| BL-25 | P0 | Recon mode when no zones: coverage-path LiDAR mapping (fresh map; satellite is stale) + perch-and-listen (rotors off) + mound segmentation → zone proposals → operator accepts (auto-accept in --autonomous) | tasking builder (sim/recon.py) + dashboard + overlay |
 | BL-11 | P1 | KEY SAVED 19:58 → Gemini audio builder records live runs. Once GEMINI_API_KEY exists: record a seed-7 Gemini run and commit its replay cache (un-ignore one curated file) so the demo replays offline | blocked on key |
 
 ## Decisions log
@@ -190,3 +191,4 @@ Give each session one workstream and point it at this file plus `contracts/INTER
 | 2026-11-07 | Up to 10 concurrent agents (user: use the budget; heavy jobs still gated by heavy.sh) | speed | user |
 | 2026-11-07 | Search areas are operator-tasked zones drawn on the dashboard before launch (sim default = rubble outlines); zones aren't re-searched without new evidence | user: realistic + avoids repeat searches | user |
 | 2026-11-07 | Dev server is now scripts/serve.py (static + /api/tasking), same port 8765 | dashboard needs to save tasking | orchestrator |
+| 2026-11-07 | No zones → recon: map the site + perch-and-listen, then propose zones; in-flight listening only for loud events (rotor ego-noise) | user: more data, realistic when satellite imagery is stale | user |

@@ -241,3 +241,24 @@ Rules:
 - The mission searches only inside tasked zones.
 - A zone marked `searched_no_ping` or `ping` is not revisited unless new evidence arrives: a new acoustic clip associated with it, or an operator re-task. The reason is recorded in `retask_reason`.
 - No detection is not proof of absence. A searched zone without a ping is shown as "searched — not cleared".
+
+### Reconnaissance mode (v1.2): no zones tasked yet
+
+When `tasking.json` has no active zones, the mission runs **recon** instead of waiting:
+
+1. **Mapping flight.** A boustrophedon or spiral coverage path over `site.bounds`, or over an operator-given area of interest if one exists. It flies at a safe altitude (about 12–15 m above the highest mapped point), collision-checked against the growing map. The LiDAR builds the fresh site map, which is needed because post-collapse satellite imagery is stale. `state.phase = "recon_mapping"`.
+2. **Perch-and-listen.** At intervals, each drone lands on a flat cell found in the fresh map, near unmapped or high-interest rubble, and listens with rotors off for about 15–20 s. Rotor ego-noise makes in-flight listening unreliable, so in-flight audio is only used for very loud events and is flagged as such. `state.phase = "recon_listening"`.
+3. **Proposals.** The fresh heightmap is segmented into rubble mounds (connected areas rising well above street level), giving outline polygons. These go in `state.zone_proposals` together with acoustic leads. The operator accepts or edits them on the dashboard, which POSTs them to `/api/tasking`, and the targeted search starts.
+
+```jsonc
+"recon": { "status": "mapping|listening|proposing|done",
+           "mapped_fraction": 0.0-1.0,            // of site.bounds (or the area of interest)
+           "path": [[x, y, z], …],                // planned coverage path (for drawing)
+           "perches": [{ "drone_id": "d2", "xy": [x, y], "t": 140.0, "clips": ["a3"] }] },
+"zone_proposals": [
+  { "id": "P1", "polygon": [[x, y], …], "kind": "rubble_mound",
+    "height_max_m": 6.2, "area_m2": 310,
+    "acoustic_leads": ["a3"], "score": 0.82,      // ranks proposals for the operator
+    "why": "mound 6 m high; voice-like clip heard from it at a perch" }
+]
+```

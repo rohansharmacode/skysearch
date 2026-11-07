@@ -26,6 +26,15 @@ You're the Claude Code session running Isaac Sim for the Larpverse demo. This fi
 
 ## Updates
 
+### 2026-11-07 21:10: reconnaissance mode (a great opening shot)
+
+When no zones are tasked, the drones run **recon**. The contract is "Reconnaissance mode (v1.2)" in `contracts/INTERFACES.md`.
+1. They fly a coverage path over the site and build a fresh LiDAR map (post-collapse satellite imagery is stale).
+2. They perch on flat spots to listen with rotors off.
+3. The system proposes rubble outlines, which the operator accepts.
+
+`isaac/overlay.py` will draw the coverage path, the perches and the proposed outlines. Shot idea: a high wide shot of three drones sweeping the site while the LiDAR map paints in, then one drone settling onto a perch, rotors spinning down. It doubles as the opening of the 1-minute video.
+
 ### 2026-11-07 21:00: new feature, operator-tasked search zones
 
 - **The design (from the user):** before launch, the operator circles the rubble zones to search on the dashboard. The drones search only those zones, track coverage, and don't re-search a zone without new evidence. Sounds heard outside every zone become "suggested zones" for the operator.

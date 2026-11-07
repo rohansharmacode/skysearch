@@ -57,7 +57,7 @@ STAGE 3 gemini_audio.analyse_sector_audio: per sector  human × urgency(+distres
   - Why the framing went: with a search-and-rescue framing (v1–v4), flash-lite invented distress on clean or noisy
     news speech. It produced "救命啊…炸彈爆炸" from Mandarin news, Spanish "Por favor ayúdame, soy trabajador" from
     Cantonese, and Thai "I'm here… third floor" from Cantonese. Naming the site (Tainan) also pushed language ID toward
-    Mandarin/Hokkien. FLEURS invented-distress rate: v4 7/60 → v5 0/40 on the same zh/yue clips.
+    Mandarin/Hokkien. FLEURS invented-distress rate: v4 7/60 (zh, yue, en) → v5 0/40 on zh/yue, 4/180 over all nine languages.
 - **Code checks** (`validate_analysis`, `cross_check`, `verify_distress`):
   - `validate_analysis` enforces types and enums and rejects "confirmed / survivor found".
   - `cross_check` caps confidence at 0.6, with a note, when stage-1 VAD heard no speech or a long transcript comes from
@@ -205,7 +205,80 @@ Without a key every command runs with `by: "fallback"`.
 
 ### Stage 2, live (`gemini-3.5-flash-lite`, prompt v5)
 
-LIVE_RESULTS
+Measured on 7 Nov 2026 with `GEMINI_AUDIO_MODEL=gemini-3.5-flash-lite`, `thinkingLevel: low` and `GEMINI_RPM=8`.
+
+- 180 FLEURS clips across 9 languages × {clean, one noisy bed}, 24 distress-phrase clips and 47 edge cases.
+- All answered by Gemini (0 fallbacks). Every validated answer is in `agents/cache/llm.jsonl` (434 rows) for offline
+  replay.
+- Noisy clips went through stage 1 first: 100 % were forwarded. Noisy beds cycle through ambient +10 / ambient 0 /
+  rotor +5 / generator 0 dB.
+
+**FLEURS (read news speech):** CER and WER against the FLEURS transcript; translation = token F1 against the parallel
+English sentence.
+
+| lang | clean: lang-ID, CER, WER, transl. F1 | noisy: lang-ID, CER, WER, transl. F1 |
+|---|---|---|
+| cmn (Mandarin) | 10/10, 0.05, -, 0.42 | 9/10, 0.41, -, 0.16 |
+| yue (Cantonese) | 10/10, 0.35, -, 0.43 | 6/10, 1.00, -, 0.10 |
+| en | 9/10, 0.00, 0.00, 0.89 | 9/10, 0.02, 0.04, 0.79 |
+| id | 10/10, 0.00, 0.00, 0.67 | 10/10, 0.10, 0.18, 0.49 |
+| vi | 10/10, 0.03, 0.04, 0.64 | 10/10, 0.11, 0.18, 0.44 |
+| fil | 10/10, 0.07, 0.22, 0.71 | 10/10, 0.24, 0.47, 0.45 |
+| th | 10/10, 0.13, -, 0.56 | 10/10, 0.18, -, 0.35 |
+| ja | 10/10, 0.05, -, 0.52 | 10/10, 0.23, -, 0.43 |
+| ko | 10/10, 0.08, 0.11, 0.59 | 10/10, 0.16, 0.34, 0.45 |
+
+- **Language ID** is 89/90 clean and 78/90 noisy. Cantonese under noise is the weak spot.
+- **Translation F1** is lexical overlap with one reference, so 0.4–0.9 means the gist is right (spot-checked).
+- **Hallucination.** Distress cues were invented on 4/180 news clips (all noisy), down from 7/60 with prompt v4. None
+  is a call for help or a scream:
+  - verification demoted the 2 fabricated "help" lines (zh "Help, three bomb explosions…", fil "Help the fifth…")
+    to `distress_unverified` with confidence capped at 0.5
+  - the 4 left are minor tags read off the news content (Thai "3 people in the house" → multiple_people; a Korean
+    "levee" → location)
+  - 5/180 transcripts came back in the wrong language
+
+**Scripted distress phrases** (Piper TTS; en, cmn, vi, id × clean / ambient 0 dB / rotor 0 dB = 24):
+
+- Language ID 23/24.
+- Cue recall 0.76, precision 1.00 (v4: 0.81 / 0.89).
+- All four cues found in 12/24.
+- CER 0.00 for en and id, 0.09–0.21 for cmn, 0.08–0.31 for vi. The vi/zh x_low voices are rough.
+
+**Edge cases** (ambient 0 dB unless noted, 47 clips):
+
+- **Non-human (dog, siren, engine, chainsaw, helicopter, glass, fire, creak, debris, rain, wind; 23 clips):**
+  - Stage 1 dismissed 11.
+  - Of the 12 forwarded, Gemini gave confidence ≥ 0.4 to one: a door creak heard as crying (0.8).
+  - The rest came back as animal or machinery at ≤ 0.1.
+- **Human sounds** (all forwarded):
+  - Crying: 3/3 human (crying, scream, one heard as animal).
+  - Cough: 2/3 coughing.
+  - Breathing: 3/3 human (as moaning or other).
+  - Sneeze: 2/2 human (as coughing).
+  - Faint speech at −10 dB: 2/3.
+  - Shouted phrases under a hovering drone at −5 dB: 2/2.
+- **Weak spots:**
+  - Knocks: Gemini rarely calls them human (0/5 at ≥ 0.4; 1/5 typed knocking_tapping). Stage 1's knock heuristic and
+    YAMNet carry them; consider a code rule that keeps periodic knocks as leads.
+  - Overlapping voices (en+zh, id+vi, ja+ko): 0/3 reported two people or two languages. Gemini picks the dominant
+    talker.
+- **Latency:** median 1.6–1.8 s per clip (p90 2.3–3.4 s), excluding client-side throttling. Tokens per clip are about
+  800 in (about 200 audio, i.e. ~32 tokens/s) and 110–190 out. Cost is about $0.00015/clip at assumed lite list
+  prices: noise next to throughput.
+
+**End to end** (`e2e --seed 3 --mode live`; scene.py listen → existing `run.analyse` → stage 1/2/3 → merge):
+
+- 5 separated clips: 3 forwarded, 2 dismissed (debris "aircraft", dog "animal").
+- 3 audio calls plus 1 rationale call.
+- Ranking: B1 "Help, can anyone hear me? My leg is trapped" (71), C1 "Hello, is anyone there? … water" (53, ambiguous
+  direction 0.51), C2 knocks (2; Gemini heard machinery), A2/B2 dismissed but not cleared.
+- Gemini wrote the rationales, e.g. "Heard someone saying 'Help, can anyone hear me? My leg is trapped' with distress
+  cues of call for help and trapped; direction reliability …".
+- Truth: B1 voice, C1 weak voice, C2 knock, B2 dog, A2 settling.
+
+**Earlier runs:** `gemini-3.5-flash`, prompt v1, 16 clips at 0 dB. Language ID was 15/16 where answered; the run then
+hit the 20/day free-tier quota.
 
 ### Stage 2, fallback (no key; Whisper base.en)
 

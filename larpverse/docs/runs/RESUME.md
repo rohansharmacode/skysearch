@@ -26,7 +26,7 @@ Paused by the user at about 23:15 and resumed at about 23:20. All 11 agents were
 **Gemini**
 - The key is saved in `.env` (gitignored). It's a temporary hackathon key, so use it freely.
 - It is rate-limited (HTTP 429), so backoff and throttling live in `agents/llm.py`.
-- Model `gemini-3.5-flash` (GEMINI_MODEL). **23:55: the key hit its DAILY quota (429)**; all agents fall back cleanly. Re-run the live decider pass and the Gemini audio eval when it resets.
+- Model `gemini-3.5-flash` (GEMINI_MODEL). **23:55: the key hit its DAILY quota (429). It is FREE TIER: ~20 req/day per model.** demo.sh now splits models: audio gemini-3.5-flash-lite (replay cache), decider gemini-3.7-flash; all agents fall back cleanly. Re-run the live decider pass and the Gemini audio eval when it resets.
 
 **Product decisions by the user**
 - **Audio:** an open-model novelty filter runs first; only outliers go to Gemini (multilingual), which feeds prioritisation.
@@ -56,7 +56,7 @@ Paused by the user at about 23:15 and resumed at about 23:20. All 11 agents were
 |---|---|---|
 | a055b721c3e78b0e1 | **Mission** (sim/grid_mission, grid_world, acoustic_grid, coordinator, radar_model, radar_dsp, landing, localise, planner, evaluate(_grid); tests grid/radar/localise; docs/EVAL_GRID.md, RADAR_PENETRATION.md) | RESUMED 23:05: build WINCH POD delivery (decision in PLAN log), realistic penetration default, then physio on + vitals hooks 3-5, then LOD/tiles. Last round: legacy default kept (realistic = 0 pings from 11 m stand-off); seed 7 pings A2,A3,B2; eval 42/60 vs 17/20 |
 | a1dbd08c7726451da | **Acoustic fix** (acoustic/dsp, run, scene, models, eval_assign; tests/test_acoustic) | Top blocker: B1 missed, A3 cross-talk, knock-vs-engine, wire the novelty→Gemini stage into run.py, final eval table |
-| a162587dbfaffdc2e | **Gemini audio** (acoustic/novelty, gemini_audio, eval_gemini; agents/llm.py audio, backoff and throttle; FLEURS data; docs/ACOUSTIC_GEMINI.md) | Live multilingual evaluation, replay cache |
+| a162587dbfaffdc2e | **Gemini audio** (acoustic/novelty, gemini_audio, eval_gemini; agents/llm.py audio, backoff and throttle; FLEURS data; docs/ACOUSTIC_GEMINI.md) | DONE (06013f5..1333702): prompt v5 kills hallucinated distress; 434 replay answers on flash-lite. Integration → acoustic fix agent |
 | a2b76615bba793384 | **Real-audio validation + pipeline verdict** (acoustic/validate_real.py, docs/ACOUSTIC_VALIDATION.md, data/audio_real) | DONE: verdict ours; DREGON real DoA (dd8ab8a, data is academic-use only, kept local) |
 | a1a856ada8463193a | **Vitals** (sim/physio.py, sim/vitals.py, scripts/validate_vitals.py, tests/test_vitals, docs/VITALS.md) | DONE 4da97d0: condition-only, 86% synthetic, distressed 100%, over-triage fixed (49→5 of 57). Hooks 3-5 unblocked. Callout fix → speaker. Known: over-triages calm slow breathers (5-8 bpm) |
 | add66c0cd95d1fed8 | **Site** (sim/site_weiguan, site_mesh, `site="collapse"` from the teammate's USD, isaac/scene.py, photoreal.py, run_mission.py `--site`, isaac/site.py, mapping/slam per-scenario, usd-core in .venv) | DONE: collapse site (07d9ec7), pod visual + passthrough (75ea9b2). Brief 🟡→✅ pushed. Open: isaac/selftest.py still grid-only; licence: core geometry is also scan-derived |
@@ -66,7 +66,7 @@ Paused by the user at about 23:15 and resumed at about 23:20. All 11 agents were
 | ac3d7a7f1dc704099 | **Platform** (sim/platform.py, mapping/raycast_lidar.py, isaac/lidar.py, isaac/drone_viz.py, docs/PLATFORM.md) | DONE (84b9dd9, 337db98). R-PLAT-1/2/5 → mission, R-PLAT-3 → site, R-PLAT-4 → dashboard (producer of 16 m tiles still unassigned) |
 | ad524ba6da89b83ed | **Decider** — DONE (9730a11, 0958562); requests 1-3 → mission. Idle |
 | a02bd98e325a265bc | **Comms / rescue hotspot** (sim/comms.py, tests/test_comms.py, docs/HOTSPOT.md, dashboard/portal/) | NEW 00:05: Wi-Fi AP + captive portal + mesh backhaul + RSSI phone localisation; serve.py /api/portal patch → orchestrator applies |
-| a5e7bdb232aa15f7b | **Speaker** (sim/callout.py, sim/guidance.py, acoustic/speaker_assets.py, docs/SPEAKER.md, tests/test_callout) | serve.py patch and mission diff via Requests |
+| a5e7bdb232aa15f7b | **Speaker** (sim/callout.py, sim/guidance.py, acoustic/speaker_assets.py, docs/SPEAKER.md, tests/test_callout) | DONE (4d46fb4, a8eff22, c8cf446). serve.py /api/broadcast applied b90217d; mission patch §6 → mission (3 langs default); panel → dashboard. Hokkien voice needs native recording |
 
 Paused: a946c57cc57fd5b2b (video cut, `scripts/cut_video.py`). Resume it when the Isaac re-record exists.
 

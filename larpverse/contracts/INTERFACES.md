@@ -366,3 +366,93 @@ The search gains a **consent-based** signal: a phone that connects has its RSSI,
 - `devices[].est_xy` is a **candidate region** (σ from the RSSI fit), never a confirmed position. RSSI through rubble is weak and multipath-heavy.
 - A connected device whose position falls inside a zone counts as **new evidence**, so the zone can be re-searched.
 - Colour: **blue** (#3b82f6) for comms, phones and hotspot coverage, everywhere.
+
+### Speaker: call-out, reassurance and guidance (v1.3, from docs/SPEAKER.md §4)
+
+```markdown
+#### Speaker (v1.3, additive): loudspeaker broadcasts, call-out responsiveness, operator API
+
+Heavy-lift drones carry a loudspeaker. Every played string is a vetted template (sim/guidance.py) or text an
+operator typed; machine translations are `pending_approval` until an operator approves them. Never "confirmed".
+
+state.json additions (sim/callout.Speaker.state; written by sim/grid_mission.py):
+
+"broadcasts": [ { "id": "b23", "t": 600.1, "drone_id": "d3",
+    "kind": "callout|reassure|guidance|operator", "lang": "zh-TW|nan-TW|en|id|vi",
+    "text": "...", "text_en": "...", "audio_url": "acoustic/data/speaker/<key>.<lang>.wav" | null,
+    "audio_status": "rendered|unvetted (...)|missing: record a native speaker|no audio yet ...",
+    "target": { "type": "sector|ping|sectors|track|zone|drone", "id": "A3-R1", "xy": [x, y]? },
+    "heading_deg": 271.6,            // guidance only: first leg, CCW from east (contract convention)
+    "source": "template|operator|llm_translation", "template": "callout|reassure|guidance" | null,
+    "status": "played|pending_approval|rejected", "approved_by": "op1" | null,
+    "duration_s": 4.7, "review": "pending native-speaker review" | null, "group": "callout-2" } ],
+    // scheduled items appear as "played" once t <= state.t; pending / rejected operator items are listed for the UI
+"callouts": [ { "id": "C2", "t_start": 466.0, "listen_ends": 523.0, "t_end": 644.5, "speaker_drone": "d2",
+    "target": { "type": "ping", "id": "A3-R1", "xy": [x, y] }, "langs": [...],
+    "steps": [ { "step": "silence|message|listen", "lang"?, "t0", "t1" } ],
+    "sectors": { "A3": <responsiveness> }, "pings": { "A3-R1": <responsiveness + ping_id, note> },
+    "tracks": [ { "id": "T1", "xy": [x, y], "source": "callout_voice_open_ground", "evidence": [t...], "why": "..." } ],
+    "guided": [ { "track": "2-T1", "xy", "source", "why", "text_en", "path": [[x, y]...], "legs": [{bearing_deg, dist_m, compass}] } ],
+    "reassured": ["A3-R1"], "n_events": 41, "synthetic": true } ],   // results only after listen_ends; before: status "in_progress"
+"responsiveness": { "A3": <responsiveness> },   // per pile: the call-out heard from closest (then latest)
+<responsiveness> = { "status": "responded|possible_response|nonhuman_only|no_response", "kind": "knock_x3|knock_fast|knock|voice|shout|crying|..." | null,
+    "avpu": "V|unknown|not V (A/V not shown)", "confidence": 0-1, "text": "...", "callout_t": 466.0,
+    "range_m": 11.4, "message_reached": true, "events": [...]? , "lang_hint": "zh-TW"? }
+piles[].responsiveness, radar_candidates[].responsiveness (same object); radar_candidates[].triage_fused
+    { triage_hint, condition, avpu, reason, changed_from, rank } when the candidate has vitals
+    (hints / ranks from sim/vitals.TRIAGE_RANK; no response raises, never lowers).
+drones[].speaker = { kind, lang, id } while that drone is playing.
+
+Rules: "no_response" never clears a pile and its text says it does not rule out an unconscious person; a
+"responded" sector is a candidate, not a confirmed person; guidance routes use the LiDAR heightmap (rubble
+> 0.4 m above local ground, +2 m margin) and tasked zones, never truth.
+
+Operator API (scripts/serve.py, queue file dashboard/data/broadcast_queue.json, read by the mission each step):
+GET  /api/broadcast                 -> { schema: "larpverse.broadcast_queue/v1", revision, items: [broadcast...] }
+POST /api/broadcast                 { "drone_id": "d2" | "zone": "Z1", "kind": "operator|callout|reassure",
+                                      "text": "...", "src_lang": "en", "langs": [...], "translate": true,
+                                      "operator": "name" }
+     -> { items, translation_problems }; operator text: scheduled; translations: pending_approval;
+        callout / reassure: the vetted templates (text ignored)
+POST /api/broadcast/approve         { "id": "op203011-2", "operator": "name", "approve": true|false }
+```
+
+
+### Gemini audio fields (acoustic/v1 additions, from docs/ACOUSTIC_GEMINI.md)
+
+All additive: a v1 reader keeps working.
+
+```jsonc
+"clips": [ { /* v1 fields */,
+  "novelty": 14.5,                      // stage-1 peak novelty (background ≈ 1-2, threshold 4)
+  "forwarded": true,                    // something in this clip went to stage 2
+  "dismissed": ["dismissed: dog"],      // stage-1 dismissals in this clip (kept visible)
+  "language": "cmn", "languages": [{"code": "cmn", "name": "Mandarin"}],
+  "transcript_original": "救命！我被困在樓梯下面…", "translation": "Help! I'm trapped under the stairs…",
+  "distress": ["call_for_help", "trapped", "location_hint"],
+  "audio_analysis": { "by": "gemini", "by_note": null, "sound_type": "call_for_help", "human_vocal": true,
+                      "confidence": 0.95, "people_count": 1, "location_hints": ["under the stairs"],
+                      "rationale": "...", "model": "gemini-3.5-flash-lite", "error": null,
+                      "cross_check": null, "verify": {"ok": true, "similarity": 0.93, "...": "..."},
+                      "distress_unverified": [], "t0": 7.3, "t1": 11.9 },
+  "stage1": { "denoise": "noisereduce", "profile": "background 26.0 s (quietest 70%)",
+              "events": [ {"cand_id": "d1-n1", "t0": 7.5, "t1": 11.7, "novelty_peak": 14.5,
+                           "label": "likely_human", "reason": "Speech 0.92, VAD 1.00", "forwarded": true,
+                           "dismissed": null, "group": "d1-g1"} ],
+              "stage2_clips": [ {"cand_id": "d1-g1", "t0": 7.0, "t1": 12.2, "members": ["d1-n1"]} ] } } ],
+"piles": [ { /* v1 */, "audio_priority": 83, "distress": ["trapped"], "languages": ["en"] } ],
+"sector_tasks": [ { "rank": 1, "pile_id": "B1", "priority": 83,
+                    "status": "lead",           // lead | uncertain_sound | dismissed_nonhuman | no_signal_not_cleared
+                    "human": 0.9, "urgency": 1.0, "reliability": 0.85,
+                    "languages": [{"code": "en", "name": "English"}], "distress": ["call_for_help", "trapped"],
+                    "reasons": ["..."], "rationale": "...", "rationale_by": "gemini",   // or "template"
+                    "top_event": "d1-g1", "events": 2, "forwarded": 1, "dismissed": [], "by": "gemini" } ],
+"gemini_audio": { "prompt": "gemini-audio-v5", "mode": "auto",
+                  "stage1": {"candidates": 5, "forwarded": 3, "dismissed": {"dog": 1}},
+                  "stage2": {"calls": 3, "cached": 0, "fallback": 0, "errors": [], "latency_ms": 4500,
+                             "audio_s": 13.5, "usage": {...}, "rationale": {"by": "gemini", ...}} }
+```
+
+With `reprioritise=True` (the default), `merge_into_state` raises a pile's `priority`/`why` to the stage-3 value
+when that value is higher and the task is a `lead`, then re-picks `radar_ping` and `dispatch` from the top lead.
+

@@ -45,6 +45,7 @@ RUBBLE_DB_PER_M = 3.0
 EARSHOT_M = 40.0             # sectors farther than this from the speaker drone are not reported
 HUMAN = ("voice", "shout", "knocking", "crying")
 RESP_MAX_LATENCY_S = 10.0    # an onset this soon after a message segment counts as time-locked
+REASSURE_EVERY_S = 600.0     # the same ping / sector is reassured at most this often
 SECTOR_RADIUS_M = 9.0        # a source farther than this (+ 2 sigma) from every pile centre is on open ground
 FIX_SIGMA_MAX_M = 3.0  # triangulated position used only when its major-axis std is below this
 
@@ -56,7 +57,6 @@ RESPONSE_MODEL = {
     "distressed_tachypnea": (0.60, [("knock_fast", 0.5), ("weak_voice", 0.5)], (2.0, 8.0), 0.35),
     "unconscious_slow":     (0.00, [], (0, 0), 1.0),
     "irregular_apneic":     (0.00, [], (0, 0), 1.0),
-    "child_calm":           (0.75, [("crying", 0.6), ("shout", 0.4)], (1.0, 6.0), 0.15),
     "ambulatory":           (0.90, [("shout", 1.0)], (1.0, 3.0), 0.20),
 }
 LEVEL_DB = {"knock3": 88.0, "knock_fast": 84.0, "shout": 90.0, "weak_voice": 72.0, "crying": 85.0,
@@ -355,7 +355,7 @@ def _describe(g):
         if n >= 4 and per and per < 0.2:
             return "knock_fast", f"fast knocking x{n}"
         return "knock", f"knocking x{n}"
-    return cls, {"voice": "voice", "shout": "shouting", "crying": "crying (child-like?)"}.get(cls, cls)
+    return cls, {"voice": "voice", "shout": "shouting", "crying": "crying"}.get(cls, cls)
 
 
 def analyse_callout(plan, detections, sectors, pings=(), open_ground=None):
@@ -480,40 +480,47 @@ def analyse_callout(plan, detections, sectors, pings=(), open_ground=None):
 
 
 # ============================================================================ fusion
-TRIAGE_RANK = {"immediate": 1.0, "immediate (check)": 0.85, "assess": 0.55, "delayed (re-check)": 0.45, "delayed": 0.35}
-ABNORMAL = ("rapid_shallow", "irregular_with_pauses", "slow_deep")
-
-
 def fuse_triage(vitals, resp):
-    """Respiratory hint (sim/vitals.py dict: pattern, triage_hint) + call-out responsiveness -> fused hint.
-    START logic: cannot follow a simple command -> immediate. An aid for the dig order, never a diagnosis."""
+    """Fuse the radar condition (sim/vitals.py: ``condition``, ``triage_hint``) with call-out responsiveness.
+
+    START logic: someone who cannot follow a simple command is IMMEDIATE, so no response to the call-out raises
+    priority; above all for ``unconscious_slow`` (slow regular breathing, hint "urgent"), where the radar cannot
+    tell deep rest from reduced consciousness and the voice check is exactly the missing test. A response never
+    lowers priority below "urgent" for an abnormal condition (the call-out is sector-level, not per person).
+    Hints and ranks come from sim/vitals.py. An aid for the dig order, never a diagnosis."""
+    from .vitals import CONDITION_OF, TRIAGE_RANK
     v = vitals or {}
-    hint, pattern = v.get("triage_hint", "assess"), v.get("pattern")
+    hint = v.get("triage_hint", "assess")
+    cond = v.get("condition") or CONDITION_OF.get(v.get("pattern"), "unknown")
     st = (resp or {}).get("status")
-    out = {"triage_hint": hint, "avpu": (resp or {}).get("avpu", "unknown"), "changed_from": None,
-           "reason": v.get("triage_reason", "no breathing pattern")}
+    out = {"triage_hint": hint, "condition": cond, "avpu": (resp or {}).get("avpu", "unknown"), "changed_from": None,
+           "reason": v.get("triage_reason") or v.get("condition_text") or "no breathing condition yet",
+           "rank": TRIAGE_RANK.get(hint, TRIAGE_RANK["assess"])}
     if st == "no_response" and (resp or {}).get("message_reached", True):
-        if pattern in ABNORMAL:
-            new, why = "immediate", "no response to the call-out + abnormal breathing: possible reduced consciousness"
-        elif pattern in ("regular_calm", "fast_small"):
-            new, why = "immediate (check)", ("no response to the call-out (START: cannot follow a command) with "
-                                             "regular breathing; may simply not hear through the rubble")
-        else:
-            new, why = hint if hint != "delayed" else "immediate (check)", "no response to the call-out; breathing unknown"
+        new, why = {
+            "distressed_tachypnea": ("immediate", "no response to the call-out + rapid shallow breathing"),
+            "irregular_apneic": ("immediate", "no response to the call-out + irregular breathing / pauses: possible "
+                                              "airway problem or reduced consciousness"),
+            "unconscious_slow": ("immediate", "slow regular breathing and no response to the call-out: reduced "
+                                              "consciousness more likely than deep rest"),
+            "calm": ("immediate (check)", "no response to the call-out (START: cannot follow a command) with calm "
+                                          "breathing; may simply not hear through the rubble"),
+        }.get(cond, (hint, "no response to the call-out; breathing condition unknown"))
     elif st == "responded":
-        if pattern == "rapid_shallow":
-            new, why = "immediate", "responds to voice but breathing is fast (START respiratory criterion)"
-        elif pattern in ("irregular_with_pauses", "slow_deep"):
-            new, why = "immediate (check)", "responds to voice, but breathing is irregular or slow"
-        elif pattern == "regular_calm":
-            new, why = "delayed", "responds to voice and breathes regularly"
-        else:
-            new, why = hint, "responds to voice (AVPU V); breathing pattern unknown"
+        new, why = {
+            "distressed_tachypnea": (hint, "responds to voice; breathing is rapid and shallow"),
+            "irregular_apneic": ("immediate (check)" if TRIAGE_RANK.get(hint, 0) < TRIAGE_RANK["immediate (check)"]
+                                 else hint, "responds to voice, but breathing is irregular or paused"),
+            "unconscious_slow": (hint, "responds to voice: deep rest more likely than reduced consciousness; re-check"),
+            "calm": ("delayed", "responds to voice and breathes calmly"),
+        }.get(cond, (hint, "responds to voice (AVPU V); breathing condition unknown"))
     else:
         return out
+    if TRIAGE_RANK.get(new) is None or TRIAGE_RANK[new] < TRIAGE_RANK.get(hint, 0.0) and st == "no_response":
+        new = hint                                     # no response never lowers priority
     if new != hint:
         out["changed_from"] = hint
-    out.update(triage_hint=new, reason=why, rank=TRIAGE_RANK.get(new, 0.55))
+    out.update(triage_hint=new, reason=why, rank=TRIAGE_RANK.get(new, TRIAGE_RANK["assess"]))
     return out
 
 
@@ -566,6 +573,7 @@ class Speaker:
         self.log = BroadcastLog(audio_lookup=self._audio)
         self.callouts = []
         self.guided = []                  # tracks already guided (xy), so a track is not re-guided every listen
+        self.reassured_at = {}            # target id -> last reassurance time
         self._cmap = None
         self.n = 0
 
@@ -594,9 +602,9 @@ class Speaker:
         return segs + LISTEN_WINDOW_S
 
     def begin_listen(self, scenario, t_callout, drones, target, pings=(), moving_tracks=(), callout_fn=None):
-        """Returns (rotors_off_seconds_after_t_callout, result): the mission keeps the drones landed and
-        silent until the call-out's listen window ends; reassurance and guidance follow from the hover
-        (playing needs no silence), scheduled after that. ``target``: {"type": "sector"|"ping", "id", "xy"}.
+        """Returns (landed_seconds_after_t_callout, result): the drones stay landed through the call-out, its
+        listen window (rotors off) and the reassurance / guidance broadcasts that follow (they must be played
+        from close by to be heard; results are revealed at the end of the listen window). ``target``: {"type": "sector"|"ping", "id", "xy"}.
         ``moving_tracks``: radar Doppler tracks [{id, xy}] (public). ``callout_fn`` replaces the generator."""
         if not self.enabled:
             return 0.0, None
@@ -616,6 +624,7 @@ class Speaker:
                    if p["id"] in res["pings"] or p.get("pile_id") == target.get("id")]
         targets += [{"type": "sector", "id": s, "xy": self.sectors[s]} for s, r in res["sectors"].items()
                     if r["status"] == "responded" and not any(p.get("pile_id") == s for p in pings or ())]
+        targets = [x for x in targets if t - self.reassured_at.get(x["id"], -1e9) >= REASSURE_EVERY_S]
         reassured = []
         if targets:
             tg = targets[0] if len(targets) == 1 else {"type": "sectors", "id": ",".join(x["id"] for x in targets)}
@@ -624,6 +633,8 @@ class Speaker:
             t = self._play_all(t, spk, "reassure", MESSAGES["reassure"], {"type": tg["type"], "id": tg["id"]},
                                template="reassure")
             reassured = [x["id"] for x in targets]
+            for x in targets:
+                self.reassured_at[x["id"]] = plan["t_end"]
         # guidance: ambulatory people on open ground (call-out voices) and radar Doppler tracks
         guided = []
         for tr in list(res["tracks"]) + [dict(m, source="radar_doppler") for m in moving_tracks or ()]:
@@ -653,7 +664,7 @@ class Speaker:
                "events": res["events"], "reassured": reassured, "guided": guided,
                "generator": obs.get("generator"), "synthetic": True}
         self.callouts.append(rec)
-        return plan["t_end"] - t_callout, rec
+        return round(t - t_callout, 2), rec
 
     def ingest_operator(self, path, t, drones):
         """Pick up operator broadcasts from the ops server queue (dashboard/data/broadcast_queue.json): items
@@ -701,13 +712,23 @@ class Speaker:
         """{"broadcasts", "callouts", "responsiveness"} as of time t (results only after their listen ends)."""
         done = self.results_at(t)
         resp = {}
-        for c in done:                     # per sector: the call-out heard from closest (best geometry), then latest
+        rank = {"responded": 3, "possible_response": 2, "nonhuman_only": 1, "no_response": 0}
+        for c in done:                     # per sector: strongest evidence over all call-outs, plus history
             for sid, r in c["sectors"].items():
-                prev = resp.get(sid)
-                if prev is None or r["range_m"] <= prev["range_m"] + 2.0:
-                    resp[sid] = {k: r[k] for k in ("status", "kind", "avpu", "confidence", "text", "callout_t",
-                                                   "range_m", "message_reached")}
-                    resp[sid]["callout_id"] = c["id"]
+                h = resp.setdefault(sid, {"history": []})
+                h["history"].append({"callout_id": c["id"], "t": r["callout_t"], "status": r["status"],
+                                     "range_m": r["range_m"]})
+                best = h.get("status")
+                if best is None or (rank[r["status"]], -r["range_m"]) > (rank[best], -h["range_m"]):
+                    h.update({k: r[k] for k in ("status", "kind", "avpu", "confidence", "text", "callout_t",
+                                                "range_m", "message_reached")}, callout_id=c["id"])
+        for sid, h in resp.items():
+            last = h["history"][-1]
+            h["latest_status"] = last["status"]
+            if h["status"] == "responded" and last["status"] == "no_response" and last["t"] > h["callout_t"] \
+                    and last["range_m"] <= h["range_m"] + 5:
+                h["note"] = (f"responded at t {h['callout_t']:.0f} s but no response at t {last['t']:.0f} s: possible "
+                             "deterioration (or moved / could not hear): re-check")
         live = [c for c in self.callouts if c["listen_ends"] > t]
         return {"broadcasts": self.log.state(t),
                 "callouts": [dict({k: v for k, v in c.items() if k not in ("events", "applied")},

@@ -48,6 +48,7 @@
         <button class="tog" data-k="acoustic" aria-pressed="true">Acoustic cones</button>
         <button class="tog" data-k="sites" aria-pressed="true">Landing sites</button>
         <button class="tog" data-k="reach" aria-pressed="true">Radar reach</button>
+        <button class="tog" data-k="comms" aria-pressed="true">Rescue Wi-Fi</button>
         <button class="tog" data-k="piles" aria-pressed="true" id="togPiles" hidden>Piles &amp; dispatch</button>
       </div>
     </div>
@@ -71,6 +72,7 @@
       <span><i class="dot red"></i>Radar ping (candidate region)</span>
       <span class="lx"><i class="ring"></i>Insufficient evidence</span>
       <span class="lx"><i class="tring"></i>Triage ring (dig order)</span>
+      <span><i class="phone"></i>Phone / Wi-Fi</span>
       <span><i class="wedge"></i>Heard a human-like sound</span>
       <span class="lx"><i class="tri"></i>Drone</span>
       <span class="lx"><i class="sq"></i>Landing site</span>
@@ -95,6 +97,7 @@
         <li><i class="k-tri"></i><div><b>Drone</b> (white; hollow with a small "ear" ring while landed and listening, rotors off). <i class="k-sq-inline"></i> green squares are landing sites the drones chose from the LiDAR map.</div></li>
         <li><i class="k-arrow"></i><div><b>Dispatch</b>: where the coordinator sent the fleet next, and why (see Dispatch decisions).</div></li>
         <li><i class="k-zone"></i><div><b>Search zones</b> the operator tasked (✎ Plan search): white outline. Dashed = not searched yet; grey hatch = <b>searched — not cleared</b>; red = ping inside; teal = acoustic lead. <b>Proposed</b> zones from recon are dashed with a "proposed" tag until you accept them; <b>suggested</b> circles are sounds heard outside every zone.</div></li>
+        <li><i class="k-phone"></i><div><b>Blue = rescue Wi-Fi</b>: each drone's open hotspot (faint disc), the mesh links back to the GCS (thin lines, Mbps), and phones that joined it with their RSSI candidate region (dashed circle). A ringed, brighter phone says it is <b>trapped</b>. Consent-based: no passive phone sniffing.</div></li>
         <li><i class="k-stage"></i><div><b>Staging</b>: the operator's console and the drone pads.</div></li>
         <li><i class="k-geo">N</i><div><b>Basemap</b>: by default the drones' LiDAR relief of the (synthetic) rubble. <i>Map</i> and <i>Satellite</i> show the real case-study site (OpenStreetMap or imagery, dimmed) with the site frame anchored at the building (the N arrow, top right, shows true north). The pile layout is synthetic: nothing here marks where real victims were. Without network the map falls back to the LiDAR relief.</div></li>
       </ul>
@@ -104,6 +107,12 @@
 
   <aside id="side">
     <div class="col colA">
+      <section id="secComms" hidden>
+        <h2>Connected · rescue Wi-Fi <span id="nComms" class="count"></span></h2>
+        <div id="commsMeta"></div>
+        <div id="comms"></div>
+        <p class="caveat0">Phones that chose to join the rescue Wi-Fi. Positions are RSSI candidate regions, not confirmed. Replies use vetted templates; free text waits for an operator.</p>
+      </section>
       <section id="secZones" hidden>
         <h2>Search zones <span id="nZones" class="count"></span></h2>
         <div id="zones"></div>
@@ -146,6 +155,8 @@
     <p class="caveat" id="railCaveat">Red regions are where to search, not confirmed people. Acoustic priority orders the search; it is not proof, and silent piles are not cleared. Radar and audio here come from labelled synthetic models. No detection is not proof that nobody is present.</p>
   </aside>
 </div>
+
+<div id="toast" role="status" aria-live="polite" hidden></div>
 
 <div id="detail" hidden>
   <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="dTitle">

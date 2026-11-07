@@ -5,17 +5,25 @@
 GET  /...               static files from the repo root (no-cache, so polling always sees fresh state)
 GET  /api/tasking       current operator tasking (dashboard/data/tasking.json) or {"zones": []}
 POST /api/tasking       replace the tasking with a JSON body {"zones": [...], ...}; validated, written atomically
+GET  /api/broadcast     operator loudspeaker queue (dashboard/data/broadcast_queue.json; contract v1.3)
+POST /api/broadcast     {drone_id | zone, kind: operator|callout|reassure, text, src_lang, langs, translate, operator}
+                        -> operator text queued; machine translations (Gemini, optional) stay pending_approval
+POST /api/broadcast/approve  {id, operator, approve: true|false} -> release or reject one pending item
 Stdlib only. Binds to 127.0.0.1 by default (LAN demo: --host 0.0.0.0 at your own risk).
 """
 import argparse
 import json
 import os
+import sys
 import time
 from http import HTTPStatus
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 TASKING = os.path.join(ROOT, "dashboard", "data", "tasking.json")
+BROADCAST_Q = os.path.join(ROOT, "dashboard", "data", "broadcast_queue.json")
+if ROOT not in sys.path:                     # sim.guidance (stdlib-only parts) for the broadcast API
+    sys.path.insert(0, ROOT)
 MAX_BODY = 512 * 1024
 MAX_ZONES, MAX_VERTS = 64, 400
 
@@ -62,6 +70,9 @@ class Handler(SimpleHTTPRequestHandler):
         self.wfile.write(body)
 
     def do_GET(self):
+        if self.path.split("?")[0] == "/api/broadcast":
+            from sim.guidance import queue_load          # stdlib-only part of sim.guidance (numpy optional)
+            return self._json(HTTPStatus.OK, queue_load(BROADCAST_Q))
         if self.path.split("?")[0] == "/api/tasking":
             try:
                 with open(TASKING) as f:
@@ -71,7 +82,10 @@ class Handler(SimpleHTTPRequestHandler):
         return super().do_GET()
 
     def do_POST(self):
-        if self.path.split("?")[0] != "/api/tasking":
+        route = self.path.split("?")[0]
+        if route in ("/api/broadcast", "/api/broadcast/approve"):
+            return self._broadcast(route)
+        if route != "/api/tasking":
             return self._json(HTTPStatus.NOT_FOUND, {"error": "unknown endpoint"})
         n = int(self.headers.get("Content-Length") or 0)
         if n <= 0 or n > MAX_BODY:
@@ -87,6 +101,24 @@ class Handler(SimpleHTTPRequestHandler):
         os.replace(tmp, TASKING)
         return self._json(HTTPStatus.OK, doc)
 
+    def _broadcast(self, route):
+        """Operator loudspeaker API (contract v1.3). Nothing machine-translated is ever playable before an
+        operator approves it; the mission (sim/callout.Speaker.ingest_operator) plays only released items."""
+        from sim.guidance import BroadcastError, queue_decide, queue_post
+        n = int(self.headers.get("Content-Length") or 0)
+        if n <= 0 or n > 16 * 1024:
+            return self._json(HTTPStatus.BAD_REQUEST, {"error": "empty or too large body"})
+        try:
+            body = json.loads(self.rfile.read(n))
+            if route == "/api/broadcast":
+                out = queue_post(BROADCAST_Q, body)        # may call Gemini (agents.llm: .env key, cache, backoff)
+            else:
+                out = queue_decide(BROADCAST_Q, str(body.get("id") or ""), str(body.get("operator") or "")[:40],
+                                   approve=bool(body.get("approve", True)))
+        except (BroadcastError, ValueError, json.JSONDecodeError) as e:
+            return self._json(HTTPStatus.BAD_REQUEST, {"error": str(e)})
+        return self._json(HTTPStatus.OK, out)
+
     def log_message(self, fmt, *args):  # quiet: only API calls and errors
         if "/api/" in (self.path or "") or (args and str(args[1]).startswith(("4", "5"))):
             super().log_message(fmt, *args)
@@ -97,5 +129,5 @@ if __name__ == "__main__":
     ap.add_argument("--host", default="127.0.0.1")
     ap.add_argument("--port", type=int, default=8765)
     a = ap.parse_args()
-    print(f"Larpverse ops server: http://{a.host}:{a.port}/dashboard/  (tasking API: /api/tasking)")
+    print(f"Larpverse ops server: http://{a.host}:{a.port}/dashboard/  (APIs: /api/tasking, /api/broadcast)")
     ThreadingHTTPServer((a.host, a.port), Handler).serve_forever()

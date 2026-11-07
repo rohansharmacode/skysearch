@@ -6,6 +6,7 @@
 // #ping=<id> opens that ping's detail view. A missing state file shows the demo state.
 import { demoState, demoCloud } from './demo.js';
 import { createTasking, reconText } from './tasking.js';
+import { createComms } from './comms.js';
 import { digScore, triageOf, conditionOf, conditionLabel, confMeter, rateOf, spark, caveatsOf, triageChip, drawTriageRing, ALWAYS } from './vitals.js';
 
 const params = new URLSearchParams(location.search);
@@ -42,14 +43,14 @@ const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '
 let S = null;                 // current state
 let cloud = null, cloudKey = null;
 let live = false, lastRaw = null;
-const layers = { belief: true, rings: false, acoustic: true, sites: true, piles: true, reach: true };
+const layers = { belief: true, rings: false, acoustic: true, sites: true, piles: true, reach: true, comms: true };
 const isGrid = () => (Array.isArray(S?.piles) && S.piles.length > 0) || !!S?.recon || S?.mission?.kind === 'grid';
 // UI state that survives re-renders
 let selListen = null;                                  // null = follow the latest listen
 const openRows = new Set(), openWhy = new Set(), decOpen = new Map();
 let dismOpen = false, showAllPiles = false;
 let DIG = [], DIG_BY = new Map();
-let TK = null;                          // operator tasking + recon overlay (tasking.js)       // dig order (ranked pings), recomputed per state
+let TK = null, CM = null;   // CM: rescue hotspot / comms relay (comms.js)                          // operator tasking + recon overlay (tasking.js)       // dig order (ranked pings), recomputed per state
 
 // ---------------- data ----------------
 async function poll() {
@@ -378,6 +379,7 @@ function draw(now = performance.now()) {
 
   if (isGrid()) drawGridLayer(now);
   TK?.draw(ctx, layers);
+  CM?.draw(ctx, layers);
 
   // acoustic cones: the selected listen (default: latest) (R1-025)
   if (layers.acoustic) {
@@ -472,10 +474,10 @@ function drawGridLayer(now) {
   const stg = S.staging;
   if (stg) {
     const [x0, y0] = toPx(stg.xy[0] - 7, stg.xy[1] + 4), [x1, y1] = toPx(stg.xy[0] + 7, stg.xy[1] - 4);
-    ctx.save(); ctx.fillStyle = 'rgba(90,169,255,0.08)'; ctx.strokeStyle = 'rgba(90,169,255,0.7)'; ctx.setLineDash([4, 3]); ctx.lineWidth = 1.2;
+    ctx.save(); ctx.fillStyle = 'rgba(200,210,220,0.06)'; ctx.strokeStyle = 'rgba(200,210,220,0.55)'; ctx.setLineDash([4, 3]); ctx.lineWidth = 1.2;
     ctx.fillRect(x0, y0, x1 - x0, y1 - y0); ctx.strokeRect(x0, y0, x1 - x0, y1 - y0); ctx.setLineDash([]);
-    for (const p of stg.pads || []) { const [px, py] = toPx(...p); ctx.strokeStyle = 'rgba(90,169,255,0.9)'; ctx.strokeRect(px - 4, py - 4, 8, 8); }
-    ctx.restore(); qLabel(W < 600 ? 'Staging' : 'Staging · operator console', x0 + 4, y1 + 16, '#9cc8ff', undefined, 7);
+    for (const p of stg.pads || []) { const [px, py] = toPx(...p); ctx.strokeStyle = 'rgba(200,210,220,0.85)'; ctx.strokeRect(px - 4, py - 4, 8, 8); }
+    ctx.restore(); qLabel(W < 600 ? 'Staging' : 'Staging · operator console', x0 + 4, y1 + 16, '#c3d0d9', undefined, 7);
   }
   if (!layers.piles) return;
   const m = S.mission || {}, active = m.active_pile, short = view.scale < 6.5;
@@ -651,6 +653,7 @@ function renderSide() {
   const rc = S.recon; $('reconChip').hidden = !rc; if (rc) $('reconChip').textContent = reconText(rc);
   renderBasemapUI();
   TK?.renderRail();
+  CM?.render(); if (S.comms) CM?.start();
   renderCands(grid);
   $('secAgent').hidden = !grid; $('secPiles').hidden = !grid || !(S.piles || []).length; $('secAc').hidden = grid;
   if (grid) { renderPiles(); renderDecisions(); renderClips(); }
@@ -915,6 +918,7 @@ $('caseBtn').onclick = () => setCase($('casePop').hidden);
 $('caseClose').onclick = () => setCase(false);
 
 // ---------------- operator tasking ----------------
+CM = createComms({ S: () => S, toPx, scale: () => view.scale, ctx: () => ctx, draw: () => draw(), qLabel, font: FONT_L, $ });
 TK = createTasking({ S: () => S, toPx, toM, scale: () => view.scale, ctx: () => ctx, draw: () => draw(), qLabel, font: FONT_L, $ });
 
 // ---------------- boot ----------------

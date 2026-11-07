@@ -270,3 +270,18 @@ def smooth_normals(P, F):
         np.add.at(N, F[:, k], n)
     N /= np.linalg.norm(N, axis=1, keepdims=True) + 1e-12
     return N.astype(np.float32)
+
+
+def piece_for_box(rng, sx, sy, sz, rebar_p=0.3):
+    """An irregular piece that stands in for a box of size (sx, sy, sz) in the box's own frame (same centre, same
+    axes), so a scene built from boxes keeps its layout, collisions and LiDAR returns roughly unchanged.
+    Thin boxes become broken slab pieces (sometimes with rebar), long ones chipped blocks, the rest fractured lumps.
+    Returns (mesh, rebar_mesh_or_None)."""
+    dims = sorted((sx, sy, sz))
+    if sz <= 0.4 * min(sx, sy):
+        mesh = slab(rng, sx, sy, T=max(sz, 0.03), step=max(0.05, min(sx, sy) / 8))
+        bars = rebar(rng, sx, sy, 0.0) if rng.random() < rebar_p and min(sx, sy) > 0.3 else None
+        return mesh, bars
+    if dims[2] > 2.2 * dims[1]:
+        return block(rng, sx, sy, sz, chip=0.12), None
+    return rock(rng, sx * 1.15, sy * 1.15, sz * 1.15, n=16), None

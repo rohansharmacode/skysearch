@@ -49,6 +49,7 @@
         <button class="tog" data-k="sites" aria-pressed="true">Landing sites</button>
         <button class="tog" data-k="reach" aria-pressed="true">Radar reach</button>
         <button class="tog" data-k="comms" aria-pressed="true">Rescue Wi-Fi</button>
+        <button class="tog" data-k="speaker" aria-pressed="true">Speaker &amp; guidance</button>
         <button class="tog" data-k="piles" aria-pressed="true" id="togPiles" hidden>Piles &amp; dispatch</button>
       </div>
     </div>
@@ -98,6 +99,7 @@
         <li><i class="k-arrow"></i><div><b>Dispatch</b>: where the coordinator sent the fleet next, and why (see Dispatch decisions).</div></li>
         <li><i class="k-zone"></i><div><b>Search zones</b> the operator tasked (✎ Plan search): white outline. Dashed = not searched yet; grey hatch = <b>searched — not cleared</b>; red = ping inside; teal = acoustic lead. <b>Proposed</b> zones from recon are dashed with a "proposed" tag until you accept them; <b>suggested</b> circles are sounds heard outside every zone.</div></li>
         <li><i class="k-phone"></i><div><b>Blue = rescue Wi-Fi</b>: each drone's open hotspot (faint disc), the mesh links back to the GCS (thin lines, Mbps), and phones that joined it with their RSSI candidate region (dashed circle). A ringed, brighter phone says it is <b>trapped</b>. Consent-based: no passive phone sniffing.</div></li>
+        <li><i class="k-guide"></i><div><b>Guidance arrow</b> (white, dashed): the route the loudspeaker read to a person heard on open ground, around the rubble, to the rescue tent. A speaker icon marks a drone that is playing.</div></li>
         <li><i class="k-stage"></i><div><b>Staging</b>: the operator's console and the drone pads.</div></li>
         <li><i class="k-geo">N</i><div><b>Basemap</b>: by default the drones' LiDAR relief of the (synthetic) rubble. <i>Map</i> and <i>Satellite</i> show the real case-study site (OpenStreetMap or imagery, dimmed) with the site frame anchored at the building (the N arrow, top right, shows true north). The pile layout is synthetic: nothing here marks where real victims were. Without network the map falls back to the LiDAR relief.</div></li>
       </ul>
@@ -137,6 +139,11 @@
         <div id="agentMeta"></div>
         <div id="listens" role="tablist" aria-label="Listen"></div>
         <div id="clips"></div>
+      </section>
+      <section id="secSpeaker" hidden>
+        <h2>Speaker <span id="nSpk" class="count"></span></h2>
+        <div id="speaker"></div>
+        <p class="caveat0">Only vetted templates or an operator's own words play. Machine translations wait for approval. A response to the call-out marks a candidate, not a confirmed person; no response does not rule out an unconscious person.</p>
       </section>
       <section id="secAc">
         <h2>Acoustic directions <span id="nAc" class="count">0</span></h2>

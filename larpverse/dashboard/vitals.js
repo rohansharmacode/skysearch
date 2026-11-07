@@ -61,7 +61,8 @@ export const rateOf = (v, c) => v?.rate_bpm ?? (c?.breathing_hz ? c.breathing_hz
 // Dig-order score = triage weight (shrunk towards "assess" by pattern_conf, like sim/vitals.priority_weight)
 //                   x localisation certainty (firm fix, belief share, 95% region size) x accessibility (depth).
 export function digScore(c, depth, ell) {
-  const v = c.vitals || null, t = triageOf(v), conf = clamp(+(v?.pattern_conf ?? 0));
+  // triage_fused (call-out responsiveness + vitals; no response raises, never lowers) overrides the vitals hint
+  const fz = c.triage_fused, v = fz?.triage_hint && c.vitals ? { ...c.vitals, triage_hint: fz.triage_hint, priority_weight: undefined } : c.vitals || null, t = triageOf(v), conf = clamp(+(v?.pattern_conf ?? 0));
   const tri = v?.priority_weight ?? (TRIAGE.assess.rank + (t.rank - TRIAGE.assess.rank) * conf);
   const weak = c.status !== 'candidate' || c.kind === 'moving';
   let loc = weak ? 0.45 : 0.65 + 0.35 * clamp((c.p_mass ?? 0.5) / 0.8);

@@ -96,8 +96,11 @@ export function createComms(app) {
     const rank = d => ({ trapped: 0, unknown: 1, safe: 2 }[d.live_status || d.status] ?? 1);
     return ds.sort((a, b) => rank(a) - rank(b) || (b.last_seen ?? 0) - (a.last_seen ?? 0));
   }
-  function render() {
+  function render(force = false) {
     const S = app.S(), sec = $('secComms'); if (!sec) return;
+    const host = $('comms'), ae = document.activeElement;
+    if (host && host.contains(ae) && /INPUT|TEXTAREA|SELECT/.test(ae.tagName) && !force) { deferred = true; return; }
+    deferred = false;
     const cm = S?.comms, ds = devices(S);
     sec.hidden = !cm && !C.liveSubs.length; if (sec.hidden) return;
     $('nComms').textContent = `${ds.length} device${ds.length === 1 ? '' : 's'}`;
@@ -129,13 +132,15 @@ export function createComms(app) {
     const S = app.S(); const lang = [...msgsOf((S?.comms?.devices || []).find(d => d.id === dev) || { id: dev })].reverse().find(m => m.lang)?.lang || null;
     C.log.push({ k: Math.random().toString(36).slice(2, 9), device: dev, t: S?.t ?? null, lang, ...r }); lsSet(C.log); render();
   }
+  let deferred = false;
   function bind() {
+    $('comms').addEventListener('focusout', () => setTimeout(() => { if (deferred) render(); }, 0));
     $('comms').addEventListener('click', e => {
       const b = e.target.closest('[data-act]'); if (!b) return; const dev = b.closest('[data-dev]')?.dataset.dev;
       const a = b.dataset.act;
       if (a === 'tpl') record(dev, { template: b.dataset.t, confirmed_by: 'operator' });
-      else if (a === 'free') { C.open.has(dev) ? C.open.delete(dev) : C.open.add(dev); render(); }
-      else if (a === 'hold') { const v = (b.parentElement.querySelector('input')?.value || '').trim(); if (!v) return; C.draft[dev] = ''; C.open.delete(dev); record(dev, { text: v, pending: true }); }
+      else if (a === 'free') { C.open.has(dev) ? C.open.delete(dev) : C.open.add(dev); render(true); }
+      else if (a === 'hold') { const v = (b.parentElement.querySelector('input')?.value || '').trim(); if (!v) return; C.draft[dev] = ''; C.open.delete(dev); record(dev, { text: v, pending: true }); render(true); }
       else if (a === 'confirm') { const r = C.log.find(r => r.k === b.dataset.k); if (r) { r.pending = false; r.confirmed_by = 'operator'; lsSet(C.log); render(); } }
     });
     $('comms').addEventListener('input', e => { const dev = e.target.closest('[data-dev]')?.dataset.dev; if (dev) C.draft[dev] = e.target.value; });

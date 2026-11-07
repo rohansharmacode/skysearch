@@ -7,6 +7,7 @@
 import { demoState, demoCloud } from './demo.js';
 import { createTasking, reconText } from './tasking.js';
 import { createComms } from './comms.js';
+import { createSpeaker, respChip } from './speaker.js';
 import { digScore, triageOf, conditionOf, conditionLabel, confMeter, rateOf, spark, caveatsOf, triageChip, drawTriageRing, ALWAYS } from './vitals.js';
 
 const params = new URLSearchParams(location.search);
@@ -43,14 +44,14 @@ const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '
 let S = null;                 // current state
 let cloud = null, cloudKey = null;
 let live = false, lastRaw = null;
-const layers = { belief: true, rings: false, acoustic: true, sites: true, piles: true, reach: true, comms: true };
+const layers = { belief: true, rings: false, acoustic: true, sites: true, piles: true, reach: true, comms: true, speaker: true };
 const isGrid = () => (Array.isArray(S?.piles) && S.piles.length > 0) || !!S?.recon || S?.mission?.kind === 'grid';
 // UI state that survives re-renders
 let selListen = null;                                  // null = follow the latest listen
 const openRows = new Set(), openWhy = new Set(), decOpen = new Map();
 let dismOpen = false, showAllPiles = false;
 let DIG = [], DIG_BY = new Map();
-let TK = null, CM = null;   // CM: rescue hotspot / comms relay (comms.js)                          // operator tasking + recon overlay (tasking.js)       // dig order (ranked pings), recomputed per state
+let TK = null, CM = null, SP = null;   // SP: loudspeaker panel + guidance overlay (speaker.js)   // CM: rescue hotspot / comms relay (comms.js)                          // operator tasking + recon overlay (tasking.js)       // dig order (ranked pings), recomputed per state
 
 // ---------------- data ----------------
 async function poll() {
@@ -380,6 +381,7 @@ function draw(now = performance.now()) {
   if (isGrid()) drawGridLayer(now);
   TK?.draw(ctx, layers);
   CM?.draw(ctx, layers);
+  SP?.draw(ctx, layers);
 
   // acoustic cones: the selected listen (default: latest) (R1-025)
   if (layers.acoustic) {
@@ -654,6 +656,7 @@ function renderSide() {
   renderBasemapUI();
   TK?.renderRail();
   CM?.render(); if (S.comms) CM?.start();
+  SP?.render(); if (grid) SP?.start();
   renderCands(grid);
   $('secAgent').hidden = !grid; $('secPiles').hidden = !grid || !(S.piles || []).length; $('secAc').hidden = grid;
   if (grid) { renderPiles(); renderDecisions(); renderClips(); }
@@ -707,7 +710,7 @@ function renderCands(grid) {
       <span class="l1"><i class="mk"></i><b>${esc(c.id)}</b><small>${lab}</small>${triageChip(t)}</span>
       <span class="sp${sp?.rateOnly ? ' ro' : ''}">${sp ? sp.svg + `<small>${esc(sp.label)}</small>` : '<small>no breathing signal</small>'}</span>
       <span class="l2 ${cond ? 'k-' + cond.key : 'none'}">${esc(pl || 'No breathing signal at this ping')}</span>
-      <span class="l5">${v ? confMeter(v.pattern_conf) : '<span class="cm none">no pattern analysis</span>'}</span>
+      <span class="l5">${v ? confMeter(v.pattern_conf) : '<span class="cm none">no pattern analysis</span>'}${respChip(c.responsiveness)}</span>
       <span class="l3">depth <b>${esc(di.short)}</b> · ${weak ? `<span class="sup">${esc(supText(c))}</span>` : `belief share <b>${f2(c.p_mass)}</b>`}${v?.rate_ci?.length === 2 && v.rate_ci[0] != null ? ` · rate 95% ${f0(v.rate_ci[0])}–${f0(v.rate_ci[1])}` : ''}</span>
       <span class="l4"><span class="aid">Aid, not a diagnosis</span><span class="cv">${cav.length} caveat${cav.length === 1 ? '' : 's'}</span><span class="go">3D view →</span></span></button>`;
   }).join('') + `<p class="dignote">Ranked by ${anyV ? 'the condition read from the breathing pattern (weighted by its confidence)' : 'condition (none analysed yet: all “assess”)'} × localisation certainty × depth. ${esc(ALWAYS)} Every ping is a candidate search region, not a confirmed person.</p>`;
@@ -725,7 +728,7 @@ function renderPiles() {
   const row = p => {
     const [txt, , col] = pst(p), amb = pileAmb(p);
     return `<div class="row ${p === topUnvisited ? 'top' : ''} ${vis.includes(p.id) ? 'done' : ''} ${openRows.has(p.id) ? 'open' : ''}" data-pile="${esc(p.id)}" title="Click to expand">
-      <b>${esc(p.id)}</b><span class="why"><span class="chip" style="color:${col};border-color:${col}${amb ? ';border-style:dashed' : ''}">${esc(txt)}</span>${amb ? '<span class="chip amb" title="The drones\' bearings do not single out this pile: the sound may come from a neighbour">ambiguous direction</span>' : ''} ${esc(p.why)}</span>
+      <b>${esc(p.id)}</b><span class="why"><span class="chip" style="color:${col};border-color:${col}${amb ? ';border-style:dashed' : ''}">${esc(txt)}</span>${amb ? '<span class="chip amb" title="The drones\' bearings do not single out this pile: the sound may come from a neighbour">ambiguous direction</span>' : ''}${respChip(p.responsiveness || S.responsiveness?.[p.id], true)} ${esc(p.why)}</span>
       <span class="s">${p.priority ?? '—'}</span></div>`;
   };
   $('piles').innerHTML = (visited.length ? `<div class="sub">Searched by the drones</div>${visited.map(row).join('')}` : '')
@@ -848,6 +851,8 @@ function vitalsCard(c, di) {
       <div class="tile dtile"><h5>Depth</h5><b>${esc(di.short.replace(/\s*\((nominal|radar estimate)\)$/, ''))}</b><small>${esc(di.nominal ? 'nominal: assumed, not measured' : 'radar estimate, below the LiDAR surface')}</small></div>
       <div class="tile btile"><h5>Condition (breathing) ${triageChip(t)}</h5><b class="pat ${cond ? 'k-' + cond.key : ''}">${esc(pl || 'No breathing signal at this ping')}</b>
         ${v ? confMeter(v.pattern_conf) : '<span class="cm none">not analysed in this run: rate only</span>'}
+        ${c.responsiveness ? `<div class="rsp">${respChip(c.responsiveness)}</div>` : ''}
+        ${c.triage_fused?.changed_from ? `<small class="fz">Raised from “${esc(c.triage_fused.changed_from)}” after the call-out: ${esc(c.triage_fused.reason || '')}</small>` : ''}
         <small class="aidn">Aid for rescuers, not a diagnosis.</small>
         ${sp ? `<div class="bsp">${sp.svg}<small title="${esc(sp.tip)}">${esc(sp.label)}${sp.measured ? '' : sp.rateOnly ? ': periodic radar return, no pattern analysis; the shape is not a pattern' : ': shape from rate, variability and pauses, not the measured waveform'}</small></div>` : '<small>no periodic signal</small>'}</div>
     </div>
@@ -918,6 +923,7 @@ $('caseBtn').onclick = () => setCase($('casePop').hidden);
 $('caseClose').onclick = () => setCase(false);
 
 // ---------------- operator tasking ----------------
+SP = createSpeaker({ S: () => S, toPx, scale: () => view.scale, ctx: () => ctx, draw: () => draw(), qLabel, font: FONT_L, $ });
 CM = createComms({ S: () => S, toPx, scale: () => view.scale, ctx: () => ctx, draw: () => draw(), qLabel, font: FONT_L, $ });
 TK = createTasking({ S: () => S, toPx, toM, scale: () => view.scale, ctx: () => ctx, draw: () => draw(), qLabel, font: FONT_L, $ });
 

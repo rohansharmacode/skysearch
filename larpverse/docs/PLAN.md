@@ -144,7 +144,7 @@ Give each session one workstream and point it at this file plus `contracts/INTER
 | BL-3 | P0 | Acoustic pile assignment: voices attributed to wrong piles (B3/C3 in seed 7); triangulate across drones, reject inconsistent bearings | builder — running |
 | BL-4 | P1 | Gemini decider + provider layer + intake + handover brief (agents/) | DONE 1ed9bae (fallback-tested; real API untested until key) |
 | BL-5 | P1 | KISS-ICP SLAM (mapping/) then wire into grid mission landing maps | DONE 110fdd2 (ATE 3.6 cm B2, landing IoU 0.98); wiring → mission agent |
-| BL-6 | P1 | Animation v2 driven by the seed-7 scenario (same map as Isaac + dashboard), re-record MP4, republish | queued |
+| BL-6 | P1 | Animation v2 driven by the seed-7 scenario | DONE 70442db; MP4 on release; artifact v4 |
 | BL-7 | P1 | Grid evaluation: acoustic-priority order vs nearest-first vs fixed order; victims pinged within budget, time to first ping, false leads; N seeds | builder — running (with BL-8 + autonomy loop) |
 | BL-8 | P0 | A3 never pings with the model radar after 8 scans — make `--radar dsp` default for the grid demo or tune; explain in log | queued |
 | BL-9 | P2 | Pitch pack: one-page technical summary, 1-minute video script, deck (after BL-7 numbers) | queued |
@@ -152,6 +152,7 @@ Give each session one workstream and point it at this file plus `contracts/INTER
 | BL-13 | P1 | Review pass 1 brain batch (R1-001…015): acoustic items → BL-3 builder; sim items → mission builder | routed |
 | BL-14 | P1 | Isaac handoff batch (R1-030…038): done by orchestrator, except R1-033 (needs final story), R1-037 (GPU label), R1-038 (depth wording after R1-006) | mostly done |
 | BL-12 | P1 | Acoustic real-data validation (DroneAudioSet / ESC-50): detection P/R, Whisper under drone noise, vs SNR | builder — running |
+| BL-15 | P0 | One-command demo (scripts/demo.sh) + dashboard replay recording + docs/DEMO.md runbook | builder — running |
 | BL-11 | P1 | Once GEMINI_API_KEY exists: record a seed-7 Gemini run and commit its replay cache (un-ignore one curated file) so the demo replays offline | blocked on key |
 
 ## Decisions log

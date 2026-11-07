@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Memory guard, run under the Monitor tool filtered to WARN|HARD. Below HARD it kills headless
 # browsers (the dev server here is a tiny python http.server, so it is left alone).
-WARN_MB=${WARN_MB:-2800}; HARD_MB=${HARD_MB:-1800}
+WARN_MB=${WARN_MB:-1500}; HARD_MB=${HARD_MB:-900}
 last=0
 while true; do
   a=$(awk '/^MemAvailable:/{print int($2/1024)}' /proc/meminfo)

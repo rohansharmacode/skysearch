@@ -28,8 +28,14 @@ Read this first after a context compaction or restart.
 | 1 | Acoustic real-data validation: acoustic/validate_real.py, docs/ACOUSTIC_VALIDATION.md, data/audio_real/ | 18:25 |
 | 2 | Mission autonomy + eval (BL-7/8): sim/* except scenario.py, tests/test_grid_mission.py, tests/test_radar_dsp.py, tests/test_localise.py, docs/EVAL_GRID.md | 18:20 |
 | 3 | Dashboard fix batch R1-016…029 (BL-10): dashboard/*, docs/review/img/dash-b2-* | 18:55 |
-| 4 | Animation on seed 7 (BL-6): animation/grid-search.html, animation/scenario_seed7.js, scripts/export_scenario_js.py, media/larpverse-grid-seed7.mp4 → orchestrator republishes artifact U5RX772n8VKTTGPA8yEWxZ | 18:42 |
+| 4 | Demo runner + dashboard recording (BL-15): scripts/demo.sh, scripts/record_dashboard.py, docs/DEMO.md, media/larpverse-dashboard-seed7.mp4 | 19:15 |
 | 5 | Acoustic pile assignment: acoustic/{dsp,run,scene,models,eval_assign}.py, tests/test_acoustic.py, acoustic/README.md | 18:08 |
+
+## Isaac teammate status (19:35)
+- Rohan + Claude on branch larpverse-isaac: Isaac 6.0.1 + Lab 3.0 on Brev L40S, ALL bring-up steps PASS (FROM_ISAAC.md), photoreal dressing (isaac/photoreal.py, rubble.py), multi-cam recorder; recording lv2 footage; path-traced frame from 2x RTX PRO 6000.
+- Their isaac/ changes being merged into ours by the Isaac-merge builder (run_mission.py had 6 rejected hunks).
+- Frances pushed branch acoustic-voice-detection (her own SRP-PHAT+YAMNet pipeline + real recordings) → fed to the real-audio validation builder.
+- User 19:30: up to 8 agents; guardrails loosened (heavy.sh 3 slots, 1.2 GB floor; watchdog warn 1.5 GB / kill browsers <0.9 GB).
 
 ## Review loop
 - Pass 1 done (575253f): 46 findings. Batches routed: brain → acoustic + mission builders; dashboard → builder; Isaac handoff → orchestrator (done except R1-033/037/038); animation → animation builder.

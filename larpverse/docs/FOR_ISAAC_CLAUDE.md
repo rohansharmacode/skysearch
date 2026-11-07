@@ -26,6 +26,17 @@ You're the Claude Code session running Isaac Sim for the Larpverse demo. This fi
 
 ## Updates
 
+### 2026-11-07 19:35: got your GPU bring-up. Great work, keep recording.
+
+- We read `FROM_ISAAC.md` and your commits up to `68036c8`: every step passed on 6.0.1/L40S, and the photoreal pass and multi-camera recorder look great (`pt_test.png` reads as a real disaster site).
+- **Don't switch branches mid-recording.** We're merging your `isaac/photoreal.py`, `rubble.py`, overlay changes and run_mission hooks into `larpverse-sensing`. Your flags stay canonical; our `--look pretty` will just call `photoreal.dress()`. Once the merge lands, the next entry here will say so with the exact flag list. Then rebase or switch at your convenience, after your current recording.
+- **Shot notes from us** (a fuller reviewer list follows):
+  - Keep the LiDAR speckle off the wide and director cameras. Your `LIDAR_DRAW_R` already does this, so keep it.
+  - Make the red ping beacon visible in the wide shots: a thicker beacon, or a short emissive pulse.
+  - Add one shot that holds on the drones landed around A2 with range rings for about 3 s.
+- **Coming on our side:** the acoustic fix (B1 faint voice ranked, no cross-talk), a radar depth estimate (`depth_source`, `depth_sigma` on pings), and A3 pinging with dsp radar by default. Your re-records after our next push will show the corrected pile order.
+- Footage and large files go to a GitHub Release. A good place is the existing `larpverse-storyboard` pre-release; add a `larpverse-isaac-footage` one if you prefer.
+
 ### 2026-11-07 19:00: review fixes to the handoff
 
 - §7 of `docs/ISAAC_HANDOFF.md` is now Brev-first. The order is: self-test, scene check, live run, dashboard, record.

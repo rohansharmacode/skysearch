@@ -275,7 +275,14 @@ def main(argv=None):
         specs = [c.strip() for c in a.rec_cams.split(",") if c.strip()]
         rigs = photoreal.Rigs(stage, [c for c in specs if c != "director"], surface)
         cams = ([("director", cam.path)] if "director" in specs else []) + [(r["name"], r["path"]) for r in rigs.rigs]
-        rec = photoreal.Recorder(a.record, cams, a.rec_res, say)
+        rec = photoreal.Recorder(a.record, cams, a.rec_res, say, windows=photoreal.Recorder.parse_windows(a.rec_windows))
+        if a.rec_windows and a.headless:        # nothing needs the viewport: render only the windowed cameras
+            try:
+                from omni.kit.viewport.utility import get_active_viewport
+                get_active_viewport().updates_enabled = False
+                say("[photoreal] viewport updates off (windowed recording)")
+            except Exception as e:
+                say(f"[photoreal] viewport stays on ({type(e).__name__}: {e})")
         for _ in range(10):
             app.update()
 
@@ -370,6 +377,8 @@ def main(argv=None):
             if app is not None:
                 if not app.is_running():
                     break
+                if rec is not None:
+                    rec.prepare(frame // max(1, a.rec_every))
                 app.update()
                 if rec is not None and frame % max(1, a.rec_every) == 0:
                     rec.capture(frame // max(1, a.rec_every))
@@ -380,6 +389,8 @@ def main(argv=None):
                 clock_v += rdt_v
             if a.record and a.rec_stop_t and float(cur.get("t", 0)) >= a.rec_stop_t:
                 done = True
+            if rec is not None and rec.done(frame // max(1, a.rec_every)):
+                done = True                     # past the last window
             if done:
                 finished_at = finished_at or now
                 if a.dry_run or a.headless or a.no_keep_open or now - finished_at > 2.0:

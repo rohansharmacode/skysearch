@@ -50,6 +50,9 @@ def add_args(ap):
     g.add_argument("--rec-warp", type=float, default=1.0,
                    help="recording: speed up the long radar/rescan/relocate phases by this factor (e.g. 4)")
     g.add_argument("--rec-every", type=int, default=1, help="save every Nth frame (preview runs)")
+    g.add_argument("--rec-windows", default="",
+                   help='render/save only these frame ranges per camera, e.g. "director:120-250,560-700;wide:0-110" '
+                        "(path-traced passes of just the shots the cut uses)")
     g.add_argument("--rtx", choices=["realtime", "pathtracing"], default="realtime")
     g.add_argument("--spp", type=int, default=16, help="--rtx pathtracing: samples per pixel per frame")
     return g
@@ -486,24 +489,79 @@ class Rigs:
 
 
 class Recorder:
-    """PNG frames per camera from replicator render products (headless-safe)."""
+    """PNG frames per camera from replicator render products (headless-safe).
 
-    def __init__(self, out_dir, cams, res="1920x1080", log=print):
+    windows: {cam: [(f0, f1), ...]} (from --rec-windows "cam:f0-f1,f0-f1;cam2:..."). When given, only those
+    cameras are rendered, and only around those frame ranges: their render products are created a few frames
+    before a window opens and destroyed after it closes, so a path-traced pass costs only the frames the cut
+    uses. Without windows every camera renders every frame (as before)."""
+
+    PRE = 4                                            # frames of warm-up before a window (denoiser, latency)
+
+    def __init__(self, out_dir, cams, res="1920x1080", log=print, windows=None):
         import omni.replicator.core as rep
-        w, h = (int(v) for v in res.split("x"))
-        self.out, self.items, self.log, self.n = out_dir, [], log, 0
-        for name, path in cams:
-            rp = rep.create.render_product(path, (w, h))
-            ann = rep.AnnotatorRegistry.get_annotator("rgb")
-            ann.attach([rp])
-            os.makedirs(os.path.join(out_dir, name), exist_ok=True)
-            self.items.append((name, ann))
-        log(f"[photoreal] recording {[n for n, _ in cams]} at {w}x{h} to {out_dir}")
+        self.rep = rep
+        self.wh = tuple(int(v) for v in res.split("x"))
+        self.out, self.log, self.n = out_dir, log, 0
+        self.paths = dict(cams)
+        self.win = windows or {}
+        self.live = {}                                 # name -> (render product, annotator)
+        for name in self.paths:
+            if not self.win or name in self.win:
+                os.makedirs(os.path.join(out_dir, name), exist_ok=True)
+        if not self.win:
+            for name in self.paths:
+                self._open(name)
+        log(f"[photoreal] recording {list(self.paths)} at {self.wh[0]}x{self.wh[1]} to {out_dir}"
+            + (f"; windows {self.win}" if self.win else ""))
+
+    @staticmethod
+    def parse_windows(spec):
+        out = {}
+        for part in filter(None, (p.strip() for p in (spec or "").split(";"))):
+            cam, _, rngs = part.partition(":")
+            out[cam.strip().replace(":", "_")] = [tuple(int(v) for v in r.split("-")) for r in rngs.split(",") if r.strip()]
+        return out
+
+    def _open(self, name):
+        rp = self.rep.create.render_product(self.paths[name], self.wh)
+        ann = self.rep.AnnotatorRegistry.get_annotator("rgb")
+        ann.attach([rp])
+        self.live[name] = (rp, ann)
+
+    def _close(self, name):
+        rp, ann = self.live.pop(name)
+        for fn in (lambda: ann.detach(), lambda: rp.destroy()):
+            try:
+                fn()
+            except Exception as e:                     # older replicator: leave it attached but stop saving
+                self.log(f"[photoreal] close {name}: {type(e).__name__}: {e}")
+
+    def _in(self, name, idx, pre=0):
+        if not self.win:
+            return True
+        return any(f0 - pre <= idx <= f1 for f0, f1 in self.win.get(name, ()))
+
+    def prepare(self, idx):
+        """Before rendering frame idx: open render products whose window starts soon, close finished ones."""
+        if not self.win:
+            return
+        for name in self.paths:
+            want = self._in(name, idx, self.PRE)
+            if want and name not in self.live and name in self.win:
+                self._open(name)
+            elif not want and name in self.live:
+                self._close(name)
+
+    def done(self, idx):
+        return bool(self.win) and all(idx > max(f1 for _, f1 in w) for w in self.win.values() if w)
 
     def capture(self, idx):
         from PIL import Image
         ok = 0
-        for name, ann in self.items:
+        for name, (rp, ann) in list(self.live.items()):
+            if not self._in(name, idx):
+                continue
             d = ann.get_data()
             if d is None or getattr(d, "size", 0) == 0:
                 continue

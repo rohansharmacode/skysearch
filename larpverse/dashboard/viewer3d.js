@@ -1,4 +1,5 @@
-// LiDAR detail view: point cloud cropped around a radar candidate, red ping at the estimated depth.
+// LiDAR detail view: point cloud cropped around a radar candidate, ping drawn at its depth (nominal or radar estimate).
+// Weak (insufficient-evidence) candidates are orange and get no surface marker: they are not a search point yet.
 // Site frame is Z-up (x east, y north), so the camera uses z as up.
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
@@ -20,7 +21,7 @@ export function createViewer(host) {
   function size() { const w = host.clientWidth, h = host.clientHeight; renderer.setSize(w, h); labels.setSize(w, h); camera.aspect = w / Math.max(1, h); camera.updateProjectionMatrix(); }
   new ResizeObserver(size).observe(host);
 
-  function show({ cloud, center, surf, z, ellipse, id, depth }) {
+  function show({ cloud, center, surf, z, ellipse, id, depthLabel, weak }) {
     group.traverse(o => { if (o.element) o.element.remove(); });
     group.clear();
     const [cx, cy] = center, pos = [], col = [];
@@ -35,7 +36,7 @@ export function createViewer(host) {
     const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
     group.add(new THREE.Points(g, new THREE.PointsMaterial({ size: 0.07, vertexColors: true })));
 
-    const red = 0xff4545, onTop = { depthTest: false, transparent: true };
+    const red = weak ? 0xff9f43 : 0xff4545, onTop = { depthTest: false, transparent: true };
     const ping = new THREE.Mesh(new THREE.SphereGeometry(0.22, 20, 14), new THREE.MeshBasicMaterial({ color: red, ...onTop })); ping.position.set(0, 0, z); ping.renderOrder = 10; group.add(ping);
     halo = new THREE.Mesh(new THREE.SphereGeometry(0.22, 20, 14), new THREE.MeshBasicMaterial({ color: red, ...onTop, depthWrite: false })); halo.position.copy(ping.position); halo.renderOrder = 9; group.add(halo);
     const plumb = new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0, 0, surf + 0.8), new THREE.Vector3(0, 0, z)]), new THREE.LineDashedMaterial({ color: red, dashSize: 0.18, gapSize: 0.12, ...onTop }));
@@ -46,8 +47,8 @@ export function createViewer(host) {
       ring = new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), new THREE.LineBasicMaterial({ color: red, ...onTop })); ring.renderOrder = 10; group.add(ring);
     }
     const mk = (html, cls, p) => { const el = document.createElement('div'); el.className = 'lbl ' + cls; el.innerHTML = html; const o = new CSS2DObject(el); o.position.copy(p); group.add(o); };
-    mk(`${id} · ≈${depth.toFixed(1)} m below surface`, '', ping.position);
-    mk(`Surface ${surf.toFixed(1)} m · dig here`, 'dig', new THREE.Vector3(0, 0, surf + 0.9));
+    mk(`${id} · ${depthLabel}`, weak ? 'weak' : '', ping.position);
+    if (!weak) mk(`Surface ${surf.toFixed(1)} m · candidate search point`, 'dig', new THREE.Vector3(0, 0, surf + 0.9));
 
     controls.target.set(0, 0, (surf + z) / 2);
     camera.position.set(7, -9, surf + 6);

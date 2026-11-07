@@ -41,16 +41,16 @@ export function demoState() {
   const L = (pid, k, xy, status) => ({ id: `${pid}-L${k}`, pile_id: pid, xy, z: hz(xy), slope_deg: 2.1, roughness: 0.02, clearance: 2.2, score: 0.88, status });
   const drones = siteA3.map((xy, k) => ({ id: 'd' + (k + 1), pose: [...xy, hz(xy) + 0.15, 120 * k + 40], state: k === 2 ? 'scanning' : 'landed', battery: +(0.74 - 0.03 * k).toFixed(2) }));
   const clips = [
-    { id: '1-ac-A3', listen: 1, t: 122, pile_id: 'A3', drone_id: 'd3', origin: siteA2[2], class: 'voice', transcript: 'Help! Can anyone hear me? My leg is trapped.', scores: { human: 0.9, urgency: 0.92, reliability: 0.82 }, priority: 77, by: 'llm', rationale: 'Clear call for help with an injury; 3/3 drones agree on the bearing, SNR 14 dB.' },
-    { id: '1-ac-B2', listen: 1, t: 122, pile_id: 'B2', drone_id: 'd1', origin: siteA2[0], class: 'knocking', transcript: '', scores: { human: 0.65, urgency: 0.43, reliability: 0.86 }, priority: 37, by: 'fallback', rationale: 'knocking 0.55; knock regularity 0.75; 3/3 drones agree; width 22 deg, SNR 12 dB' },
-    { id: '1-ac-B3', listen: 1, t: 122, pile_id: 'B3', drone_id: 'd3', origin: siteA2[2], class: 'debris', transcript: '', scores: { human: 0.02, urgency: 0.02, reliability: 0.9 }, priority: 1, by: 'fallback', rationale: 'debris 0.55; 3/3 drones agree; width 24 deg, SNR 15 dB' },
-    { id: '1-ac-A1', listen: 1, t: 122, pile_id: 'A1', drone_id: 'd1', origin: siteA2[0], class: 'engine', transcript: '', scores: { human: 0.08, urgency: 0.02, reliability: 0.8 }, priority: 3, by: 'fallback', rationale: 'engine 0.59; steady harmonic hum; 2/3 drones agree; SNR 11 dB' },
+    { id: '1-ac-A3', listen: 1, t: 122, pile_id: 'A3', drone_id: 'd3', origin: siteA2[2], class: 'voice', transcript: 'Help! Can anyone hear me? My leg is trapped.', scores: { human: 0.9, urgency: 0.92, reliability: 0.82 }, priority: 77, by: 'llm', rationale: 'Clear call for help with an injury; 3/3 drones agree on the bearing, SNR 14 dB.', snr_db: 14, vad_speech_ratio: 0.62, doa_agree: '3/3', heard_by: ['d1', 'd2', 'd3'], association: 'confident' },
+    { id: '1-ac-B2', listen: 1, t: 122, pile_id: 'B2', drone_id: 'd1', origin: siteA2[0], class: 'knocking', transcript: '', scores: { human: 0.65, urgency: 0.43, reliability: 0.86 }, priority: 37, by: 'fallback', rationale: 'knocking 0.55; knock regularity 0.75; 2/3 drones agree; width 22 deg, SNR 12 dB', snr_db: 12, vad_speech_ratio: 0.05, doa_agree: '2/3', heard_by: ['d1', 'd3'], association: 'ambiguous', ambiguous_with: ['B3'] },
+    { id: '1-ac-B3', listen: 1, t: 122, pile_id: 'B3', drone_id: 'd3', origin: siteA2[2], class: 'debris', transcript: '', scores: { human: 0.02, urgency: 0.02, reliability: 0.9 }, priority: 1, by: 'fallback', rationale: 'debris 0.55; 3/3 drones agree; width 24 deg, SNR 15 dB', snr_db: 15, vad_speech_ratio: 0.0, doa_agree: '3/3' },
+    { id: '1-ac-A1', listen: 1, t: 122, pile_id: 'A1', drone_id: 'd1', origin: siteA2[0], class: 'engine', transcript: '', scores: { human: 0.08, urgency: 0.02, reliability: 0.8 }, priority: 3, by: 'fallback', rationale: 'engine 0.59; steady harmonic hum; 2/3 drones agree; SNR 11 dB', snr_db: 11, vad_speech_ratio: 0.0, doa_agree: '2/3' },
   ].map(c => { const pp = P[c.pile_id]; return { ...c, bearing_deg: +(Math.atan2(pp.y - c.origin[1], pp.x - c.origin[0]) * 180 / Math.PI + 3).toFixed(1), width_deg: 22 }; });
   const piles = PILES.map(pp => ({ id: pp.id, xy: [+pp.x.toFixed(2), +pp.y.toFixed(2)], status: 'no_signal_not_cleared', priority: 8, radar_candidate_ids: [], why: 'No sound assigned to this pile during the listen. Silence is not absence: not cleared.' }));
   const set = (id, o) => Object.assign(piles.find(q => q.id === id), o);
-  set('A2', { status: 'ping', priority: null, radar_candidate_ids: ['A2-R1'], why: 'Radar ping A2-R1, p 0.94, ≈1.6 m below the surface. Candidate search region, not a confirmed person.' });
+  set('A2', { status: 'ping', priority: null, radar_candidate_ids: ['A2-R1'], why: 'Radar ping A2-R1, ≈1.6 ± 0.3 m below the surface (radar estimate). Candidate search region, not a confirmed person.' });
   set('A3', { status: 'scanning', priority: 77, radar_candidate_ids: [], why: 'Voice saying "Help! Can anyone hear me? My leg is trapped."; drones landed, radar scanning.' });
-  set('B2', { status: 'lead', priority: 37, why: 'Knocking; human 0.65, urgency 0.43, reliability 0.86.' });
+  set('B2', { status: 'lead', priority: 37, association: 'ambiguous', why: 'Lead (ambiguous direction; could be B3): knocking; human 0.65, urgency 0.43, reliability 0.45.' });
   set('B3', { status: 'dismissed_nonhuman', priority: 1, why: 'Heard debris (human 0.02); dismissed as an acoustic lead, but the pile is not cleared.' });
   set('A1', { status: 'dismissed_nonhuman', priority: 3, why: 'Heard engine (human 0.08); dismissed as an acoustic lead, but the pile is not cleared.' });
   const scans = [
@@ -66,15 +66,15 @@ export function demoState() {
     landing_sites: [...siteA2.map((xy, k) => L('A2', k + 1, xy, 'used')), ...siteA3.map((xy, k) => L('A3', k + 1, xy, 'used')), L('A3', 4, at(A3, 11, 1.9), 'candidate'), L('A3', 5, at(A3, 10.4, 4.1), 'candidate')],
     scans,
     radar_candidates: [
-      { id: 'A2-R1', pile_id: 'A2', xy: R1, z_est: +(H(...R1) - 1.6).toFixed(2), cov: [[0.09, 0.02], [0.02, 0.06]], p_mass: 0.94, breathing_hz: 0.27, kind: 'stationary', status: 'candidate', evidence: ['s1', 's2', 's3'] },
-      { id: 'A3-R1', pile_id: 'A3', xy: R2, z_est: +(H(...R2) - 1.0).toFixed(2), cov: [[0.3, 0.05], [0.05, 0.22]], p_mass: 0.62, breathing_hz: 0.28, kind: 'stationary', status: 'insufficient_evidence', evidence: ['s4', 's5'] },
+      { id: 'A2-R1', pile_id: 'A2', xy: R1, z_est: +(H(...R1) - 1.6).toFixed(2), cov: [[0.09, 0.02], [0.02, 0.06]], p_mass: 0.94, breathing_hz: 0.27, kind: 'stationary', status: 'candidate', evidence: ['s1', 's2', 's3'], depth_source: 'radar', depth_m: 1.6, depth_sigma: 0.3, support: '3/3' },
+      { id: 'A3-R1', pile_id: 'A3', xy: R2, z_est: +(H(...R2) - 1.5).toFixed(2), cov: [[0.3, 0.05], [0.05, 0.22]], p_mass: 0.62, breathing_hz: 0.28, kind: 'stationary', status: 'insufficient_evidence', evidence: ['s4', 's5'], depth_source: 'nominal', support: '2/3' },
     ],
     acoustic: clips.filter(c => c.scores.human >= 0.4).map((c, k) => ({ obs_id: 'a' + (k + 1), drone_id: c.drone_id, origin: c.origin, timestamp: c.t, bearing_deg: c.bearing_deg, width_deg: c.width_deg, class: c.class === 'voice' ? 'voice' : 'knocking', confidence: c.scores.reliability, pile_id: c.pile_id })),
     belief: { origin: bo, res, w: bw, h: bw, pile_id: 'A3', p },
     next_scan: { drone_id: 'd3', site_id: 'A3-L3', pile_id: 'A3', reason: 'separates two modes 3.9 m apart', score: 0.7 },
     log: [
       { t: 0, msg: 'Grid mission start: 3 drones at the staging area, start pile A2 (operator choice)' },
-      { t: 96, msg: 'PING A2-R1 at pile A2: depth ≈1.6 m, p 0.94 -> sent to the operator dashboard' },
+      { t: 96, msg: 'PING A2-R1 at pile A2: depth ≈1.6 ± 0.3 m (radar estimate), belief share 0.94 -> sent to the operator dashboard' },
       { t: 96, msg: 'Radar phase at A2 over; landed drones listen to the other piles for 26 s' },
       { t: 122, msg: 'Clip 1-ac-A3 (d3): voice "Help! Can anyone hear me? My leg is trapped." -> priority 77 for A3 [llm]' },
       { t: 122, msg: 'Pile priority: A3 77, B2 37, A1 3, B3 1' },
@@ -85,8 +85,16 @@ export function demoState() {
     staging: { xy: BASE, pads: PADS },
     piles,
     acoustic_clips: clips,
-    acoustic_agent: { mode: 'demo', llm_calls: 1, fallback: 3 },
+    acoustic_agent: { mode: 'demo', model: 'demo', llm_calls: 1, cache_hits: 0, fallback: 3 },
     dispatch: [{ t: 122, from_pile: 'A2', to_pile: 'A3', reason: 'Send the radar drones to A3: highest priority (77) from "Help! Can anyone hear me?…", 3/3 drones agreeing on the bearing.' }],
+    decisions: [{ t: 122, gate: 'dispatch', chosen: 'o1', by: 'argmax', latency_ms: 0,
+      rationale: 'Send the radar drones to A3: highest priority (77) from "Help! Can anyone hear me?…", 3/3 drones agreeing on the bearing.',
+      options: [
+        { id: 'o1', action: 'dispatch', pile_id: 'A3', priority: 77, travel_s: 16, battery_after_min: 0.71, evidence: 'voice "Help! Can anyone hear me?" (human 0.90, priority 77, llm)', flags: [] },
+        { id: 'o2', action: 'dispatch', pile_id: 'B2', priority: 37, travel_s: 21, battery_after_min: 0.7, evidence: 'knocking (human 0.65, priority 37, fallback)', flags: [] },
+        { id: 'o3', action: 'dispatch', pile_id: 'A1', priority: 3, travel_s: 14, battery_after_min: 0.72, evidence: 'engine (human 0.08)', flags: ['below_threshold', 'nonhuman'] },
+        { id: 'o4', action: 'stop', pile_id: null, priority: null, travel_s: null, battery_after_min: 0.88, evidence: 'return to the staging area', flags: [] },
+      ] }],
   };
 }
 

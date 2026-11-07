@@ -26,6 +26,7 @@ HUMAN = {"voice", "weak_voice", "shout", "knock", "knocking", "tapping", "human"
 LINE_W = 0.03
 POINT_W = 0.09
 MAX_SCANS = 12
+LINE_MESH = False        # True: draw lines as flat ribbon meshes LINE_W * width metres wide (exact in every renderer)
 ACTIVE = {"active", "survey", "surveying", "scanning", "searching", "in_progress", "radar", "landing",
           "relocate", "rescan", "acoustic"}
 
@@ -246,9 +247,40 @@ class UsdBackend:
         self.ping_prims = {}
         self.live = set()
 
+    def _ribbons(self, P0, P1, C, W):
+        """Flat quads along each segment (horizontal, width LINE_W * W m): thin painted-light lines."""
+        UsdGeom, Vt = self.UsdGeom, self.Vt
+        if not hasattr(self, "ribbon"):
+            self.ribbon = UsdGeom.Mesh.Define(self.stage, self.root + "/LineRibbons")
+            self.ribbon.CreateDoubleSidedAttr(True)
+        n = len(P0)
+        if n == 0:
+            self.ribbon.CreateVisibilityAttr("invisible")
+            return
+        self.ribbon.CreateVisibilityAttr("inherited")
+        P0, P1 = np.asarray(P0, np.float32), np.asarray(P1, np.float32)
+        d = P1[:, :2] - P0[:, :2]
+        L = np.maximum(np.hypot(d[:, 0], d[:, 1]), 1e-6)
+        nrm = np.stack([-d[:, 1] / L, d[:, 0] / L, np.zeros(n)], 1).astype(np.float32)
+        h = (np.asarray(W, np.float32) * LINE_W / 2)[:, None] * nrm
+        pts = np.empty((4 * n, 3), np.float32)
+        pts[0::4], pts[1::4], pts[2::4], pts[3::4] = P0 - h, P1 - h, P1 + h, P0 + h
+        m = self.ribbon
+        m.CreatePointsAttr(Vt.Vec3fArray.FromNumpy(pts))
+        m.CreateFaceVertexCountsAttr(Vt.IntArray([4] * n))
+        m.CreateFaceVertexIndicesAttr(Vt.IntArray.FromNumpy(np.arange(4 * n, dtype=np.int32)))
+        lo, hi = pts.min(0), pts.max(0)
+        m.CreateExtentAttr([self.Gf.Vec3f(*map(float, lo)), self.Gf.Vec3f(*map(float, hi))])
+        pv = UsdGeom.PrimvarsAPI(m)
+        pv.CreatePrimvar("displayColor", self.Sdf.ValueTypeNames.Color3fArray, UsdGeom.Tokens.uniform).Set(
+            Vt.Vec3fArray.FromNumpy(np.asarray(C, np.float32)[:, :3].copy()))
+
     def set_lines(self, P0, P1, C, W):
         UsdGeom, Vt = self.UsdGeom, self.Vt
         n = len(P0)
+        if LINE_MESH:
+            self.curves.CreateVisibilityAttr("invisible")
+            return self._ribbons(P0, P1, C, W)
         if n == 0:
             self.curves.CreateVisibilityAttr("invisible")
             return

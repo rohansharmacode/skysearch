@@ -335,8 +335,8 @@ def rig_pose(rc, scen, pos3, Q):
         rc["h"] = h
         fwd = np.array([math.cos(h), -math.sin(h), 0.0])
         p = pos3[i]
-        if rc["mode"] == "fpv":
-            eye = p + 0.12 * fwd + np.array([0, 0, 0.03])
+        if rc["mode"] == "fpv":            # lens at the front edge of the airframe, not inside the body
+            eye = p + (0.30 if d.kind == "micro" else 0.60) * fwd + np.array([0, 0, 0.02])
             tgt = eye + 3.0 * fwd - np.array([0, 0, 0.5])
         else:
             back, up = (0.9, 0.22) if d.kind == "micro" else (2.2, 0.9)

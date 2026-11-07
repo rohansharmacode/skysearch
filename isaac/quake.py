@@ -400,7 +400,7 @@ class Quake:
                 g["released"][new] = True
                 self._write(o, new, vel=g["kick"][new])
                 if name in ("panels", "chunks", "walltops"):
-                    self._emit_dust(g["hold"][new, :3], n_each={"panels": 10, "chunks": 3, "walltops": 3}[name])
+                    self._emit_dust(g["hold"][new, :3], n_each={"panels": 4, "chunks": 1, "walltops": 1}[name])
             live = np.nonzero(g["released"])[0]
             if len(live) and (self.gravity_mode == "velocity" and self.envelope(t - self.PRE) > 0 or g["guide"].any()):
                 try:
@@ -458,9 +458,9 @@ class Quake:
             return [], [], []
         d = self.dust                         # positions freeze once the mission runs; the dust only fades
         age = d[:, 6] + t_mission
-        alpha = np.clip(0.32 * (1 - age / 20.0), 0, 0.32)
+        alpha = np.clip(0.16 * (1 - age / 20.0), 0, 0.16)
         keep = alpha > 0.02
         pts = [tuple(map(float, p)) for p in d[keep, 0:3]]
         cols = [(0.66, 0.62, 0.56, float(a)) for a in alpha[keep]]
-        sizes = [float(s) for s in np.clip(16 + 2.5 * age[keep], 16, 40)]
+        sizes = [float(s) for s in np.clip(8 + 1.5 * age[keep], 8, 22)]
         return pts, cols, sizes

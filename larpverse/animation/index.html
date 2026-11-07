@@ -1,0 +1,835 @@
+<meta charset="utf-8">
+<title>Larpverse Mission Concept</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+Condensed:wght@400;500;600&display=swap">
+<style>
+/* Layout: full-bleed 3D field-ops viewer; HUD floats in four corners, timeline docked at the bottom. Single dark theme by design. */
+:root {
+  color-scheme: dark;
+  --ink: #0b1117;
+  --panel: rgba(11, 17, 23, 0.82);
+  --line: rgba(150, 180, 200, 0.18);
+  --fg: #e4ebf0;
+  --muted: #8b9dab;
+  --lidar: #9b6bff;
+  --radar: #ff9f43;
+  --acoustic: #22c3d6;
+  --cone: #ffe14a;
+  --detect: #ff4545;
+  --coord: #6fd36f;
+  --drone: #ef5350;
+  --f-display: "IBM Plex Sans Condensed", "Arial Narrow", system-ui, sans-serif;
+  --f-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+}
+[hidden] { display: none !important; }
+html, body { height: 100%; }
+body { background: var(--ink); color: var(--fg); font-family: var(--f-display); overflow: hidden; }
+#app { position: relative; width: 100%; height: 100%; overflow: hidden; }
+#app > canvas { display: block; position: absolute; inset: 0; }
+.labels { position: absolute; inset: 0; pointer-events: none; z-index: 1; }
+.hud { position: absolute; pointer-events: none; z-index: 2; }
+.hud > * { pointer-events: auto; }
+
+.lbl { font: 500 11px/1.2 var(--f-mono); color: var(--fg); background: rgba(8, 12, 16, 0.78); border: 1px solid var(--line); padding: 3px 6px; border-radius: 3px; white-space: nowrap; transform: translateY(-14px); }
+.lbl.lidar { border-color: var(--lidar); }
+.lbl.radar { border-color: var(--radar); color: #ffd3a6; }
+.lbl.acoustic { border-color: var(--cone); color: #fff2a8; }
+.lbl.detect { border-color: var(--detect); color: #ffd0d0; background: rgba(60, 8, 8, 0.85); }
+.lbl.coord { border-color: var(--coord); color: #c9f5c9; }
+.lbl.truth { border-style: dashed; color: var(--muted); }
+.lbl.drone b { color: var(--drone); font-weight: 500; }
+
+#top { top: 16px; left: 16px; max-width: min(460px, calc(100% - 32px)); }
+.brand { font: 500 11px/1 var(--f-mono); letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); display: flex; gap: 10px; align-items: center; }
+.brand i { width: 8px; height: 8px; border-radius: 50%; background: var(--detect); box-shadow: 0 0 10px var(--detect); }
+#phaseNo { font: 500 12px/1 var(--f-mono); color: var(--coord); margin-top: 14px; letter-spacing: 0.08em; }
+#phaseTitle { font-size: clamp(26px, 4vw, 40px); font-weight: 600; line-height: 1.02; margin: 6px 0 10px; text-wrap: balance; letter-spacing: -0.01em; }
+#caption { font-size: 15px; line-height: 1.45; color: #c8d3db; background: var(--panel); border-left: 2px solid var(--coord); padding: 10px 12px; max-width: 62ch; backdrop-filter: blur(4px); }
+
+#layers { top: 16px; right: 16px; display: flex; flex-direction: column; gap: 6px; align-items: stretch; }
+.tog { font: 500 12px/1 var(--f-mono); color: var(--fg); background: var(--panel); border: 1px solid var(--line); padding: 7px 10px; border-radius: 3px; display: flex; align-items: center; gap: 8px; cursor: pointer; text-align: left; }
+.tog i { width: 10px; height: 10px; border-radius: 2px; background: var(--c); box-shadow: 0 0 8px var(--c); }
+.tog[aria-pressed="false"] { color: var(--muted); }
+.tog[aria-pressed="false"] i { background: transparent; box-shadow: none; outline: 1px solid var(--c); }
+.tog:focus-visible, .btn:focus-visible, .chap:focus-visible { outline: 2px solid var(--coord); outline-offset: 2px; }
+#follow { color: var(--coord); border-color: var(--coord); }
+
+#side { right: 16px; bottom: 96px; width: 330px; display: flex; flex-direction: column; gap: 8px; }
+.panel { background: var(--panel); border: 1px solid var(--line); border-radius: 4px; padding: 10px 12px; backdrop-filter: blur(4px); }
+.panel h3 { margin: 0 0 8px; font: 500 10px/1 var(--f-mono); letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); display: flex; justify-content: space-between; }
+#radarPanel canvas { width: 100%; height: 132px; display: block; }
+#log { font: 400 11.5px/1.45 var(--f-mono); color: #b9c6cf; max-height: 168px; overflow-y: auto; display: flex; flex-direction: column; gap: 3px; scrollbar-width: thin; }
+#log div { display: grid; grid-template-columns: 38px 1fr; gap: 6px; }
+#log span { color: var(--muted); font-variant-numeric: tabular-nums; }
+#log .new { color: var(--fg); }
+#log .k-coord b { color: var(--coord); font-weight: 500; }
+
+#bar { left: 16px; right: 16px; bottom: 16px; display: flex; gap: 10px; align-items: center; background: var(--panel); border: 1px solid var(--line); border-radius: 4px; padding: 8px 10px; }
+.btn { font: 500 12px/1 var(--f-mono); background: transparent; color: var(--fg); border: 1px solid var(--line); border-radius: 3px; height: 30px; min-width: 34px; padding: 0 9px; cursor: pointer; }
+.btn:hover, .tog:hover { border-color: var(--muted); }
+#time { font: 400 12px/1 var(--f-mono); color: var(--muted); font-variant-numeric: tabular-nums; min-width: 86px; }
+#chapters { flex: 1; display: flex; gap: 3px; min-width: 0; }
+.chap { position: relative; height: 30px; background: rgba(150, 180, 200, 0.08); border: 0; border-radius: 2px; cursor: pointer; padding: 0 6px; overflow: hidden; text-align: left; color: var(--muted); font: 500 10.5px/30px var(--f-display); letter-spacing: 0.04em; text-transform: uppercase; white-space: nowrap; text-overflow: ellipsis; min-width: 0; }
+.chap .fill { position: absolute; left: 0; top: 0; bottom: 0; width: 0; background: rgba(111, 211, 111, 0.22); border-right: 2px solid var(--coord); pointer-events: none; }
+.chap span { position: relative; }
+.chap.on { color: var(--fg); }
+.chap.done .fill { border-right: 0; }
+
+#loading { position: absolute; inset: 0; display: grid; place-items: center; background: var(--ink); font: 500 13px var(--f-mono); color: var(--muted); letter-spacing: 0.08em; z-index: 5; }
+
+@media (max-height: 760px) { #log { max-height: 84px; } #radarPanel canvas { height: 100px; } #caption { font-size: 13.5px; } }
+@media (max-width: 860px) {
+  #side { display: none; }
+  #caption { font-size: 13.5px; }
+  #layers { top: auto; bottom: 70px; right: 16px; left: 16px; flex-direction: row; flex-wrap: wrap; }
+  .tog { padding: 6px 8px; font-size: 11px; }
+  .chap span { display: none; }
+  #time { min-width: 0; }
+}
+</style>
+
+<div id="app">
+  <div id="loading">Building rubble site and LiDAR map…</div>
+  <div class="hud" id="top">
+    <div class="brand"><i></i>Larpverse · autonomous SAR concept</div>
+    <div id="phaseNo">01 / 08</div>
+    <div id="phaseTitle">Deploy</div>
+    <div id="caption"></div>
+  </div>
+  <div class="hud" id="layers">
+    <button class="tog" data-k="lidar" aria-pressed="true" style="--c: var(--lidar)"><i></i>LiDAR / SLAM</button>
+    <button class="tog" data-k="radar" aria-pressed="true" style="--c: var(--radar)"><i></i>Radar</button>
+    <button class="tog" data-k="acoustic" aria-pressed="true" style="--c: var(--acoustic)"><i></i>Acoustic</button>
+    <button class="tog" data-k="links" aria-pressed="true" style="--c: var(--coord)"><i></i>Coordinator links</button>
+    <button class="tog" data-k="truth" aria-pressed="true" style="--c: #ffffff"><i></i>Hidden ground truth</button>
+    <button class="tog" id="follow" hidden>Follow camera</button>
+  </div>
+  <div class="hud" id="side">
+    <div class="panel" id="radarPanel" hidden>
+      <h3><span>Radar slow-time phase</span><span>0.1–0.5 Hz band</span></h3>
+      <canvas id="trace" width="620" height="264"></canvas>
+    </div>
+    <div class="panel">
+      <h3><span>Coordinator log</span><span>site frame, m</span></h3>
+      <div id="log" aria-live="polite"></div>
+    </div>
+  </div>
+  <div class="hud" id="bar">
+    <button class="btn" id="play" aria-label="Pause">❚❚</button>
+    <button class="btn" id="speed" aria-label="Playback speed">1×</button>
+    <span id="time">0:00 / 1:06</span>
+    <div id="chapters"></div>
+  </div>
+</div>
+
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+} }
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
+
+// ---------- constants & helpers ----------
+const TAU = Math.PI * 2, D2R = Math.PI / 180;
+const T_END = 66;
+const LAYER_Y = 5.6;                     // height of the 2D search layer drawing
+const C = { lidar: 0x9b6bff, radar: 0xff9f43, acoustic: 0x22c3d6, cone: 0xffe14a, detect: 0xff4545, coord: 0x6fd36f, drone: 0xef5350, good: 0x4fd18b, bad: 0xff6464 };
+const CHAPTERS = [
+  { name: 'Deploy', t0: 0, t1: 7 },
+  { name: 'LiDAR survey', t0: 7, t1: 17 },
+  { name: 'Find flat ground & land', t0: 17, t1: 24 },
+  { name: 'Radar scan', t0: 24, t1: 33 },
+  { name: 'Ambiguity → relocate', t0: 33, t1: 41 },
+  { name: 'Rescan', t0: 41, t1: 47 },
+  { name: 'Acoustic', t0: 47, t1: 55 },
+  { name: 'Site model & dashboard', t0: 55, t1: 66 },
+];
+function mulberry32(a) { return () => { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+const rnd = mulberry32(11);
+const R = (a, b) => a + (b - a) * rnd();
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const sstep = (a, b, v) => { const x = clamp((v - a) / (b - a), 0, 1); return x * x * (3 - 2 * x); };
+const lerp = (a, b, k) => a + (b - a) * k;
+const polar = (deg, r) => ({ x: r * Math.cos(deg * D2R), z: r * Math.sin(deg * D2R) });
+const dist2 = (a, b) => Math.hypot(a.x - b.x, a.z - b.z);
+const site = p => [+(p.x).toFixed(1), +(-p.z).toFixed(1)];          // three (x,z) -> site frame (east, north)
+const bearingDeg = (from, to) => ((Math.atan2(-(to.z - from.z), to.x - from.x) / D2R) + 360) % 360; // CCW from east
+function hash2(x, z) { const s = Math.sin(x * 127.1 + z * 311.7) * 43758.5453; return s - Math.floor(s); }
+function vnoise(x, z) { const xi = Math.floor(x), zi = Math.floor(z), xf = x - xi, zf = z - zi; const u = xf * xf * (3 - 2 * xf), v = zf * zf * (3 - 2 * zf); const a = hash2(xi, zi), b = hash2(xi + 1, zi), c = hash2(xi, zi + 1), d = hash2(xi + 1, zi + 1); return a + (b - a) * u + (c - a) * v + (a - b - c + d) * u * v; }
+
+// Rubble mound heightfield (metres). Ground ~0, pile ~4 m.
+function H(x, z) {
+  const m = 3.3 * Math.exp(-((x / 7) ** 2 + (z / 6) ** 2) * 1.4) + 0.9 * Math.exp(-((x - 2.4) ** 2 + (z - 1.6) ** 2) / 5);
+  const f = clamp(m / 0.9, 0, 1);
+  return m + f * ((vnoise(x * 0.9, z * 0.9) - 0.5) * 0.55 + (vnoise(x * 3.1, z * 3.1) - 0.5) * 0.16) + (vnoise(x * 0.35, z * 0.35) - 0.5) * 0.05;
+}
+
+// Hidden ground truth. Only the "observation generator" below reads this.
+const TRUTH = { T: { x: 1.0, z: 2.6, depth: 1.6 }, S2: { x: -4.6, z: -3.2, depth: 0.9 } };
+const SITE_ANG = { A: 200, B: 10, C: 100 };
+const CSLAB = polar(SITE_ANG.C, 8.6);
+const BASE = { x: -30, z: 22 };
+
+// ---------- renderer / scene ----------
+const app = document.getElementById('app');
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.05;
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+app.prepend(renderer.domElement);
+const labelR = new CSS2DRenderer(); labelR.domElement.className = 'labels'; app.insertBefore(labelR.domElement, document.getElementById('top'));
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x0e151c);
+scene.fog = new THREE.Fog(0x0e151c, 70, 150);
+const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 400);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true; controls.maxPolarAngle = Math.PI * 0.495; controls.minDistance = 4; controls.maxDistance = 120;
+
+scene.add(new THREE.HemisphereLight(0xa9bccc, 0x3a3128, 0.85));
+const sun = new THREE.DirectionalLight(0xffd9b0, 1.9);
+sun.position.set(-28, 42, 18); sun.castShadow = true;
+sun.shadow.mapSize.set(2048, 2048);
+Object.assign(sun.shadow.camera, { left: -26, right: 26, top: 26, bottom: -26, near: 1, far: 120 });
+scene.add(sun);
+const rim = new THREE.DirectionalLight(0x6f8fb0, 0.5); rim.position.set(30, 20, -30); scene.add(rim);
+
+const allLabels = [];
+function label(text, cls, obj, offset = [0, 0, 0]) {
+  const el = document.createElement('div'); el.className = 'lbl ' + (cls || ''); el.innerHTML = text;
+  const o = new CSS2DObject(el); o.position.set(...offset); obj.add(o); allLabels.push(o); return o;
+}
+
+// ---------- ground & rubble ----------
+const groundGeo = new THREE.PlaneGeometry(80, 80, 200, 200); groundGeo.rotateX(-Math.PI / 2);
+{
+  const p = groundGeo.attributes.position, col = new Float32Array(p.count * 3);
+  for (let i = 0; i < p.count; i++) {
+    const x = p.getX(i), z = p.getZ(i), y = H(x, z); p.setY(i, y);
+    const n = vnoise(x * 1.7, z * 1.7) * 0.08, k = 0.36 + n - y * 0.02;
+    col[i * 3] = k * 1.08; col[i * 3 + 1] = k; col[i * 3 + 2] = k * 0.9;
+  }
+  groundGeo.setAttribute('color', new THREE.BufferAttribute(col, 3)); groundGeo.computeVertexNormals();
+}
+const groundMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1 });
+const ground = new THREE.Mesh(groundGeo, groundMat); ground.receiveShadow = true; scene.add(ground);
+const outer = new THREE.Mesh(new THREE.PlaneGeometry(400, 400).rotateX(-Math.PI / 2), new THREE.MeshStandardMaterial({ color: 0x5a544c, roughness: 1 }));
+outer.position.y = -0.09; outer.receiveShadow = true; scene.add(outer);
+
+const rubble = [], rubbleMats = [];
+const mat = c => { const m = new THREE.MeshStandardMaterial({ color: c, roughness: 0.93, metalness: 0.02, flatShading: true }); rubbleMats.push(m); return m; };
+const concrete = ['#8f8b84', '#7c7973', '#9d978d', '#6d6963', '#a59c8f'].map(mat);
+const brick = ['#86614d', '#7a4f3f'].map(mat);
+function addRubble(mesh) { mesh.castShadow = mesh.receiveShadow = true; scene.add(mesh); mesh.updateMatrixWorld(); rubble.push(mesh); return mesh; }
+
+for (let i = 0; i < 115; i++) {
+  const r = 8.4 * Math.pow(rnd(), 0.7), a = rnd() * TAU, x = r * Math.cos(a), z = r * Math.sin(a);
+  if (Math.hypot(x - CSLAB.x, z - CSLAB.z) < 2.7) continue;
+  const m = new THREE.Mesh(new THREE.BoxGeometry(R(1.2, 3.8), R(0.14, 0.32), R(0.8, 2.6)), rnd() < 0.85 ? concrete[i % 5] : brick[i % 2]);
+  m.position.set(x, H(x, z) + R(-0.15, 0.22), z); m.rotation.set(R(-0.55, 0.55), rnd() * TAU, R(-0.55, 0.55));
+  addRubble(m);
+}
+for (let i = 0; i < 90; i++) {
+  const r = 10.6 * Math.pow(rnd(), 0.6), a = rnd() * TAU, x = r * Math.cos(a), z = r * Math.sin(a);
+  if (Math.hypot(x - CSLAB.x, z - CSLAB.z) < 2.2) continue;
+  const s = R(0.18, 0.7), m = new THREE.Mesh(new THREE.DodecahedronGeometry(s, 0), rnd() < 0.7 ? concrete[i % 5] : brick[i % 2]);
+  m.scale.set(1, R(0.45, 1), R(0.6, 1.3)); m.position.set(x, H(x, z) + s * 0.25, z); m.rotation.set(rnd() * 3, rnd() * 3, rnd() * 3);
+  addRubble(m);
+}
+for (let i = 0; i < 6; i++) {
+  const a = rnd() * TAU, r = R(1, 6), x = r * Math.cos(a), z = r * Math.sin(a);
+  const m = new THREE.Mesh(new THREE.CylinderGeometry(0.27, 0.27, R(2.5, 4.5), 8), concrete[i % 5]);
+  m.position.set(x, H(x, z) + 0.2, z); m.rotation.set(0, rnd() * TAU, Math.PI / 2 + R(-0.35, 0.35)); addRubble(m);
+}
+{ // broken wall fragment, the one bit of building still standing
+  const c = polar(152, 7.6), yaw = -152 * D2R + Math.PI / 2;
+  const dir = { x: Math.cos(152 * D2R + Math.PI / 2), z: Math.sin(152 * D2R + Math.PI / 2) };
+  const hs = [3.9, 4.3, 2.2, 0, 3.4, 2.6, 1.4];
+  hs.forEach((h, k) => {
+    if (!h) return; const o = (k - 3) * 0.86, x = c.x + dir.x * o, z = c.z + dir.z * o;
+    const m = new THREE.Mesh(new THREE.BoxGeometry(0.86, h, 0.32), brick[k % 2]);
+    m.position.set(x, H(x, z) - 0.25 + h / 2, z); m.rotation.y = yaw + R(-0.04, 0.04); addRubble(m);
+  });
+}
+// The big flat slab d3 lands on. Geometrically flat, structurally not: it rocks under the drone.
+let maxUnder = 0; for (let dx = -1.8; dx <= 1.8; dx += 0.3) for (let dz = -1.8; dz <= 1.8; dz += 0.3) maxUnder = Math.max(maxUnder, H(CSLAB.x + dx, CSLAB.z + dz));
+const slabC = addRubble(new THREE.Mesh(new THREE.BoxGeometry(3.4, 0.34, 3.4), concrete[2]));
+slabC.position.set(CSLAB.x, maxUnder + 0.3, CSLAB.z); slabC.rotation.y = 0.3; slabC.updateMatrixWorld();
+const SLAB_TOP = slabC.position.y + 0.17;
+{ // rebar
+  const pts = [];
+  for (let i = 0; i < 70; i++) { const s = rubble[(i * 7) % 115]; if (!s) continue; const p = s.position; const a = rnd() * TAU, e = R(0.3, 1.2), L = R(0.6, 1.6); pts.push(p.x, p.y, p.z, p.x + Math.cos(a) * L * Math.cos(e), p.y + Math.sin(e) * L, p.z + Math.sin(a) * L * Math.cos(e)); }
+  const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3));
+  scene.add(new THREE.LineSegments(g, new THREE.LineBasicMaterial({ color: 0x5b3b2b })));
+}
+const rubbleSpheres = rubble.map(m => { m.geometry.computeBoundingSphere(); const s = m.geometry.boundingSphere.clone().applyMatrix4(m.matrixWorld); return { m, x: s.center.x, y: s.center.y, z: s.center.z, r: s.radius }; });
+
+// Staging area + coordinator
+const baseG = new THREE.Group(); baseG.position.set(BASE.x, 0, BASE.z); scene.add(baseG);
+{
+  const pad = new THREE.Mesh(new THREE.BoxGeometry(9, 0.12, 4), new THREE.MeshStandardMaterial({ color: 0x2b333b, roughness: 0.8 })); pad.position.y = 0.06; pad.receiveShadow = true; baseG.add(pad);
+  const truck = new THREE.Mesh(new THREE.BoxGeometry(4.2, 2.2, 2.2), new THREE.MeshStandardMaterial({ color: 0xd9dde0, roughness: 0.6 })); truck.position.set(0, 1.1, -3.6); truck.castShadow = true; baseG.add(truck);
+  const mast = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 3.2), new THREE.MeshStandardMaterial({ color: 0x9aa4ad })); mast.position.set(1.6, 3.8, -3.6); baseG.add(mast);
+  const tip = new THREE.Mesh(new THREE.SphereGeometry(0.16), new THREE.MeshBasicMaterial({ color: C.coord })); tip.position.set(1.6, 5.4, -3.6); baseG.add(tip);
+  label('Coordinator · staging', 'coord', baseG, [1.6, 6.1, -3.6]);
+}
+const COORD_POS = new THREE.Vector3(BASE.x + 1.6, 5.4, BASE.z - 3.6);
+
+// ---------- ray casting (LiDAR) ----------
+const _rc = new THREE.Raycaster(), _hits = [];
+function castRay(o, d, far) {
+  let best = far;
+  // heightfield: sphere-trace then bisect
+  let s = 0;
+  for (let it = 0; it < 200 && s < best; it++) {
+    const y = o.y + d.y * s, h = H(o.x + d.x * s, o.z + d.z * s), gap = y - h;
+    if (gap < 0.01) { let lo = Math.max(0, s - 0.6), hi = s; for (let k = 0; k < 7; k++) { const mid = (lo + hi) / 2; if (o.y + d.y * mid - H(o.x + d.x * mid, o.z + d.z * mid) > 0) lo = mid; else hi = mid; } best = hi; break; }
+    s += Math.max(0.12, gap * 0.45);
+  }
+  _rc.ray.origin.set(o.x, o.y, o.z); _rc.ray.direction.set(d.x, d.y, d.z); _rc.far = best;
+  for (const sp of rubbleSpheres) {
+    const ox = sp.x - o.x, oy = sp.y - o.y, oz = sp.z - o.z, tca = ox * d.x + oy * d.y + oz * d.z;
+    if (tca < -sp.r || tca - sp.r > best) continue;
+    if (ox * ox + oy * oy + oz * oz - tca * tca > sp.r * sp.r) continue;
+    _hits.length = 0; sp.m.raycast(_rc, _hits);
+    for (const h of _hits) if (h.distance < best) best = h.distance;
+  }
+  return best;
+}
+
+// Top-down height grid (what a LiDAR map gives you), 0.5 m.
+const HG = { o: -16, res: 0.5, n: 65, z: null };
+HG.z = new Float32Array(HG.n * HG.n);
+for (let j = 0; j < HG.n; j++) for (let i = 0; i < HG.n; i++) {
+  const x = HG.o + i * HG.res, z = HG.o + j * HG.res, d = castRay({ x, y: 30, z }, { x: 0, y: -1, z: 0 }, 40);
+  HG.z[j * HG.n + i] = 30 - d;
+}
+const hg = (i, j) => HG.z[clamp(j, 0, HG.n - 1) * HG.n + clamp(i, 0, HG.n - 1)];
+
+// ---------- landing-cell scoring: slope, roughness, step ----------
+const cells = [];
+for (let cj = 0; cj < 32; cj++) for (let ci = 0; ci < 32; ci++) {
+  const cx = -15.5 + ci, cz = -15.5 + cj, r = Math.hypot(cx, cz);
+  if (r < 4.5 || r > 15.2) continue;
+  const i0 = (cx - HG.o) / HG.res, j0 = (cz - HG.o) / HG.res;
+  let sx = 0, sz = 0, sxx = 0, szz = 0, mean = 0, mn = 1e9, mx = -1e9; const hs = [];
+  for (let dj = -1; dj <= 1; dj++) for (let di = -1; di <= 1; di++) { const h = hg(i0 + di, j0 + dj); hs.push([di * 0.5, dj * 0.5, h]); mean += h / 9; mn = Math.min(mn, h); mx = Math.max(mx, h); }
+  for (const [x, z, h] of hs) { sx += x * (h - mean); sz += z * (h - mean); sxx += x * x; szz += z * z; }
+  const a = sx / sxx, b = sz / szz; let rs = 0;
+  for (const [x, z, h] of hs) rs += (h - mean - a * x - b * z) ** 2;
+  const slope = Math.atan(Math.hypot(a, b)) / D2R, rough = Math.sqrt(rs / 9), step = mx - mn;
+  cells.push({ id: 'L' + (cells.length + 1), x: cx, z: cz, y: mean, r, slope, rough, ok: slope < 7 && rough < 0.05 && step < 0.25 });
+}
+const okCells = cells.filter(c => c.ok);
+const nearestOk = (p, rmin = 0) => okCells.filter(c => c.r >= rmin).reduce((b, c) => dist2(c, p) < dist2(b, p) ? c : b);
+const SITES = { A: nearestOk(polar(SITE_ANG.A, 12.5), 11), B: nearestOk(polar(SITE_ANG.B, 12.5), 11), C: nearestOk(CSLAB) };
+SITES.C.y = SLAB_TOP;
+
+// ---------- synthetic radar observation generator (only place that reads TRUTH) ----------
+function radarObs(s, bias, w, sigma) { return { site: s, r: dist2(s, TRUTH.T) + bias, w, sigma }; }
+const scans = [
+  { id: 's1', drone: 0, ...radarObs(SITES.A, 0.11, 0.9, 0.38), q: 0.93, t: 26 },
+  { id: 's2', drone: 1, ...radarObs(SITES.B, -0.09, 0.9, 0.38), q: 0.91, t: 27.5 },
+  { id: 's3', drone: 2, ...radarObs(SITES.C, 2.1, 0.12, 1.4), q: 0.19, t: 29 },     // slab rocking -> motion-corrupted
+];
+
+// ---------- localisation: 2D grid Bayes filter (never reads TRUTH) ----------
+const BG = { n: 100, ext: 14 }; BG.res = 2 * BG.ext / BG.n;
+const cellXZ = k => ({ x: -BG.ext + ((k % BG.n) + 0.5) * BG.res, z: -BG.ext + (Math.floor(k / BG.n) + 0.5) * BG.res });
+function belief(obs) {
+  const n = BG.n, lp = new Float64Array(n * n);
+  for (let k = 0; k < n * n; k++) {
+    const p = cellXZ(k); lp[k] = Math.log(0.12 + 0.88 * sstep(0.2, 1.2, H(p.x, p.z))); // prior: rubble footprint from the LiDAR map
+    for (const o of obs) { const d = dist2(p, o.site); lp[k] += Math.log(o.w * Math.exp(-((d - o.r) ** 2) / (2 * o.sigma ** 2)) + (1 - o.w) * 0.05); }
+  }
+  let mx = -Infinity; for (const v of lp) mx = Math.max(mx, v);
+  const p = new Float32Array(n * n); let s = 0; for (let k = 0; k < n * n; k++) { p[k] = Math.exp(lp[k] - mx); s += p[k]; }
+  for (let k = 0; k < n * n; k++) p[k] /= s; return p;
+}
+function modes(p) {
+  const n = BG.n, out = []; let pmax = 0; for (const v of p) pmax = Math.max(pmax, v);
+  for (let j = 3; j < n - 3; j++) for (let i = 3; i < n - 3; i++) {
+    const v = p[j * n + i]; if (v < 0.12 * pmax) continue; let isMax = true;
+    for (let dj = -3; dj <= 3 && isMax; dj++) for (let di = -3; di <= 3; di++) if ((di || dj) && p[(j + dj) * n + i + di] > v) { isMax = false; break; }
+    if (isMax) out.push(cellXZ(j * n + i));
+  }
+  for (const m of out) { let mass = 0, sx = 0, sz = 0; for (let k = 0; k < n * n; k++) { const c = cellXZ(k); if (dist2(c, m) < 1.8) { mass += p[k]; sx += p[k] * c.x; sz += p[k] * c.z; } } m.mass = mass; m.x = sx / mass; m.z = sz / mass; }
+  out.sort((a, b) => b.mass - a.mass);
+  return out.filter((m, i) => out.slice(0, i).every(o => dist2(o, m) > 1.5));
+}
+function cov(p, m) {
+  let sxx = 0, szz = 0, sxz = 0, w = 0; for (let k = 0; k < p.length; k++) { const c = cellXZ(k); if (dist2(c, m) > 2.5) continue; const dx = c.x - m.x, dz = c.z - m.z; sxx += p[k] * dx * dx; szz += p[k] * dz * dz; sxz += p[k] * dx * dz; w += p[k]; }
+  return [sxx / w, sxz / w, szz / w];
+}
+const beliefs = [null, belief(scans.slice(0, 1)), belief(scans.slice(0, 2)), belief(scans.slice(0, 3))];
+const ambModes = modes(beliefs[3]);
+
+// ---------- planner: pick the free landing cell whose range best separates the modes ----------
+const [m1, m2] = ambModes;
+const used = [SITES.A, SITES.B, SITES.C];
+const buckets = new Map();
+for (const c of okCells) {
+  if (c.r < 11 || c.r > 13.8 || used.some(u => dist2(u, c) < 3)) continue;
+  const b = Math.round(((Math.atan2(c.z, c.x) / D2R + 360) % 360) / 12);
+  if (!buckets.has(b) || Math.abs(c.r - 12.4) < Math.abs(buckets.get(b).r - 12.4)) buckets.set(b, c);
+}
+const cands = [...buckets.values()].map(c => { const sep = Math.abs(dist2(c, m1) - dist2(c, m2)), travel = dist2(c, SITES.C); return { c, sep, travel, raw: sep - 0.08 * travel }; });
+const rawMax = Math.max(...cands.map(k => k.raw));
+cands.forEach(k => k.score = k.raw / rawMax); cands.sort((a, b) => b.score - a.score);
+SITES.D = cands[0].c;
+scans.push({ id: 's4', drone: 2, ...radarObs(SITES.D, 0.07, 0.9, 0.38), q: 0.94, t: 43.5 });
+beliefs.push(belief(scans.slice(0, 4)));
+const finalModes = modes(beliefs[4]);
+const EST = finalModes[0];
+const [cxx, cxz, czz] = cov(beliefs[4], EST);
+const EST_DEPTH = TRUTH.T.depth + 0.12;  // depth from 3D range residual (synthetic, display only)
+const EST_SURF = hg(Math.round((EST.x - HG.o) / HG.res), Math.round((EST.z - HG.o) / HG.res));
+
+// ---------- synthetic acoustic DoA (generator) + fusion ----------
+const micSites = [SITES.A, SITES.B, SITES.D], micNoise = [3, -4, 2];
+const acoustic = micSites.map((s, i) => ({ s, brg: bearingDeg(s, TRUTH.S2) + micNoise[i], w: 26, t: 48.5 + i }));
+const ACOUSTIC_PT = (() => { // least-squares intersection of the bearing lines
+  let a11 = 0, a12 = 0, a22 = 0, b1 = 0, b2 = 0;
+  for (const o of acoustic) { const ux = Math.cos(o.brg * D2R), uz = -Math.sin(o.brg * D2R); const m11 = 1 - ux * ux, m12 = -ux * uz, m22 = 1 - uz * uz; a11 += m11; a12 += m12; a22 += m22; b1 += m11 * o.s.x + m12 * o.s.z; b2 += m12 * o.s.x + m22 * o.s.z; }
+  const det = a11 * a22 - a12 * a12; return { x: (a22 * b1 - a12 * b2) / det, z: (a11 * b2 - a12 * b1) / det };
+})();
+
+// ---------- drones ----------
+const LEG = 0.78;
+function makeDrone(name) {
+  const g = new THREE.Group(), body = new THREE.Group(); g.add(body);
+  const dark = new THREE.MeshStandardMaterial({ color: 0x252b32, roughness: 0.5, metalness: 0.3 });
+  const shell = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.24, 0.6), dark); shell.castShadow = true; body.add(shell);
+  const cap = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.06, 0.4), new THREE.MeshStandardMaterial({ color: C.drone, roughness: 0.4 })); cap.position.y = 0.15; body.add(cap);
+  for (const s of [1, -1]) { const arm = new THREE.Mesh(new THREE.BoxGeometry(2.0, 0.06, 0.09), dark); arm.rotation.y = s * Math.PI / 4; arm.castShadow = true; body.add(arm); }
+  const rotors = [], micMat = new THREE.MeshStandardMaterial({ color: 0x0c3f46, emissive: C.acoustic, emissiveIntensity: 0.2 });
+  for (const [x, z] of [[0.7, 0.7], [0.7, -0.7], [-0.7, 0.7], [-0.7, -0.7]]) {
+    const r = new THREE.Group(); r.position.set(x, 0.16, z);
+    r.add(new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.42, 0.01, 24), new THREE.MeshBasicMaterial({ color: 0xc9d4dc, transparent: true, opacity: 0.12, depthWrite: false })));
+    const blade = new THREE.Mesh(new THREE.BoxGeometry(0.82, 0.015, 0.07), dark); r.add(blade); body.add(r); rotors.push(r);
+    const mic = new THREE.Mesh(new THREE.SphereGeometry(0.06, 10, 8), micMat); mic.position.set(x * 1.02, 0.02, z * 1.02); body.add(mic);
+  }
+  const legMat = new THREE.MeshStandardMaterial({ color: 0x3b434b });
+  for (const s of [1, -1]) {
+    const skid = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 1.0), legMat); skid.rotation.x = Math.PI / 2; skid.position.set(s * 0.38, -LEG + 0.03, 0); body.add(skid);
+    for (const z of [0.25, -0.25]) { const l = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.025, LEG - 0.1), legMat); l.position.set(s * 0.32, -LEG / 2 + 0.02, z); l.rotation.z = s * 0.15; body.add(l); }
+  }
+  const lidarMat = new THREE.MeshStandardMaterial({ color: 0x1b1530, emissive: C.lidar, emissiveIntensity: 0.6 });
+  const puck = new THREE.Mesh(new THREE.CylinderGeometry(0.13, 0.13, 0.16, 20), lidarMat); puck.position.y = 0.28; body.add(puck);
+  const radarMat = new THREE.MeshStandardMaterial({ color: 0x3a2207, emissive: C.radar, emissiveIntensity: 0.35 });
+  const panel = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.34, 0.5), radarMat); panel.position.set(0.44, -0.08, 0); panel.rotation.z = -0.35; body.add(panel);
+  g.scale.setScalar(1.35); scene.add(g);
+  const lbl = label(`<b>${name}</b> <span></span>`, 'drone', g, [0, 1.25, 0]);
+  return { g, body, rotors, lidarMat, radarMat, micMat, lbl, span: lbl.element.querySelector('span') };
+}
+const drones = ['d1', 'd2', 'd3'].map(makeDrone);
+
+// Keyframed paths. Survey orbit: r 14 m, 10 m up, each drone sweeps 120°.
+const orbit = (deg, t) => { const a = (deg + (t - 7) / 10 * 120) * D2R; return { x: 14 * Math.cos(a), y: 10, z: 14 * Math.sin(a) }; };
+const theta0 = [80, 250, -20];
+const landY = s => (s.y ?? 0) + LEG * 1.35;
+function buildPath(i) {
+  const pad = { x: BASE.x + (i - 1) * 2.6, y: 0.12 + LEG * 1.35, z: BASE.z }, k = [];
+  const add = (t, p, ease = true) => k.push({ t, p: { ...p }, ease });
+  add(0, pad); add(1.5, { ...pad, y: 9 }); add(7, orbit(theta0[i], 7));
+  for (let t = 7.5; t <= 17; t += 0.5) add(t, orbit(theta0[i], t), false);
+  const end = orbit(theta0[i], 17), s = [SITES.A, SITES.B, SITES.C][i];
+  add(19, end); add(22, { x: s.x, y: landY(s) + 6, z: s.z }); add(24, { x: s.x, y: landY(s), z: s.z });
+  if (i === 2) { const d = SITES.D; add(35, { x: s.x, y: landY(s), z: s.z }); add(36.3, { x: s.x, y: landY(s) + 5, z: s.z }); add(39.6, { x: d.x, y: landY(d) + 5, z: d.z }); add(41, { x: d.x, y: landY(d), z: d.z }); }
+  add(T_END + 1, k[k.length - 1].p);
+  return k;
+}
+const paths = [0, 1, 2].map(buildPath);
+function pathPos(i, t) {
+  const k = paths[i]; let j = 0; while (j < k.length - 2 && k[j + 1].t <= t) j++;
+  const a = k[j], b = k[j + 1], u = clamp((t - a.t) / (b.t - a.t), 0, 1), e = b.ease ? u * u * (3 - 2 * u) : u;
+  return { x: lerp(a.p.x, b.p.x, e), y: lerp(a.p.y, b.p.y, e), z: lerp(a.p.z, b.p.z, e) };
+}
+const isLanded = (i, t) => t >= 24 && !(i === 2 && t >= 35 && t < 41);
+const slabWobble = t => { let w = 0; if (t > 23.6 && t < 35) w += 0.07 * Math.sin(9 * (t - 23.6)) * Math.exp(-(t - 23.6) * 0.35); return w; };
+const scanSite = (i, t) => i < 2 ? (i ? SITES.B : SITES.A) : (t < 35 ? SITES.C : SITES.D);
+const isScanning = (i, t) => i < 2 ? t >= 24.6 && t < 47 : (t >= 24.6 && t < 35) || (t >= 41.6 && t < 47);
+
+// ---------- LiDAR survey precompute (deterministic so the timeline can scrub) ----------
+const MAXP = 60000, lidarPts = new Float32Array(MAXP * 3), lidarT = new Float32Array(MAXP), lidarD = new Uint8Array(MAXP);
+let NP = 0;
+for (let tick = 0; tick < 250 && NP < MAXP - 200; tick++) {
+  const t = 7 + tick * 0.04;
+  for (let i = 0; i < 3; i++) {
+    const p = pathPos(i, t), o = { x: p.x, y: p.y + 0.3, z: p.z }, spin = t * TAU * 1.7 + i;
+    for (let k = 0; k < 72; k++) {
+      const az = spin + k * TAU / 72 + rnd() * 0.05, el = -(4 + 78 * Math.pow(rnd(), 0.8)) * D2R;
+      const d = { x: Math.cos(el) * Math.cos(az), y: Math.sin(el), z: Math.cos(el) * Math.sin(az) };
+      const s = castRay(o, d, 45); if (s >= 45) continue;
+      lidarPts[NP * 3] = o.x + d.x * s + R(-0.02, 0.02); lidarPts[NP * 3 + 1] = o.y + d.y * s; lidarPts[NP * 3 + 2] = o.z + d.z * s + R(-0.02, 0.02);
+      lidarT[NP] = t; lidarD[NP] = i; NP++;
+    }
+  }
+}
+const cloudGeo = new THREE.BufferGeometry();
+cloudGeo.setAttribute('position', new THREE.BufferAttribute(lidarPts, 3));
+const colSurvey = new Float32Array(MAXP * 3), colModel = new Float32Array(MAXP * 3), colLive = new Float32Array(MAXP * 3);
+const mako = [[0.17, 0.12, 0.28], [0.24, 0.27, 0.55], [0.21, 0.48, 0.64], [0.29, 0.76, 0.68], [0.87, 0.96, 0.9]];
+for (let i = 0; i < NP; i++) {
+  const y = lidarPts[i * 3 + 1], k = clamp(y / 4.6, 0, 1), b = 0.45 + 0.55 * k;
+  colSurvey[i * 3] = 0.61 * b; colSurvey[i * 3 + 1] = 0.42 * b; colSurvey[i * 3 + 2] = 1.0 * b;
+  const f = k * 4, a = Math.min(3, Math.floor(f)), u = f - a;
+  for (let c = 0; c < 3; c++) colModel[i * 3 + c] = lerp(mako[a][c], mako[a + 1][c], u);
+}
+colLive.set(colSurvey);
+cloudGeo.setAttribute('color', new THREE.BufferAttribute(colLive, 3));
+const cloudMat = new THREE.PointsMaterial({ size: 0.09, vertexColors: true, transparent: true, opacity: 0.9, depthWrite: false });
+const cloud = new THREE.Points(cloudGeo, cloudMat); cloud.frustumCulled = false; scene.add(cloud);
+const beamGeo = new THREE.BufferGeometry(); beamGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(3 * 28 * 6), 3));
+const beams = new THREE.LineSegments(beamGeo, new THREE.LineBasicMaterial({ color: C.lidar, transparent: true, opacity: 0.55, blending: THREE.AdditiveBlending, depthWrite: false }));
+beams.frustumCulled = false; scene.add(beams);
+const countAt = t => { let lo = 0, hi = NP; while (lo < hi) { const m = (lo + hi) >> 1; if (lidarT[m] <= t) lo = m + 1; else hi = m; } return lo; };
+
+// landing cells (instanced squares)
+const cellMesh = new THREE.InstancedMesh(new THREE.PlaneGeometry(0.86, 0.86).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ transparent: true, opacity: 0.55, depthWrite: false }), cells.length);
+cells.forEach((c, k) => cellMesh.setColorAt(k, new THREE.Color(c.ok ? C.good : C.bad)));
+scene.add(cellMesh);
+const _m4 = new THREE.Matrix4();
+function updateCells(t) {
+  const sweep = sstep(17, 19.2, t) * 400, fade = 1 - sstep(24, 25.5, t);
+  cellMesh.visible = fade > 0 && t >= 17; cellMesh.material.opacity = 0.55 * fade;
+  cells.forEach((c, k) => { const ang = ((Math.atan2(c.z, c.x) / D2R) + 360) % 360, s = ang < sweep ? 1 : 0; _m4.makeScale(s, 1, s).setPosition(c.x, c.y + 0.07, c.z); cellMesh.setMatrixAt(k, _m4); });
+  cellMesh.instanceMatrix.needsUpdate = true;
+}
+
+// site markers
+function siteMarker(s, color, text, cls) {
+  const g = new THREE.Group(); g.position.set(s.x, (s.y ?? 0) + 0.08, s.z);
+  const ring = new THREE.Mesh(new THREE.RingGeometry(0.75, 0.92, 40).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.9, side: THREE.DoubleSide, depthWrite: false }));
+  g.add(ring); const l = label(text, cls, g, [0, 0.4, 0]); scene.add(g); return { g, ring, l };
+}
+const siteMk = {
+  A: siteMarker(SITES.A, C.good, `${SITES.A.id} · ${SITES.A.slope.toFixed(1)}°`, ''),
+  B: siteMarker(SITES.B, C.good, `${SITES.B.id} · ${SITES.B.slope.toFixed(1)}°`, ''),
+  C: siteMarker(SITES.C, C.good, `${SITES.C.id} · slab, ${SITES.C.slope.toFixed(1)}°`, ''),
+};
+const candMk = cands.slice(0, 4).map((k, i) => siteMarker(k.c, i ? C.radar : C.coord, `${k.c.id} · Δr ${k.sep.toFixed(1)} m · ${k.score.toFixed(2)}`, i ? 'radar' : 'coord'));
+
+// ---------- survivors (hidden ground truth) ----------
+const ghostMat = new THREE.MeshBasicMaterial({ color: 0xf2f5f7, transparent: true, opacity: 0.5, depthTest: false });
+function figure(p, pose) {
+  const g = new THREE.Group(), torso = new THREE.Mesh(new THREE.CapsuleGeometry(0.2, 0.62, 4, 10), ghostMat);
+  torso.rotation.z = Math.PI / 2; g.add(torso);
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.14, 12, 10), ghostMat); head.position.x = 0.62; g.add(head);
+  const legs = new THREE.Mesh(new THREE.CapsuleGeometry(0.15, 0.7, 4, 8), ghostMat); legs.rotation.z = Math.PI / 2 + (pose ? 0.9 : 0.1); legs.position.set(-0.75, pose ? 0.25 : 0, 0.05); g.add(legs);
+  g.position.set(p.x, H(p.x, p.z) - p.depth, p.z); g.rotation.y = pose ? 1.2 : -0.6; g.traverse(o => o.renderOrder = 20); scene.add(g);
+  return { g, torso };
+}
+const surv1 = figure(TRUTH.T, 0), surv2 = figure(TRUTH.S2, 1);
+const t1Lbl = label('Ground truth · hidden from planner', 'truth', surv1.g, [0, 0.7, 0]);
+const t2Lbl = label('Ground truth · knocking', 'truth', surv2.g, [0, 0.8, 0]);
+
+// ---------- search layer: belief, range rings, markers, cones ----------
+const layer = new THREE.Group(); layer.position.y = LAYER_Y; scene.add(layer);
+const grid = new THREE.GridHelper(28, 28, 0x4a6070, 0x4a6070); grid.material.transparent = true; grid.material.opacity = 0.14; layer.add(grid);
+const layerLbl = label('2D search layer', '', layer, [-14, 0, -14]);
+const beliefTex = beliefs.map(p => {
+  if (!p) return null; const n = BG.n, d = new Uint8Array(n * n * 4); let mx = 0; for (const v of p) mx = Math.max(mx, v);
+  for (let k = 0; k < n * n; k++) { const u = Math.pow(p[k] / mx, 0.7), hot = sstep(0.55, 1, u); d[k * 4] = 255; d[k * 4 + 1] = lerp(170, 70, hot); d[k * 4 + 2] = lerp(70, 70, hot); d[k * 4 + 3] = Math.round(225 * u); }
+  const tx = new THREE.DataTexture(d, n, n, THREE.RGBAFormat); tx.magFilter = tx.minFilter = THREE.LinearFilter; tx.flipY = false; tx.needsUpdate = true; return tx;
+});
+const beliefPlane = new THREE.Mesh(new THREE.PlaneGeometry(28, 28).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ transparent: true, depthWrite: false, side: THREE.DoubleSide }));
+// PlaneGeometry rotated: uv v=0 maps to +z; DataTexture row 0 is z = -ext, so flip v.
+{ const uv = beliefPlane.geometry.attributes.uv; for (let i = 0; i < uv.count; i++) uv.setY(i, 1 - uv.getY(i)); }
+beliefPlane.position.y = 0.01; layer.add(beliefPlane);
+
+const lineMat = (color, opacity, dashed) => dashed ? new THREE.LineDashedMaterial({ color, transparent: true, opacity, dashSize: 0.5, gapSize: 0.35, depthWrite: false }) : new THREE.LineBasicMaterial({ color, transparent: true, opacity, depthWrite: false });
+function loop(pts, m) { const g = new THREE.BufferGeometry().setFromPoints(pts.map(p => new THREE.Vector3(p.x, p.y ?? 0, p.z))); const l = new THREE.LineLoop(g, m); l.computeLineDistances(); return l; }
+function circlePts(cx, cz, r, n = 96) { const a = []; for (let i = 0; i < n; i++) a.push({ x: cx + r * Math.cos(i / n * TAU), z: cz + r * Math.sin(i / n * TAU) }); return a; }
+const rings = scans.map(s => {
+  const g = new THREE.Group(); g.position.set(s.site.x, 0.02, s.site.z); layer.add(g);
+  const weak = s.q < 0.5;
+  const line = loop(circlePts(0, 0, 1), lineMat(C.radar, weak ? 0.45 : 0.95, weak)); g.add(line);
+  const band = new THREE.Mesh(new THREE.RingGeometry(1 - s.sigma / s.r, 1 + s.sigma / s.r, 96).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: C.radar, transparent: true, opacity: weak ? 0.05 : 0.13, depthWrite: false, side: THREE.DoubleSide }));
+  g.add(band);
+  const lbl = label(`${s.id} · r ${s.r.toFixed(1)} m · q ${s.q.toFixed(2)}`, 'radar', layer, [s.site.x + (s.r) * Math.cos(-0.5), 0.1, s.site.z + s.r * Math.sin(-0.5)]);
+  return { g, s, lbl };
+});
+const modeMk = ambModes.slice(0, 2).map((m, i) => {
+  const g = new THREE.Group(); g.position.set(m.x, 0.05, m.z); layer.add(g);
+  g.add(loop(circlePts(0, 0, 0.7, 48), lineMat(C.radar, 1)));
+  const l = label(`mode ${'AB'[i]} · ${(m.mass * 100).toFixed(0)}%`, 'radar', g, [0, 0.3, 0]); return { g, l };
+});
+// final candidate: red dot + 95% ellipse
+const est = new THREE.Group(); est.position.set(EST.x, 0.06, EST.z); layer.add(est);
+est.add(new THREE.Mesh(new THREE.CircleGeometry(0.32, 32).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: C.detect, side: THREE.DoubleSide })));
+const pingRing = new THREE.Mesh(new THREE.RingGeometry(0.9, 1, 48).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: C.detect, transparent: true, side: THREE.DoubleSide, depthWrite: false })); est.add(pingRing);
+let ellipseAB;
+{
+  const tr = cxx + czz, det = cxx * czz - cxz * cxz, l1 = tr / 2 + Math.sqrt(tr * tr / 4 - det), l2 = tr / 2 - Math.sqrt(tr * tr / 4 - det);
+  const ang = 0.5 * Math.atan2(2 * cxz, cxx - czz), a = 2.45 * Math.sqrt(l1), b = 2.45 * Math.sqrt(Math.max(l2, 1e-4));
+  ellipseAB = [a, b]; const pts = [];
+  for (let i = 0; i < 72; i++) { const u = i / 72 * TAU, x = a * Math.cos(u), z = b * Math.sin(u); pts.push({ x: x * Math.cos(ang) - z * Math.sin(ang), z: x * Math.sin(ang) + z * Math.cos(ang) }); }
+  est.add(loop(pts, lineMat(C.detect, 0.95)));
+}
+const estLbl = label(`R1 · candidate · p ${EST.mass.toFixed(2)} · 0.27 Hz`, 'detect', est, [0, 0.5, 0]);
+// acoustic cones
+const cones = acoustic.map(o => {
+  const g = new THREE.Group(); layer.add(g); const L = 24, a0 = (o.brg - o.w / 2) * D2R, a1 = (o.brg + o.w / 2) * D2R, pos = [];
+  for (let i = 0; i < 24; i++) { const u0 = lerp(a0, a1, i / 24), u1 = lerp(a0, a1, (i + 1) / 24); pos.push(o.s.x, 0, o.s.z, o.s.x + L * Math.cos(u0), 0, o.s.z - L * Math.sin(u0), o.s.x + L * Math.cos(u1), 0, o.s.z - L * Math.sin(u1)); }
+  const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  const fill = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color: C.cone, transparent: true, opacity: 0.13, side: THREE.DoubleSide, depthWrite: false })); g.add(fill);
+  const edge = new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(o.s.x + L * Math.cos(a0), 0, o.s.z - L * Math.sin(a0)), new THREE.Vector3(o.s.x, 0, o.s.z), new THREE.Vector3(o.s.x + L * Math.cos(a1), 0, o.s.z - L * Math.sin(a1))]), lineMat(C.cone, 0.8));
+  g.add(edge); return { g, o, fill };
+});
+const acPt = new THREE.Group(); acPt.position.set(ACOUSTIC_PT.x, 0.05, ACOUSTIC_PT.z); layer.add(acPt);
+acPt.add(loop(circlePts(0, 0, 1.6, 64), lineMat(C.cone, 1, true)));
+const acLbl = label('Acoustic · knocking · scan here next', 'acoustic', acPt, [0, 0.4, 0]);
+
+// relocation path (coordinator decision)
+const relPath = new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(SITES.C.x, SLAB_TOP + 0.1, SITES.C.z), new THREE.Vector3(SITES.D.x, 0.15, SITES.D.z)]), lineMat(C.coord, 0.9, true));
+relPath.computeLineDistances(); scene.add(relPath);
+
+// 3D candidate at depth (site model phase)
+const depthG = new THREE.Group(); scene.add(depthG);
+const ESTY = EST_SURF - EST_DEPTH;
+const ping3 = new THREE.Mesh(new THREE.SphereGeometry(0.3, 20, 14), new THREE.MeshBasicMaterial({ color: C.detect, transparent: true, depthTest: false })); ping3.position.set(EST.x, ESTY, EST.z); ping3.renderOrder = 30; depthG.add(ping3);
+const ping3Halo = new THREE.Mesh(new THREE.SphereGeometry(0.3, 20, 14), new THREE.MeshBasicMaterial({ color: C.detect, transparent: true, depthTest: false, depthWrite: false })); ping3Halo.position.copy(ping3.position); ping3Halo.renderOrder = 29; depthG.add(ping3Halo);
+const plumb = new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(EST.x, LAYER_Y, EST.z), new THREE.Vector3(EST.x, ESTY, EST.z)]), new THREE.LineDashedMaterial({ color: C.detect, dashSize: 0.25, gapSize: 0.18, depthTest: false, transparent: true }));
+plumb.computeLineDistances(); plumb.renderOrder = 30; depthG.add(plumb);
+const digRing = new THREE.Mesh(new THREE.RingGeometry(0.9, 1.05, 48).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: C.detect, side: THREE.DoubleSide, depthTest: false, transparent: true })); digRing.position.set(EST.x, EST_SURF + 0.15, EST.z); digRing.renderOrder = 30; depthG.add(digRing);
+const compass = (() => { const b = bearingDeg({ x: 0, z: 0 }, EST); return ['E', 'NE', 'N', 'NW', 'W', 'SW', 'S', 'SE'][Math.round(b / 45) % 8]; })();
+const depthLbl = label(`Dig here · ≈${EST_DEPTH.toFixed(1)} m below surface<br>${compass} flank · surface ${EST_SURF.toFixed(1)} m above ground`, 'detect', depthG, [EST.x, ESTY - 0.6, EST.z]);
+
+// ---------- radar waves, sound waves, links ----------
+const waveGeo = new THREE.SphereGeometry(1, 30, 10, 0, TAU, 0, 0.6);
+const waves = drones.map(() => [0, 1, 2].map(() => { const m = new THREE.Mesh(waveGeo, new THREE.MeshBasicMaterial({ color: C.radar, transparent: true, opacity: 0.2, side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending })); scene.add(m); return m; }));
+const sndGeo = new THREE.SphereGeometry(1, 24, 12);
+const sounds = [0, 1, 2].map(() => { const m = new THREE.Mesh(sndGeo, new THREE.MeshBasicMaterial({ color: C.acoustic, wireframe: true, transparent: true, opacity: 0.2, depthWrite: false })); scene.add(m); return m; });
+const S2_SURF = new THREE.Vector3(TRUTH.S2.x, H(TRUTH.S2.x, TRUTH.S2.z), TRUTH.S2.z);
+const linkDots = drones.map(() => [0, 1, 2].map(() => { const m = new THREE.Mesh(new THREE.SphereGeometry(0.13, 8, 6), new THREE.MeshBasicMaterial({ color: C.coord })); scene.add(m); return m; }));
+const linkLines = drones.map(() => { const l = new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3()]), lineMat(C.coord, 0.25)); l.frustumCulled = false; scene.add(l); return l; });
+
+// ---------- story: captions + log ----------
+const f1 = v => v.toFixed(1);
+const CAPS = [
+  [0, 'Three drones launch from the staging point. In the sim, flight is kinematic: collision-checked waypoints, no aerodynamics.'],
+  [7, 'Each drone sweeps a spinning LiDAR from 10 m. Every return becomes a point in one shared map of the site (SLAM).'],
+  [17, 'Every 1 m cell is scored for slope, roughness and step height. Green cells are flat enough to land on. Flat geometry is not proof the surface is structurally safe.'],
+  [19.5, 'The coordinator picks three green cells spread around the pile, because ranges from different directions localise better.'],
+  [24, 'Landed and rotors off, so the platform is still. Each radar dwells for about 20 s (compressed here), looking for a respiration-like 0.1–0.5 Hz phase signal.'],
+  [29, 'd3\'s slab rocked under it. Platform motion swamps the breathing signal, so scan s3 gets quality 0.19 and almost no weight.'],
+  [30.5, 'Two good ranges cross at two points. The belief has two modes, so the coordinator reports insufficient evidence instead of guessing.'],
+  [33, 'The coordinator scores every free landing cell by how far apart the two modes would look from there, minus travel. It is a decision computed from the measurements, not a script.'],
+  [35, 'It sends d3, the drone with the least informative scan, to the best cell and marks the slab as unstable.'],
+  [41.5, 'From the new angle, the range fits only one mode. The belief collapses to a single candidate search region with a 95% ellipse.'],
+  [47, 'Rotors are off, so the microphones can hear. Each array estimates a direction of arrival for knocking: a yellow cone.'],
+  [52, 'The cones overlap where radar saw no breathing signal. No detection is not proof nobody is there, so that area is queued for the next scan.'],
+  [55, 'The LiDAR map becomes the site model. The candidate sits about 1.7 m under the surface, so rescuers know where to dig and how deep.'],
+  [61, 'This is the operator dashboard view: red is a radar candidate region, yellow is an acoustic direction. Click a red dot for the LiDAR model and the depth ping.'],
+];
+const LOG = [
+  [0.4, 'Mission start · 3 drones · scan budget 5'],
+  [7, 'Survey: rotating LiDAR, 10 m AGL'],
+  [17, `Map ${(NP / 1000).toFixed(0)}k pts · ${cells.length} cells scored · ${okCells.length} landable`],
+  [19.5, `<b>Sites</b> ${SITES.A.id}, ${SITES.B.id}, ${SITES.C.id} for angular spread`, 'coord'],
+  [24.2, 'All landed · settling 2 s before dwell'],
+  [26, `s1 d1 r=${f1(scans[0].r)} m q=0.93`],
+  [27.5, `s2 d2 r=${f1(scans[1].r)} m q=0.91`],
+  [29, 's3 d3 q=0.19 · platform motion · weight 0.12'],
+  [30.5, `<b>Belief</b> 2 modes ${f1(dist2(m1, m2))} m apart (${(m1.mass * 100).toFixed(0)}% / ${(m2.mass * 100).toFixed(0)}%) → insufficient evidence`, 'coord'],
+  [33, `Planner scored ${cands.length} free cells: Δr between modes − 0.08·travel`],
+  [34.5, `<b>Relocate</b> d3 → ${SITES.D.id} · Δr ${f1(cands[0].sep)} m · travel ${f1(cands[0].travel)} m`, 'coord'],
+  [35, `${SITES.C.id} flagged unstable (motion during dwell)`],
+  [41, `d3 landed ${SITES.D.id} · settling`],
+  [43.5, `s4 d3 r=${f1(scans[3].r)} m q=0.94`],
+  [45, `<b>R1</b> candidate at (${site(EST).join(', ')}) · p ${EST.mass.toFixed(2)} · 95% ${f1(ellipseAB[0] * 2)}×${f1(ellipseAB[1] * 2)} m`, 'coord'],
+  [47, 'No other stationary breathing return. Not proof of absence.'],
+  ...acoustic.map((o, i) => [o.t, `a${i + 1} d${i === 2 ? 3 : i + 1} knocking · bearing ${o.brg.toFixed(0)}°`]),
+  [52, `<b>Next scan</b> acoustic overlap at (${site(ACOUSTIC_PT).join(', ')})`, 'coord'],
+  [55, 'Export → dashboard: site model, R1, acoustic cones'],
+];
+const logEl = document.getElementById('log');
+let logShown = -1;
+function updateLog(t) {
+  const n = LOG.filter(e => e[0] <= t).length; if (n === logShown) return; logShown = n;
+  logEl.innerHTML = LOG.slice(0, n).map((e, i) => `<div class="${i === n - 1 ? 'new ' : ''}${e[2] ? 'k-' + e[2] : ''}"><span>${String(Math.floor(e[0])).padStart(2, '0')}s</span><p style="margin:0">${e[1]}</p></div>`).join('');
+  logEl.scrollTop = logEl.scrollHeight;
+}
+
+// ---------- radar trace panel ----------
+const trace = document.getElementById('trace'), tctx = trace.getContext('2d');
+function drawTrace(t) {
+  const W = trace.width, Hh = trace.height, rows = 3, rh = Hh / rows; tctx.clearRect(0, 0, W, Hh);
+  tctx.font = '500 19px "IBM Plex Mono", monospace';
+  for (let i = 0; i < rows; i++) {
+    const y0 = i * rh + rh / 2, scanning = isScanning(i, t), bad = i === 2 && t < 41;
+    tctx.strokeStyle = 'rgba(150,180,200,0.15)'; tctx.beginPath(); tctx.moveTo(0, y0); tctx.lineTo(W, y0); tctx.stroke();
+    const s = scanSite(i, t);
+    tctx.fillStyle = '#8b9dab'; tctx.fillText(`d${i + 1} ${s.id}`, 6, i * rh + 22);
+    if (!scanning) continue;
+    const t0 = i === 2 && t >= 41 ? 41.6 : 24.6;
+    tctx.strokeStyle = bad ? 'rgba(255,159,67,0.55)' : '#ff9f43'; tctx.lineWidth = 2; tctx.beginPath();
+    for (let x = 0; x < W; x++) {
+      const tau = (t - t0) * 6 - (W - x) / W * 24; if (tau < 0) continue;
+      const sig = Math.sin(TAU * 0.27 * tau), nz = (hash2(Math.floor(tau * 18), i) - 0.5);
+      const v = bad ? 0.25 * sig + 1.1 * nz + 0.9 * Math.sin(tau * 1.9) * Math.sin(tau * 0.31) : 0.8 * sig + 0.22 * nz;
+      tctx.lineTo(x, y0 - v * rh * 0.32);
+    }
+    tctx.stroke();
+    tctx.fillStyle = bad ? '#ff6464' : '#ffd3a6'; tctx.textAlign = 'right';
+    tctx.fillText(bad ? 'q 0.19 · motion' : '0.27 Hz · 16/min', W - 6, i * rh + 22); tctx.textAlign = 'left';
+  }
+}
+
+// ---------- camera keyframes ----------
+const CAM = [
+  [0, [-40, 9, 36], [-29, 2, 20]], [5, [-24, 16, 34], [-10, 4, 8]], [8, [-6, 26, 34], [0, 2, 0]], [12.5, [27, 19, 21], [0, 2, 0]],
+  [17, [22, 24, -16], [0, 1, 0]], [19.5, [0, 36, 15], [0, 0, 0]], [23, [-16, 12, 23], [0, 1, 2]], [27, [-14, 18, 22], [0, 3, 0]],
+  [31, [0, 32, 17], [0, 4, 0]], [35, [4, 30, 22], [0, 3, 3]], [39, [-6, 15, 24], [0, 3, 8]], [42, [2, 31, 17], [0, 4, 0]],
+  [47.5, [-20, 17, -16], [-3, 3, -2]], [52.5, [0, 36, 10], [-2, 4, -1]], [56, [17, 11, 18], [EST.x, ESTY + 1, EST.z]],
+  [59.5, [12, 15, 14], [EST.x, ESTY + 1, EST.z]], [63.5, [0.01, 46, 0.6], [0, 0, 0]], [66, [0.01, 46, 0.6], [0, 0, 0]],
+];
+const _cp = new THREE.Vector3(), _ct = new THREE.Vector3();
+function camAt(t) {
+  let j = 0; while (j < CAM.length - 2 && CAM[j + 1][0] <= t) j++;
+  const [ta, pa, qa] = CAM[j], [tb, pb, qb] = CAM[j + 1], u = sstep(0, 1, (t - ta) / (tb - ta));
+  _cp.set(lerp(pa[0], pb[0], u), lerp(pa[1], pb[1], u), lerp(pa[2], pb[2], u));
+  _ct.set(lerp(qa[0], qb[0], u), lerp(qa[1], qb[1], u), lerp(qa[2], qb[2], u));
+}
+
+// ---------- HUD wiring ----------
+const ui = { lidar: true, radar: true, acoustic: true, links: true, truth: true };
+let follow = true, playing = !matchMedia('(prefers-reduced-motion: reduce)').matches, speed = 1, T = 0;
+const followBtn = document.getElementById('follow'), playBtn = document.getElementById('play');
+document.querySelectorAll('.tog[data-k]').forEach(b => b.addEventListener('click', () => { const k = b.dataset.k; ui[k] = !ui[k]; b.setAttribute('aria-pressed', ui[k]); }));
+controls.addEventListener('start', () => { follow = false; followBtn.hidden = false; });
+followBtn.onclick = () => { follow = true; followBtn.hidden = true; };
+const setPlay = p => { playing = p; playBtn.textContent = p ? '❚❚' : '▶'; playBtn.setAttribute('aria-label', p ? 'Pause' : 'Play'); };
+playBtn.onclick = () => { if (!playing && T >= T_END) T = 0; setPlay(!playing); };
+document.getElementById('speed').onclick = e => { speed = speed === 1 ? 0.5 : speed === 0.5 ? 2 : 1; e.target.textContent = speed + '×'; };
+const chapEl = document.getElementById('chapters');
+const chapBtns = CHAPTERS.map((c, i) => {
+  const b = document.createElement('button'); b.className = 'chap'; b.style.flex = (c.t1 - c.t0); b.title = c.name;
+  b.innerHTML = `<div class="fill"></div><span>${c.name}</span>`;
+  b.onclick = e => { const r = b.getBoundingClientRect(); T = c.t0 + clamp((e.clientX - r.left) / r.width, 0, 0.98) * (c.t1 - c.t0); if (e.detail === 0) T = c.t0; };
+  chapEl.appendChild(b); return b;
+});
+addEventListener('keydown', e => {
+  if (e.code === 'Space' && e.target === document.body) { e.preventDefault(); playBtn.click(); }
+  if (e.code === 'ArrowRight') T = Math.min(T_END, T + 3); if (e.code === 'ArrowLeft') T = Math.max(0, T - 3);
+});
+const $ = id => document.getElementById(id);
+const fmt = t => `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, '0')}`;
+
+// ---------- per-frame update ----------
+let rubbleOp = 1, groundOp = 1, cloudMode = -1;
+function setOpacity(mats, o) { for (const m of mats) { const tr = o < 0.999; if (m.transparent !== tr) { m.transparent = tr; m.depthWrite = !tr; m.needsUpdate = true; } m.opacity = o; } }
+const _v = new THREE.Vector3(), _up = new THREE.Vector3(0, 1, 0), _q = new THREE.Quaternion();
+
+function update(t) {
+  const ch = CHAPTERS.findIndex(c => t < c.t1); const ci = ch < 0 ? CHAPTERS.length - 1 : ch;
+  $('phaseNo').textContent = `${String(ci + 1).padStart(2, '0')} / ${String(CHAPTERS.length).padStart(2, '0')}`;
+  $('phaseTitle').textContent = CHAPTERS[ci].name;
+  const cap = CAPS.filter(c => c[0] <= t).pop(); if ($('caption').textContent !== cap[1]) $('caption').textContent = cap[1];
+  $('time').textContent = `${fmt(t)} / ${fmt(T_END)}`;
+  chapBtns.forEach((b, i) => { const c = CHAPTERS[i], f = clamp((t - c.t0) / (c.t1 - c.t0), 0, 1); b.firstChild.style.width = f * 100 + '%'; b.classList.toggle('on', i === ci); b.classList.toggle('done', f >= 1); });
+  updateLog(t);
+  $('radarPanel').hidden = !(t >= 24 && t < 47);
+  if (!$('radarPanel').hidden) drawTrace(t);
+
+  // drones
+  const wob = slabWobble(t);
+  slabC.rotation.set(wob, 0.3, wob * 0.6);
+  drones.forEach((d, i) => {
+    const p = pathPos(i, t), p2 = pathPos(i, t + 0.08), vx = (p2.x - p.x) / 0.08, vz = (p2.z - p.z) / 0.08, hs = Math.hypot(vx, vz);
+    d.g.position.set(p.x, p.y, p.z);
+    const yawC = Math.atan2(p.z, -p.x), yawV = Math.atan2(-vz, vx), k = clamp(hs / 3, 0, 1);
+    const dy = Math.atan2(Math.sin(yawV - yawC), Math.cos(yawV - yawC));
+    d.g.rotation.set(0, yawC + dy * k, 0);
+    d.body.rotation.set(i === 2 && t < 35 ? wob * 1.4 : 0, 0, -clamp(hs * 0.025, 0, 0.28));
+    const landed = isLanded(i, t), airborne = t > 0.3 && !landed;
+    d.rotors.forEach((r, j) => r.rotation.y = airborne ? t * 50 + j : j * 0.7);
+    d.lidarMat.emissiveIntensity = (t >= 7 && t < 17) || t >= 55 ? 1.6 : 0.4;
+    const scanning = isScanning(i, t); d.radarMat.emissiveIntensity = scanning ? 1.2 + 0.6 * Math.sin(t * 8) : 0.25;
+    d.micMat.emissiveIntensity = t >= 47.5 && t < 55 && i !== 2 || (i === 2 && t >= 47.5 && t < 55) ? 1 + Math.max(0, Math.sin((t - 47.5) * TAU / 1.1)) * 2 : 0.2;
+    const st = t < 7 ? 'deploying' : t < 17 ? 'LiDAR sweep' : t < 22 ? 'to site' : !landed ? (t < 24 ? 'landing' : 'relocating') : scanning ? 'radar dwell' : t >= 47 && t < 55 ? 'listening' : 'landed';
+    if (d.span.textContent !== st) d.span.textContent = st;
+    // radar waves
+    const dir = _v.set(-p.x, 2.0 - p.y, -p.z).normalize(); _q.setFromUnitVectors(_up, dir);
+    waves[i].forEach((w, j) => { const on = scanning && ui.radar; w.visible = on; if (!on) return; const f = ((t * 0.7 + j / 3) % 1); w.position.copy(d.g.position); w.quaternion.copy(_q); w.scale.setScalar(0.5 + f * 11); w.material.opacity = 0.32 * (1 - f) * (i === 2 && t < 35 ? 0.5 : 1); });
+    // links to coordinator
+    const lk = ui.links && t >= 24; linkLines[i].visible = lk;
+    if (lk) { const a = linkLines[i].geometry.attributes.position; a.setXYZ(0, p.x, p.y + 0.6, p.z); a.setXYZ(1, COORD_POS.x, COORD_POS.y, COORD_POS.z); a.needsUpdate = true; }
+    linkDots[i].forEach((m, j) => { m.visible = lk && (landed || i === 2); if (!m.visible) return; const f = (t * 0.45 + j / 3 + i * 0.13) % 1; m.position.set(lerp(p.x, COORD_POS.x, f), lerp(p.y + 0.6, COORD_POS.y, f) + Math.sin(f * Math.PI) * 3, lerp(p.z, COORD_POS.z, f)); });
+  });
+
+  // lidar
+  const n = countAt(t);
+  cloud.visible = ui.lidar && n > 0; cloudGeo.setDrawRange(0, n);
+  const mk = sstep(55, 57.5, t);
+  if (Math.abs(mk - cloudMode) > 1e-3) { for (let k = 0; k < NP * 3; k++) colLive[k] = lerp(colSurvey[k], colModel[k], mk); cloudGeo.attributes.color.needsUpdate = true; cloudMode = mk; }
+  cloudMat.size = lerp(0.09, 0.12, mk); cloudMat.opacity = t < 24 ? 0.9 : lerp(0.45, 0.95, mk);
+  const bpos = beamGeo.attributes.position; let bi = 0;
+  if (ui.lidar && t >= 7 && t < 17) {
+    for (let i = 0; i < 3; i++) { const p = pathPos(i, t); let c = 0; for (let k = n - 1; k >= 0 && c < 28; k--) { if (lidarD[k] !== i) continue; if (t - lidarT[k] > 0.09) break; bpos.setXYZ(bi++, p.x, p.y + 0.4, p.z); bpos.setXYZ(bi++, lidarPts[k * 3], lidarPts[k * 3 + 1], lidarPts[k * 3 + 2]); c++; } }
+  }
+  beams.geometry.setDrawRange(0, bi); bpos.needsUpdate = true;
+  updateCells(t); cellMesh.visible = cellMesh.visible && ui.lidar;
+
+  // site markers
+  const siteVis = t >= 19.5 && t < 55;
+  for (const k of ['A', 'B', 'C']) { const m = siteMk[k]; m.g.visible = siteVis && (k !== 'C' || t < 41); }
+  siteMk.C.ring.material.color.setHex(t >= 35 ? C.bad : C.good);
+  siteMk.C.l.element.innerHTML = t >= 35 ? `${SITES.C.id} · unstable` : `${SITES.C.id} · slab, ${SITES.C.slope.toFixed(1)}°`;
+  candMk.forEach((m, i) => { m.g.visible = t >= 33.2 + i * 0.25 && t < (i === 0 ? 55 : 36); if (i === 0) m.l.element.innerHTML = t >= 41 ? `${SITES.D.id} · d3` : `${SITES.D.id} · Δr ${cands[0].sep.toFixed(1)} m · ${cands[0].score.toFixed(2)}`; });
+  relPath.visible = t >= 34.5 && t < 41.5;
+
+  // search layer
+  layer.visible = t >= 25;
+  const stage = scans.filter(s => s.t + 0.6 <= t).length;
+  beliefPlane.visible = ui.radar && stage > 0; if (stage > 0) { beliefPlane.material.map = beliefTex[stage]; beliefPlane.material.needsUpdate = beliefPlane.material._st !== stage; beliefPlane.material._st = stage; }
+  beliefPlane.material.opacity = t < 47 ? 0.95 : lerp(0.95, 0.35, sstep(47, 48, t));
+  rings.forEach(r => { const u = sstep(r.s.t, r.s.t + 0.6, t), fade = 1 - sstep(47, 48, t); r.g.visible = ui.radar && u > 0 && fade > 0; r.g.scale.setScalar(Math.max(0.001, u * r.s.r)); r.lbl.visible = r.g.visible && u >= 1 && t < 47; });
+  modeMk.forEach(m => m.g.visible = ui.radar && t >= 30.5 && t < 43.5);
+  est.visible = ui.radar && t >= 44.5; estLbl.visible = est.visible && t < 55 || t >= 61;
+  const pf = (t * 0.8) % 1; pingRing.scale.setScalar(0.4 + pf * 1.6); pingRing.material.opacity = 1 - pf;
+  const hideM = clamp(1 - sstep(55, 55.8, t) + sstep(60.5, 61.5, t), 0, 1);
+  cones.forEach(c => { const u = sstep(c.o.t, c.o.t + 0.8, t) * hideM; c.g.visible = ui.acoustic && u > 0; c.fill.material.opacity = 0.14 * u; });
+  acPt.visible = ui.acoustic && t >= 52 && hideM > 0.5; acLbl.visible = acPt.visible;
+  sounds.forEach((s, j) => { const on = ui.acoustic && t >= 47.2 && t < 55; s.visible = on; if (!on) return; const f = ((t - 47.2) / 1.1 + j / 3) % 1; s.position.copy(S2_SURF); s.scale.setScalar(0.3 + f * 9); s.material.opacity = 0.35 * (1 - f); });
+
+  // site model phase
+  const fadeR = sstep(55, 58, t); setOpacity(rubbleMats, 1 - 0.93 * fadeR); setOpacity([groundMat], 1 - 0.3 * fadeR);
+  depthG.visible = ui.radar && t >= 56.5; depthLbl.visible = depthG.visible && t >= 57.5 && t < 62;
+  const hp = (t * 0.9) % 1; ping3Halo.scale.setScalar(1 + hp * 2.4); ping3Halo.material.opacity = 0.5 * (1 - hp);
+  digRing.material.opacity = 0.9;
+
+  // survivors
+  const br = 1 + 0.07 * Math.sin(TAU * 0.27 * t * 3);
+  surv1.torso.scale.set(br, 1, br);
+  surv1.g.visible = surv2.g.visible = ui.truth && t >= 3;
+  t1Lbl.visible = surv1.g.visible && t >= 24 && t < 47; t2Lbl.visible = surv2.g.visible && t >= 47 && t < 55;
+  ghostMat.opacity = 0.32 + 0.12 * Math.sin(t * 2);
+
+  if (follow) { camAt(t); camera.position.copy(_cp); controls.target.copy(_ct); }
+}
+
+// ---------- loop ----------
+function resize() { const w = app.clientWidth, h = app.clientHeight; renderer.setSize(w, h); labelR.setSize(w, h); camera.aspect = w / h; camera.fov = w < 700 ? 60 : 45; camera.updateProjectionMatrix(); }
+addEventListener('resize', resize); resize();
+let last = performance.now();
+function frame(now) {
+  const dt = Math.min(0.1, Math.max(0, (now - last) / 1000)); last = now; // rAF timestamps can predate setup: never let time run backwards
+  if (playing) { T += dt * speed; if (T >= T_END) { T = T_END; setPlay(false); } }
+  update(T); controls.update(); renderer.render(scene, camera);
+  for (const o of allLabels) { let v = true; for (let p = o.parent; p; p = p.parent) if (!p.visible) { v = false; break; } o.element.style.visibility = v ? '' : 'hidden'; }
+  labelR.render(scene, camera);
+  requestAnimationFrame(frame);
+}
+setPlay(playing);
+window.seek = v => { T = v; setPlay(false); };
+document.getElementById('loading').remove();
+requestAnimationFrame(frame);
+</script>

@@ -1,0 +1,134 @@
+# Larpverse build plan (24 h MVP)
+
+The goal is one honest end-to-end loop, visible in Isaac and on the dashboard:
+
+**sense → pick landing cells → land → scan → fuse → ambiguity → autonomous relocation → rescan → candidate region**
+
+Everything else comes after that loop works.
+
+## What already exists in this repo
+
+| Path | State | What it is |
+|---|---|---|
+| `animation/index.html` | done | A 66 s interactive 3D concept animation for explaining the idea. Its localisation, ambiguity and relocation are computed, not keyframed. |
+| `contracts/INTERFACES.md` | agreed v1 | Frames, units, command, observation and dashboard state schema, plus the ground-truth boundary. |
+| `dashboard/` | working | Site map with red candidate dots, yellow acoustic cones, drones and landing sites. Clicking a dot opens the LiDAR detail view with the depth ping. It polls `data/state.json` and falls back to demo data. |
+| `sim/` | first pass | numpy core: mock world, landing cells, synthetic radar, grid localiser, planner, coordinator, evaluator. It writes `dashboard/data/state.json`. |
+| `docs/RESEARCH.md` | done | Open-source picks, licences and Isaac version traps. |
+
+Run it all locally (no GPU needed):
+
+```bash
+cd ~/Downloads/UCL/agentverse && .venv/bin/python -m sim.coordinator --realtime --out dashboard/data
+```
+
+```bash
+cd ~/Downloads/UCL/agentverse && python3 -m http.server 8765
+```
+
+Then open `http://localhost:8765/dashboard/` (live) and `http://localhost:8765/animation/` (concept).
+
+## Architecture (matches the team diagram)
+
+```
+Dashboard  <- polls state.json --  Coordinator (sim/coordinator.py: localise, planner)
+                                        |  commands (drone_id, destination, scan_duration)
+                                        v
+                          Drone adapter: mock (sim/world.py)  or  Isaac (isaac/)
+                           |- LiDAR  -> point cloud -> SLAM map, heightmap, landing cells
+                           |- Radar  -> synthetic IF -> breathing DSP -> range candidates
+                           '- Acoustic -> simulated mic array -> VAD/YAMNet + SRP-PHAT -> bearing cone
+```
+
+Isaac is only the world and the body. The brain (`sim/localise.py` and `sim/planner.py`) is engine-agnostic numpy, importable inside Isaac's Python. If Isaac breaks at hour 20, the mock world still demos the same decisions.
+
+## Critical risks (deal with these in hour 0)
+
+1. **No GPU on the dev laptop.** It has no NVIDIA card and 14 GB RAM, while Isaac needs an RTX 4080-class card (16 GB VRAM) and 32 GB RAM.
+   - Decide in the first hour: a teammate's RTX desktop, or Brev L40S (Isaac 5.1 Launchable, about $1–2/hr).
+   - Pin that version and only follow docs for it.
+2. **Isaac API churn** between 5.x and 6.x. Spike LiDAR and pose-setting first, before building on them.
+3. **Integration drift.** One person owns `contracts/INTERFACES.md` and the main loop. Nobody changes a field without telling them.
+
+## Workstreams and tasks
+
+Owners are slots. Put names in when you split up. **P0** = needed for the demo, **P1** = makes it convincing, **P2** = nice to have.
+
+### A. Isaac world and body (owner: A, on the GPU machine)
+
+| # | Pri | Task | Done when |
+|---|---|---|---|
+| A1 | P0 | Get Isaac running headless and in the GUI on the chosen machine. Write a hello-world standalone script that loads a ground plane. | A screenshot is in `docs/` |
+| A2 | P0 | Procedural rubble, `isaac/rubble.py`: seeded slabs, chunks and columns dropped as rigid bodies with convex-decomposition collision, settled for 2 s, then frozen. Export a USD. | Same seed gives the same pile |
+| A3 | P0 | Three `quadcopter.usd` drones moved kinematically by `set_world_poses`, driven by coordinator waypoints. Altitude collision check against the heightmap. | Drones fly the mock mission path |
+| A4 | P0 | LiDAR on each drone (RTX `Example_Rotary`, or PhysX raycast fallback). Accumulate a world-frame point cloud and write `pointcloud.bin` plus the heightmap grid in the `state.json` format. | The dashboard shows the Isaac cloud |
+| A5 | P1 | `isaac/adapter.py` implements the same interface as `sim/world.py`, so `coordinator.py --world isaac` works. | One flag swaps mock for Isaac |
+| A6 | P1 | Hidden survivor capsules placed in pile voids, with their pose exported only to the radar generator and evaluator. | Ground truth stays out of the planner's inputs |
+| A7 | P2 | KISS-ICP on the per-drone scans instead of ground-truth poses, for a real SLAM story. | The map overlays the ground-truth cloud |
+| A8 | P2 | Cinematic camera path and recording for the video. | MP4 exported |
+
+### B. Sensing, fusion and planning (owner: B, any laptop)
+
+| # | Pri | Task | Done when |
+|---|---|---|---|
+| B1 | P0 | Review the `sim/` first pass. Make sure the default seed shows a genuine ambiguity and a planner-chosen relocation. Run `tests/`. | Tests pass, and the log explains each decision |
+| B2 | P1 | Radar DSP chain, `sim/radar_dsp.py`. Synthetic FMCW IF (range bins plus breathing phase, rubble attenuation, motion artefacts), then range FFT → phase unwrap → 0.1–0.5 Hz bandpass → peak. It outputs `range_candidates`, `confidence` and `breathing_hz` instead of the current direct noise model. | Spectrogram plot in `docs/` |
+| B3 | P1 | Validate B2's extractor on Schellenberger 2020 recordings (CC BY 4.0). | Rate error table on real data |
+| B4 | P1 | Acoustic chain, `sim/acoustic_dsp.py`: pyroomacoustics 4-mic array per landed drone, knock or shout clip at the survivor, Silero VAD / YAMNet class, SRP-PHAT bearing and cone width. | Real DoA cones in `state.json` |
+| B5 | P1 | Evaluation: adaptive vs fixed sites, same scan budget, 30 seeds. Measure error, 95% coverage, false alerts, scans and runtime. | `eval/results.json` plus a slide table |
+| B6 | P2 | Moving distractor (Doppler-moving track kept separate), then a periodic non-human distractor. | It shows as a separate track, not a candidate |
+
+### C. Dashboard, story and video (owner: C)
+
+| # | Pri | Task | Done when |
+|---|---|---|---|
+| C1 | P0 | Run the dashboard against live `state.json` from the coordinator. Fix any contract mismatches by changing code, not the contract, unless the integration owner agrees. | Live map updates every second |
+| C2 | P1 | Timeline scrubber over `frames/state_XXXX.json`, so the demo can replay the decision moment. | Scrubbing shows ambiguity, then relocation |
+| C3 | P1 | Belief-over-time strip and an entropy sparkline in the side rail. | Visible drop after the rescan |
+| C4 | P1 | One-minute video: deploy, LiDAR, landing, ambiguous scans, relocation, collapsed region, acoustic cone, dashboard click-through. Use the concept animation as the storyboard. | MP4 under 60 s |
+| C5 | P2 | Slides: problem, what's new (planning and uncertainty, not radar), the honest limits, eval table. | Deck |
+
+### D. Mission Commander agent (owner: D, any laptop)
+
+The full option map is in `docs/agent-decisions.html` (published: https://claude.ai/artifact/2DJSXqUQfkZGjKfFifxjay). One agent, three entry points, hooked into `Coordinator._decide()`.
+
+| # | Pri | Task | Done when |
+|---|---|---|---|
+| D1 | P0 | `planner.options(k)` returns scored actions: relocate, extend dwell, acoustic lead, stop, return to base | The option list is logged at every gate |
+| D2 | P0 | `sim/agent.py`: context from state (assert no ground truth), tool loop (preview, scan_detail, site_detail, commit), validator, fallback to argmax, record/replay | `--policy agent` completes seed 75 offline from replay |
+| D3 | P0 | Operator intel intake (`ops/intel.jsonl` → priors, no-go zones, ignored sounds) and the handover brief | Brief text cites state fields only |
+| D4 | P1 | `decisions[]` in `state.json` plus a dashboard Decision card: option table, pick, rationale, agent or fallback badge | Visible during the ambiguity moment |
+| D5 | P1 | Evaluation comparing fixed, argmax and agent policies, with scenario packs (intel, battery, acoustic lead, unstable site) | Table in the slides |
+
+### I. Integration owner (one person, all 24 h)
+
+- I1 (P0): owns `contracts/INTERFACES.md`, merges, runs the end-to-end loop every 2 hours, and keeps `main` demoable.
+- I2 (P0): enforces the ground-truth boundary. Run `grep -rn "targets" sim/` and confirm that only `radar_model.py`, `acoustic_model.py` and `evaluate.py` touch it.
+
+## Timeline
+
+| Hours | Milestone |
+|---|---|
+| 0–1 | GPU machine decided; everyone has run the mock loop and the dashboard; contract agreed |
+| 1–6 | A1–A3 (Isaac scene, drones moving); B1; C1. **Single-drone sense–move–scan–update loop in mock** |
+| 6–12 | A4–A5 (Isaac LiDAR into the dashboard, adapter); B2, B4; C2 |
+| 12 | **Freeze the core loop in Isaac.** Only fixes after this |
+| 12–18 | A6–A7; B3, B5; C3. Record backup footage from the mock run |
+| 18–22 | Video (C4), slides (C5), eval numbers |
+| 22–24 | Rehearse, buffer, nothing new |
+
+## Rules that keep us honest (from the brief)
+
+- The planner and localiser never read ground truth. Only the generators and the evaluator do.
+- Three noisy ranges can't identify a faulty one. Allow a fourth scan and an `insufficient_evidence` outcome.
+- Stationary does not mean trapped, and periodic does not mean human. The UI says "candidate search region".
+- No detection is not proof of absence. Landing geometry is not structural safety.
+- Keep LLM use bounded: any frontier-model orchestration sees summaries only, never ground truth, and never in the numeric loop.
+
+## Running Claude Code on this (two 20x plans)
+
+Give each session one workstream and point it at this file plus `contracts/INTERFACES.md`. Good first prompts:
+
+- **A:** "Read docs/PLAN.md and contracts/INTERFACES.md. Do A1–A3 for Isaac Sim <version> on this machine. Start with a minimal standalone script and verify each step runs before adding the next."
+- **B:** "Read docs/PLAN.md, contracts/INTERFACES.md and sim/. Do B2 then B4 using docs/RESEARCH.md picks. Keep numpy/scipy only in the core and gate heavy deps (torch for Silero/YAMNet) behind an optional import."
+- **C:** "Read docs/PLAN.md and dashboard/. Do C1 then C2 against `python -m sim.coordinator --frames`."

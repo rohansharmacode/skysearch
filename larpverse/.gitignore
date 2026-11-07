@@ -1,0 +1,11 @@
+.venv/
+__pycache__/
+*.pyc
+dashboard/data/
+eval/
+*.usd.bak
+data/radar_real/
+acoustic/data/
+acoustic/models/
+.venv-audio/
+.env

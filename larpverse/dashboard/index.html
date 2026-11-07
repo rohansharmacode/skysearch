@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Larpverse Operator Console</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+Condensed:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="shell">
+  <header id="hdr">
+    <div class="brand"><i></i>Larpverse</div>
+    <div class="site" id="siteName">Rubble site</div>
+    <div class="pill" id="phase">phase</div>
+    <div class="meta"><span id="simT">t = 0.0 s</span><span id="conn" class="conn">connecting</span></div>
+  </header>
+
+  <main id="mapWrap">
+    <canvas id="map" aria-label="Site map. Red dots are radar candidate regions; yellow cones are acoustic directions."></canvas>
+    <div id="layers" class="float">
+      <button class="tog" data-k="basemap" aria-pressed="true">LiDAR relief</button>
+      <button class="tog" data-k="belief" aria-pressed="true">Radar belief</button>
+      <button class="tog" data-k="rings" aria-pressed="false">Range rings</button>
+      <button class="tog" data-k="acoustic" aria-pressed="true">Acoustic cones</button>
+      <button class="tog" data-k="sites" aria-pressed="true">Landing sites</button>
+      <button class="tog" data-k="piles" aria-pressed="true" id="togPiles" hidden>Piles &amp; dispatch</button>
+    </div>
+    <div id="zoom" class="float">
+      <button class="btn" id="zin" aria-label="Zoom in">+</button>
+      <button class="btn" id="zout" aria-label="Zoom out">−</button>
+      <button class="btn" id="zfit" aria-label="Fit site">Fit</button>
+    </div>
+    <div id="cursor" class="float mono">x — · y — m</div>
+    <div id="legend" class="float">
+      <span><i class="dot red"></i>Radar candidate (95% region)</span>
+      <span><i class="wedge"></i>Acoustic direction</span>
+      <span><i class="tri"></i>Drone</span>
+      <span><i class="sq"></i>Landing site</span>
+      <span id="legendGrid" hidden><i class="badge">64</i>Acoustic priority <i class="arrow"></i>Dispatch</span>
+    </div>
+  </main>
+
+  <aside id="side">
+    <section>
+      <h2>Radar candidates <span id="nCand" class="count">0</span></h2>
+      <div id="cands"></div>
+    </section>
+    <section id="secPiles" hidden>
+      <h2>Pile priority <span id="nPiles" class="count">0</span></h2>
+      <div id="piles"></div>
+      <div id="dispatch"></div>
+    </section>
+    <section id="secAgent" hidden>
+      <h2>Acoustic agent <span id="agentSrc" class="count">waiting</span></h2>
+      <div id="clips"></div>
+    </section>
+    <section id="secAc">
+      <h2>Acoustic directions <span id="nAc" class="count">0</span></h2>
+      <div id="acList"></div>
+    </section>
+    <section>
+      <h2>Fleet</h2>
+      <div id="fleet"></div>
+      <div id="next"></div>
+    </section>
+    <section class="grow">
+      <h2>Coordinator log</h2>
+      <div id="log" class="mono"></div>
+    </section>
+    <p class="caveat">Red regions are where to search, not confirmed people. Acoustic priority orders the search; it is not proof, and silent piles are not cleared. Radar and audio here are labelled synthetic models. No detection is not proof that nobody is present.</p>
+  </aside>
+</div>
+
+<div id="detail" hidden>
+  <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="dTitle">
+    <div class="viewer"><div id="v3d"></div>
+      <div class="vhint mono">Drag to orbit · scroll to zoom</div>
+    </div>
+    <div class="facts">
+      <div class="dhead"><h3 id="dTitle">R1</h3><button class="btn" id="dClose" aria-label="Close">Close</button></div>
+      <div class="status" id="dStatus"></div>
+      <dl id="dFacts"></dl>
+      <h4>Evidence</h4>
+      <div class="tablewrap"><table id="dEv"><thead><tr><th>Scan</th><th>Drone</th><th>Range</th><th>Conf.</th><th>Quality</th></tr></thead><tbody></tbody></table></div>
+      <p class="caveat">Depth comes from the LiDAR surface height minus the radar depth estimate. Geometry says nothing about structural safety. Confirm on site before digging.</p>
+    </div>
+  </div>
+</div>
+
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+} }
+</script>
+<script type="module" src="app.js"></script>
+</body>
+</html>

@@ -43,7 +43,7 @@ cd /workspace/isaaclab
     --record out/quake --rec_cams fpv:C1,chase:C1,collapse --stop_t 75
 ```
 The building is built from the same search grid the swarm uses (walls, rubble heaps, voids under slabs).
-- **`--collapse` (`isaac/quake.py`).** The earthquake is simulated in PhysX. Ground acceleration is applied as a gravity tilt, which is physically equivalent in the building's frame. Upper-floor slab panels, wall tops and concrete blocks are rigid bodies released in stages, and unanchored furniture slides and topples. Slabs come to rest at the void heights the swarm's map has.
+- **`--collapse` (`isaac/quake.py`, `isaac/rubble.py`).** The earthquake is simulated in PhysX. Ground acceleration is applied as a gravity tilt, which is physically equivalent in the building's frame. About 1,700 pieces of irregular broken concrete are released in stages: slab pieces with bent rebar, chipped blocks and lumps, and wall tops. Each collides as its own convex hull, and unanchored furniture slides and topples. Damaged walls get ragged tops, the rubble zone becomes a mound covered in gravel, and slabs come to rest at the void heights in the swarm's map.
 - **`--look` (`isaac/look.py`, on by default).** MDL concrete and plaster, an HDRI sky, Crazyflie and quadcopter models, people models, and office furniture.
 - **The drones.** They are moved by the swarm code, not by a flight controller. The confirmer's RGB camera feed comes from Isaac. Dashboard at `<VS Code URL>/proxy/8090/`. See [docs/BREV_SETUP.md](docs/BREV_SETUP.md) and
 [docs/ISAAC6_API.md](docs/ISAAC6_API.md).

@@ -493,9 +493,13 @@ class Quake:
             zb = h0
             for j, ph in enumerate(parts):
                 mesh = RB.block(rng, cell - 0.02, cell - 0.02, ph, chip=0.12)
+                # Shaking alone can't slide them off: the tilt (0.45 g) is below concrete friction. So the
+                # top is pushed off the wall towards the collapse and tipped over the edge.
+                v = rng.uniform(2.4, 3.4)
+                tip = np.array([away[1], away[0], 0.0]) * rng.uniform(2.5, 4.0)    # world axis to topple about
                 tops.append(dict(mesh=mesh, pos=put(mesh, px, py, zb), rgb=grey((0.60, 0.59, 0.56), 0.015),
                                  mass=2000 * cell * cell * ph, release=rel - 0.25 * j,
-                                 kick=np.r_[1.2 * away[0], -1.2 * away[1], 0.3, rng.normal(0, 1.5, 3)]))
+                                 kick=np.r_[v * away[0], -v * away[1], 0.6, tip + rng.normal(0, 0.8, 3)]))
                 zb += float(np.ptp(mesh[0][:, 2])) + 0.01
         # 4) unanchored furniture in open parts of rooms: slides and topples in the shaking (never held)
         furn = []

@@ -39,14 +39,14 @@ FACE_MAT = "concrete3"                     # fallen-tower faces: smooth grey con
 # The map's own grade (collapse_site/apply_look.py), with less haze: fixed ACES exposure, AO, film grain.
 GRADE = {
     "/rtx/post/tonemap/op": 6, "/rtx/post/tonemap/filmIso": 100.0, "/rtx/post/tonemap/cameraShutter": 50.0,
-    "/rtx/post/tonemap/fNumber": 5.0, "/rtx/post/histogram/enabled": False,
+    "/rtx/post/tonemap/fNumber": 9.0, "/rtx/post/histogram/enabled": False,
     "/rtx/ambientOcclusion/enabled": True, "/rtx/ambientOcclusion/rayLength": 3.0,
     "/rtx/indirectDiffuse/enabled": True, "/rtx/shadows/enabled": True, "/rtx/reflections/enabled": True,
     "/rtx/post/colorcorr/enabled": True, "/rtx/post/colorcorr/saturation": [1.0, 1.0, 1.0],
     "/rtx/post/colorcorr/contrast": [1.15, 1.15, 1.15], "/rtx/post/colorcorr/gamma": [1.0, 1.0, 1.0],
     "/rtx/post/colorcorr/gain": [1.0, 1.0, 1.0], "/rtx/post/colorcorr/offset": [0.0, 0.0, 0.0],
     "/rtx/post/tvNoise/enabled": True, "/rtx/post/tvNoise/enableVignetting": True,
-    "/rtx/post/tvNoise/vignettingSize": 107.0, "/rtx/post/tvNoise/vignettingStrength": 0.45,
+    "/rtx/post/tvNoise/vignettingSize": 107.0, "/rtx/post/tvNoise/vignettingStrength": 0.2,
     "/rtx/post/tvNoise/enableFilmGrain": True, "/rtx/post/tvNoise/grainAmount": 0.02,
     "/rtx/post/tvNoise/grainSize": 1.4, "/rtx/post/tvNoise/enableScanlines": False,
     "/rtx/post/tvNoise/enableScrollBug": False, "/rtx/post/tvNoise/enableVignettingFlickering": False,
@@ -57,6 +57,8 @@ GRADE = {
     "/rtx/fog/fogDistanceDensity": 0.2, "/rtx/fog/fogStartHeight": 0.0, "/rtx/fog/fogEndHeight": 60.0,
     "/rtx/fog/fogHeightDensity": 0.15,
 }
+# dusty reinforced-concrete rubble (linear albedo): the reference photos read mid-grey with a warm dust cast
+RUBBLE_TINTS = ((0.36, 0.35, 0.33), (0.29, 0.28, 0.26), (0.43, 0.41, 0.38), (0.40, 0.36, 0.31), (0.33, 0.33, 0.33))
 EXTRA_MDL = {"stucco": "Masonry/Stucco.mdl", "soil": "Natural/Soil_Rocky.mdl",
              "concrete3": "Masonry/Concrete_Smooth.mdl"}
 
@@ -432,6 +434,13 @@ def debris(stage, mats, looks, faces, log, seed=0, n_core=32000, n_outer=9000):
     C, N, A, T = faces
     rng = np.random.default_rng(4200 + seed)
     protos = _prototypes(rng)
+    rubble = [_pv(stage, f"{ROOT}/Looks/rubble{k}", rgb, 0.92) for k, rgb in enumerate(RUBBLE_TINTS)]
+    tint_k = iter(range(10 ** 6))
+
+    def rubble_mat(mk):
+        if mk in ("concrete", "concrete2", "concrete3"):
+            return rubble[next(tint_k) % len(rubble)]
+        return mats.get(mk, looks.get(mk))
     inst_path = f"{ROOT}/Debris"
     inst = UsdGeom.PointInstancer.Define(stage, inst_path)
     rel = inst.CreatePrototypesRel()
@@ -440,13 +449,13 @@ def debris(stage, mats, looks, faces, log, seed=0, n_core=32000, n_outer=9000):
         UsdGeom.Xform.Define(stage, proot)
         for k, (P, F, mk) in enumerate(parts):
             pth = f"{proot}/g{k}"
-            PR._mesh(stage, pth, P, F, (0.55, 0.53, 0.5))
-            mat = mats.get(mk, looks.get(mk))
+            PR._mesh(stage, pth, P, F, (0.37, 0.35, 0.32))
+            mat = rubble_mat(mk)
             if mat is not None:
                 PR.bind(stage, pth, mat)
         rel.AddTarget(Sdf.Path(proot))
     kinds = [p[1] for p in protos]
-    mix = {"chunk": 0.50, "block": 0.10, "slab": 0.13, "brick": 0.10, "tile": 0.07, "rebar": 0.07, "column": 0.03}
+    mix = {"chunk": 0.52, "block": 0.10, "slab": 0.14, "brick": 0.10, "tile": 0.03, "rebar": 0.08, "column": 0.03}
     core = _in_core(C[:, 0], C[:, 1], pad=4.0)
     out = []
     for sel, n in ((core, n_core), (~core, n_outer)):
@@ -495,8 +504,8 @@ def debris(stage, mats, looks, faces, log, seed=0, n_core=32000, n_outer=9000):
         for k in range(8):
             pth = f"{SITE}/Debris/Scatter/Prototypes/{p}{k}"
             if stage.GetPrimAtPath(pth).IsValid():
-                key = {"brick": "brick", "tile": "tile"}.get(p, "concrete2" if k % 2 else "concrete")
-                mat = mats.get(key, looks.get(key))
+                key = {"brick": "brick", "tile": "tile"}.get(p, "concrete")
+                mat = rubble_mat(key)
                 if mat is not None:
                     PR.bind(stage, pth, mat)
                     nb += 1
@@ -620,14 +629,14 @@ def dress(stage, sc, a, mats, nv, isa, log=print):
     looks = {"glass": _pv(stage, f"{ROOT}/Looks/glass", (0.035, 0.045, 0.055), 0.06, 0.0, 1.0),
              "void": _pv(stage, f"{ROOT}/Looks/void", (0.012, 0.011, 0.010), 0.95),
              "frame": _pv(stage, f"{ROOT}/Looks/frame", (0.62, 0.63, 0.64), 0.35, 0.8),
-             "tile": _pv(stage, f"{ROOT}/Looks/tile", (0.80, 0.78, 0.72), 0.3, 0.0, 0.5),
+             "tile": _pv(stage, f"{ROOT}/Looks/tile", (0.62, 0.59, 0.53), 0.35, 0.0, 0.4),
              "facade_tile": _pv(stage, f"{ROOT}/Looks/facade_tile", (0.60, 0.54, 0.45), 0.55, 0.0, 0.2),  # beige tiles
              "interior": _pv(stage, f"{ROOT}/Looks/interior", (0.03, 0.028, 0.026), 0.95)}       # crushed storeys
     scan = str(getattr(a, "urban_terrain", "scan")) == "scan"
     if scan:
         scan_ai(stage, getattr(a, "scan_ai", ""), log)
     faces = terrain(stage, mats, log, seed, rematerial=not scan)
-    facade(stage, mats, looks, log, seed, slabs=not scan)
+    facade(stage, mats, looks, log, seed, slabs=True)
     debris(stage, mats, looks, faces, log, seed, n_core=int(getattr(a, "urban_debris", 32000)),
            n_outer=int(getattr(a, "urban_debris", 32000) * 0.28))
     if getattr(a, "crew", 1):

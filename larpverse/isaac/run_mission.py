@@ -76,7 +76,10 @@ def _base_parser():
     g.add_argument("--no-autonomous", dest="autonomous", action="store_false",
                    help="legacy fixed loop: 3 piles, no battery swaps, no revisits")
     ap.add_argument("--speed", type=float, default=4.0, help="sim-seconds per wall-second")
-    ap.add_argument("--show-truth", action="store_true", help="draw ground-truth victim ghosts (display only)")
+    ap.add_argument("--show-truth", action="store_true",
+                    help="draw the scenario's hidden (invented) people as grey dummies, half sunk (display only)")
+    ap.add_argument("--fx", type=int, default=1, help="live sensor effects (isaac/sensor_fx.py): LiDAR beams, "
+                    "radar pulses, sound domes while listening, belief hotspot (0 = off)")
     ap.add_argument("--replay", default=None, help="dir with frames/state_XXXX.json (or the frames dir itself)")
     ap.add_argument("--out", default=os.path.join(REPO, "dashboard", "data"), help="state.json output dir")
     ap.add_argument("--frames", action="store_true", help="also write frames/state_XXXX.json")
@@ -370,6 +373,9 @@ def main(argv=None):
                   for i in ids}
     from isaac.pods import NullPods, PodViz
     pods = NullPods() if a.dry_run else PodViz(stage, ids)
+    from isaac.sensor_fx import NullFX, SensorFX     # LiDAR beams, radar pulses, sound domes, hotspot, dummies
+    fx = NullFX() if (a.dry_run or not a.fx) else SensorFX(stage, sc, surface, show_truth=a.show_truth, log=say,
+                                                          seed=a.seed)
     from isaac.site import base_xy
     overlay = Overlay(make_backend("null" if a.dry_run else a.overlay, stage, dd), surface, pile_xy,
                       base_xy=base_xy(sc), zones=a.zones)
@@ -508,6 +514,7 @@ def main(argv=None):
                     pl = active if active in pile_xy else nearest_pile(pile_xy, x, y)
                     if pl:
                         pts = rtx.read(did) if rtx is not None else lidar.sweep((x, y, z + mount_z), yaw, frame)
+                        fx.lidar(did, (x, y, z + mount_z), pts)
                         new_pts = accum.add(pl, pts)
                         if new_pts is not None and len(new_pts):
                             pending.setdefault(pl, []).append(new_pts)
@@ -519,6 +526,7 @@ def main(argv=None):
                             if len(show):
                                 overlay.add_points(show)
             pods.update(cur, poses)                    # winch-lowered radar pods (state.pods / winch_len_m)
+            fx.frame(now, cur, poses)
             if dust is not None:
                 dust.update(poses, surface)
 
@@ -563,7 +571,7 @@ def main(argv=None):
         "overlay_updates": overlay.updates, "camera_updates": cam.updates,
         "state_json": state_path if state_path and os.path.exists(state_path) else None,
         "mission": type(mission).__name__, "launcher": a.launcher, "site": site_name(sc),
-        "pods_max_visible": pods.max_visible,
+        "pods_max_visible": pods.max_visible, "fx": dict(fx.counts, dummies=fx.dummies),
         "recorded_frames": rec.n if rec is not None else 0,
     }
     say("summary " + json.dumps(summary))

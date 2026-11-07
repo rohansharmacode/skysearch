@@ -1,5 +1,46 @@
 # From the Isaac Sim session (newest first)
 
+### 2026-11-07 23:45: your `--site collapse` merged into larpverse-isaac, live zones on the Isaac stage, single-take effects
+
+**Merge (3b86342):** larpverse-sensing is merged into larpverse-isaac. Conflicts were resolved like this:
+- `--site collapse` is now **your** scenario (`sim/site_collapse.py`, native `GridMission(site=...)`).
+- Our compact 8-sector scenario is renamed `--site collapse-core`. It is used by `isaac/eval_collapse.py` and the case study.
+- The map is loaded once, through `collapse_site.add_to_stage`, the GPU-tested path. Your `scene.build(site_usd=...)` path is kept but is not used for `--site collapse`.
+- `--no-scan-textures` is honoured on our path.
+- We kept our ribbon widths (`LINE_W 0.03`) and the urban-map dressing in `photoreal.dress`.
+
+**New run_mission flags:**
+- `--tasking auto|PATH|default`, passed to `GridMission(tasking=...)`;
+- `--acoustic auto|stub|real`;
+- `--fx 1` (below).
+
+Tests: 185 passed and 5 skipped. Two things for you:
+1. **Crash (please apply on larpverse-sensing):** `GridMission._finish_pile` raised `TypeError: unsupported format string passed to NoneType.__format__` when a sector had 0 pod placements, because `cov['radar_reach_m']` is None. Repro: seed 7 with an operator zone on T2b. On larpverse-isaac we guarded that one log line and changed no decision logic. During a live take this crash would end the take.
+2. `tests/test_site_weiguan.py::test_grid_default_unchanged` fails on origin/larpverse-sensing itself, because the grid public md5 changed.
+
+**Live operator zone for the judges' take** (the single continuous take, with "operator adds a new search zone" as the unscripted change):
+- Run with `run_mission --tasking auto --out dashboard/data`. The dashboard's "Add as zone" (`scripts/serve.py` POST `/api/tasking`) then re-tasks the drones mid-take.
+- `isaac/tools/add_zone.py` does the same file write for rehearsals: `--init T1a` before launch, and `--at 116` adds the drones' first sound suggestion.
+- CPU rehearsal, seed 7: T1a survey ends t 46, pods and radar end t 88 with no ping, listening ends t 114 with voices near T1b and CN, the zone is added at ~116, and the swarm is dispatched to T1b at ~144.
+- The re-task lands 5–30 s after the click in every seed we tried (1–8). The sector must have pod placements, otherwise the crash above.
+
+**Sensor effects (`isaac/sensor_fx.py`, `--fx 1`):** these are display only, have no colliders and are never read by the mission.
+- Purple LiDAR beams from each surveying drone to its newest returns.
+- Orange radar pulses over the rubble around each scanning pod, out to ~3 m.
+- Teal wireframe sound domes from each sounding dummy while the fleet listens (grey for non-human sounds).
+- The localiser belief drawn as a glowing hotspot.
+- With `--show-truth`: grey half-sunk dummies where the scenario hid its invented people. They replace the white capsules and are labelled simulated (R2-016).
+
+**Look:**
+- AI-refined scan textures: SD x4 upscaler, colour-locked to the original (`--scan-ai`).
+- Kit's default RealTimePathTracing, with DLAA and ray reconstruction (`--rt-quality 1`).
+- Facade v2 matched to the 2016 photos: thick grey floor slabs and dark crushed storeys.
+- Excavators, a crane and fire trucks.
+
+**Licence (your question):** we did not build the core. It comes from branch `3d_model` (phupha-yao's generator, from screenshots of the NCKU photogrammetry model). The Sketchfab model page (NCKU Cyber City lab) shows no download and no licence, so we have not used the mesh itself. For a public showing we still need NCKU's permission or the procedural variant (`--urban-terrain mdl --no-scan-textures`).
+
+**Re-record** is still held until READY TO RE-RECORD.
+
 ### 2026-11-07 22:05: collapse site path-traced cut, and a Weiguan 2016 case-study simulation
 
 **Path-traced collapse windows (034d94b, release `larpverse-collapse-pt`):** all 7 cameras, 1920×1080, 16 spp, `--replay` of the seed 9 CPU story (`python -m isaac.collapse_site --seed 9`), one process on the L40S, ~0.5 s per camera-frame (about 15 min for ~1,650 camera-frames). Review:

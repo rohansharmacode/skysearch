@@ -22,7 +22,7 @@ Terrain: the animation ports ``Scenario.ground_height`` exactly, so it only need
 (``noise.a/kx/ky/ph``, used with site y = -z). A coarse height grid is included for cross-checking.
 
 The ``story`` block is STORYBOARD TRUTH (display only): start pile, sound roles, sound positions,
-transcripts and victim positions/depths. It exists so the video can show what the sensors are meant
+transcripts, victim positions/depths and breathing states (``victims[].physio``, drives the dig-order beat). It exists so the video can show what the sensors are meant
 to find. The planner, agents and dashboard never read this file.
 """
 from __future__ import annotations
@@ -101,7 +101,9 @@ def build(seed: int, start_pile: str | None = None, site: str = "grid") -> dict:
         "victims": [{"id": v["id"], "pile": v["pile"], "x": round(v["xy"][0], 3), "z": round(-v["xy"][1], 3),
                      "depth": round(v["depth"], 3), "sound": v["sound"],
                      **({"y": round(v["z"], 3), "depth_class": v["depth_class"]} if "z" in v else {}),
-                     **({"lang": v["lang"]} if "lang" in v else {})} for v in t["victims"]],
+                     **({"lang": v["lang"]} if "lang" in v else {}),
+                     **({"physio": {k: (round(x, 3) if isinstance(x, float) else x) for k, x in v["physio"].items()}}
+                        if "physio" in v else {})} for v in t["victims"]],
         "transcripts": TRANSCRIPTS,
     }
     extra = {}

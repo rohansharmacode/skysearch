@@ -1,4 +1,4 @@
-"""Build the 3x3 rubble-grid stage from sim.scenario (pxr only, so it is stable across Isaac versions).
+"""Build the rubble stage (grid | weiguan | mesh site) from sim.scenario (pxr only, so it is stable across Isaac versions).
 
 Every rubble piece and the terrain get PhysX collision, so the LiDAR raycasts hit real Isaac geometry.
 Drones are visual-only (no rigid body, no collider) and are posed kinematically each step.
@@ -14,7 +14,8 @@ import math
 import numpy as np
 from pxr import Gf, Sdf, UsdGeom, UsdLux, UsdPhysics, UsdShade, Vt
 
-from sim.scenario import BASE_XY, SITE_BOUNDS, rot_matrix
+from isaac.site import base_xy, bounds, victim_z
+from sim.scenario import rot_matrix
 
 PALETTE = {
     "concrete": [(0.56, 0.55, 0.52), (0.49, 0.47, 0.45), (0.62, 0.59, 0.55), (0.43, 0.41, 0.39)],
@@ -177,8 +178,8 @@ def build(stage, sc, show_truth=False, terrain_res=0.5, physics_scene=True, sun=
     dome.CreateIntensityAttr(float(sky))
     dome.CreateColorAttr(Gf.Vec3f(0.80, 0.85, 1.0))
 
-    # terrain (nine mounds + undulation) with a flat apron around it
-    x0, y0, x1, y1 = SITE_BOUNDS
+    # terrain (grid/Weiguan: sector mounds + undulation; mesh sites: the loaded surface) with a flat apron
+    x0, y0, x1, y1 = bounds(sc)
     tb = (x0 - 6, y0 - 6, x1 + 6, y1 + 6)
 
     def dust(z):
@@ -213,7 +214,7 @@ def build(stage, sc, show_truth=False, terrain_res=0.5, physics_scene=True, sun=
             n += 1
 
     # staging area: pad, truck, coordinator mast, operator dashboard table, acoustic-agent server
-    bx, by = BASE_XY
+    bx, by = base_xy(sc)
     box(stage, "/World/Staging/Pad", (bx, by - 1.5, 0.05), (16, 7, 0.1), (0.17, 0.2, 0.23), mats=mats)
     box(stage, "/World/Staging/Truck", (bx + 7, by - 3.5, 1.15), (4.6, 2.3, 2.3), (0.85, 0.87, 0.88), mats=mats)
     box(stage, "/World/Staging/Mast", (bx + 7, by - 2.2, 4.0), (0.1, 0.1, 3.4), (0.6, 0.64, 0.68), collide=False, mats=mats)
@@ -229,7 +230,7 @@ def build(stage, sc, show_truth=False, terrain_res=0.5, physics_scene=True, sun=
             cap.CreateRadiusAttr(0.2)
             cap.CreateHeightAttr(0.9)
             cap.CreateAxisAttr("X")
-            _xform(cap, (x, y, float(sc.ground_height(x, y)) - v["depth"]))
+            _xform(cap, (x, y, victim_z(sc, v)))          # Weiguan/mesh: v["z"] (inside the void)
             _color(cap, (0.95, 0.95, 0.95))
             mats.bind(cap.GetPrim(), "truth_ghost", (0.95, 0.95, 0.95), roughness=0.4)
     build.materials = mats

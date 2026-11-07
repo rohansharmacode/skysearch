@@ -102,3 +102,17 @@ def test_isaac_dryrun_photoreal_record_flags(tmp_path):
     assert 28 <= s["t"] <= 40 and s["recorded_frames"] == 0, s
     assert s["lidar_points"] > 0
     assert not any(m == "pxr" or m.startswith(("pxr.", "omni.")) or m == "omni" for m in sys.modules)
+
+
+def test_isaac_dryrun_weiguan(tmp_path):
+    """--site weiguan on the dry run: scenario-owned bounds/staging reach the state; drones fly; LiDAR hits."""
+    from isaac.run_mission import main
+
+    out = tmp_path / "data"
+    s = main(["--dry-run", "--site", "weiguan", "--max-steps", "40", "--out", str(out), "--quiet"])
+    assert s["site"] == "weiguan" and s["steps"] == 40
+    assert s["lidar_points"] > 500, s
+    state = json.loads((out / "state.json").read_text())
+    assert state["site"]["bounds"] == [-32.0, -64.0, 68.0, 42.0]
+    assert state["staging"]["xy"] == [31.0, -55.0]
+    assert {p["id"] for p in state.get("piles", [])} <= set("ABCDEFGHI")

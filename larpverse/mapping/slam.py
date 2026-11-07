@@ -78,10 +78,11 @@ def rot_err_deg(est, gt):
     return float(np.degrees(np.arccos(c)).mean())
 
 
-def pile_window(centre, half=HALF_WINDOW, res=HM_RES):
-    """(origin, w, h) of a square window around ``centre`` snapped to the site heightmap grid."""
-    x0 = SITE_BOUNDS[0] + np.floor((centre[0] - half - SITE_BOUNDS[0]) / res) * res
-    y0 = SITE_BOUNDS[1] + np.floor((centre[1] - half - SITE_BOUNDS[1]) / res) * res
+def pile_window(centre, half=HALF_WINDOW, res=HM_RES, bounds=SITE_BOUNDS):
+    """(origin, w, h) of a square window around ``centre`` snapped to the site heightmap grid
+    (``bounds``: the scenario's, e.g. ``getattr(sc, "bounds", SITE_BOUNDS)`` for Weiguan / mesh sites)."""
+    x0 = bounds[0] + np.floor((centre[0] - half - bounds[0]) / res) * res
+    y0 = bounds[1] + np.floor((centre[1] - half - bounds[1]) / res) * res
     n = int(round(2 * half / res))
     return (float(x0), float(y0)), n, n
 
@@ -232,7 +233,7 @@ def run_pile_slam(scenario: Scenario, pile_name: str, seed: int = 0, n_scans: in
 
     t2 = time.perf_counter()
     cloud = accumulate(scans, est)
-    origin, w, h = pile_window(centre)
+    origin, w, h = pile_window(centre, bounds=getattr(scenario, "bounds", SITE_BOUNDS))
     grid = rasterise(cloud, origin, w, h)
     cnt = np.zeros((h, w), int)
     ix = ((cloud[:, 0] - origin[0]) / HM_RES).astype(int)

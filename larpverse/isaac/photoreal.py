@@ -243,6 +243,11 @@ def scatter_debris(stage, sc, mats, log, seed=0):
     LiDAR and landing cells are unaffected)."""
     rng = np.random.default_rng(2000 + seed)
     tot = 0
+    # grid: stones on the bare mounds (teammate's behaviour); other sites: on the top surface (slabs, wreck)
+    if getattr(sc, "site", "grid") == "grid":
+        ground = sc.ground_height
+    else:
+        ground = sc.heightmap(0.5).height_at
     for p in sc.piles:
         for mat, n, smin, smax in (("concrete", 2400, 0.025, 0.09), ("brick", 700, 0.03, 0.12), ("concrete2", 700, 0.10, 0.45)):
             parts = []
@@ -251,7 +256,7 @@ def scatter_debris(stage, sc, mats, log, seed=0):
                 ang = rng.uniform(0, 2 * np.pi)
                 x = p.x + r * p.sx * math.cos(ang)
                 y = p.y + r * p.sy * math.sin(ang)
-                z = float(np.asarray(sc.ground_height(np.array([x]), np.array([y]))).ravel()[0])
+                z = float(np.asarray(ground(np.array([x]), np.array([y]))).ravel()[0])
                 s = rng.uniform(smin, smax)
                 P, F = RB.rock(rng, s, s * rng.uniform(0.6, 1.0), s * rng.uniform(0.35, 0.7), n=9 if s < 0.1 else 14)
                 c, si = math.cos(rng.uniform(0, 6.28)), math.sin(rng.uniform(0, 6.28))
@@ -301,23 +306,39 @@ PEOPLE = ("male_adult_construction_01_new/male_adult_construction_01_new.usd",
 
 def vegetation(stage, sc, nv, log, seed=0):
     """Dry grass clumps and shrubs between the piles, a few trees at the edges; nothing on piles, flight paths
-    over the grid centre lines, or the staging area."""
-    from sim.scenario import BASE_XY
+    over the grid centre lines, or the staging area. Non-grid sites: only on bare street-level ground inside
+    the site bounds, off the road (site_info.road)."""
+    from isaac.site import base_xy, bounds
+    BASE_XY = base_xy(sc)
+    grid = getattr(sc, "site", "grid") == "grid"
     rng = np.random.default_rng(3000 + seed)
     pts = []
+    if grid:
+        area, ring = ((-34, 34), (-40, 34)), (0.0, -6.0, 46.0, 50.0)
+    else:
+        bx0, by0, bx1, by1 = bounds(sc)
+        area = ((bx0 + 2, bx1 - 2), (by0 + 2, by1 - 2))
+        ring = ((bx0 + bx1) / 2, (by0 + by1) / 2, 0.44 * (bx1 - bx0), 0.44 * (by1 - by0))
+        top = sc.heightmap(0.5)
+        road = (getattr(sc, "public_dict", lambda: {})().get("site_info") or {}).get("road") if hasattr(sc, "site") else None
 
     def free(x, y, gap):
         if any(math.hypot(x - p.x, y - p.y) < max(p.sx, p.sy) * 1.6 for p in sc.piles):
             return False
         if abs(x - BASE_XY[0]) < 14 and abs(y - BASE_XY[1]) < 8:
             return False
+        if not grid:
+            if float(top.height_at(x, y)) > 0.4:                 # rubble / building here
+                return False
+            if road and road["x"][0] - 1 < x < road["x"][1] + 1:
+                return False
         return all(math.hypot(x - a, y - b) > gap for a, b in pts)
 
     n_s = n_t = 0
     for _ in range(3000):
         if n_s >= 70:
             break
-        x, y = rng.uniform(-34, 34), rng.uniform(-40, 34)
+        x, y = rng.uniform(*area[0]), rng.uniform(*area[1])
         if free(x, y, 2.5):
             z = float(np.asarray(sc.ground_height(np.array([x]), np.array([y]))).ravel()[0])
             u = f"{nv}/Assets/Vegetation/Shrub/{VEG_SHRUBS[n_s % len(VEG_SHRUBS)]}.usd"
@@ -330,7 +351,7 @@ def vegetation(stage, sc, nv, log, seed=0):
         if n_t >= 12:
             break
         ang = rng.uniform(0, 2 * np.pi)
-        x, y = 46 * math.cos(ang) + rng.normal(0, 3), -6 + 50 * math.sin(ang) + rng.normal(0, 3)
+        x, y = ring[0] + ring[2] * math.cos(ang) + rng.normal(0, 3), ring[1] + ring[3] * math.sin(ang) + rng.normal(0, 3)
         if free(x, y, 7.0):
             u = f"{nv}/Assets/Vegetation/Trees/{VEG_TREES[n_t % len(VEG_TREES)]}.usd"
             try:
@@ -401,8 +422,8 @@ def dress(stage, sc, a, log=print):
     if a.veg:
         vegetation(stage, sc, nv, log, seed=sc.seed)
     if a.operator:
-        from sim.scenario import BASE_XY
-        bx, by = BASE_XY
+        from isaac.site import base_xy
+        bx, by = base_xy(sc)
         try:
             reference(stage, "/World/Operator", f"{isa}/People/Characters/{PEOPLE[0]}", (bx - 3.2, by - 0.4, 0.0), 90.0)
             log("[photoreal] operator model at the dashboard table")

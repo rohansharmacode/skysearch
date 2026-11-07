@@ -6,6 +6,8 @@
     # Isaac Sim 4.5 / 5.x standalone (SimulationApp route):
     ~/isaacsim/python.sh isaac/run_mission.py --seed 7 --speed 4
     python isaac/run_mission.py --dry-run --max-steps 60                          # any laptop, numpy only
+    # Sites (docs/SITE_WEIGUAN.md): --site grid (default) | weiguan (case study) | "mesh:<map.npz|.ply|.obj|.usd>[?sectors=weiguan]"
+    ./isaaclab.sh -p .../isaac/run_mission.py --site weiguan --headless --show-truth --photoreal 1
     # Footage (isaac/photoreal.py, verified on the L40S; --launcher kit = the exact route it was recorded on):
     ... run_mission.py --headless --radar dsp --show-truth --photoreal 1 --record out/lv1 \
         --rec-cams director,wide,chase:d1,fpv:d2,top --rec-res 1920x1080 --rec-fps 30 --rec-speed 6 --rec-warp 4 \
@@ -49,6 +51,8 @@ def _base_parser():
                     help="check every risky Isaac call in order, print PASS/WARN/FAIL per step, save a frame, exit")
     ap.add_argument("--seed", type=int, default=7)
     ap.add_argument("--start-pile", default=None, help="pile to begin at, e.g. B2 (default: scenario's)")
+    ap.add_argument("--site", default="grid",
+                    help="grid (synthetic 3x3) | weiguan (Weiguan Jinlong case study) | mesh:<path>[?sectors=weiguan]")
     ap.add_argument("--radar", choices=["model", "dsp"], default="dsp", help="dsp needs scipy in Isaac's python")
     ap.add_argument("--speed", type=float, default=4.0, help="sim-seconds per wall-second")
     ap.add_argument("--show-truth", action="store_true", help="draw ground-truth victim ghosts (display only)")
@@ -140,7 +144,7 @@ def _atomic_write(path, text):
 class ReplayMission:
     """Plays recorded state frames with the GridMission interface (step/done/t/build_state/scenario)."""
 
-    def __init__(self, replay_dir, out_dir=None, seed=7, start_pile=None):
+    def __init__(self, replay_dir, out_dir=None, seed=7, start_pile=None, site="grid"):
         from sim.scenario import make_scenario
         files = sorted(glob.glob(os.path.join(replay_dir, "frames", "state_*.json"))) or \
             sorted(glob.glob(os.path.join(replay_dir, "state_*.json")))
@@ -151,7 +155,9 @@ class ReplayMission:
             self.state = json.load(f)
         meta = self.state.get("scenario") if isinstance(self.state.get("scenario"), dict) else {}
         seed = int(self.state.get("seed", meta.get("seed", seed)))
-        self.scenario = make_scenario(seed, start_pile or meta.get("start_pile") or self.state.get("start_pile"))
+        site = (self.state.get("site") or {}).get("kind") or site
+        self.scenario = make_scenario(seed, start_pile or meta.get("start_pile") or self.state.get("start_pile"),
+                                      site=site)
         self.t = float(self.state.get("t", 0.0))
         self.dt = 1.0
         if out_dir:
@@ -179,17 +185,17 @@ class ReplayMission:
 def load_mission(a, log):
     if a.replay:
         log(f"replaying {a.replay}")
-        return ReplayMission(a.replay, a.out, a.seed, a.start_pile)
+        return ReplayMission(a.replay, a.out, a.seed, a.start_pile, a.site)
     try:
-        from sim.grid_mission import GridMission
-        return GridMission(seed=a.seed, start_pile=a.start_pile, radar=a.radar, out_dir=a.out,
-                           frames=a.frames, verbose=not a.quiet)
+        from isaac.site import mission_for_site
+        return mission_for_site(a.site, seed=a.seed, start_pile=a.start_pile, radar=a.radar, out_dir=a.out,
+                                frames=a.frames, verbose=not a.quiet)
     except Exception:
         err = traceback.format_exc()
         fb = os.path.join(a.out, "frames")
         if glob.glob(os.path.join(fb, "state_*.json")):
             log(f"live GridMission failed, replaying {fb} instead:\n{err}")
-            return ReplayMission(fb, a.out, a.seed, a.start_pile)
+            return ReplayMission(fb, a.out, a.seed, a.start_pile, a.site)
         log("live GridMission failed and no recorded frames to replay "
             f"(record with: python -m sim.grid_mission --frames --out {a.out})")
         raise
@@ -273,7 +279,7 @@ def main(argv=None):
     pile_xy = {p.name: (float(p.x), float(p.y)) for p in sc.piles}
     t0 = time.time()
     hm = sc.heightmap(0.5)                  # public geometry: overlay draping + dry-run LiDAR target
-    say(f"heightmap {hm.w}x{hm.h} in {time.time() - t0:.1f} s")
+    say(f"site {getattr(sc, 'site', 'grid')}: {len(sc.piles)} sectors; heightmap {hm.w}x{hm.h} in {time.time() - t0:.1f} s")
     surface = hm.height_at
 
     stage, dd, rtx, dust = None, None, None, None
@@ -302,7 +308,9 @@ def main(argv=None):
     else:
         drones = {i: DroneViz(stage, f"/World/Drones/{i}", did=i, scale=a.drone_scale, asset=a.drone_asset)
                   for i in ids}
-    overlay = Overlay(make_backend("null" if a.dry_run else a.overlay, stage, dd), surface, pile_xy)
+    from isaac.site import base_xy, site_name
+    overlay = Overlay(make_backend("null" if a.dry_run else a.overlay, stage, dd), surface, pile_xy,
+                      base_xy=base_xy(sc))
     mirrors = []
     if not a.dry_run:
         from isaac import compat
@@ -485,7 +493,7 @@ def main(argv=None):
         "lidar_points": int(accum.total), "piles_scanned": sorted(accum.chunks), "ingested": fed,
         "overlay_updates": overlay.updates, "camera_updates": cam.updates,
         "state_json": state_path if state_path and os.path.exists(state_path) else None,
-        "mission": type(mission).__name__, "launcher": a.launcher,
+        "mission": type(mission).__name__, "launcher": a.launcher, "site": site_name(sc),
         "recorded_frames": rec.n if rec is not None else 0,
     }
     say("summary " + json.dumps(summary))

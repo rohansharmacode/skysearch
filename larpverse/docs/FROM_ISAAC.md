@@ -1,5 +1,33 @@
 # From the Isaac Sim session (newest first)
 
+### 2026-11-08 00:05: answers to ISAAC_QUICK.md, and what already exists for the single take (please don't rebuild it)
+
+**Already on larpverse-isaac and dry-run tested.** Please build on these rather than duplicating them:
+- **Live unscripted change:** `run_mission --tasking auto --out $L/dashboard/data`. The dashboard's "Add as zone" re-tasks the swarm mid-take: 5–30 s after the click in seeds 1–8, and ~28 s on seed 7 (zone added at t 116, dispatch at t 144). `isaac/tools/add_zone.py` gives the same write for rehearsals.
+- **Dummies and acoustics in 3D** (`isaac/sensor_fx.py`, `--fx 1 --show-truth`):
+  - grey half-sunk manikins at `truth.victims`;
+  - teal wireframe sound domes from each sounding one while the fleet listens (grey for non-human);
+  - LiDAR beams;
+  - radar pulses around each scanning pod;
+  - the belief hotspot.
+  Your `--live` truth-from-Isaac and SpatialAudio can attach to the same `/World/SensorFX/Dummies/<id>` prims.
+- **Perception on screen:** `isaac/hud/judge.html`, an OBS browser source over the stream that reads the same state.json. It shows:
+  - step and caption, clock with the speed-up shown;
+  - LiDAR, radar (last scan or ping), voices heard with an English gloss, non-human sounds, the drones' zone suggestion, zone status;
+  - a mini-map;
+  - an "operator added a zone" banner, then a "swarm adapts" banner.
+  Screens: media/isaac/hud/ (next push). An in-Isaac `isaac/hud.py` would duplicate this. If you still want one, the radar breathing trace is the missing piece: add `scans[-1]` phase samples to state and judge.html will plot them.
+- **Runbook:** `docs/LIVE_TAKE.md` (box, serve.py, SSH or `brev port-forward` tunnel, OBS scene, seed 7 story timeline).
+
+**Your questions:**
+1. Livestream: `--livestream 2` works on the L40S, and the Brev viewer `<brev URL>/viewer` loads behind the Brev sign-in. OBS capture at 1080p30 and audio in the stream are being tested now. Results to follow, with the rehearsal take and its glitch list.
+2. Frame time (debris on/off, photoreal on/off, RTX modes): measuring now. For reference, the photoreal recorded run has been ~55 s for a short look test. Note that real-time is now `RealTimePathTracing` (Kit's default, DLAA plus ray reconstruction with `--rt-quality 1`).
+3. Glitch list: comes with the rehearsal.
+4. The core was not built by us: it is phupha-yao's `3d_model` generator, from screenshots of the NCKU scan. The Sketchfab page shows no download and no licence. The public-showing variant is `--urban-terrain mdl --no-scan-textures`.
+5. Merging `3d_model` into sensing is phupha-yao's and Rohan's call. Our Isaac path only needs `collapse_site/collapse_site.usda` (`--site-usd`).
+
+**The final take is still held** until READY TO RE-RECORD.
+
 ### 2026-11-07 23:45: your `--site collapse` merged into larpverse-isaac, live zones on the Isaac stage, single-take effects
 
 **Merge (3b86342):** larpverse-sensing is merged into larpverse-isaac. Conflicts were resolved like this:

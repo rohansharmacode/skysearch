@@ -26,6 +26,27 @@ COL = {
     "battery": (0.30, 0.32, 0.36), "thermal": (0.12, 0.12, 0.13),
 }
 MODELS = ("heavy", "small")
+# --photoreal: real surface materials per part (UsdPreviewSurface; RTX and path tracing) instead of flat colours.
+PBR = False
+PROP_DISC = 0.06       # PBR: opacity of the spinning-prop blur disc (0 hides it; the blades still turn)
+PBR_LOOK = {           # key -> (rgb, roughness, metallic, clearcoat); rgb None = the part's own colour
+    "body": ((0.19, 0.20, 0.22), 0.32, 0.0, 0.8),       # painted composite shell
+    "stripe": (None, 0.35, 0.0, 0.6),
+    "carbon": ((0.022, 0.022, 0.026), 0.26, 0.0, 0.9),  # carbon-fibre arms and landing gear
+    "metal": ((0.50, 0.51, 0.53), 0.30, 1.0, 0.0),      # motor bells
+    "gimbal": ((0.09, 0.09, 0.10), 0.35, 0.6, 0.0),
+    "plastic": ((0.03, 0.03, 0.035), 0.45, 0.0, 0.0),   # prop blades
+    "radome": ((0.80, 0.80, 0.78), 0.55, 0.0, 0.2),     # radar panel cover
+    "battery": ((0.10, 0.11, 0.12), 0.40, 0.0, 0.4),
+    "lens": ((0.015, 0.015, 0.02), 0.06, 0.0, 1.0),     # LiDAR window, thermal lens
+    "mic": ((0.04, 0.04, 0.045), 0.6, 0.0, 0.0),
+    "speaker": ((0.70, 0.70, 0.68), 0.5, 0.0, 0.0),
+    "disc": ((0.10, 0.10, 0.11), 0.5, 0.0, 0.0),
+}
+PART_KEY = (("Fuselage", "body"), ("Stripe", "stripe"), ("Battery", "battery"), ("Arm", "carbon"),
+            ("Motor", "metal"), ("Skid", "carbon"), ("Leg", "carbon"), ("Brace", "carbon"), ("Gimbal", "gimbal"),
+            ("LidarPuck", "lens"), ("Thermal", "lens"), ("RadarPanel", "radome"), ("SpeakerHorn", "speaker"),
+            ("Mic", "mic"), ("Blade", "plastic"), ("Disc", "disc"))
 GEAR_H = 0.60          # heavy: skid bottom to fuselage underside (m, estimate)
 
 
@@ -197,6 +218,40 @@ class DroneViz:
                 pass
             self._shape("Cube", f"{m}/{name}/Blade", (0, 0, 0.006), (2 * attrs["radius"], 0.09, 0.012),
                         COL["blade"], Size=1.0)
+            if PBR and PROP_DISC <= 0:
+                UsdGeom.Imageable(disc).MakeInvisible()
+        if PBR:
+            self._materials()
+
+    def _materials(self):
+        """--photoreal: bind a real surface material to every part, by part name (PART_KEY)."""
+        from pxr import Sdf, Usd, UsdShade
+        did = self.path.rstrip("/").split("/")[-1]
+        for prim in Usd.PrimRange(self.stage.GetPrimAtPath(self.model)):
+            if not prim.IsA(self.UsdGeom.Gprim):
+                continue
+            key = next((k for pre, k in PART_KEY if prim.GetName().startswith(pre)), None)
+            if key is None:
+                continue
+            rgb, rough, metal, coat = PBR_LOOK[key]
+            if rgb is None:
+                c = self.UsdGeom.Gprim(prim).GetDisplayColorAttr().Get()
+                rgb = tuple(c[0]) if c else (0.8, 0.8, 0.8)
+            mpath = f"/World/Looks/Drone/{key}" + (f"_{did}" if key == "stripe" else "")
+            mat = UsdShade.Material.Get(self.stage, mpath)
+            if not mat:
+                mat = UsdShade.Material.Define(self.stage, mpath)
+                sh = UsdShade.Shader.Define(self.stage, mpath + "/Surface")
+                sh.CreateIdAttr("UsdPreviewSurface")
+                sh.CreateInput("diffuseColor", Sdf.ValueTypeNames.Color3f).Set(self.Gf.Vec3f(*map(float, rgb)))
+                sh.CreateInput("roughness", Sdf.ValueTypeNames.Float).Set(float(rough))
+                sh.CreateInput("metallic", Sdf.ValueTypeNames.Float).Set(float(metal))
+                sh.CreateInput("clearcoat", Sdf.ValueTypeNames.Float).Set(float(coat))
+                sh.CreateInput("clearcoatRoughness", Sdf.ValueTypeNames.Float).Set(0.08)
+                if key == "disc":
+                    sh.CreateInput("opacity", Sdf.ValueTypeNames.Float).Set(float(max(PROP_DISC, 0.0)))
+                mat.CreateSurfaceOutput().ConnectToSource(sh.ConnectableAPI(), "surface")
+            UsdShade.MaterialBindingAPI.Apply(prim).Bind(mat)
 
     # ------------------------------------------------------------------ geometry helpers
     def _shape(self, kind, path, t=(0, 0, 0), s=(1, 1, 1), rgb=(1, 1, 1), rot_z=None, **attrs):

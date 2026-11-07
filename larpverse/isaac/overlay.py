@@ -63,6 +63,10 @@ RECON_PATH = (*GREEN[:3], 0.35)     # recon coverage path in the air: dashed, lo
 PROPOSAL = (*GREY[:3], 0.75)        # dashboard-proposed rubble outlines (until the operator accepts them)
 ZONE_W = 2.0                        # width units (x LINE_W); thin enough not to read as a prop
 CONE_HUMAN_MIN = 0.4                # dashboard/app.js: (c.scores?.human ?? 0) >= 0.4
+# Footage clarity (set by photoreal --clean-overlay; the dashboard and state.json are unchanged):
+HIDE_WEAK = False                   # skip "insufficient_evidence" candidates (no beacon, ring or tag)
+RING_TOP = 0                        # >0: per radar scan draw only the N most confident range rings
+SMOOTH_DRAPE = 0.0                  # >0: draped lines ride over the rubble (running max over +-this many m), not into it
 ACTIVE = {"active", "survey", "surveying", "scanning", "searching", "in_progress", "radar", "landing",
           "relocate", "rescan", "acoustic"}
 # Dashboard label look for any burn-in text (post-process / drawtext): dark pill, IBM Plex Mono, coloured border.
@@ -74,6 +78,23 @@ LABEL_STYLE = {
     "text": {"pile": "#e4ebf0", "ping": "#ffd0d0", "priority": "#c4f3f8", "cone": "#fff3b0",
              "dispatch": "#c9f5c9", "drone": "#e4ebf0"},
 }
+
+
+def _ride_over(p, z, win):
+    """Heights for a draped polyline that ride over the rubble instead of following every bump: running max
+    over +-win metres of arc length, then a light running mean (keeps the line clear of the debris)."""
+    d = np.concatenate([[0.0], np.cumsum(np.hypot(*np.diff(p, axis=0).T))])
+    zz = np.empty_like(z)
+    j0 = j1 = 0
+    for i in range(len(z)):
+        while d[i] - d[j0] > win:
+            j0 += 1
+        while j1 + 1 < len(z) and d[j1 + 1] - d[i] <= win:
+            j1 += 1
+        zz[i] = z[j0:j1 + 1].max()
+    k = max(1, min(len(zz) // 2, 3))
+    ker = np.ones(2 * k + 1) / (2 * k + 1)
+    return np.convolve(np.pad(zz, k, mode="edge"), ker, mode="valid")
 
 
 def lidar_colors(z, lo=-0.5, hi=5.0):
@@ -113,7 +134,10 @@ class Overlay:
             n = max(1, int(math.ceil(np.hypot(*(b - a)) / max_seg)))
             out.append(a + (b - a) * (np.arange(1, n + 1) / n)[:, None])
         p = np.concatenate(out)
-        return np.column_stack([p, np.asarray(self.surface(p[:, 0], p[:, 1]), float) + lift])
+        z = np.asarray(self.surface(p[:, 0], p[:, 1]), float)
+        if SMOOTH_DRAPE > 0 and len(z) > 2:
+            z = _ride_over(p, z, SMOOTH_DRAPE)
+        return np.column_stack([p, z + lift])
 
     @staticmethod
     def _dashed(poly, rgba, width, acc, dash=1.0, gap=0.6):
@@ -176,6 +200,8 @@ class Overlay:
             zs = float(self.surface(np.array([x]), np.array([y]))[0])
             ze = float(c.get("z_est", zs - 1.2) if c.get("z_est") is not None else zs - 1.2)
             weak = c.get("status") == "insufficient_evidence"
+            if weak and HIDE_WEAK:
+                continue
             col = RED_DIM if weak else RED
             pings.append({"id": str(c.get("id", f"R{len(pings)}")), "pos": (x, y, ze), "top": zs + 14.0,
                           "rgba": col, "radius": 0.35})
@@ -242,7 +268,10 @@ class Overlay:
             sx, sy = s["sensor_pose"][:2]
             confs = s.get("confidence") or []
             wgt = float(s.get("used_weight", 1.0) if s.get("used_weight") is not None else 1.0)
-            for i, r in enumerate(s.get("range_candidates") or []):
+            rings = list(enumerate(s.get("range_candidates") or []))
+            if RING_TOP > 0:
+                rings = sorted(rings, key=lambda ir: -(float(confs[ir[0]]) if ir[0] < len(confs) else 0.5))[:RING_TOP]
+            for i, r in rings:
                 cf = float(confs[i]) if i < len(confs) else 0.5
                 rgba = (*AMBER[:3], 0.25 + 0.7 * cf * max(wgt, 0.2))
                 a = np.linspace(0, 2 * np.pi, max(32, int(r * 6)) + 1)
@@ -330,6 +359,8 @@ class Overlay:
             x, y = map(float, c["xy"][:2])
             z = float(self.surface(np.array([x]), np.array([y]))[0])
             weak = c.get("status") == "insufficient_evidence"
+            if weak and HIDE_WEAK:
+                continue
             out.append({"kind": "ping", "text": f"{cid} · {'weak candidate' if weak else 'candidate search region'}",
                         "xyz": (x, y, z + 2.0)})
         for o in out:

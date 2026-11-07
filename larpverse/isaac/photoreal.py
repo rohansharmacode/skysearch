@@ -51,6 +51,15 @@ def add_args(ap):
     g.add_argument("--chase-back", type=float, default=6.0, help="chase camera distance behind the drone (m)")
     g.add_argument("--chase-up", type=float, default=3.0, help="chase camera height above the drone (m)")
     g.add_argument("--operator", type=int, default=1, help="a person model (operator) at the dashboard table")
+    g.add_argument("--urban-look", type=int, default=1,
+                   help="collapse map: real materials instead of the scan photo on rubble/towers/slabs, 3D facade and "
+                        "debris (isaac/urban_look.py); 0 = the map as shipped")
+    g.add_argument("--urban-debris", type=int, default=32000, help="3D debris pieces on the core rubble (+28%% outside)")
+    g.add_argument("--crew", type=int, default=1, help="collapse map: rescue crew models at the staging area")
+    g.add_argument("--clean-overlay", type=int, default=-1,
+                   help="footage clarity: hide weak candidates, one radar ring per scan, lines ride over the rubble "
+                        "(1 on, 0 off, -1 auto = on for the collapse map)")
+    g.add_argument("--prop-disc", type=float, default=0.06, help="opacity of the spinning-prop blur disc (0 = blades only)")
     g.add_argument("--record", default="", help="write PNG frames per camera to this folder (virtual clock)")
     g.add_argument("--rec-res", default="1920x1080")
     g.add_argument("--rec-fps", type=float, default=30.0, help="video frames per second")
@@ -421,8 +430,25 @@ def dress(stage, sc, a, log=print):
         except Exception as e:
             log(f"[photoreal] material {k} failed: {type(e).__name__}: {e}")
     urban_map = str(getattr(a, "site", "")).startswith("collapse")
-    if urban_map:                                     # the 3d_model map brings its own materials, sun and sky
-        log("[photoreal] collapse map: keeping its materials, sun and sky; no extra rubble, debris or vegetation")
+    try:                                              # drones: real part materials instead of flat colours
+        from isaac import drone_viz as _dv
+        _dv.PBR, _dv.PROP_DISC = True, float(getattr(a, "prop_disc", 0.06))
+    except Exception as e:
+        log(f"[photoreal] drone materials unchanged ({type(e).__name__}: {e})")
+    clean = getattr(a, "clean_overlay", -1)
+    if clean == 1 or (clean == -1 and urban_map):
+        try:
+            from isaac import overlay as _ov
+            _ov.HIDE_WEAK, _ov.RING_TOP, _ov.SMOOTH_DRAPE, _ov.MAX_SCANS = True, 1, 1.5, 1
+            log("[photoreal] clean overlay: weak candidates hidden, one radar ring per scan, lines ride over the rubble")
+        except Exception as e:
+            log(f"[photoreal] clean overlay off ({type(e).__name__}: {e})")
+    if urban_map:                                     # the 3d_model map brings its own sun and sky
+        if getattr(a, "urban_look", 1):
+            from isaac import urban_look
+            urban_look.dress(stage, sc, a, mats, nv, isa, log)
+        else:
+            log("[photoreal] collapse map: keeping its materials, sun and sky; no extra rubble, debris or vegetation")
     else:
         sky_and_sun(stage, a, nv, log)
     if urban_map:

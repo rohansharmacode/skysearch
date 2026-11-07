@@ -25,8 +25,9 @@
   "radar_candidates": [
     {"id": "B2-R1", "pile_id": "B2", "xy": [-0.5, 1.5], "z_est": 2.0, "depth_m": 1.2, "cov": [[0.3, 0], [0, 0.2]],
      "p_mass": 0.8, "status": "candidate", "kind": "stationary", "evidence": ["s4", "s5"],
-     "vitals": {"version": "vitals-v1", "pattern": "regular_calm", "rate_bpm": 14.2, "triage_hint": "delayed",
-                "pattern_conf": 0.7, "duration_s": 60.0, "condition": "calm, regular breathing, 14/min -> stable for now",
+     "vitals": {"version": "vitals-v1", "condition": "calm", "pattern": "regular_calm", "rate_bpm": 14.2, "triage_hint": "delayed",
+                "pattern_conf": 0.7, "duration_s": 60.0,
+                "condition_text": "calm, regular breathing, 14/min -> stable for now (breathing only), re-check later",
                 "caveats": ["aid for rescuers, not a diagnosis: ..."]},
      "dig_score": 0.21},
     {"id": "A2-R1", "pile_id": "A2", "xy": [-18.2, 0.4], "z_est": 1.5, "depth_m": 1.5, "cov": [[0.2, 0], [0, 0.1]],

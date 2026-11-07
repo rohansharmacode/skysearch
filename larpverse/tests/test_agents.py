@@ -330,7 +330,7 @@ def test_dig_order_and_condition_phrases():
     rows = gemini_decider.dig_order(_v13()["radar_candidates"])
     assert [r["ping"] for r in rows] == ["A2-R1", "B2-R1"]                      # by dig_score, firm pings only
     assert rows[0]["condition"] == "irregular breathing with pauses (~12/min) — check first"
-    assert rows[1]["condition"].startswith("calm, regular breathing (~14/min) — check")
+    assert rows[1]["condition"] == "calm, regular breathing, 14/min — stable for now (breathing only), re-check later"
     # missing vitals / dig_score: 'assess' weight x p_mass x accessibility, phrase still says check
     r = gemini_decider.dig_order([{"id": "X-R1", "status": "candidate", "p_mass": 0.8, "depth_m": 2.0}])[0]
     assert r["dig_score"] == round(0.55 * 0.8 * 0.5, 3) and "check" in r["condition"]
@@ -338,6 +338,29 @@ def test_dig_order_and_condition_phrases():
         t = gemini_decider.condition_phrase({"pattern": pat, "rate_bpm": 24, "triage_hint": "urgent", "duration_s": 20})
         assert "check" in t and gemini_decider.wording_problem(t) is None, t
         assert not gemini_decider.AGE_WORDS.search(t)
+
+
+def test_condition_text_final_fields():
+    """vitals 4da97d0: category ``condition`` (never shown) + ``condition_text`` (shown if it passes the rules)."""
+    v = {"condition": "irregular_apneic", "triage_hint": "immediate (check)", "rate_bpm": 12.0, "pattern_conf": 0.7,
+         "duration_s": 60, "condition_text": "irregular breathing with 1 pause(s) over 10 s, 12/min -> possible "
+                                              "airway problem or reduced consciousness, check"}
+    t = gemini_decider.condition_phrase(v, first=True)
+    assert t.endswith("reduced consciousness, check first") and "—" in t and "->" not in t
+    slow = {"condition": "unconscious_slow", "triage_hint": "urgent", "rate_bpm": 8.0, "pattern_conf": 0.6,
+            "duration_s": 60}                                                 # no text: built from the category
+    t = gemini_decider.condition_phrase(slow)
+    assert "deep rest or reduced consciousness" in t and "check responsiveness" in t and "unconscious" not in t
+    for bad in ("slow breathing, possible child, check", "patient is unconscious, check", "diagnosis: apnoea, check",
+                "unconscious_slow"):
+        t = gemini_decider.condition_phrase(dict(slow, condition_text=bad))
+        assert t.startswith("slow, regular breathing (~8/min)"), (bad, t)
+    rows = gemini_decider.dig_order([{"id": "B-R1", "status": "candidate", "p_mass": 0.9, "dig_score": 0.4, "vitals": slow},
+                                     {"id": "A-R1", "status": "candidate", "p_mass": 0.8, "dig_score": 0.6, "vitals": v}])
+    assert [r["ping"] for r in rows] == ["A-R1", "B-R1"] and rows[1]["pattern"] == "slow_regular"
+    s = gemini_decider.compact_context({"pings": [{"id": "B-R1", "pile_id": "B", "status": "candidate",
+                                                   "p_mass": 0.9, "dig_score": 0.4, "vitals": slow}]})
+    assert "unconscious" not in json.dumps(s)
 
 
 def test_zone_suggestion_is_a_suggestion(monkeypatch):

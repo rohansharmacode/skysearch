@@ -76,24 +76,59 @@ def wording_problem(text, pod=False):
 
 
 # --------------------------------------------------------------------------- vitals -> plain words
+# vitals.condition (contract v1.3.1) -> legacy pattern; category names are never displayed or prompted
+PATTERN_OF = {"calm": "regular_calm", "distressed_tachypnea": "rapid_shallow", "unconscious_slow": "slow_regular",
+              "irregular_apneic": "irregular_with_pauses", "unknown": "unclear"}
+TEXT_UNSAFE = re.compile(r"\b(unconscious|injured|dying)\b", re.I)
+
+
+def _pattern(v):
+    if not isinstance(v, dict):
+        return None
+    return v.get("pattern") or PATTERN_OF.get(str(v.get("condition") or ""))
+
+
+def _producer_text(v):
+    """The vitals agent's ``condition_text`` if it is safe to show (says check, no age / diagnosis / fact)."""
+    t = v.get("condition_text")
+    if not isinstance(t, str) or not t.strip():
+        return None
+    t = " ".join(t.replace("->", "—").split())
+    if "check" not in t.lower() or TEXT_UNSAFE.search(t) or wording_problem(t) or len(t) > 200:
+        return None
+    return t
+
+
 def condition_phrase(v, first=False):
     """Plain-words breathing condition with 'check' ("irregular breathing with pauses — check first").
 
-    Built from the pattern only (never the producer's free text), so no age or diagnosis can slip in.
+    Shows the vitals agent's ``condition_text`` when it passes the wording rules, else builds the phrase
+    from the pattern / condition category, so no age, diagnosis or condition-as-fact can slip in.
     A triage aid for rescuers ordering the dig, not a diagnosis."""
     if not isinstance(v, dict) or not v:
         return "no breathing pattern measured — check on reaching it"
-    pat = v.get("pattern") or "unclear"
+    pat = _pattern(v) or "unclear"
     rate = v.get("rate_bpm")
     r = f" (~{rate:.0f}/min)" if isinstance(rate, (int, float)) else ""
     hint = str(v.get("triage_hint") or "assess")
+    conf = v.get("pattern_conf")
+    low = isinstance(conf, (int, float)) and conf < 0.3
+    short = isinstance(v.get("duration_s"), (int, float)) and v["duration_s"] < 45
+    note = "; low confidence" if low else ""
+    note += "; short scan, rate only" if short else ""
+    text = _producer_text(v)
+    if text and pat != "unclear":
+        if first and hint.startswith("immediate") and text.rstrip(". ").endswith("check"):
+            text = text.rstrip(". ") + " first"
+        return text + note
     if pat == "irregular_with_pauses":
         what = "irregular breathing with pauses" if (v.get("apnea_events") or 0) > 0 or \
             (v.get("apnea_events_per_min") or 0) > 0 else "irregular breathing"
     elif pat == "rapid_shallow":
         what = "rapid shallow breathing"
     elif pat in ("slow_regular", "slow_deep"):
-        what = "slow, regular breathing"
+        return (f"slow, regular breathing{r} — could be deep rest or reduced consciousness; call out and "
+                f"check responsiveness{note}")
     elif pat == "regular_calm":
         what = "calm, regular breathing"
     elif pat == "fast_small":                           # legacy vitals-v1 class: condition only, no age
@@ -108,11 +143,6 @@ def condition_phrase(v, first=False):
         tail = "check, then re-check later"
     else:
         tail = "check"
-    conf = v.get("pattern_conf")
-    low = isinstance(conf, (int, float)) and conf < 0.3
-    short = isinstance(v.get("duration_s"), (int, float)) and v["duration_s"] < 45
-    note = "; low confidence" if low else ""
-    note += "; short scan, rate only" if short else ""
     return f"{what}{r} — {tail}{note}"
 
 
@@ -120,7 +150,9 @@ def _vitals_summary(v):
     if not isinstance(v, dict):
         return None
     out = {k: v[k] for k in VITALS_KEEP if v.get(k) is not None}
-    out["condition"] = condition_phrase(v)
+    if _pattern(v):
+        out["pattern"] = _pattern(v)
+    out["condition"] = condition_phrase(v)          # plain words; the category name is not passed on
     return out
 
 
@@ -141,7 +173,7 @@ def dig_order(candidates, depth_of=None):
             acc = 1.0 if not isinstance(d, (int, float)) else min(1.0, max(0.2, 1 - d / 4.0))
             s = round(ASSESS_WEIGHT * float(c.get("p_mass") or 0.0) * acc, 3)
         rows.append({"ping": c.get("id"), "pile": c.get("pile_id"), "dig_score": s,
-                     "p_mass": c.get("p_mass"), "pattern": (v or {}).get("pattern"),
+                     "p_mass": c.get("p_mass"), "pattern": _pattern(v),
                      "triage_hint": (v or {}).get("triage_hint"), "_v": v})
     rows.sort(key=lambda r: (-r["dig_score"], -(r["p_mass"] or 0), str(r["ping"])))
     for i, r in enumerate(rows, 1):
@@ -178,7 +210,9 @@ Rules:
   candidate search regions. Silent or searched piles are not cleared.
 - Breathing patterns are a triage aid for rescuers to check, not a diagnosis. Describe only the
   breathing (rate, regular / irregular, pauses). Never infer age (no child, infant, elderly) and never
-  state injury or consciousness as fact.
+  state injury or consciousness as fact. Triage hints: immediate, immediate (check), urgent (slow and
+  regular: deep rest or reduced consciousness, the radar cannot tell; check responsiveness), delayed,
+  assess. Use the dig_order condition text as given.
 - With pod delivery say "pod lowered onto rubble at ...", never "landed".
 - Zones and zone proposals are the operator's call: you may only suggest ("suggest tasking P1").
 - rationale: at most 2 sentences, citing the evidence you relied on (pile ids, scores, transcripts,

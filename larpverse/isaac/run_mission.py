@@ -85,6 +85,9 @@ def _base_parser():
     ap.add_argument("--drone-model", choices=["heavy", "small"], default="heavy",
                     help="heavy: FlyCart/T50-class coaxial X8 from sim.platform (docs/PLATFORM.md); small: old quad")
     ap.add_argument("--rtx-lidar", action="store_true", help="try RTX LiDAR (falls back to PhysX raycasts)")
+    ap.add_argument("--zones", dest="zones", action="store_true", default=None,
+                    help="draw operator zones / recon / proposals (default: on unless LARPVERSE_ZONES=0)")
+    ap.add_argument("--no-zones", dest="zones", action="store_false")
     ap.add_argument("--overlay", choices=["auto", "debug", "usd"], default="auto",
                     help="debug = debug_draw lines/points; usd = prims only (safest for Movie Capture)")
     ap.add_argument("--rays", type=int, default=None, help="pin LiDAR rays per surveying drone per frame "
@@ -352,7 +355,7 @@ def main(argv=None):
     pods = NullPods() if a.dry_run else PodViz(stage, ids)
     from isaac.site import base_xy
     overlay = Overlay(make_backend("null" if a.dry_run else a.overlay, stage, dd), surface, pile_xy,
-                      base_xy=base_xy(sc))
+                      base_xy=base_xy(sc), zones=a.zones)
     mirrors = []
     if not a.dry_run:
         from isaac import compat

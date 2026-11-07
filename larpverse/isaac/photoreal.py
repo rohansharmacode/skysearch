@@ -27,6 +27,7 @@ from isaac import rubble as RB
 S3 = "https://omniverse-content-production.s3-us-west-2.amazonaws.com/Assets/Isaac/6.0"
 
 
+LIDAR_DRAW_R = 11.0                                   # --photoreal: draw LiDAR hits only on the pile being mapped
 WARP_PHASES = ("radar", "rescan", "relocate")     # long, repetitive stretches: shortened when recording
 
 
@@ -287,7 +288,7 @@ def rubble_ground(stage, sc, mat, log):
 
 
 VEG_TREES = ("Black_Oak", "Gray_Birch", "White_Pine", "Shumard_Oak")
-VEG_SHRUBS = ("Switchgrass", "Fountain_Grass_Tall", "Pampas_Grass", "Cedar_Shrub", "Burning_Bush")
+VEG_SHRUBS = ("Switchgrass", "Fountain_Grass_Tall", "Pampas_Grass", "Cedar_Shrub")   # no red foliage: red = radar ping
 PEOPLE = ("male_adult_construction_01_new/male_adult_construction_01_new.usd",
           "male_adult_construction_05_new/male_adult_construction_05_new.usd")
 
@@ -398,9 +399,9 @@ def dress(stage, sc, a, log=print):
         import carb
         s = carb.settings.get_settings()
         s.set_bool("/rtx/fog/enabled", True)
-        s.set_float("/rtx/fog/fogColorIntensity", 0.6)
-        s.set_float("/rtx/fog/fogStartDist", 25.0)
-        s.set_float("/rtx/fog/fogEndDist", 220.0)
+        s.set_float("/rtx/fog/fogColorIntensity", 0.35)
+        s.set_float("/rtx/fog/fogStartDist", 70.0)
+        s.set_float("/rtx/fog/fogEndDist", 450.0)
         s.set_float("/rtx/fog/fogColor/0", 0.78); s.set_float("/rtx/fog/fogColor/1", 0.70); s.set_float("/rtx/fog/fogColor/2", 0.60)
     except Exception:
         pass

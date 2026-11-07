@@ -353,7 +353,13 @@ def main(argv=None):
                         new_pts = accum.add(pl, pts)
                         if new_pts is not None and len(new_pts):
                             pending.setdefault(pl, []).append(new_pts)
-                            overlay.add_points(new_pts)
+                            show = new_pts
+                            if a.photoreal and pl in pile_xy:   # the map, not hits sprayed over the whole site
+                                from isaac.photoreal import LIDAR_DRAW_R
+                                c = np.asarray(pile_xy[pl], float)[:2]
+                                show = new_pts[np.hypot(new_pts[:, 0] - c[0], new_pts[:, 1] - c[1]) < LIDAR_DRAW_R]
+                            if len(show):
+                                overlay.add_points(show)
 
             focus, spread = focus_from_state(cur, pile_xy, active, list(poses.values()))
             cam.update(rdt, focus, spread)

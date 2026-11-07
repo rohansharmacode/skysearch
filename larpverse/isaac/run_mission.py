@@ -53,6 +53,8 @@ def _base_parser():
     ap.add_argument("--start-pile", default=None, help="pile to begin at, e.g. B2 (default: scenario's)")
     ap.add_argument("--site", default="grid",
                     help="grid (synthetic 3x3) | weiguan (Weiguan Jinlong case study) | mesh:<path>[?sectors=weiguan]")
+    ap.add_argument("--site-usd", default="",
+                    help="--site collapse: the 3d_model map, <repo>/collapse_site/collapse_site.usda (default: found next to the repo)")
     ap.add_argument("--radar", choices=["model", "dsp"], default="dsp", help="dsp needs scipy in Isaac's python")
     ap.add_argument("--speed", type=float, default=4.0, help="sim-seconds per wall-second")
     ap.add_argument("--show-truth", action="store_true", help="draw ground-truth victim ghosts (display only)")
@@ -156,8 +158,10 @@ class ReplayMission:
         meta = self.state.get("scenario") if isinstance(self.state.get("scenario"), dict) else {}
         seed = int(self.state.get("seed", meta.get("seed", seed)))
         site = (self.state.get("site") or {}).get("kind") or site
-        self.scenario = make_scenario(seed, start_pile or meta.get("start_pile") or self.state.get("start_pile"),
-                                      site=site)
+        start = start_pile or meta.get("start_pile") or self.state.get("start_pile")
+        from isaac import collapse_site
+        self.scenario = (collapse_site.make_collapse_scenario(seed, start) if collapse_site.is_collapse(site)
+                         else make_scenario(seed, start, site=site))
         self.t = float(self.state.get("t", 0.0))
         self.dt = 1.0
         if out_dir:
@@ -274,6 +278,8 @@ def main(argv=None):
 
     if a.out:
         os.makedirs(a.out, exist_ok=True)
+    if a.site_usd:
+        os.environ["LARPVERSE_COLLAPSE_USD"] = os.path.abspath(a.site_usd)
     mission = load_mission(a, say)
     sc = mission.scenario
     pile_xy = {p.name: (float(p.x), float(p.y)) for p in sc.piles}
@@ -291,6 +297,9 @@ def main(argv=None):
         n = scene.build(stage, sc, show_truth=a.show_truth, physics_scene=rt.own_physics_scene, sun=a.sun,
                         sky=a.sky, materials="none" if a.look == "plain" else "preview")
         say(f"stage built: {n} rubble pieces, {scene.build.materials.bound} material bindings")
+        from isaac import collapse_site
+        if collapse_site.is_collapse(a.site):  # the real map: its own meshes, colliders, sun and sky
+            collapse_site.add_to_stage(stage, a.site_usd or None, say)
         if a.photoreal:                     # visual only; colliders keep the scenario's piece poses
             from isaac import photoreal
             photoreal.dress(stage, sc, a, say)

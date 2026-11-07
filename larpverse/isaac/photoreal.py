@@ -420,16 +420,23 @@ def dress(stage, sc, a, log=print):
             mats[k] = mdl_material(stage, f"/World/Looks/{k}", M[k], s)
         except Exception as e:
             log(f"[photoreal] material {k} failed: {type(e).__name__}: {e}")
-    sky_and_sun(stage, a, nv, log)
-    if "dirt" in mats:
+    urban_map = str(getattr(a, "site", "")).startswith("collapse")
+    if urban_map:                                     # the 3d_model map brings its own materials, sun and sky
+        log("[photoreal] collapse map: keeping its materials, sun and sky; no extra rubble, debris or vegetation")
+    else:
+        sky_and_sun(stage, a, nv, log)
+    if urban_map:
+        pass
+    elif "dirt" in mats:
         bind(stage, "/World/Terrain", mats["dirt"])
         bind(stage, "/World/Apron", mats["dirt"])
-    if "gravel" in mats:
+    if "gravel" in mats and not urban_map:
         rubble_ground(stage, sc, mats["gravel"], log)
     if "asphalt" in mats:
         bind(stage, "/World/Staging/Pad", mats["asphalt"])
-    dress_rubble(stage, sc, mats, log, seed=sc.seed)
-    scatter_debris(stage, sc, mats, log, seed=sc.seed)
+    if not urban_map:
+        dress_rubble(stage, sc, mats, log, seed=sc.seed)
+        scatter_debris(stage, sc, mats, log, seed=sc.seed)
     veg = a.veg if a.veg in (0, 1) else int(not str(getattr(a, "site", "grid")).startswith(("collapse", "weiguan", "mesh:")))
     if veg:
         vegetation(stage, sc, nv, log, seed=sc.seed)

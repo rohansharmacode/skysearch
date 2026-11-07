@@ -49,7 +49,9 @@ def victim_z(sc, v, surface=None):
 def mission_for_site(site: str, **kw):
     """GridMission on ``site`` (grid | weiguan | mesh:<path>); kw go to the GridMission constructor."""
     import sim.grid_mission as gm
-    if site == "grid" or "site" in inspect.signature(gm.GridMission.__init__).parameters:
+    from isaac import collapse_site
+    if not collapse_site.is_collapse(site) and (
+            site == "grid" or "site" in inspect.signature(gm.GridMission.__init__).parameters):
         return gm.GridMission(**({"site": site} if site != "grid" else {}), **kw)
     from sim.scenario import make_scenario as _make
 
@@ -64,7 +66,7 @@ def mission_for_site(site: str, **kw):
 
     saved = gm.make_scenario, gm.DRONE_PADS
     seed, start = kw.get("seed", 7), kw.get("start_pile")
-    sc = _make(seed, start, site=site)
+    sc = collapse_site.make_collapse_scenario(seed, start) if collapse_site.is_collapse(site) else _make(seed, start, site=site)
     gm.make_scenario = lambda *_a, **_k: sc
     gm.DRONE_PADS = drone_pads(sc)
     try:
@@ -77,6 +79,8 @@ def _label(sc):
     s = site_name(sc)
     if s == "weiguan":
         return "Weiguan Jinlong collapse (procedural stand-in)"
+    if s == "collapse":
+        return "Collapse site (320 m reconstruction, core 160 m)"
     if s == "mesh":
         import os
         return f"Map {os.path.basename(getattr(sc, 'source', 'mesh'))}"

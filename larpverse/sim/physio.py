@@ -39,7 +39,6 @@ SHAPE = {
     "distressed_tachypnea": dict(ti=0.45, pause=0.00, sigh=0.00, moves=0.6, hr=(95, 110)),
     "unconscious_slow":     dict(ti=0.33, pause=0.25, sigh=0.00, moves=0.0, hr=(55, 70)),
     "irregular_apneic":     dict(ti=0.38, pause=0.10, sigh=0.05, moves=0.1, hr=(60, 100)),
-    "child_calm":           dict(ti=0.40, pause=0.05, sigh=0.03, moves=0.4, hr=(90, 110)),
 }
 DEFAULT_SHAPE = SHAPE["calm"]
 
@@ -47,9 +46,8 @@ DEFAULT_SHAPE = SHAPE["calm"]
 PATTERN_FOR_STATE = {
     "calm": "regular_calm",
     "distressed_tachypnea": "rapid_shallow",
-    "unconscious_slow": "slow_deep",
+    "unconscious_slow": "slow_regular",
     "irregular_apneic": "irregular_with_pauses",
-    "child_calm": "fast_small",
 }
 
 

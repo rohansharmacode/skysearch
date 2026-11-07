@@ -21,9 +21,11 @@ Pipeline
   6. signal quality index (SQI) from band SNR, movement fraction, number of breaths, scan quality.
   7. rule-based pattern classifier (thresholds below) -> pattern, pattern_conf, triage_hint.
 
-The triage hint follows START / SALT RESPIRATORY criteria only (rate > 30 -> immediate, irregular or
-pauses -> immediate (check), 10-20 regular -> delayed). It is an aid for rescuers ordering the dig,
-never a diagnosis: START also needs perfusion and mental status, which a radar cannot assess.
+It reads the survivor's CONDITION from the breathing only (no age / child inference). Patterns:
+regular_calm, rapid_shallow, slow_regular, irregular_with_pauses, unclear. The triage hint follows START /
+SALT RESPIRATORY criteria (rate > 30 -> immediate, irregular or pauses -> immediate (check), slow but regular
+-> urgent, 11-20 regular -> delayed). It is an aid for rescuers ordering the dig, never a diagnosis: START
+also needs perfusion and mental status, which a radar cannot assess.
 """
 from __future__ import annotations
 
@@ -39,9 +41,13 @@ WAVE_BAND_HZ = (0.05, 1.2)  # band kept for the breathing waveform (keeps the 2n
 MOVE_BAND_HZ = (0.9, 3.5)   # energy here (beyond breathing + its harmonics) marks movement / artefact
 MOVE_K = 5.0                # frame is "movement" if its MOVE_BAND rms > MOVE_K x the scan's median frame rms
 APNEA_MIN_S = 10.0          # clinical: a pause > 10 s
-APNEA_FRAC = 0.35          # envelope below 35% of the breathing level counts as "no breathing motion"
+APNEA_FRAC = 0.45           # envelope below 45% of the breathing level counts as "no breathing motion"
+GAP_ENV_FRAC = 0.8          # a breath-free gap >= 10 s (and >= 2.2 median intervals) counts as a pause if its
+                            # envelope stays below 60% of the breathing level
+APNEA_WIN_PERIODS = 0.6     # envelope window = 0.6 breath periods, clipped to [APNEA_WIN_S, APNEA_WIN_MAX_S]
+APNEA_WIN_MAX_S = 6.0
 APNEA_WIN_S = 3.0           # moving-RMS window for the envelope
-APNEA_BAND_HZ = (0.1, 0.8)  # envelope band: breathing fundamentals only (drops post-hold drift and heartbeat)
+APNEA_BAND_HZ = (0.08, 0.5) # envelope band (upper edge raised to 1.6 x the breathing rate for fast breathers)
 MIN_ARC_RAD = 0.6           # I/Q arc needed for a trustworthy circle fit (arctangent demodulation)
 MAX_RING_RESID = 0.6        # std(|y| - r) / r: a centred noise blob gives ~0.5-0.6, real 24 GHz records 0.15-0.5
 MIN_BEND = 0.25             # sqrt(minor / major I/Q variance): below this the arc is too short to fit a circle
@@ -50,20 +56,22 @@ SQI_MIN = 0.35              # below this the pattern is "unclear"
 SNR_MID_DB = 8.0            # band SNR at which the SNR term of the SQI is 0.5
 
 RATE_FAST = 30.0            # START: respiratory rate > 30/min -> IMMEDIATE
-RATE_ELEVATED = 19.5        # adult resting normal is about 12-20/min
-RATE_SLOW = 11.0            # below this: bradypnoea (NEWS scores <= 8 as critical; we use 11 as the split)
-CV_IRREGULAR = 0.20         # robust breath-interval CV above this = irregular (at scan quality 1) ...
+RATE_FAST_CHECK = 25.0      # 25-30/min: rapid shallow, "immediate (check)"; 20-25: "urgent"
+RATE_ELEVATED = 20.0        # adult resting normal is about 12-20/min
+RATE_SLOW = 11.0            # below this: slow breathing (bradypnoea)
+CV_IRREGULAR = 0.30         # robust breath-interval CV above this = irregular (at scan quality 1); real resting adults read 0.1-0.28
 CV_Q_SLOPE = 0.25           # ... raised by this x (1 - quality): platform motion jitters breath timing
-RATE_RAPID = 27.0           # 27-30/min: "rapid_shallow" pattern (hint "immediate (check)"); > 30 is START "immediate"
-CV_VERY_REGULAR = 0.08      # 27-30/min but this regular (robust CV) -> still "fast_small" (children breathe up to ~30)
-CV_FAST_IRREGULAR = 0.30    # 19.5-27/min with robust CV above this -> rapid_shallow (radar timing jitter inflates
-                            # CV of fast breathing, so this is set high; measured child CV reads 0.1-0.3 at low quality)
-CHILD_DEPTH_MAX = 1.0       # depth_rel above this argues against "small chest" (only when depth is measured; synthetic depth reads ~1.5x high)
-CHILD_CONF_CAP = 0.45       # age inference from breathing is weak: never more confident than this
+AMP_CV_IRREGULAR = 0.35     # robust breath-to-breath DEPTH variability above this (with CV >= AMP_CV_WITH x the CV
+AMP_CV_WITH = 0.5           # threshold) also reads as irregular: waxing / waning breaths around pauses
 
-PATTERNS = ("regular_calm", "rapid_shallow", "slow_deep", "irregular_with_pauses", "fast_small", "unclear")
+# Condition patterns (no age / child class: the radar reads the breathing, not the person)
+PATTERNS = ("regular_calm", "rapid_shallow", "slow_regular", "irregular_with_pauses", "unclear")
+# contract v1.3.1 condition names (vitals.condition); vitals.pattern stays as a legacy alias
+CONDITION_OF = {"regular_calm": "calm", "rapid_shallow": "distressed_tachypnea", "slow_regular": "unconscious_slow",
+                "irregular_with_pauses": "irregular_apneic", "unclear": "unknown"}
+CONDITIONS = ("calm", "distressed_tachypnea", "unconscious_slow", "irregular_apneic", "unknown")
 # rescuer-facing hint and its dig-order rank (higher = dig first); "assess" sits in the middle on purpose
-TRIAGE_RANK = {"immediate": 1.0, "immediate (check)": 0.85, "assess": 0.55, "delayed (re-check)": 0.45, "delayed": 0.35}
+TRIAGE_RANK = {"immediate": 1.0, "immediate (check)": 0.85, "urgent": 0.7, "assess": 0.55, "delayed": 0.35}
 
 CAVEATS_ALWAYS = [
     "aid for rescuers, not a diagnosis: radar sees chest-wall motion only (no perfusion, mental status or airway)",
@@ -185,8 +193,9 @@ def features(d, fs, units="m"):
     out["peakiness"] = float(pw[near].sum() / max(pw[rb].sum(), 1e-300))
 
     # --- apnea: moving-RMS envelope of the waveform
-    m = max(int(APNEA_WIN_S * fs), 3)
-    wa = _bp(d, fs, APNEA_BAND_HZ)
+    # envelope window scales with the breath period so a slow breather's end-expiratory pause is not a "gap"
+    m = max(int(float(np.clip(APNEA_WIN_PERIODS / max(f_spec, 0.05), APNEA_WIN_S, APNEA_WIN_MAX_S)) * fs), 3)
+    wa = _bp(d, fs, (APNEA_BAND_HZ[0], float(np.clip(1.6 * f_spec, APNEA_BAND_HZ[1], 0.8))))
     env = np.sqrt(np.convolve(wa ** 2, np.ones(m) / m, "same"))
     level = float(np.percentile(env[~moving] if (~moving).sum() > m else env, 80))
     low = (env < APNEA_FRAC * level) & ~moving
@@ -238,16 +247,32 @@ def features(d, fs, units="m"):
         if before.size:
             depths.append(sgn * (ws[i] - ws[before[-1]]))
     out["ie_ratio"] = float(np.median(halves)) if halves else None
+    dp = np.abs(np.array(depths, float))
+    # robust breath-to-breath depth variability (shape of the breathing, NOT absolute amplitude)
+    out["amp_cv"] = float(1.4826 * np.median(np.abs(dp - np.median(dp))) / max(np.median(dp), 1e-30)) if dp.size >= 4 else None
+    # long gaps between detected breaths with a low envelope are pauses too (the envelope alone misses
+    # pauses that platform / rubble motion keeps above APNEA_FRAC)
+    for t0, t1, g in zip(t_pk[:-1], t_pk[1:], iv):
+        if g >= ap_gap and not moving[int(t0 * fs):int(t1 * fs)].any() \
+                and not any(a < t1 and b > t0 for a, b in apneas):
+            inner = env[int((t0 + 1.5) * fs):int((t1 - 1.5) * fs)]
+            if inner.size and float(np.median(inner)) < GAP_ENV_FRAC * level:
+                apneas.append((float(t0 + 1.0), float(t1 - 1.0)))
+    apneas.sort()
+    out["apneas"] = apneas
+    out["apnea_events"] = len(apneas)
+    out["apnea_events_per_min"] = 60.0 * len(apneas) / dur
+    out["apnea_longest_s"] = max([b - a for a, b in apneas], default=0.0)
     out["depth_pp"] = float(np.median(depths)) if depths else None
     out["units"] = units
     return out
 
 
 # ----------------------------------------------------------------------------- classifier
-def classify(fe: dict, sqi: float, depth_rel=None, depth_conf=0.0, quality=None):
-    """Rule-based pattern from features. Returns (pattern, conf, reason)."""
+def classify(fe: dict, sqi: float, quality=None):
+    """Rule-based condition pattern from features. Returns (pattern, conf, reason)."""
     rate = fe.get("rate_bpm")
-    cv = fe.get("cv")
+    cv, acv = fe.get("cv"), fe.get("amp_cv")
     ci = fe.get("rate_ci") or (rate, rate)
     half = 0.5 * (ci[1] - ci[0]) if rate else 0.0
     if rate is None or sqi < SQI_MIN or (fe["n_breaths"] < 2 and not fe["apnea_events"]):
@@ -262,41 +287,48 @@ def classify(fe: dict, sqi: float, depth_rel=None, depth_conf=0.0, quality=None)
         return "irregular_with_pauses", conf, f"{fe['apnea_events']} pause(s) > {APNEA_MIN_S:.0f} s, longest {fe['apnea_longest_s']:.0f} s"
     if rate > RATE_FAST:
         return "rapid_shallow", sqi * margin(rate, RATE_FAST, s), f"rate {rate:.0f}/min > {RATE_FAST:.0f}"
-    cv_thr = CV_IRREGULAR + CV_Q_SLOPE * (1.0 - (1.0 if quality is None else float(np.clip(quality, 0, 1))))
-    if cv is not None and cv >= cv_thr and rate < RATE_ELEVATED:
-        return "irregular_with_pauses", sqi * evidence * margin(cv, cv_thr, 0.1), \
-            f"breath-to-breath variability {cv:.2f} >= {cv_thr:.2f}"
-    if rate < RATE_SLOW:
-        return "slow_deep", sqi * margin(rate, RATE_SLOW, s), f"rate {rate:.0f}/min < {RATE_SLOW:.0f}"
     if rate >= RATE_ELEVATED:
-        if rate >= RATE_RAPID and not (cv is not None and cv < CV_VERY_REGULAR):
-            return "rapid_shallow", sqi * margin(rate, RATE_RAPID, s), f"rate {rate:.0f}/min >= {RATE_RAPID:.0f}"
-        if cv is not None and cv >= CV_FAST_IRREGULAR:
-            return "rapid_shallow", sqi * evidence * margin(cv, CV_FAST_IRREGULAR, 0.1), \
-                f"rate {rate:.0f}/min, irregular (variability {cv:.2f})"
-        conf = min(CHILD_CONF_CAP, sqi * evidence * margin(rate, RATE_ELEVATED, s))
-        if depth_rel is not None and depth_conf > 0 and depth_rel > CHILD_DEPTH_MAX:
-            conf *= 0.5                     # adult-like excursion argues against a child, but depth is unreliable
-        return "fast_small", conf, f"fast ({rate:.0f}/min) and regular: possible child (weak inference)"
+        return "rapid_shallow", sqi * margin(rate, RATE_ELEVATED, s), f"rate {rate:.0f}/min >= {RATE_ELEVATED:.0f}"
+    cv_thr = CV_IRREGULAR + CV_Q_SLOPE * (1.0 - (1.0 if quality is None else float(np.clip(quality, 0, 1))))
+    if cv is not None and cv >= cv_thr:
+        return "irregular_with_pauses", sqi * evidence * margin(cv, cv_thr, 0.1), \
+            f"breath-to-breath timing variability {cv:.2f} >= {cv_thr:.2f}"
+    if cv is not None and acv is not None and acv >= AMP_CV_IRREGULAR and cv >= AMP_CV_WITH * cv_thr:
+        return "irregular_with_pauses", 0.8 * sqi * evidence * margin(acv, AMP_CV_IRREGULAR, 0.2), \
+            f"breath depth varies {acv:.2f} breath to breath, timing variability {cv:.2f}"
+    if rate < RATE_SLOW:
+        return "slow_regular", sqi * evidence * margin(rate, RATE_SLOW, s), f"rate {rate:.0f}/min < {RATE_SLOW:.0f}, regular, no pauses"
     conf = sqi * evidence * margin(rate, RATE_SLOW, s) * margin(rate, RATE_ELEVATED, s)
     return "regular_calm", conf, f"regular, rate {rate:.0f}/min within {RATE_SLOW:.0f}-{RATE_ELEVATED:.0f}"
 
 
-def triage(pattern: str, rate=None):
-    """START / SALT-style respiratory hint for the dig order (an aid, not a diagnosis)."""
+def triage(pattern: str, rate=None, fe: dict | None = None):
+    """START / SALT-style respiratory hint + plain-words condition. Returns (hint, condition, criterion).
+
+    The condition sentence says what the breathing looks like and what it MAY mean; never a diagnosis."""
+    r = f"{rate:.0f}/min" if rate is not None else "rate unknown"
+    fe = fe or {}
     if pattern == "rapid_shallow":
+        cond = f"rapid shallow breathing, {r} -> possible injury, pain or distress, check"
         if rate is not None and rate > RATE_FAST:
-            return "immediate", f"breathing over {RATE_FAST:.0f}/min (START respiratory criterion for IMMEDIATE)"
-        return "immediate (check)", "fast, irregular breathing: possible distress or shock"
+            return "immediate", cond, f"breathing over {RATE_FAST:.0f}/min (START respiratory criterion for IMMEDIATE)"
+        if rate is not None and rate >= RATE_FAST_CHECK:
+            return "immediate (check)", cond, f"breathing {RATE_FAST_CHECK:.0f}-{RATE_FAST:.0f}/min: close to the START cut-off"
+        return "urgent", cond, f"breathing faster than the adult resting range ({RATE_ELEVATED:.0f}/min)"
     if pattern == "irregular_with_pauses":
-        return "immediate (check)", "irregular breathing or pauses: possible airway problem or reduced consciousness"
-    if pattern == "slow_deep":
-        return "immediate (check)", "slow breathing (< 11/min): possible reduced consciousness"
+        n = fe.get("apnea_events", 0)
+        what = f"irregular breathing with {n} pause(s) over {APNEA_MIN_S:.0f} s" if n else "irregular breathing"
+        return "immediate (check)", f"{what}, {r} -> possible airway problem or reduced consciousness, check", \
+            "irregular breathing or pauses (SALT: breathing present but abnormal)"
+    if pattern == "slow_regular":
+        return "urgent", (f"slow, regular breathing, {r} -> could be deep rest or reduced consciousness; the radar "
+                          f"cannot tell which, so call out and check responsiveness"), \
+            f"slow breathing below {RATE_SLOW:.0f}/min, regular and without pauses"
     if pattern == "regular_calm":
-        return "delayed", "regular breathing in the normal range (respiration only; perfusion and responsiveness unknown)"
-    if pattern == "fast_small":
-        return "delayed (re-check)", "fast regular breathing; normal for a child, elevated for an adult: re-check"
-    return "assess", "breathing pattern unclear from this scan: needs a longer or better scan"
+        return "delayed", f"calm, regular breathing, {r} -> stable for now (breathing only), re-check later", \
+            "regular breathing in the normal range (perfusion and responsiveness unknown)"
+    return "assess", "breathing pattern unclear -> rescan longer or from a better landing spot", \
+        "no usable breathing pattern from this scan"
 
 
 def priority_weight(v: dict) -> float:
@@ -393,16 +425,16 @@ def extract(x, fs: float = 20.0, *, kind: str = "auto", wavelength=None, range_m
         depth_rel = fe["depth_pp"] / DEPTH_REF_M
         depth_conf = (0.3 if method in ("arctan", "displacement", "phase") else 0.15) * sqi
 
-    pattern, conf, reason = classify(fe, sqi, depth_rel, depth_conf, quality)
-    hint, hint_why = triage(pattern, rate)
+    pattern, conf, reason = classify(fe, sqi, quality)
+    hint, condition, hint_why = triage(pattern, rate, fe)
     caveats = list(CAVEATS_ALWAYS)
     caveats.append(f"rate_bpm: from {rate_src} over {fe['duration_s']:.0f} s; through rubble the SNR is far lower than in the lab")
     caveats.append("depth_rel: LOW confidence, chest-wall amplitude depends on aspect, posture, range and the rubble in the path"
                    + ("; here scaled by a path-loss MODEL, not measured" if method == "linear+pathloss" else ""))
     if fe["duration_s"] < 30:
         caveats.append(f"cv / apnea: a {fe['duration_s']:.0f} s window holds few breaths and cannot contain many > 10 s pauses; use a >= 45 s vitals dwell")
-    if pattern == "fast_small":
-        caveats.append("possible child: fast, small, regular breathing is a weak hint of age; a distressed adult can look the same")
+    if pattern == "slow_regular":
+        caveats.append("slow regular breathing looks the same in deep rest and in reduced consciousness; only a voice / responsiveness check separates them")
     if fe["movement"] > 0.2:
         caveats.append(f"movement / artefacts in {100 * fe['movement']:.0f}% of the window (person moving, rubble shifting or platform)")
     caveats.append("cardiac motion (~0.1 mm) is not reliably resolvable through rubble and is not reported")
@@ -418,7 +450,9 @@ def extract(x, fs: float = 20.0, *, kind: str = "auto", wavelength=None, range_m
         "apnea_longest_s": r2(fe["apnea_longest_s"], 1),
         "movement": r2(fe["movement"]), "snr_db": r2(fe["snr_db"], 1), "sqi": r2(sqi),
         "n_breaths": int(fe["n_breaths"]), "duration_s": r2(fe["duration_s"], 1), "demod": method,
+        "amp_cv": r2(fe.get("amp_cv")),
         "pattern": pattern, "pattern_conf": r2(conf), "pattern_reason": reason,
+        "condition": CONDITION_OF[pattern], "condition_text": condition,
         "triage_hint": hint, "triage_reason": hint_why,
         "caveats": caveats,
     }

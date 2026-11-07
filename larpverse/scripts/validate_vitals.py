@@ -43,7 +43,6 @@ LABELS = [physio.PATTERN_FOR_STATE[s] for s in STATES] + ["unclear"]
 VITALS_RESP_BAND = (0.1, 0.75)
 VITALS_OOB_BAND = (0.85, 3.0)
 BLUE, ORANGE, AQUA, INK, INK2, GRID = "#2a78d6", "#eb6834", "#1baf7a", "#0b0b0b", "#52514e", "#e4e3df"
-TRIAGE_OF = {p: vitals.triage(p, 35 if p == "rapid_shallow" else None)[0] for p in LABELS}
 
 
 # ============================================================================ (a) synthetic
@@ -54,7 +53,11 @@ def _install_physio_hook():
 
     def hooked(b, params, rng):
         ph = getattr(b, "physio", None)
-        return physio.chest_displacement(params.t_slow, ph, rng) if ph else orig(b, params, rng)
+        if not ph:
+            return orig(b, params, rng)
+        x, ev = physio.chest_displacement(params.t_slow, ph, rng, return_events=True)
+        b.events = ev                          # truth, read only by this evaluator
+        return x
     R._breath_displacement = hooked
 
 
@@ -85,12 +88,12 @@ def one_scan(i, dwell, seed=11):
     b = R.Breather(rng_m, R.reflection_amplitude(rng_m, path, rcs, params), ph["rate_bpm"] / 60.0)
     b.physio = ph
     scene.breathers.append(b)
-    # truth chest waveform for the plot / realised rate (same rng stream as the generator is NOT needed)
     iq = R.simulate_if(scene, params, rng)
+    true_pauses = [(a_, b_) for a_, b_ in getattr(b, "events", {}).get("apneas", []) if b_ - a_ >= 10.0]
     res = R.process_if(iq, params, cfg, keep_debug=False)
     row = dict(i=i, dwell=dwell, state=state, truth=physio.PATTERN_FOR_STATE[state], rate_true=ph["rate_bpm"],
                cv_true=ph["cv"], depth_true=ph["depth_rel"], apnea_rate_true=ph["apnea_per_min"],
-               range_m=rng_m, path=path, quality=quality, detected=False)
+               range_m=rng_m, path=path, quality=quality, detected=False, true_pauses=len(true_pauses))
     near = [c for c in res.candidates if abs(c["range_m"] - rng_m) < 0.5]
     if not near:
         return row
@@ -142,7 +145,8 @@ def summarise_synth(rows, dwell):
     acc = float(np.trace(M[:, :len(STATES)]) / max(M.sum(), 1))
     called = [r for r in det if r["v"]["pattern"] != "unclear"]
     acc_called = float(np.mean([r["v"]["pattern"] == r["truth"] for r in called])) if called else 0.0
-    tri_ok = float(np.mean([TRIAGE_OF[r["v"]["pattern"]] == TRIAGE_OF[r["truth"]] for r in called])) if called else 0.0
+    # hint agreement: the hint from the measured pattern + rate vs the hint the true pattern + true mean rate would get
+    tri_ok = float(np.mean([r["v"]["triage_hint"] == vitals.triage(r["truth"], r["rate_true"])[0] for r in called])) if called else 0.0
     good = [r for r in det if r["snr_db"] >= 15 and r["q_meas"] >= 0.6]
     rate_err = np.array([abs(r["v"]["rate_bpm"] - r["rate_true"]) for r in good
                          if r["state"] != "irregular_apneic" and r["v"]["rate_bpm"] is not None])
@@ -163,9 +167,9 @@ def summarise_synth(rows, dwell):
         b = [r for r in det if lo <= r["q_meas"] < hi]
         if b:
             by_q.append(dict(q=f"{lo}-{hi:g}", n=len(b), acc=float(np.mean([r["v"]["pattern"] == r["truth"] for r in b]))))
-    ap = [r for r in det if r["state"] == "irregular_apneic"]
+    ap = [r for r in det if r.get("true_pauses", 0) > 0]          # scans whose window really holds a >= 10 s pause
     ap_hit = float(np.mean([r["v"]["apnea_events"] > 0 for r in ap])) if ap else None
-    noap = [r for r in det if r["state"] in ("calm", "child_calm", "distressed_tachypnea")]
+    noap = [r for r in det if r.get("true_pauses", 0) == 0]
     ap_fp = float(np.mean([r["v"]["apnea_events"] > 0 for r in noap])) if noap else None
     dr = np.array([(r["v"]["depth_rel"], r["depth_true"]) for r in good if r["v"]["depth_rel"] is not None])
     depth_corr = float(np.corrcoef(np.log(np.maximum(dr[:, 0], 1e-3)), np.log(dr[:, 1]))[0, 1]) if len(dr) > 5 else None
@@ -176,7 +180,7 @@ def summarise_synth(rows, dwell):
                 triage_agreement_called=tri_ok, unclear_frac=float(np.mean([r["v"]["pattern"] == "unclear" for r in det])),
                 rate_mae_good=float(rate_err.mean()) if rate_err.size else None,
                 rate_within_1p5_good=float(np.mean(rate_err <= 1.5)) if rate_err.size else None, n_good=len(rate_err),
-                apnea_state_hit=ap_hit, apnea_false_alarm=ap_fp, depth_log_corr=depth_corr, depth_ratio_p10_50_90=depth_ratio,
+                apnea_scans=len(ap), apnea_hit=ap_hit, apnea_false_alarm=ap_fp, depth_log_corr=depth_corr, depth_ratio_p10_50_90=depth_ratio,
                 per_state=per_state, by_snr=by_snr, by_path=by_path, by_quality=by_q, confusion=M.tolist())
 
 
@@ -312,9 +316,9 @@ def plot(rows, syn60, resting, apnea, out):
         for j in range(M.shape[1]):
             if M[i, j]:
                 a.text(j, i, str(M[i, j]), ha="center", va="center", color="#ffffff" if rn[i, j] > 0.55 else INK, fontsize=8)
-    a.set_xticks(range(len(LABELS)), [l.replace("_", "\n") for l in LABELS], fontsize=7)
+    a.set_xticks(range(len(LABELS)), [vitals.CONDITION_OF[l].replace("_", "\n") for l in LABELS], fontsize=7)
     a.set_yticks(range(len(STATES)), [s.replace("_", " ") for s in STATES], fontsize=7)
-    a.set_xlabel("vitals.py pattern"); a.set_ylabel("hidden state (synthetic)")
+    a.set_xlabel("vitals.condition (measured)"); a.set_ylabel("hidden state (synthetic)")
     a.set_title(f"Synthetic, 60 s dwell: {100 * syn60['accuracy']:.0f}% correct of {syn60['detected']} detected scans", color=INK)
     # (2) accuracy vs measured scan quality (landing / platform motion), 20 s and 60 s
     a = ax[0, 1]
@@ -340,7 +344,7 @@ def plot(rows, syn60, resting, apnea, out):
         a.plot(t, (d - np.median(d)) / (np.std(d) + 1e-30), color=BLUE, lw=1.2, label="radar-recovered chest displacement")
         for k, (s0, s1) in enumerate(ex["v"]["_apneas_s"]):
             a.axvspan(s0, s1, color=ORANGE, alpha=.18, lw=0, label="detected pause > 10 s" if k == 0 else None)
-        a.set_title(f"Synthetic '{ex['state'].replace('_', ' ')}' scan -> {ex['v']['pattern'].replace('_', ' ')}\n"
+        a.set_title(f"Synthetic '{ex['state'].replace('_', ' ')}' scan -> {ex['v']['condition'].replace('_', ' ')}\n"
                     f"hint '{ex['v']['triage_hint']}', rate {ex['v']['rate_bpm']:.0f}/min, SNR {ex['snr_db']:.0f} dB, quality {ex['q_meas']:.2f}",
                     color=INK)
         a.set_xlabel("time (s)"); a.set_ylabel("displacement (z-scored; absolute mm unreliable)"); a.legend(fontsize=7, frameon=False, loc="upper right"); a.grid(color=GRID, lw=.6)
@@ -426,7 +430,7 @@ def main(argv=None):
             print(f"SYNTH {dw:.0f}s: {s['detected']}/{s['scans']} detected; pattern acc {100 * s['accuracy']:.0f}% "
                   f"(of non-unclear {100 * s['accuracy_called']:.0f}%, triage agreement {100 * s['triage_agreement_called']:.0f}%), "
                   f"unclear {100 * s['unclear_frac']:.0f}%; rate MAE (SNR>=15, q>=.6, n={s['n_good']}) {s['rate_mae_good']:.2f} bpm, "
-                  f"within 1.5 {100 * s['rate_within_1p5_good']:.0f}%; apnea-state hit {s['apnea_state_hit']:.2f}, "
+                  f"within 1.5 {100 * s['rate_within_1p5_good']:.0f}%; pause detected in {s['apnea_hit']} of {s['apnea_scans']} scans with a true pause, "
                   f"false apnea {s['apnea_false_alarm']:.2f}; depth log-corr {s['depth_log_corr']}, ratio p10/50/90 {s['depth_ratio_p10_50_90']}")
             print("   per state recall:", {k: f"{v['recall']:.2f} (n={v['n']})" for k, v in s["per_state"].items()})
             print("   by SNR:", s["by_snr"]); print("   by path:", s["by_path"]); print("   by quality:", s["by_quality"])

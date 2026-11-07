@@ -278,25 +278,25 @@ Breathing-pattern features measured from the slow-time signal of a radar candida
 ```jsonc
 "vitals": {
   "version": "vitals-v1",
-  "rate_bpm": 31.6, "rate_ci": [29.8, 33.6],      // breaths/min (breath count if >= 3 clean intervals, else spectrum)
-  "cv": 0.21,                                    // robust breath-interval CV; null if < 3 intervals
-  "depth_rel": 0.6, "depth_rel_conf": 0.12,      // 1.0 = 5 mm p-p chest excursion; conf <= 0.3 ALWAYS (amplitude unreliable)
-  "apnea_events_per_min": 0.0,                   // pauses >= 10 s (also apnea_events, apnea_longest_s)
-  "movement": 0.03,                              // fraction of the window flagged movement / artefact
-  "sqi": 0.81, "duration_s": 60.0,               // signal quality 0-1; analysed window
-  "pattern": "rapid_shallow",                    // regular_calm | rapid_shallow | slow_deep | irregular_with_pauses | fast_small | unclear
+  "condition": "distressed_tachypnea",           // calm | distressed_tachypnea | unconscious_slow | irregular_apneic | unknown
+  "condition_text": "rapid shallow breathing, 32/min -> possible injury, pain or distress, check",
+  "pattern": "rapid_shallow",                    // legacy alias: regular_calm | rapid_shallow | slow_regular | irregular_with_pauses | unclear
   "pattern_conf": 0.72, "pattern_reason": "rate 32/min > 30",
-  "triage_hint": "immediate",                    // immediate | immediate (check) | delayed (re-check) | delayed | assess
+  "triage_hint": "immediate",                    // immediate | immediate (check) | urgent | delayed | assess
   "triage_reason": "breathing over 30/min (START respiratory criterion for IMMEDIATE)",
   "priority_weight": 0.88,                       // hint rank shrunk toward 'assess' (0.55) as pattern_conf falls
+  "rate_bpm": 31.6, "rate_ci": [29.8, 33.6], "rate_spectral_bpm": 31.2, "rate_count_bpm": 31.6,
+  "cv": 0.21, "amp_cv": 0.3, "ie_ratio": 0.72,   // timing / depth variability (robust); shorter/longer half-cycle
+  "depth_rel": 0.6, "depth_rel_conf": 0.12,      // 1.0 = 5 mm p-p; conf <= 0.3 ALWAYS; not used for the condition
+  "apnea_events": 0, "apnea_events_per_min": 0.0, "apnea_longest_s": 0.0,
+  "movement": 0.03, "snr_db": 18.4, "sqi": 0.81, "n_breaths": 31, "duration_s": 60.0, "demod": "linear+pathloss",
   "caveats": ["aid for rescuers, not a diagnosis: ...", "..."]
-  // also: rate_spectral_bpm, rate_count_bpm, ie_ratio, apnea_events, apnea_longest_s, snr_db, n_breaths, demod
 }
 ```
 
 - Dig order: `vitals.dig_score(v, p_mass, depth_m)` = `priority_weight x p_mass x clip(1 - depth_m / 4, 0.2, 1)`; no vitals -> the "assess" weight.
 - Pattern/hint claims need a >= 45-60 s dwell; a 20 s scan is rate-only (a caveat says so).
-- Wording rule (UI, decider, brief): "possible", "check", "aid"; never "diagnosis", "confirmed", or "injured" / "unconscious" / "child" as fact. `fast_small` = "fast, regular breathing (possible child, weak)".
+- Wording rule (UI, decider, brief): "possible", "check", "aid"; never "diagnosis", "confirmed", or "injured" / "unconscious" as fact. **No age or child wording anywhere** (user decision). Show `condition_text`; `slow_regular` means "deep rest or reduced consciousness — the radar cannot tell which; call out and check responsiveness" (hint `urgent`).
 
 ### Mission state fields (v1.3, from the mission builder; additive)
 

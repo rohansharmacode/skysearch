@@ -8,7 +8,7 @@ from sim import physio, radar_dsp as R, vitals
 
 FS = 20.0
 CONTRACT = {"rate_bpm", "rate_ci", "cv", "depth_rel", "depth_rel_conf", "apnea_events_per_min", "movement",
-            "pattern", "pattern_conf", "triage_hint", "caveats"}
+            "pattern", "pattern_conf", "condition", "condition_text", "triage_hint", "caveats"}
 
 
 def _scan(state, seed, dur=60.0, noise_m=0.1e-3):
@@ -42,7 +42,7 @@ def test_each_state_classified_at_good_snr(state):
 
 
 def test_rate_within_1p5_bpm_at_good_snr():
-    for state in ("calm", "distressed_tachypnea", "unconscious_slow", "child_calm"):
+    for state in ("calm", "distressed_tachypnea", "unconscious_slow"):
         for seed in range(4):
             x, ph, ev = _scan(state, seed)
             true = 60.0 / np.median(np.diff(ev["breaths"]))     # realised rate in this window
@@ -70,10 +70,31 @@ def test_apnea_detected_and_not_hallucinated():
 def test_unclear_at_low_quality():
     rng = np.random.default_rng(9)
     v = vitals.extract(rng.normal(0, 1e-3, int(60 * FS)), FS, kind="displacement")
-    assert v["pattern"] == "unclear" and v["triage_hint"] == "assess" and v["pattern_conf"] == 0.0
+    assert v["pattern"] == "unclear" and v["condition"] == "unknown" and v["triage_hint"] == "assess" and v["pattern_conf"] == 0.0
     x, _, _ = _scan("calm", 1)
     v = vitals.extract(x + rng.normal(0, 4e-3, x.size), FS, kind="displacement")   # breathing buried in noise
     assert v["pattern"] == "unclear" or v["pattern_conf"] < 0.4
+
+
+def test_condition_only_no_age():
+    assert set(vitals.PATTERNS) == {"regular_calm", "rapid_shallow", "slow_regular", "irregular_with_pauses", "unclear"}
+    assert set(vitals.CONDITIONS) == set(physio.PATTERN_FOR_STATE) | {"unknown"}
+    for state in physio.PATTERN_FOR_STATE:
+        v = vitals.extract(_scan(state, 0)[0], FS, kind="displacement")
+        text = json.dumps(v).lower()
+        assert "child" not in text and "age" not in set(v)
+        assert v["condition"] == state and "->" in v["condition_text"]
+
+
+def test_slow_regular_is_not_immediate():
+    """A slow (6-8/min), regular, deep, pause-free breather is 'urgent: check responsiveness', not 'immediate'."""
+    t = np.arange(0, 60, 1 / FS)
+    for k, rate in enumerate((6.5, 8.0, 9.5)):
+        ph = {"state": "unconscious_slow", "rate_bpm": rate, "depth_rel": 1.3, "cv": 0.06, "apnea_per_min": 0.0}
+        x = physio.chest_displacement(t, ph, np.random.default_rng(k)) + np.random.default_rng(k + 9).normal(0, 0.1e-3, t.size)
+        v = vitals.extract(x, FS, kind="displacement")
+        assert v["pattern"] == "slow_regular" and v["triage_hint"] == "urgent", (rate, v["pattern"], v["pattern_reason"])
+        assert "cannot tell" in v["condition_text"] and v["condition"] == "unconscious_slow"
 
 
 def test_contract_fields_json_and_priority():

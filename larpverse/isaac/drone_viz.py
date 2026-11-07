@@ -19,6 +19,8 @@ from __future__ import annotations
 
 import math
 
+import numpy as np
+
 COL = {
     "body": (0.16, 0.18, 0.21), "arm": (0.10, 0.11, 0.12), "rotor": (0.75, 0.78, 0.82),
     "blade": (0.05, 0.05, 0.06), "lidar": (0.55, 0.30, 0.85), "radar": (0.98, 0.55, 0.12),
@@ -28,12 +30,14 @@ COL = {
 MODELS = ("heavy", "small")
 # --photoreal: real surface materials per part (UsdPreviewSurface; RTX and path tracing) instead of flat colours.
 PBR = False
+STYLE = "blocks"       # "mesh": the smooth heavy-lift model of isaac/drone_mesh.py (photoreal sets it)
 PROP_DISC = 0.06       # PBR: opacity of the spinning-prop blur disc (0 hides it; the blades still turn)
 PBR_LOOK = {           # key -> (rgb, roughness, metallic, clearcoat); rgb None = the part's own colour
     "body": ((0.19, 0.20, 0.22), 0.32, 0.0, 0.8),       # painted composite shell
     "stripe": (None, 0.35, 0.0, 0.6),
     "carbon": ((0.022, 0.022, 0.026), 0.26, 0.0, 0.9),  # carbon-fibre arms and landing gear
-    "metal": ((0.50, 0.51, 0.53), 0.30, 1.0, 0.0),      # motor bells
+    "metal": ((0.32, 0.33, 0.35), 0.30, 1.0, 0.0),      # motor bells
+    "canopy": ((0.80, 0.81, 0.82), 0.30, 0.0, 0.9),     # light top shell
     "gimbal": ((0.09, 0.09, 0.10), 0.35, 0.6, 0.0),
     "plastic": ((0.03, 0.03, 0.035), 0.45, 0.0, 0.0),   # prop blades
     "radome": ((0.80, 0.80, 0.78), 0.55, 0.0, 0.2),     # radar panel cover
@@ -43,7 +47,10 @@ PBR_LOOK = {           # key -> (rgb, roughness, metallic, clearcoat); rgb None 
     "speaker": ((0.70, 0.70, 0.68), 0.5, 0.0, 0.0),
     "disc": ((0.10, 0.10, 0.11), 0.5, 0.0, 0.0),
 }
-PART_KEY = (("Fuselage", "body"), ("Stripe", "stripe"), ("Battery", "battery"), ("Arm", "carbon"),
+PART_KEY = (("Fuselage", "body"), ("Canopy", "canopy"), ("Visor", "lens"), ("GpsMast", "gimbal"),
+            ("GpsPuck", "radome"), ("Hinge", "gimbal"), ("Column", "gimbal"), ("Foot", "plastic"),
+            ("YokeGimbal", "gimbal"), ("LensZoom", "lens"), ("LidarCap", "gimbal"), ("Hub", "gimbal"),
+            ("Stripe", "stripe"), ("Battery", "battery"), ("Arm", "carbon"),
             ("Motor", "metal"), ("Skid", "carbon"), ("Leg", "carbon"), ("Brace", "carbon"), ("Gimbal", "gimbal"),
             ("LidarPuck", "lens"), ("Thermal", "lens"), ("RadarPanel", "radome"), ("SpeakerHorn", "speaker"),
             ("Mic", "mic"), ("Blade", "plastic"), ("Disc", "disc"))
@@ -110,6 +117,11 @@ def model_extent(parts):
     ex = ey = 0.0
     zmin, zmax = 1e9, -1e9
     for kind, _, t, s, _, rz, attrs in parts:
+        if kind == "Mesh":
+            P = attrs["P"]
+            ex, ey = max(ex, float(abs(P[:, 0]).max())), max(ey, float(abs(P[:, 1]).max()))
+            zmin, zmax = min(zmin, float(P[:, 2].min())), max(zmax, float(P[:, 2].max()))
+            continue
         if kind == "Rotor":
             hx = hy = attrs["radius"]
         elif kind == "Cube":
@@ -191,7 +203,11 @@ class DroneViz:
         self.model = path + "/Model"
         self.spin_rate = 1200.0 if heavy else 2400.0               # deg/s, visual only
         if heavy:
-            self._build_parts(heavy_parts(spec, did))
+            if STYLE == "mesh":
+                from isaac.drone_mesh import dji_parts
+                self._build_parts(dji_parts(spec, did))
+            else:
+                self._build_parts(heavy_parts(spec, did))
             return
         used_asset = False
         if asset:
@@ -203,6 +219,9 @@ class DroneViz:
     def _build_parts(self, parts):
         Gf, UsdGeom, m = self.Gf, self.UsdGeom, self.model
         for kind, name, t, s, rgb, rot_z, attrs in parts:
+            if kind == "Mesh":
+                self._meshpart(f"{m}/{name}", attrs["P"], attrs["F"], rgb)
+                continue
             if kind != "Rotor":
                 self._shape(kind, f"{m}/{name}", t, s, rgb, rot_z, **attrs)
                 continue
@@ -216,8 +235,13 @@ class DroneViz:
                 disc.CreateDisplayOpacityAttr([0.25])
             except Exception:
                 pass
-            self._shape("Cube", f"{m}/{name}/Blade", (0, 0, 0.006), (2 * attrs["radius"], 0.09, 0.012),
-                        COL["blade"], Size=1.0)
+            if attrs.get("style") == "mesh":
+                from isaac import drone_mesh as DM
+                self._meshpart(f"{m}/{name}/Blade", *DM.blades(attrs["radius"]), COL["blade"])
+                self._meshpart(f"{m}/{name}/Hub", *DM.tube((0, 0, -0.02), (0, 0, 0.03), 0.045), COL["arm"])
+            else:
+                self._shape("Cube", f"{m}/{name}/Blade", (0, 0, 0.006), (2 * attrs["radius"], 0.09, 0.012),
+                            COL["blade"], Size=1.0)
             if PBR and PROP_DISC <= 0:
                 UsdGeom.Imageable(disc).MakeInvisible()
         if PBR:
@@ -254,6 +278,23 @@ class DroneViz:
             UsdShade.MaterialBindingAPI.Apply(prim).Bind(mat)
 
     # ------------------------------------------------------------------ geometry helpers
+    def _meshpart(self, path, P, F, rgb=(0.5, 0.5, 0.5)):
+        from pxr import Vt
+        from isaac.drone_mesh import vertex_normals
+        Gf, UsdGeom = self.Gf, self.UsdGeom
+        P = np.ascontiguousarray(P, np.float32); F = np.ascontiguousarray(F, np.int32)
+        g = UsdGeom.Mesh.Define(self.stage, path)
+        g.CreatePointsAttr(Vt.Vec3fArray.FromNumpy(P))
+        g.CreateFaceVertexCountsAttr(Vt.IntArray.FromNumpy(np.full(len(F), 3, np.int32)))
+        g.CreateFaceVertexIndicesAttr(Vt.IntArray.FromNumpy(F.reshape(-1)))
+        g.CreateSubdivisionSchemeAttr("none")
+        g.CreateNormalsAttr(Vt.Vec3fArray.FromNumpy(vertex_normals(P, F)))
+        g.SetNormalsInterpolation("vertex")
+        g.CreateExtentAttr(Vt.Vec3fArray([Gf.Vec3f(*map(float, P.min(0))), Gf.Vec3f(*map(float, P.max(0)))]))
+        g.CreateDisplayColorAttr([Gf.Vec3f(*map(float, rgb))])
+        g.CreateDoubleSidedAttr(True)
+        return g
+
     def _shape(self, kind, path, t=(0, 0, 0), s=(1, 1, 1), rgb=(1, 1, 1), rot_z=None, **attrs):
         Gf, UsdGeom = self.Gf, self.UsdGeom
         g = getattr(UsdGeom, kind).Define(self.stage, path)

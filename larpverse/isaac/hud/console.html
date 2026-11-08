@@ -283,7 +283,12 @@ function breathPeaks(w, secPerSample, rateBpm) {
 // the interactive runner writes console.json {status: waiting_for_goto|running, launch_pile, goto_seq}
 let GOTO = null, CONSOLE = null;
 const lastGoto = () => (GOTO && GOTO.last_goto) || (LIVE && LIVE.last_goto) || null;
-const held = s => (CONSOLE ? CONSOLE.status === 'waiting_for_goto' : (LIVE && LIVE.held === true) || (!lastGoto() && (+s.t || 0) < 0.5));
+// held = the run is waiting for the first click; drops at once on a click (the runner's status file lags ~2 s)
+const held = s => {
+  const g = lastGoto(), fresh = g && CONSOLE && +g.wall > +(CONSOLE.wall || 0);
+  if (sent || fresh || (+s.t || 0) >= 0.5) return false;
+  return CONSOLE ? CONSOLE.status === 'waiting_for_goto' : (LIVE && LIVE.held === true) || !g;
+};
 let sent = null;                                   // {pile, at} clicked here, until the sim confirms it
 
 async function gotoPile(pile) {
@@ -409,7 +414,10 @@ function heardCard(s) {
   if (!C.length) { $('heard').classList.add('hide'); return; }
   const lastL = Math.max(...C.map(c => +c.listen || 0));
   const cur = C.filter(c => (+c.listen || 0) === lastL);
-  const best = cur.filter(c => ((c.scores || {}).human ?? 0) >= 0.4).sort((a, b) => (b.priority ?? 0) - (a.priority ?? 0))[0];
+  // after a decision, show what was heard at the pile the drones chose (so "heard" and "next pile" tell one story)
+  const d = lastDispatch(s), tMax = Math.max(...C.map(c => +c.t || 0));
+  const chosen = d && +d.t >= tMax - 1 ? C.filter(c => c.pile_id === d.to_pile).sort((a, b) => (+b.t || 0) - (+a.t || 0) || (b.priority ?? 0) - (a.priority ?? 0))[0] : null;
+  const best = chosen || cur.filter(c => ((c.scores || {}).human ?? 0) >= 0.4).sort((a, b) => (b.priority ?? 0) - (a.priority ?? 0))[0];
   $('heard').classList.remove('hide');
   const by = (cur.find(c => c.by === 'gemini') ? 'gemini' : (cur[0] || {}).by);
   $('hby').innerHTML = byTag(by);

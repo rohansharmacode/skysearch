@@ -1,0 +1,172 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Larpverse · Three drones decide where rescuers dig first</title>
+<meta name="description" content="Larpverse: an autonomous drone swarm that maps collapsed buildings, listens for survivors and hands rescuers a ranked dig list. AgentVerse 2026, Robotics track." />
+<link rel="stylesheet" href="style.css" />
+</head>
+<body>
+<div id="viewport">
+<div id="stage">
+
+  <!-- persistent background -->
+  <div class="aurora">
+    <span class="blob a"></span><span class="blob b"></span><span class="blob c"></span>
+    <canvas id="stars" width="1920" height="1080"></canvas>
+  </div>
+  <div class="vignette"></div>
+
+  <div id="brand" class="brand">
+    <svg viewBox="0 0 40 40" class="mark"><circle cx="20" cy="20" r="15" fill="none" stroke="rgba(255,255,255,.22)" stroke-width="1.5"/><circle cx="20" cy="5" r="3.4" fill="#5b8cff"/><circle cx="33" cy="27.5" r="3.4" fill="#2cb7af"/><circle cx="7" cy="27.5" r="3.4" fill="#f5c77e"/><circle cx="20" cy="20" r="2.4" fill="#eef2f9"/></svg>
+    <span class="name">Larpverse</span>
+  </div>
+
+  <!-- S1: the case -->
+  <section class="scene" id="s1">
+    <video class="bgclip" data-clip="aerial" data-start="0" muted playsinline preload="auto" src="clips/aerial.webm"></video>
+    <div class="s1-copy">
+      <p class="eyebrow r" data-in="0.3">6 February 2016 · Tainan, Taiwan</p>
+      <h1 class="headline words" data-in="0.6">A 16-storey building falls in seconds.</h1>
+      <p class="lede r" data-in="1.6">The search for the people trapped inside takes a week.</p>
+    </div>
+    <div class="stats">
+      <div class="stat r" data-in="2.4"><b class="roll" data-to="115" data-from="0" data-at="2.4">0</b><span>people died in the building</span></div>
+      <div class="stat r" data-in="2.6"><b><span class="roll" data-to="155" data-at="2.6">0</span>+</b><span>trapped in the first 48 hours</span></div>
+      <div class="stat r" data-in="2.8"><b><span class="roll" data-to="60" data-at="2.8">0</span> h</b><span>until the last person was found alive</span></div>
+      <div class="stat r" data-in="3.0"><b><span class="roll" data-to="7.5" data-dec="1" data-at="3.0">0</span> days</b><span>of searching the rubble</span></div>
+    </div>
+    <p class="source r" data-in="3.6">Weiguan Jinlong building collapse. Sources: BBC, Reuters, CNN, ReliefWeb, Taipei Times (Feb 2016).</p>
+  </section>
+
+  <!-- S2: the problem -->
+  <section class="scene" id="s2">
+    <p class="eyebrow r" data-in="0.1">The problem</p>
+    <h2 class="headline words" data-in="0.3">Survivors are in the voids. Rescuers dig where they guess.</h2>
+    <div class="problems">
+      <div class="prob r" data-in="1.4"><i class="ico"><svg viewBox="0 0 24 24"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg></i><div><b>Cameras see the surface</b><span>Thermal and RGB can't see a person under a slab.</span></div></div>
+      <div class="prob r" data-in="1.65"><i class="ico"><svg viewBox="0 0 24 24"><path d="M3 20h18M5 20l3-6 3 3 3-7 5 10"/></svg></i><div><b>Many piles, few crews</b><span>Teams must triage which pile to work first.</span></div></div>
+      <div class="prob r" data-in="1.9"><i class="ico"><svg viewBox="0 0 24 24"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l2.5 2.5M9 2h6"/></svg></i><div><b>Every wrong guess costs hours</b><span>Sensors are placed by hand, on unstable rubble.</span></div></div>
+    </div>
+  </section>
+
+  <!-- S3: title -->
+  <section class="scene" id="s3">
+    <p class="pill r" data-in="0.2"><span class="dot"></span>Larpverse · AgentVerse 2026 · Robotics track</p>
+    <h1 class="title words" data-in="0.45">Three drones decide <em>where rescuers dig first.</em></h1>
+    <p class="lede r" data-in="1.5">They map the rubble, listen for people, and hand the incident commander a ranked dig list with its evidence.</p>
+  </section>
+
+  <!-- S4: the loop -->
+  <section class="scene" id="s4">
+    <div class="loop-left">
+      <p class="eyebrow r" data-in="0.1">How it works</p>
+      <h2 class="headline sm words" data-in="0.25">One loop. No pilot.</h2>
+      <ol class="steps" id="steps">
+        <span class="steps-hl" id="stepsHl"></span>
+      </ol>
+      <p class="stepcap" id="stepcap"></p>
+    </div>
+    <div class="mapcard r" data-in="0.15">
+      <svg id="map" viewBox="0 0 900 900"></svg>
+    </div>
+    <div class="rank glass" id="rank">
+      <p class="eyebrow small">Acoustic agent · pile priority</p>
+      <div class="rrow" data-i="0"><span class="pid">A3</span><span class="rlbl">“Help… my leg is trapped”</span><span class="bar"><i style="--c:#f0857c"></i></span><b class="rv">0</b></div>
+      <div class="rrow" data-i="1"><span class="pid">B2</span><span class="rlbl">Knocking, 3 times</span><span class="bar"><i style="--c:#f5c77e"></i></span><b class="rv">0</b></div>
+      <div class="rrow" data-i="2"><span class="pid">C1</span><span class="rlbl">Dog bark · non-human</span><span class="bar"><i style="--c:#6b7690"></i></span><b class="rv">0</b></div>
+      <div class="decision"><span class="chk">✓</span> Dispatch → <b>A3</b> · picked by the agent, checked by code</div>
+    </div>
+  </section>
+
+  <!-- S5: Isaac footage -->
+  <section class="scene" id="s5">
+    <div class="s5-head">
+      <p class="eyebrow r" data-in="0.1">Simulated end to end</p>
+      <h2 class="headline sm words" data-in="0.25">Tested on a reconstruction of the real collapse site.</h2>
+    </div>
+    <div class="window r" data-in="0.2">
+      <div class="wbar"><i></i><i></i><i></i><span>Isaac Sim 6 · path-traced · NVIDIA L40S</span></div>
+      <div class="wbody">
+        <video class="wclip" data-clip="aerial" data-start="0.0" data-dur="4.4" muted playsinline preload="auto" src="clips/aerial.webm"></video>
+        <video class="wclip" data-clip="lidar" data-start="4.0" data-dur="4.45" muted playsinline preload="auto" src="clips/lidar.webm"></video>
+        <video class="wclip" data-clip="radar" data-start="8.1" data-dur="3.25" muted playsinline preload="auto" src="clips/radar.webm"></video>
+        <video class="wclip" data-clip="topdown" data-start="11.0" data-dur="4.15" muted playsinline preload="auto" src="clips/topdown.webm"></video>
+        <div class="wcap glass"><span class="num" id="wnum">1</span><span id="wtxt"></span></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- S6: live change -->
+  <section class="scene" id="s6">
+    <div class="s6-left">
+      <p class="eyebrow r" data-in="0.1">Adapts live</p>
+      <h2 class="headline sm words" data-in="0.25">The plan changes mid-mission. The swarm keeps up.</h2>
+      <p class="lede sm r" data-in="1.1">In one continuous take, the operator adds a search zone. The coordinator re-plans and the drones go, with no restart.</p>
+      <ul class="log" id="log">
+        <li data-at="3.3"><code>0 s</code> Operator adds zone T1b</li>
+        <li data-at="4.5"><code>+14 s</code> The coordinator re-plans</li>
+        <li data-at="5.6"><code>+28 s</code> d1, d2, d3 dispatched to T1b</li>
+      </ul>
+    </div>
+    <div class="dash glass r" data-in="0.3">
+      <div class="dbar"><span class="brandmini">● LARPVERSE</span><span class="dtab on">Map</span><span class="dtab">Pings</span><span class="dtab">Acoustic</span><span class="spacer"></span><span class="btn" id="addzone">+ Add as zone</span></div>
+      <svg id="dmap" viewBox="0 0 900 560"></svg>
+      <div class="banner" id="ban1"><span class="bd" style="background:#2cb7af"></span>Operator added zone <b>T1b</b></div>
+      <div class="banner" id="ban2"><span class="bd" style="background:#5b8cff"></span>Re-planned · <b>d1–d3</b> dispatched to T1b</div>
+      <svg class="cursor" id="cursor" viewBox="0 0 24 24"><path d="M4 2l14 9-6.5 1.5L15 20l-3 1.5-3-7.5L4 18z" fill="#fff" stroke="#090e18" stroke-width="1.2"/></svg>
+    </div>
+  </section>
+
+  <!-- S7: evidence -->
+  <section class="scene" id="s7">
+    <p class="eyebrow r" data-in="0.1">Results · simulated case study, 30 seeds</p>
+    <h2 class="headline words" data-in="0.25">Minutes, not days.</h2>
+    <div class="ev">
+      <div class="evbars glass r" data-in="0.8">
+        <p class="evq">Of the (simulated) trapped people, how many were in an area the drones flagged for digging</p>
+        <div class="grp"><p>Best-case radar</p>
+          <div class="hb"><span>Larpverse: listen + radar</span><span class="track"><i data-to="74" data-at="1.2" style="--c:#5b8cff"></i></span><b class="roll" data-to="74" data-at="1.2" data-suf="%">0</b></div>
+          <div class="hb"><span>Radar only</span><span class="track"><i data-to="30" data-at="1.35" style="--c:#4a5470"></i></span><b class="roll" data-to="30" data-at="1.35" data-suf="%">0</b></div>
+        </div>
+        <div class="grp"><p>Realistic radar</p>
+          <div class="hb"><span>Larpverse: listen + radar</span><span class="track"><i data-to="66" data-at="1.6" style="--c:#2cb7af"></i></span><b class="roll" data-to="66" data-at="1.6" data-suf="%">0</b></div>
+          <div class="hb"><span>Radar only</span><span class="track"><i data-to="1" data-at="1.75" style="--c:#4a5470"></i></span><b class="roll" data-to="1" data-at="1.75" data-suf="%">0</b></div>
+        </div>
+      </div>
+      <div class="evcards">
+        <div class="ecard glass r" data-in="1.1"><b><span class="roll" data-to="12" data-at="1.1">0</span> min</b><span>to a first pass over all 8 sectors. The 2016 search ran for 7.5 days.</span></div>
+        <div class="ecard glass r" data-in="1.3"><b><span class="roll" data-to="0.39" data-dec="2" data-at="1.3">0</span> bpm</b><span>breathing-rate error of our radar DSP on real recordings</span></div>
+        <div class="ecard glass r" data-in="1.5"><b><span class="roll" data-to="3.6" data-dec="1" data-at="1.5">0</span> cm</b><span>SLAM trajectory error, against 1.51 m for odometry alone</span></div>
+      </div>
+    </div>
+    <p class="source r" data-in="2.2">Simulation on a reconstructed site. People, sounds and radar returns are synthetic.</p>
+  </section>
+
+  <!-- S8: principles -->
+  <section class="scene" id="s8">
+    <p class="eyebrow r" data-in="0.1">Built for the commander's trust</p>
+    <h2 class="headline words" data-in="0.25">Candidates, not confirmations.</h2>
+    <div class="cards4">
+      <div class="pc glass r" data-in="0.9"><i class="ico"><svg viewBox="0 0 24 24"><path d="M12 3l8 4v5c0 5-3.5 8-8 9-4.5-1-8-4-8-9V7z"/></svg></i><b>No pile is ever marked clear</b><span>Silent piles stay “not cleared”, so the commander sees what wasn't checked.</span></div>
+      <div class="pc glass r" data-in="1.05"><i class="ico"><svg viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="4"/><path d="M9 12l2 2 4-4"/></svg></i><b>A bounded LLM</b><span>The AI picks only from options the planner lists. Code checks every pick.</span></div>
+      <div class="pc glass r" data-in="1.2"><i class="ico"><svg viewBox="0 0 24 24"><path d="M5 4h14v16H5zM9 9h6M9 13h6M9 17h3"/></svg></i><b>Every decision logged</b><span>Its options, its pick, its evidence, and who made it.</span></div>
+      <div class="pc glass r" data-in="1.35"><i class="ico"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M5.6 5.6l12.8 12.8"/></svg></i><b>Truth stays hidden</b><span>The planner and agents never see where the people are.</span></div>
+    </div>
+  </section>
+
+  <!-- S9: outro -->
+  <section class="scene" id="s9">
+    <svg viewBox="0 0 40 40" class="bigmark r" data-in="0.1"><circle cx="20" cy="20" r="15" fill="none" stroke="rgba(255,255,255,.22)" stroke-width="1.2"/><circle cx="20" cy="5" r="3.2" fill="#5b8cff"/><circle cx="33" cy="27.5" r="3.2" fill="#2cb7af"/><circle cx="7" cy="27.5" r="3.2" fill="#f5c77e"/><circle cx="20" cy="20" r="2.2" fill="#eef2f9"/></svg>
+    <h1 class="wordmark letters" data-in="0.3">Larpverse</h1>
+    <p class="tag words" data-in="1.1">Search smarter. Dig sooner.</p>
+    <p class="pill r" data-in="1.7"><span class="dot"></span>AgentVerse 2026 · Robotics track</p>
+  </section>
+
+  <div id="controls"><button id="play">▶ Play</button><span id="time">0.0s</span></div>
+</div>
+</div>
+<script src="app.js"></script>
+</body>
+</html>

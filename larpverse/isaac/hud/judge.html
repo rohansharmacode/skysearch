@@ -95,6 +95,10 @@ function stepOf(s) {
   const ph = String(s.phase || ''), m = s.mission || {}, now = +s.t || 0;
   if (revT !== null && now - revT < 14 && !(adaptT !== null)) return 4;
   if (adaptT !== null) return 5;
+  // opened late (or reloaded): read the change from the state itself
+  const rev = +((s.tasking || {}).revision || 0);
+  if (rev > 1 && (s.dispatch || []).some(d => d.to_pile)) return 5;
+  if (rev > 1) return 4;
   if (ph === 'deploy') return 0;
   if (ph === 'survey' || ph === 'dispatch' || ph.startsWith('recon_mapping')) return (m.visited || []).length > 1 ? 5 : 1;
   if (['landing', 'radar', 'relocate', 'rescan'].includes(ph)) return (m.visited || []).length > 1 ? 5 : 2;

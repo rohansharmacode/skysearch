@@ -34,6 +34,8 @@ import sys
 import time
 import traceback
 
+import numpy as np
+
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if REPO not in sys.path:
     sys.path.insert(0, REPO)
@@ -81,6 +83,10 @@ def _base_parser():
     ap.add_argument("--speed", type=float, default=4.0, help="sim-seconds per wall-second")
     ap.add_argument("--show-truth", action="store_true",
                     help="draw the scenario's hidden (invented) people as grey dummies, half sunk (display only)")
+    ap.add_argument("--viz-scale", type=float, default=1.0, help="multiply overlay line and sensor-effect widths "
+                    "(zones, dispatch arcs, rings, LiDAR beams, sound domes) for wide shots; the take uses ~4")
+    ap.add_argument("--smooth", type=int, default=1, help="C1-smooth drone motion through the 1 s mission states "
+                    "(monotone cubic, one step behind; tilt from acceleration + drag): 1 on, 0 = linear (old)")
     ap.add_argument("--fx", type=int, default=1, help="live sensor effects (isaac/sensor_fx.py): LiDAR beams, "
                     "radar pulses, sound domes while listening, belief hotspot (0 = off)")
     ap.add_argument("--replay", default=None, help="dir with frames/state_XXXX.json (or the frames dir itself)")
@@ -88,7 +94,9 @@ def _base_parser():
     ap.add_argument("--frames", action="store_true", help="also write frames/state_XXXX.json")
     ap.add_argument("--dry-run", action="store_true", help="no omni/pxr: numpy heightmap LiDAR, null drawing")
     ap.add_argument("--max-steps", type=int, default=0, help="stop after N mission steps (0 = until done)")
-    ap.add_argument("--camera", choices=["director", "free"], default="director")
+    ap.add_argument("--camera", choices=["director", "story", "free"], default="director",
+                    help="story = one continuous state-driven shot for the judges' take (frames the approach, "
+                    "the active zone, new/suggested zones and the dispatch; slow orbit, spring-smoothed)")
     ap.add_argument("--drone-asset", nargs="?", const="auto", default=None,
                     help="reference Isaac's quadcopter USD (optionally a path/URL) instead of primitives")
     ap.add_argument("--drone-scale", type=float, default=1.6, help="small model only (heavy is true scale)")
@@ -266,6 +274,45 @@ def interp_drones(prev, cur, u):
     return out
 
 
+G = 9.81
+DRAG_TILT = 0.18        # 1/s: cruise tilt of a heavy multirotor ~ atan(DRAG_TILT * v / g) (10 m/s -> ~10 deg)
+MAX_TILT = 22.0         # deg
+
+
+def _mono_tangent(d0, d1):
+    """Fritsch-Carlson tangent at a knot from the two adjacent secants (per axis): no overshoot, so a landing
+    drone never dips into the rubble and a hover never wobbles."""
+    m = np.where(d0 * d1 > 0, 0.5 * (d0 + d1), 0.0)
+    lim = 3.0 * np.minimum(np.abs(d0), np.abs(d1))
+    return np.clip(m, -lim, lim)
+
+
+def smooth_drones(hist, u):
+    """C1-smooth drone poses through the mission's 1 s states (one step behind the newest state): monotone
+    cubic Hermite on the segment hist[-3] -> hist[-2], tangents from hist[-4] and hist[-1]. Returns
+    {id: (x, y, z, yaw, state, vx, vy, ax, ay)} with velocity (m/s) and mean acceleration (m/s^2) in sim time."""
+    A, B, C = hist[-3], hist[-2], hist[-1]
+    P0 = hist[-4] if len(hist) >= 4 else A
+    T = max(float(B.get("t", 0)) - float(A.get("t", 0)), 1e-3)
+    pos = {k: {d["id"]: d for d in s.get("drones", [])} for k, s in (("p0", P0), ("a", A), ("b", B), ("c", C))}
+    h00, h10, h01, h11 = 2 * u**3 - 3 * u**2 + 1, u**3 - 2 * u**2 + u, -2 * u**3 + 3 * u**2, u**3 - u**2
+    d00, d10, d01, d11 = 6 * u**2 - 6 * u, 3 * u**2 - 4 * u + 1, -6 * u**2 + 6 * u, 3 * u**2 - 2 * u
+    out = {}
+    for did, db in pos["b"].items():
+        da = pos["a"].get(did, db)
+        p1, p2 = np.asarray(da["pose"][:3], float), np.asarray(db["pose"][:3], float)
+        p0 = np.asarray(pos["p0"].get(did, da)["pose"][:3], float)
+        p3 = np.asarray(pos["c"].get(did, db)["pose"][:3], float)
+        m1, m2 = _mono_tangent(p1 - p0, p2 - p1), _mono_tangent(p2 - p1, p3 - p2)
+        x = h00 * p1 + h10 * m1 + h01 * p2 + h11 * m2
+        v = (d00 * p1 + d10 * m1 + d01 * p2 + d11 * m2) / T
+        acc = (m2 - m1) / (T * T)          # segment-mean acceleration: the cubic's own 2nd derivative jumps at
+                                           # every knot, which reads as attitude flicker; the tilt filter smooths this
+        yaw = _lerp_angle(da["pose"][3], db["pose"][3], u)
+        out[did] = (*map(float, x), yaw, db.get("state", ""), float(v[0]), float(v[1]), float(acc[0]), float(acc[1]))
+    return out
+
+
 def is_surveying(drone_state, phase, airborne):
     if drone_state in SURVEY_STATES:
         return True
@@ -314,7 +361,7 @@ def main(argv=None):
         say(f"launcher={rt.mode} {compat.versions()}")
     import numpy as np
 
-    from isaac.camera import DirectorCamera, focus_from_state
+    from isaac.camera import DirectorCamera, StoryCamera, focus_from_state, story_focus
     from isaac.drone_viz import DroneViz, NullDrone
     from isaac.lidar import HeightmapLidar, PointAccumulator, RtxLidar, make_lidar
     lprof = a.lidar_prof
@@ -372,12 +419,20 @@ def main(argv=None):
     if a.dry_run:
         drones = {i: NullDrone(None, f"/World/Drones/{i}") for i in ids}
     else:
+        from isaac import drone_mesh as _dm
+        _dm.POD_MODE = str(getattr(a, "delivery", "") or "") == "pod"      # radar rides in the winch pod
         drones = {i: DroneViz(stage, f"/World/Drones/{i}", did=i, scale=a.drone_scale, asset=a.drone_asset,
                               model=a.drone_model)
                   for i in ids}
     from isaac.pods import NullPods, PodViz
     pods = NullPods() if a.dry_run else PodViz(stage, ids)
     from isaac.sensor_fx import NullFX, SensorFX     # LiDAR beams, radar pulses, sound domes, hotspot, dummies
+    if float(a.viz_scale) != 1.0:                    # wide single-take shots: thicker lines and effects
+        from isaac import overlay as _ov, sensor_fx as _sfx
+        _ov.LINE_W *= float(a.viz_scale)
+        _ov.BEACON_R *= float(a.viz_scale) ** 0.5
+        _sfx.set_scale(a.viz_scale, log=say)
+        say(f"[overlay] line width x{a.viz_scale:g}: zone outlines {_ov.LINE_W * _ov.ZONE_W * 100:.0f} cm")
     fx = NullFX() if (a.dry_run or not a.fx) else SensorFX(stage, sc, surface, show_truth=a.show_truth, log=say,
                                                           seed=a.seed)
     from isaac.site import base_xy
@@ -386,8 +441,12 @@ def main(argv=None):
     mirrors = []
     if not a.dry_run:
         from isaac import compat
-        mirrors = [compat.PERSP] if a.camera == "director" else []
-    cam = DirectorCamera(stage, mode=a.camera, mirrors=mirrors, switch_viewport=(a.camera == "director"))
+        mirrors = [compat.PERSP] if a.camera in ("director", "story") else []
+    story_memo = {}
+    if a.camera == "story":
+        cam = StoryCamera(stage, start=(*base_xy(sc)[:2], 3.0), mirrors=mirrors, switch_viewport=True)
+    else:
+        cam = DirectorCamera(stage, mode=a.camera, mirrors=mirrors, switch_viewport=(a.camera == "director"))
     if not a.dry_run and a.look == "pretty" and a.flow:
         from isaac import look
         dust = look.FlowDust(stage, ids, log=say)
@@ -410,6 +469,8 @@ def main(argv=None):
     accum = PointAccumulator.for_profile(lprof)
     mount_z = 0.35 if a.drone_model == "small" else 0.50   # LiDAR puck above the skids (nose gimbal on the X8)
     cur = prev = as_dict(mission.build_state())
+    hist = [cur]                            # last 4 states: smooth motion renders one step behind the newest
+    smooth = bool(getattr(a, "smooth", 1))
     steps, frame = 0, 0
     virtual = a.dry_run or bool(a.record)   # recording: fixed frame clock, so slow (path-traced) frames don't skip
     if a.record:
@@ -480,13 +541,14 @@ def main(argv=None):
                 new = as_dict(mission.build_state())
                 dt_sim = max(float(new.get("t", 0)) - float(cur.get("t", 0)), 1e-3)
                 prev, cur = cur, new
+                hist = (hist + [new])[-4:]
                 if a.record and a.rec_warp > 1:     # recording: compress the long radar stretches
                     from isaac.photoreal import WARP_PHASES
                     a.speed = a.rec_speed * (a.rec_warp if cur.get("phase") in WARP_PHASES else 1.0)
                 last_step, next_step = next_step, next_step + dt_sim / max(a.speed, 1e-3)
                 if now - next_step > 1.0:      # fell behind (slow step): resync instead of spiralling
                     last_step, next_step = now, now + dt_sim / max(a.speed, 1e-3)
-                active = overlay.update(cur)
+                active = overlay.update(hist[-2] if smooth and len(hist) >= 3 else cur)
                 done = mission.done or (a.max_steps and steps >= a.max_steps)
                 if steps % 20 == 0:
                     say(f"step {steps} t={cur.get('t')} phase={cur.get('phase')} pile={active} "
@@ -494,19 +556,27 @@ def main(argv=None):
 
             span = max(next_step - last_step, 1e-6)
             u = 1.0 if done else min(max((now - last_step) / span, 0.0), 1.0)
-            poses = interp_drones(prev, cur, u)
+            dt_sim_cur = max(float(cur.get("t", 0)) - float(prev.get("t", 0)), 1e-3)
+            if smooth and len(hist) >= 3 and not done:
+                disp = hist[-2]
+                poses = smooth_drones(hist, u)
+            else:
+                disp = cur
+                poses = {k: (*v[:5], v[5] / dt_sim_cur, v[6] / dt_sim_cur, 0.0, 0.0) for k, v in interp_drones(prev, cur, u).items()}
             rdt = rdt_v if virtual else max(now - last_frame_t, 1e-3)
             last_frame_t = now
-            dt_sim_cur = max(float(cur.get("t", 0)) - float(prev.get("t", 0)), 1e-3)
-            for did, (x, y, z, yaw, st, vx, vy) in poses.items():
+            for did, (x, y, z, yaw, st, vx, vy, ax, ay) in poses.items():
                 dr = drones.get(did)
                 if dr is None:
                     continue
-                sp = math.hypot(vx, vy) / dt_sim_cur
-                ang = math.radians(math.degrees(math.atan2(vy, vx)) - yaw) if sp > 0.05 else 0.0
-                tilt = min(14.0, 2.5 * sp) if not done else 0.0
+                # multirotor attitude: lean into the acceleration plus the drag-balancing cruise tilt (flare
+                # when braking falls out of the negative acceleration); sim-time units, not the speed-up
+                ex, ey = ax + DRAG_TILT * vx, ay + DRAG_TILT * vy
+                mag = math.hypot(ex, ey)
+                ang = math.radians(math.degrees(math.atan2(ey, ex)) - yaw) if mag > 0.05 else 0.0
+                tilt = min(MAX_TILT, math.degrees(math.atan2(mag, G))) if not done else 0.0
                 want = (-math.sin(ang) * tilt, math.cos(ang) * tilt)
-                k = 1.0 - math.exp(-rdt / 0.4)
+                k = 1.0 - math.exp(-rdt / 0.3)
                 tf = tilt_f[did]
                 tilt_f[did] = (tf[0] + (want[0] - tf[0]) * k, tf[1] + (want[1] - tf[1]) * k)
                 dr.set_pose(x, y, z, yaw, tilt_f[did])
@@ -514,7 +584,7 @@ def main(argv=None):
                 dr.spin(rdt, on=air or st not in GROUNDED)
                 sx = start_xy.get(did, (x, y, z))
                 moved[did] = max(moved[did], math.dist((x, y, z), sx))
-                if not done and is_surveying(st, cur.get("phase"), z - float(surface(x, y)) > 1.5):
+                if not done and is_surveying(st, disp.get("phase"), z - float(surface(x, y)) > 1.5):
                     pl = active if active in pile_xy else nearest_pile(pile_xy, x, y)
                     if pl:
                         pts = rtx.read(did) if rtx is not None else lidar.sweep((x, y, z + mount_z), yaw, frame)
@@ -529,13 +599,17 @@ def main(argv=None):
                                 show = new_pts[np.hypot(new_pts[:, 0] - c[0], new_pts[:, 1] - c[1]) < LIDAR_DRAW_R]
                             if len(show):
                                 overlay.add_points(show)
-            pods.update(cur, poses)                    # winch-lowered radar pods (state.pods / winch_len_m)
-            fx.frame(now, cur, poses)
+            pods.update(disp, poses)                   # winch-lowered radar pods (state.pods / winch_len_m)
+            fx.frame(now, disp, poses)
             if dust is not None:
                 dust.update(poses, surface)
 
-            focus, spread = focus_from_state(cur, pile_xy, active, list(poses.values()))
-            cam.update(rdt, focus, spread)
+            focus, spread = focus_from_state(disp, pile_xy, active, list(poses.values()))
+            if a.camera == "story":
+                sf, sr = story_focus(disp, pile_xy, active, list(poses.values()), story_memo)
+                cam.update(rdt, sf, sr)
+            else:
+                cam.update(rdt, focus, spread)
             if rigs is not None:
                 rigs.update(poses, focus, rdt)
             overlay.tick(now)
@@ -548,7 +622,7 @@ def main(argv=None):
                 rt.step()
                 if rec is not None and frame % max(1, a.rec_every) == 0:
                     rec.capture(rec_i())
-                    rec.note(rec_i(), cur, active)
+                    rec.note(rec_i(), disp, active)
             if virtual:
                 clock_v += rdt_v
             if a.record and a.rec_stop_t and float(cur.get("t", 0)) >= a.rec_stop_t:

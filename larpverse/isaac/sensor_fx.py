@@ -33,6 +33,8 @@ HUMAN_SOUNDS = {"voice", "weak_voice", "shout", "knock", "knocking", "tapping"}
 GLOW = 6.0                      # emissive gain (RTX nits-ish scale used by the overlay's beacons)
 BEAMS_PER_DRONE = 26
 BEAM_W = 0.022                  # m
+SOUND_W, NOISE_W = 0.05, 0.035  # m: dome wire widths (human-like, other sounds)
+RADAR_W = 0.07                  # m: radar pulse ring width at the start of a wave
 SOUND_R = 14.0                  # m: dome radius at the end of a wave
 SOUND_PERIOD = 2.2              # s (wall clock): one wave
 SOUND_WAVES = 3
@@ -187,6 +189,16 @@ class NullFX:
         return st
 
 
+def set_scale(k, log=print):
+    """Thicker effects for wide shots (--viz-scale): widths x k, radar ring reach unchanged (it means ~3 m)."""
+    global BEAM_W, SOUND_W, NOISE_W, RADAR_W
+    k = float(k)
+    if abs(k - 1.0) < 1e-6:
+        return
+    BEAM_W, SOUND_W, NOISE_W, RADAR_W = BEAM_W * k, SOUND_W * k, NOISE_W * k, RADAR_W * k
+    log(f"[fx] widths x{k:g}: LiDAR beam {BEAM_W * 100:.0f} cm, sound wire {SOUND_W * 100:.0f} cm, radar ring {RADAR_W * 100:.0f} cm")
+
+
 def analyse(state, poses):
     """What to draw this frame, from the mission state alone: {listening, radar: [(x, y, z)], belief}."""
     m = state.get("mission") if isinstance(state.get("mission"), dict) else {}
@@ -286,7 +298,7 @@ class SensorFX(NullFX):
                     segs[human][0].append(a)
                     segs[human][1].append(b)
             self.counts["sound"] += 1
-        for mesh, human, w0 in ((self.sound_mesh, True, 0.05), (self.noise_mesh, False, 0.035)):
+        for mesh, human, w0 in ((self.sound_mesh, True, SOUND_W), (self.noise_mesh, False, NOISE_W)):
             A, B = segs[human]
             mesh.set(*cross_ribbons(np.concatenate(A), np.concatenate(B), w0) if A else ([], [], []))
         # radar pulses over the rubble around each scanning pod
@@ -300,7 +312,7 @@ class SensorFX(NullFX):
                 zs = np.asarray(self.surface(xs, ys), float).ravel() + 0.08
                 ring = np.stack([xs, ys, np.maximum(zs, z - 0.5)], 1)
                 a, b = polyline_segs(ring)
-                A.append(a); B.append(b); W.append(np.full(len(a), 0.07 * (1.0 - 0.7 * f)))
+                A.append(a); B.append(b); W.append(np.full(len(a), RADAR_W * (1.0 - 0.7 * f)))
         self.radar_mesh.set(*cross_ribbons(np.concatenate(A), np.concatenate(B), np.concatenate(W)) if A else ([], [], []))
         self.counts["radar"] = max(self.counts["radar"], len(st["radar"]))
         # belief hotspot (rebuilt only when the belief changes)

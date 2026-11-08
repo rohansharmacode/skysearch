@@ -46,14 +46,23 @@ PBR_LOOK = {           # key -> (rgb, roughness, metallic, clearcoat); rgb None 
     "mic": ((0.04, 0.04, 0.045), 0.6, 0.0, 0.0),
     "speaker": ((0.70, 0.70, 0.68), 0.5, 0.0, 0.0),
     "disc": ((0.10, 0.10, 0.11), 0.5, 0.0, 0.0),
+    "wifi": ((0.08, 0.30, 0.95), 0.40, 0.0, 0.3),        # blue rescue-Wi-Fi antenna (colour code: blue = Wi-Fi)
+    "nav_red": ((0.6, 0.05, 0.03), 0.3, 0.0, 0.5),
+    "nav_green": ((0.05, 0.6, 0.1), 0.3, 0.0, 0.5),
+    "strobe": ((0.9, 0.9, 0.9), 0.3, 0.0, 0.5),
 }
+EMISSIVE = {"nav_red": (60.0, 3.0, 1.5), "nav_green": (3.0, 50.0, 6.0), "strobe": (90.0, 90.0, 95.0)}
+STROBE = (1.0, 0.09)   # s: anti-collision strobe period and flash length (render clock)
 PART_KEY = (("Fuselage", "body"), ("Canopy", "canopy"), ("Visor", "lens"), ("GpsMast", "gimbal"),
             ("GpsPuck", "radome"), ("Hinge", "gimbal"), ("Column", "gimbal"), ("Foot", "plastic"),
             ("YokeGimbal", "gimbal"), ("LensZoom", "lens"), ("LidarCap", "gimbal"), ("Hub", "gimbal"),
             ("Stripe", "stripe"), ("Battery", "battery"), ("Arm", "carbon"),
             ("Motor", "metal"), ("Skid", "carbon"), ("Leg", "carbon"), ("Brace", "carbon"), ("Gimbal", "gimbal"),
             ("LidarPuck", "lens"), ("Thermal", "lens"), ("RadarPanel", "radome"), ("SpeakerHorn", "speaker"),
-            ("Mic", "mic"), ("Blade", "plastic"), ("Disc", "disc"))
+            ("Mic", "mic"), ("Blade", "plastic"), ("Disc", "disc"), ("WifiAnt", "wifi"), ("Antenna", "plastic"),
+            ("ComputeBox", "battery"), ("RadioBox", "battery"), ("WinchDrum", "metal"), ("WinchFrame", "carbon"),
+            ("NavRed", "nav_red"), ("NavGreen", "nav_green"), ("NavRear2", "nav_red"), ("NavRear3", "nav_green"),
+            ("Strobe", "strobe"), ("LidarBracket", "gimbal"))
 GEAR_H = 0.60          # heavy: skid bottom to fuselage underside (m, estimate)
 
 
@@ -274,6 +283,8 @@ class DroneViz:
                 sh.CreateInput("clearcoatRoughness", Sdf.ValueTypeNames.Float).Set(0.08)
                 if key == "disc":
                     sh.CreateInput("opacity", Sdf.ValueTypeNames.Float).Set(float(max(PROP_DISC, 0.0)))
+                if key in EMISSIVE:
+                    sh.CreateInput("emissiveColor", Sdf.ValueTypeNames.Color3f).Set(self.Gf.Vec3f(*EMISSIVE[key]))
                 mat.CreateSurfaceOutput().ConnectToSource(sh.ConnectableAPI(), "surface")
             UsdShade.MaterialBindingAPI.Apply(prim).Bind(mat)
 
@@ -412,6 +423,21 @@ class DroneViz:
             return False
 
     # ------------------------------------------------------------------ runtime
+    def _strobe(self, dt):
+        """Anti-collision strobe: a short white flash every STROBE[0] s (phase offset per drone)."""
+        if not hasattr(self, "_strobe_img"):
+            p = self.stage.GetPrimAtPath(f"{self.model}/Strobe")
+            self._strobe_img = self.UsdGeom.Imageable(p) if p and p.IsValid() else None
+            self._strobe_t = (hash(self.path) % 97) / 97.0 * STROBE[0]
+            self._strobe_on = None
+        if self._strobe_img is None:
+            return
+        self._strobe_t = (self._strobe_t + float(dt)) % STROBE[0]
+        on = self._strobe_t < STROBE[1]
+        if on != self._strobe_on:
+            (self._strobe_img.MakeVisible if on else self._strobe_img.MakeInvisible)()
+            self._strobe_on = on
+
     def set_pose(self, x, y, z, yaw_deg, tilt=None):
         roll, pitch = _tilt(tilt)
         w, qx, qy, qz = quat_ypr(yaw_deg, pitch, roll)
@@ -419,6 +445,7 @@ class DroneViz:
         self.q_op.Set(self.Gf.Quatd(w, self.Gf.Vec3d(qx, qy, qz)))
 
     def spin(self, dt, on=True):
+        self._strobe(dt)
         if not on:
             return
         self.rotor_angle = (self.rotor_angle + self.spin_rate * dt) % 360.0

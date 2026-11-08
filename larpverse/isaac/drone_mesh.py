@@ -16,6 +16,8 @@ import math
 import numpy as np
 
 GEAR_H = 0.60
+POD_MODE = False        # --delivery pod: the radar rides in the winch pod, so no radar panel under the drone
+NAV_R = 0.035           # m: navigation light lens radius (red port, green starboard, white strobe on top)
 
 
 def _grid_faces(rows, cols, wrap=True):
@@ -177,10 +179,38 @@ def dji_parts(spec=None, did="d1"):
     mesh("Gimbal", sphere((gx + 0.02, 0, z0 - 0.15), 0.085), (0.12, 0.12, 0.13))
     mesh("Thermal", tube((gx + 0.085, 0.025, z0 - 0.15), (gx + 0.11, 0.025, z0 - 0.15), 0.028), COL["thermal"])
     mesh("LensZoom", tube((gx + 0.085, -0.03, z0 - 0.13), (gx + 0.105, -0.03, z0 - 0.13), 0.02), COL["thermal"])
-    mesh("LidarPuck", tube((0.20, 0, z0 + 0.02), (0.20, 0, z0 - 0.07), 0.05), COL["lidar"])
-    mesh("LidarCap", tube((0.20, 0, z0 - 0.07), (0.20, 0, z0 - 0.085), 0.05), (0.1, 0.1, 0.1))
-    rw, rh = spec.radar.aperture_m
-    mesh("RadarPanel", superellipsoid((-0.12, 0, z0 - 0.02), rh / 2, rw / 2, 0.03, 0.25, 0.15), COL["radar"])
+    # Ouster OS1-128 class LiDAR (85 mm x 73 mm) on a nose bracket, pitched 45 deg down to sweep the rubble ahead
+    lp = np.array([0.66, 0.0, z0 + 0.13])
+    ax = np.array([math.sin(math.radians(45)), 0.0, -math.cos(math.radians(45))])
+    mesh("LidarBracket", tube((0.52, 0, z0 + 0.20), lp - ax * 0.01, 0.018), (0.1, 0.1, 0.1))
+    mesh("LidarPuck", tube(lp, lp + ax * 0.062, 0.0425), COL["lidar"])
+    mesh("LidarCap", tube(lp + ax * 0.062, lp + ax * 0.075, 0.0425), (0.1, 0.1, 0.1))
+    if not POD_MODE:
+        rw, rh = spec.radar.aperture_m
+        mesh("RadarPanel", superellipsoid((-0.12, 0, z0 - 0.02), rh / 2, rw / 2, 0.03, 0.25, 0.15), COL["radar"])
+    else:                                       # winch drum for the radar/mic pod (the pod itself: isaac/pods.py)
+        mesh("WinchDrum", tube((-0.05, -0.11, z0 - 0.06), (-0.05, 0.11, z0 - 0.06), 0.07), (0.12, 0.12, 0.13))
+        mesh("WinchFrame", superellipsoid((-0.05, 0, z0 + 0.0), 0.12, 0.15, 0.03, 0.2, 0.2, nu=20, nv=8), (0.1, 0.1, 0.1))
     if spec.speaker is not None:
         mesh("SpeakerHorn", tube((-0.50, 0, z0 + 0.06), (-0.50, 0, z0 - 0.10), 0.05, r1=0.10), COL["speaker"])
+    # compute box, mesh radio with two whip antennas, blue rescue-Wi-Fi antenna (data/hardware_bom.json mounts)
+    mesh("ComputeBox", superellipsoid((0.30, 0, z0 + 0.47), 0.10, 0.08, 0.035, 0.15, 0.15, nu=20, nv=8), (0.10, 0.11, 0.12))
+    mesh("RadioBox", superellipsoid((-0.10, 0, z0 + 0.47), 0.07, 0.06, 0.03, 0.15, 0.15, nu=20, nv=8), (0.10, 0.11, 0.12))
+    for sd in (-1, 1):
+        base = np.array([-0.12, sd * 0.05, z0 + 0.50])
+        mesh(f"Antenna{sd + 1}", merge([tube(base, base + [-0.04, sd * 0.06, 0.24], 0.006),
+                                         tube(base, base + [0, 0, 0.03], 0.012)]), (0.04, 0.04, 0.045))
+    mesh("WifiAnt", merge([tube((-0.56, 0, z0 + 0.28), (-0.56, 0, z0 + 0.52), 0.011),
+                           superellipsoid((-0.56, 0, z0 + 0.46), 0.012, 0.025, 0.06, 0.3, 0.3, nu=16, nv=8)]),
+         (0.08, 0.30, 0.95))
+    # navigation lights: red port arm tip, green starboard, white anti-collision strobe on the canopy
+    for i, key in ((1, "NavRed"), (0, "NavGreen")):            # arm 1 at 135 deg (port), arm 0 at 45 deg (starboard)
+        a = math.radians(45 + 90 * i) if i == 1 else math.radians(-45)
+        p = (R * 0.86 * math.cos(a), R * 0.86 * math.sin(a), z0 + 0.36)
+        mesh(key, sphere(p, NAV_R, n=12), (1.0, 0.1, 0.05) if key == "NavRed" else (0.1, 1.0, 0.2))
+    for i in (2, 3):
+        a = math.radians(45 + 90 * i)
+        mesh(f"NavRear{i}", sphere((R * 0.86 * math.cos(a), R * 0.86 * math.sin(a), z0 + 0.36), NAV_R * 0.8, n=12),
+             (1.0, 0.1, 0.05) if i == 2 else (0.1, 1.0, 0.2))
+    mesh("Strobe", sphere((-0.20, 0, z0 + 0.585), NAV_R * 1.2, n=12), (1.0, 1.0, 1.0))
     return out

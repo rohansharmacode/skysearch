@@ -39,7 +39,7 @@ FACE_MAT = "concrete3"                     # fallen-tower faces: smooth grey con
 # The map's own grade (collapse_site/apply_look.py), with less haze: fixed ACES exposure, AO, film grain.
 GRADE = {
     "/rtx/post/tonemap/op": 6, "/rtx/post/tonemap/filmIso": 100.0, "/rtx/post/tonemap/cameraShutter": 50.0,
-    "/rtx/post/tonemap/fNumber": 9.0, "/rtx/post/histogram/enabled": False,
+    "/rtx/post/tonemap/fNumber": 12.0, "/rtx/post/histogram/enabled": False,
     "/rtx/ambientOcclusion/enabled": True, "/rtx/ambientOcclusion/rayLength": 3.0,
     "/rtx/indirectDiffuse/enabled": True, "/rtx/shadows/enabled": True, "/rtx/reflections/enabled": True,
     "/rtx/post/colorcorr/enabled": True, "/rtx/post/colorcorr/saturation": [1.0, 1.0, 1.0],
@@ -57,8 +57,14 @@ GRADE = {
     "/rtx/fog/fogDistanceDensity": 0.2, "/rtx/fog/fogStartHeight": 0.0, "/rtx/fog/fogEndHeight": 60.0,
     "/rtx/fog/fogHeightDensity": 0.15,
 }
-# dusty reinforced-concrete rubble (linear albedo): the reference photos read mid-grey with a warm dust cast
-RUBBLE_TINTS = ((0.36, 0.35, 0.33), (0.29, 0.28, 0.26), (0.43, 0.41, 0.38), (0.40, 0.36, 0.31), (0.33, 0.33, 0.33))
+# dusty reinforced-concrete rubble (linear albedo): the reference photos read mid-grey with a warm dust cast.
+# take1 (f/9) still read white with a blue sky cast, so darker and warmer: ~0.2-0.3 linear, red > blue
+RUBBLE_TINTS = ((0.27, 0.25, 0.22), (0.21, 0.20, 0.18), (0.32, 0.29, 0.25), (0.29, 0.25, 0.20), (0.24, 0.23, 0.22),
+                (0.18, 0.17, 0.16))
+FACADE_TINT = (0.80, 0.74, 0.66)           # scan facade photos on the standing blocks: kill the blue sky cast
+# fallen-tower pieces: weathered, dusty concrete and dirty beige tiles (not clean MDL white)
+SLAB_TINTS = ((0.30, 0.28, 0.25), (0.24, 0.23, 0.21), (0.35, 0.32, 0.28))
+TILE_TINTS = ((0.44, 0.40, 0.33), (0.37, 0.34, 0.29), (0.31, 0.29, 0.26))
 EXTRA_MDL = {"stucco": "Masonry/Stucco.mdl", "soil": "Natural/Soil_Rocky.mdl",
              "concrete3": "Masonry/Concrete_Smooth.mdl"}
 
@@ -277,7 +283,8 @@ def facade(stage, mats, looks, log, seed=0, slabs=True):
         if not quads:
             continue
         centre = np.concatenate([q for q, _ in quads]).mean(0)
-        bins = {k: [] for k in ("slab", "column", "wall", "tilewall", "chunk", "frame", "void", "stub", "rebar")}
+        bins = {k: [] for k in ("slab0", "slab1", "slab2", "column", "wall", "tilewall0", "tilewall1", "tilewall2",
+                                "chunk", "frame", "void", "stub", "rebar")}
         upper = sorted([i for i, (q, n) in enumerate(quads) if q[:, 2].mean() > centre[2]],
                        key=lambda i: quads[i][0][:, 0].mean())
         for fi, (Q, n) in enumerate(quads):
@@ -299,14 +306,16 @@ def facade(stage, mats, looks, log, seed=0, slabs=True):
             # floor slabs: thick grey plates sticking out of the dark crushed storeys, broken per bay
             for j in range(nst + 1):
                 for i in range(nb):
-                    if rng.random() < 0.07:
+                    if rng.random() < 0.15:
                         continue                                         # piece fallen out
-                    c = at((i + 0.5) / nb, j / nst, 0.10 + rng.normal(0, 0.06)) + V * rng.normal(0, 0.07)
+                    c = at((i + 0.5) / nb, j / nst, 0.10 + rng.normal(0, 0.10)) + V * rng.normal(0, 0.12)
                     if c[2] < -0.6:
                         continue
-                    Vt, Nt = tilted(math.radians(rng.normal(0, 3.5)))
-                    hn = 0.30 + rng.uniform(0, 0.16)
-                    bins["slab"].append(_box(c + Nt * (hn - 0.30), U, Vt, Nt, bw / 2 * rng.uniform(0.93, 1.0), slab_h, hn))
+                    Vt, Nt = tilted(math.radians(rng.normal(0, 6.5)))
+                    hn = 0.30 + rng.uniform(0, 0.22)
+                    hu = bw / 2 * rng.uniform(0.62, 1.0)                 # broken short of the bay line
+                    c = c + U * (bw / 2 - hu) * rng.choice((-1.0, 1.0))
+                    bins[f"slab{rng.integers(3)}"].append(_box(c + Nt * (hn - 0.30), U, Vt, Nt, hu, slab_h, hn))
             # between the slabs: dark crushed storeys, part-standing tiled infill walls with window openings,
             # column stubs; balconies on the upper west faces
             gap = (sh - 2 * slab_h) / 2
@@ -321,27 +330,34 @@ def facade(stage, mats, looks, log, seed=0, slabs=True):
                     if c[2] < -0.4:
                         continue
                     r = rng.random()
-                    if r < 0.42:
+                    if r < 0.52:
                         if rng.random() < 0.5:                           # crushed: chunk hanging in the gap
                             k = rng.uniform(0.2, 0.45)
                             bins["chunk"].append(_box(c + N * 0.1 + U * rng.normal(0, bw / 5), U, V, N, k * 1.4, k, k))
                         continue
                     hv = gap * (0.95 if r < 0.8 else rng.uniform(0.35, 0.6))
                     cc = c - V * (gap - hv) * (1 if r >= 0.8 else 0) + N * rng.normal(0.02, 0.04)
-                    key = "tilewall" if rng.random() < 0.6 else "wall"
-                    hu = bw / 2 * rng.uniform(0.86, 0.97)
-                    bins[key].append(_box(cc, U, V, N, hu, hv, 0.08))
-                    if r < 0.8 and rng.random() < 0.65:                  # window opening with what is left of a frame
-                        wu, wv = hu * 0.55, hv * 0.55
-                        bins["void"].append(_box(cc + N * 0.07, U, V, N, wu, wv, 0.02))
+                    key = f"tilewall{rng.integers(3)}" if rng.random() < 0.6 else "wall"
+                    hu = bw / 2 * rng.uniform(0.55, 0.97)
+                    cc = cc + U * (bw / 2 - hu) * rng.uniform(-1, 1)
+                    Vw, Nw = tilted(math.radians(rng.normal(0, 4.0)))
+                    Uw = U * math.cos(math.radians(rng.normal(0, 3))) + Vw * math.sin(math.radians(rng.normal(0, 3)))
+                    bins[key].append(_box(cc, Uw, Vw, Nw, hu, hv, 0.08))
+                    if r < 0.8 and rng.random() < 0.65:                  # torn opening: irregular, off-centre
+                        wu, wv = hu * rng.uniform(0.3, 0.7), hv * rng.uniform(0.35, 0.8)
+                        oc = cc + Nw * 0.07 + Uw * rng.uniform(-1, 1) * (hu - wu) * 0.8 + Vw * rng.uniform(-1, 1) * (hv - wv) * 0.6
+                        bins["void"].append(_box(oc, Uw, Vw, Nw, wu, wv, 0.02))
+                        if rng.random() < 0.5:                           # a second bite: not a clean rectangle
+                            bins["void"].append(_box(oc + Uw * rng.normal(0, wu * 0.6) + Vw * rng.normal(0, wv * 0.6),
+                                                     Uw, Vw, Nw, wu * rng.uniform(0.4, 0.8), wv * rng.uniform(0.4, 0.8), 0.021))
                         if rng.random() < 0.6:
                             for du, dv, a_, b_ in ((wu, 0, 0.03, wv), (-wu, 0, 0.03, wv), (0, wv, wu, 0.03), (0, -wv, wu, 0.03)):
                                 bins["frame"].append(_box(cc + U * du + V * dv + N * 0.1, U, V, N, a_, b_, 0.03))
                     if west and rng.random() < 0.55:                     # balcony slab + parapet
                         f0 = at((i + 0.5) / nb, j / nst + slab_h / L)
                         Vt, Nt = tilted(math.radians(rng.normal(0, 6)))
-                        bins["slab"].append(_box(f0 + Nt * 0.65, U, Vt, Nt, 0.46 * bw, 0.08, 0.6))
-                        bins["tilewall"].append(_box(f0 + Nt * 1.2 + Vt * 0.5, U, Vt, Nt, 0.46 * bw, 0.5, 0.06))
+                        bins[f"slab{rng.integers(3)}"].append(_box(f0 + Nt * 0.65, U, Vt, Nt, 0.46 * bw, 0.08, 0.6))
+                        bins[f"tilewall{rng.integers(3)}"].append(_box(f0 + Nt * 1.2 + Vt * 0.5, U, Vt, Nt, 0.46 * bw, 0.5, 0.06))
         # breaks: broken column stubs with bent rebar sticking out of both ends
         Ps = np.concatenate([q for q, _ in quads])
         for end, sgn in ((Ps[:, 1].min(), -1.0), (Ps[:, 1].max(), 1.0)):
@@ -370,9 +386,10 @@ def facade(stage, mats, looks, log, seed=0, slabs=True):
                         bins["rebar"] += [RB._bar(mid, p0, r=0.014), RB._bar(mid, tip, r=0.014)]
         out = f"{ROOT}/Facade/{t}"
         for k, parts in bins.items():
-            mat = {"slab": mats.get("concrete2"), "column": mats.get("concrete2"), "wall": mats.get("concrete"),
-                   "tilewall": looks.get("facade_tile"), "chunk": mats.get("concrete"), "stub": mats.get("concrete2"),
-                   "rebar": mats.get("rust")}.get(k, looks.get(k))
+            mat = {"slab0": looks.get("fslab0"), "slab1": looks.get("fslab1"), "slab2": looks.get("fslab2"),
+                   "column": looks.get("fslab1"), "wall": looks.get("fslab2"), "tilewall0": looks.get("ftile0"),
+                   "tilewall1": looks.get("ftile1"), "tilewall2": looks.get("ftile2"), "chunk": looks.get("fslab0"),
+                   "stub": looks.get("fslab1"), "rebar": mats.get("rust")}.get(k, looks.get(k))
             tot += _emit(stage, f"{out}/{k}", parts, mat)
     for s in SLABS:
         for part in (("top", "edges") if slabs else ("edges",)):
@@ -558,13 +575,36 @@ def scan_ai(stage, folder, log):
     return n
 
 
+def facade_tint(stage, log, tint=FACADE_TINT):
+    """Warm, darker tint on the scan-photo facade materials of the standing blocks (take1: blurry and blue)."""
+    from pxr import Gf, Sdf
+    looks = stage.GetPrimAtPath(f"{SITE}/Looks")
+    n = 0
+    if not looks.IsValid():
+        return 0
+    for mat in looks.GetChildren():
+        if not mat.GetName().startswith("facade"):
+            continue
+        for sh, attr, val, typ in (("OmniPBR", "inputs:diffuse_tint", Gf.Vec3f(*tint), Sdf.ValueTypeNames.Color3f),
+                                   ("albedoTex", "inputs:scale", Gf.Vec4f(*tint, 1.0), Sdf.ValueTypeNames.Float4)):
+            p = stage.GetPrimAtPath(f"{mat.GetPath()}/{sh}")
+            if p.IsValid():
+                at = p.GetAttribute(attr)
+                if not (at and at.IsValid()):
+                    at = p.CreateAttribute(attr, typ)
+                at.Set(val)
+                n += 1
+    log(f"[urban] facade photos: warm grey tint {tint} on {n} shader(s) (no blue sky cast)")
+    return n
+
+
 # Real-time quality for the live take: DLSS family. Keys differ between Kit versions; unknown keys are harmless.
 RT_QUALITY = {
     "/rtx/post/aa/op": 4,                       # 3 = DLSS super resolution, 4 = DLAA (AI anti-aliasing at native res)
     "/rtx/post/dlss/execMode": 2,               # quality
     "/rtx/rendermode": "RealTimePathTracing",   # "RTX Real-Time 2.0": DLSS ray reconstruction (AI denoiser)
     "/rtx-transient/dldenoiser/enabled": True,  # ray reconstruction on (key from the L40S settings dump)
-    "/rtx/post/motionblur/enabled": True, "/rtx/post/motionblur/exposureFraction": 0.5,
+    "/rtx/post/motionblur/enabled": True, "/rtx/post/motionblur/exposureFraction": 0.15,   # take1: 0.5 smeared pans
 }
 
 
@@ -632,9 +672,17 @@ def dress(stage, sc, a, mats, nv, isa, log=print):
              "tile": _pv(stage, f"{ROOT}/Looks/tile", (0.62, 0.59, 0.53), 0.35, 0.0, 0.4),
              "facade_tile": _pv(stage, f"{ROOT}/Looks/facade_tile", (0.60, 0.54, 0.45), 0.55, 0.0, 0.2),  # beige tiles
              "interior": _pv(stage, f"{ROOT}/Looks/interior", (0.03, 0.028, 0.026), 0.95)}       # crushed storeys
+    for k, rgb in enumerate(SLAB_TINTS):
+        looks[f"fslab{k}"] = _pv(stage, f"{ROOT}/Looks/fslab{k}", rgb, 0.9)
+    for k, rgb in enumerate(TILE_TINTS):
+        looks[f"ftile{k}"] = _pv(stage, f"{ROOT}/Looks/ftile{k}", rgb, 0.6, 0.0, 0.1)
     scan = str(getattr(a, "urban_terrain", "scan")) == "scan"
     if scan:
         scan_ai(stage, getattr(a, "scan_ai", ""), log)
+    try:
+        facade_tint(stage, log)
+    except Exception as e:
+        log(f"[urban] facade tint skipped ({type(e).__name__}: {e})")
     faces = terrain(stage, mats, log, seed, rematerial=not scan)
     facade(stage, mats, looks, log, seed, slabs=True)
     debris(stage, mats, looks, faces, log, seed, n_core=int(getattr(a, "urban_debris", 32000)),

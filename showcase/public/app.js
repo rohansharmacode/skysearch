@@ -28,14 +28,14 @@ const SCENES = [
   ['s1', 0.0, 7.4],
   ['s2', 7.1, 13.4],
   ['s3', 13.1, 19.8],
-  ['s4', 19.5, 46.0],
-  ['s5', 45.7, 62.2],
-  ['s6', 61.9, 72.2],
-  ['s7', 71.9, 82.4],
-  ['s8', 82.1, 89.4],
-  ['s9', 89.1, 97.0],
+  ['s4', 19.5, 44.2],
+  ['s5', 43.9, 58.4],
+  ['s6', 58.1, 78.6],
+  ['s7', 78.3, 88.3],
+  ['s8', 88.0, 94.6],
+  ['s9', 94.3, 100.0],
 ];
-const DURATION = 97.0;
+const DURATION = 100.0;
 const scene = {};
 for (const [id, a, b] of SCENES) scene[id] = { el: document.getElementById(id), a, b };
 
@@ -122,10 +122,10 @@ function blob(cx, cy, r, n = 22, jit = 0.18) {
 // =====================================================================
 const STEPS = [
   ['Survey', 'LiDAR maps the rubble pile in 3D.', 0],
-  ['Land', 'The drones land on flat spots and switch their rotors off.', 4.2],
+  ['Lower pods', 'Each drone lowers a radar pod onto the rubble on a cable.', 4.2],
   ['Radar', 'Radar looks for breathing under the rubble. Each reading is a distance: a ring.', 6.6],
-  ['Ping', 'Where three rings cross, the drones mark a place to dig.', 10.0],
-  ['Listen', 'Then they listen to the other piles: voices, knocking, a dog.', 12.2],
+  ['Ping', 'Where three rings cross, the drones mark a place for rescuers to check.', 10.0],
+  ['Listen', 'Rotors off, they listen to the other piles: voices, knocking, a dog.', 12.2],
   ['Rank', 'An AI agent ranks the piles by how human and how urgent each sound is.', 16.2],
   ['Dispatch', 'The drones fly to the top pile on their own. The loop starts again.', 20.0],
 ];
@@ -224,7 +224,7 @@ const pingG = el('g', { opacity: 0 }, map);
 const pingPulse = el('ellipse', { cx: T.x, cy: T.y, rx: 30, ry: 22, fill: 'none', stroke: '#ff5d5d', 'stroke-width': 2 }, pingG);
 const pingE = el('ellipse', { cx: T.x, cy: T.y, rx: 30, ry: 22, fill: 'rgba(255,93,93,.22)', stroke: '#ff5d5d', 'stroke-width': 2.5 }, pingG);
 el('circle', { cx: T.x, cy: T.y, r: 4.5, fill: '#ff8080' }, pingG);
-const pingLbl = fo(pingG, T.x - 150, T.y + 92, 220, 70, '<b>Dig here first</b><span>A2 · candidate region</span>', 'chip ping');
+const pingLbl = fo(pingG, T.x - 150, T.y + 92, 250, 70, '<b>Check here first</b><span>A2 · a lead, not confirmed</span>', 'chip ping');
 const pingBadge = fo(map, A2.x - 64, A2.y + 96, 128, 40, '✓ pinged', 'chip ok');
 pingBadge.style.opacity = 0;
 
@@ -301,7 +301,7 @@ function renderS4(u) {
     const p = dronePos(i, Math.max(L, 0));
     set(d.g, { transform: `translate(${p.x.toFixed(2)},${p.y.toFixed(2)})` });
     set(d.lbl, { x: 14, y: -14 });
-    const rotOn = L < 5.0 ? 1 : L > 20.3 ? clamp((L - 20.3) / 0.4) : 0;
+    const rotOn = L < 12.0 ? 1 : L > 20.3 ? clamp((L - 20.3) / 0.4) : clamp(1 - (L - 12.0) / 0.4);
     set(d.rotor, { opacity: (0.25 + 0.65 * rotOn).toFixed(3), transform: `rotate(${(L * 900 * rotOn) % 360})` });
     set(d.glow, { opacity: (0.12 + 0.18 * rotOn).toFixed(3) });
     // LiDAR sweep while surveying
@@ -384,114 +384,137 @@ function renderS4(u) {
 }
 
 // =====================================================================
-// S5: footage window
+// footage windows (S5, S6): clips cross-fade on a fixed schedule
 // =====================================================================
-const WCAPS = [
-  'A reconstruction of the real collapse site',
-  'LiDAR maps one sector of the rubble',
-  'Radar rings cross: a place to dig',
-  'Each ping becomes a marked place to dig',
+function makeWin(sec) {
+  return $$(`#${sec} .wclip`).map((v) => ({ v, at: parseFloat(v.dataset.start), dur: parseFloat(v.dataset.dur), want: null }));
+}
+function renderWin(clips, u) {
+  clips.forEach((c, i) => {
+    const local = u - c.at;
+    const nx = clips[i + 1];
+    const op = clamp(local / 0.5) * (nx ? clamp((nx.at + 0.5 - u) / 0.5) : 1);
+    c.v.style.opacity = op.toFixed(3);
+    c.v.style.transform = `scale(${(1.0 + 0.04 * clamp(local / c.dur)).toFixed(4)})`;
+    c.want = op > 0 ? clamp(local, 0, c.dur - 0.05) : null;
+  });
+}
+
+// S5: the planned search
+const CAPS5 = [
+  [0.6, 'Three drones take off from the command van'],
+  [4.55, 'LiDAR maps rubble pile A2 in 3D'],
+  [8.85, 'Each drone lowers a radar pod on a cable to feel for breathing'],
+  [11.6, 'A breathing rhythm at A2: “A2-R1 · 8/min · urgent”, a place for rescuers to check'],
 ];
-const wclips = $$('#s5 .wclip').map((v) => ({ v, at: parseFloat(v.dataset.start), dur: parseFloat(v.dataset.dur) }));
-const wnum = $('#wnum'), wtxt = $('#wtxt'), wcap = $('.wcap');
+const wclips5 = makeWin('s5');
+const wnum = $('#s5 .wcap .num'), wtxt = $('#s5 .wtxt'), wcap = $('#s5 .wcap');
 let lastW = -1;
 function renderS5(u) {
-  let idx = 0;
-  wclips.forEach((c, i) => {
-    const local = u - c.at;
-    const op = clamp(local / 0.5) * (i < wclips.length - 1 ? clamp((wclips[i + 1].at + 0.5 - u) / 0.5) : 1);
-    c.v.style.opacity = op;
-    c.v.style.transform = `scale(${1.0 + 0.045 * clamp(local / c.dur)})`;
-    c.want = op > 0 ? clamp(local, 0, c.dur - 0.04) : null;
-    if (u >= c.at + 0.25) idx = i;
-  });
-  if (idx !== lastW) { wnum.textContent = idx + 1; wtxt.textContent = WCAPS[idx]; lastW = idx; }
-  const cp = spring(u - (wclips[idx].at + 0.25), 9);
-  wcap.style.opacity = u < 0.6 ? 0 : (idx === 0 ? spring(u - 0.6) : cp);
-  wcap.style.transform = `translateY(${(1 - (idx === 0 ? spring(u - 0.6) : cp)) * 12}px)`;
+  renderWin(wclips5, u);
+  let idx = 0; CAPS5.forEach((c, i) => { if (u >= c[0]) idx = i; });
+  if (idx !== lastW) { wnum.textContent = idx + 1; wtxt.textContent = CAPS5[idx][1]; lastW = idx; }
+  const cp = spring(u - CAPS5[idx][0], 9);
+  wcap.style.opacity = u < CAPS5[0][0] ? 0 : cp.toFixed(3);
+  wcap.style.transform = `translateY(${((1 - cp) * 12).toFixed(2)}px)`;
 }
 
 // =====================================================================
-// S6: live change (operator adds a zone)
+// S6: live, unscripted change (hidden voice near A1, plan changes A2 -> A1)
 // =====================================================================
-const dmap = $('#dmap');
-dmap.innerHTML = `<defs><pattern id="hatch" width="10" height="10" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="10" stroke="rgba(44,183,175,.35)" stroke-width="3"/></pattern></defs>`;
-const dg = el('g', {}, dmap);
-for (let x = 0; x <= 900; x += 40) el('line', { x1: x, y1: 0, x2: x, y2: 560, stroke: 'rgba(255,255,255,.03)' }, dg);
-for (let y = 0; y <= 560; y += 40) el('line', { x1: 0, y1: y, x2: 900, y2: y, stroke: 'rgba(255,255,255,.03)' }, dg);
-// buildings/rubble
-[[60, 60, 150, 90], [250, 40, 120, 70], [700, 50, 150, 100], [60, 400, 130, 110], [720, 380, 140, 120], [400, 430, 180, 90]].forEach(([x, y, w, h]) =>
-  el('rect', { x, y, width: w, height: h, rx: 8, fill: '#1a2233', stroke: 'rgba(255,255,255,.07)' }, dg));
-rs = 3;
-el('path', { d: blob(300, 260, 120, 26, 0.25), fill: '#242d42', stroke: 'rgba(255,255,255,.1)' }, dg);
-el('path', { d: blob(610, 250, 110, 26, 0.25), fill: '#242d42', stroke: 'rgba(255,255,255,.1)' }, dg);
-// zone T1a (existing)
-const zA = el('path', { d: 'M180,150 L430,140 L440,370 L170,380 Z', fill: 'rgba(91,140,255,.08)', stroke: '#5b8cff', 'stroke-width': 2.5, 'stroke-dasharray': '8 6' }, dmap);
-const zAl = fo(dmap, 182, 152, 140, 40, 'Zone T1a · done', 'chip');
-// zone T1b (new)
-const zBd = 'M500,150 L730,145 L735,360 L505,365 Z';
-const zB = el('path', { d: zBd, fill: 'url(#hatch)', stroke: '#2cb7af', 'stroke-width': 3, opacity: 0 }, dmap);
-const zBlen = 2 * (230 + 215);
-const zBl = fo(dmap, 566, 300, 170, 40, 'New zone T1b', 'chip zone');
-// voices near T1b
-const vRings = [0, 1, 2].map(() => el('circle', { cx: 615, cy: 255, r: 0, fill: 'none', stroke: '#f0857c', 'stroke-width': 2.5, opacity: 0 }, dmap));
-const vChip = fo(dmap, 540, 300, 200, 40, '<span class="q">Voices heard</span>', 'chip');
-// drones in T1a
-const dDr = COLORS.map((c, i) => {
-  const g = el('g', {}, dmap);
-  el('circle', { r: 16, fill: 'none', stroke: c, 'stroke-width': 2, 'stroke-dasharray': '5 4' }, g);
-  el('circle', { r: 7, fill: c, stroke: '#090e18', 'stroke-width': 2 }, g);
-  const t = el('text', { x: 13, y: -13, 'font-family': 'GeistMono', 'font-size': 13, fill: '#eef2f9', 'font-weight': 600 }, g); t.textContent = 'd' + (i + 1);
+const wclips6 = makeWin('s6');
+const ban6 = $('#ban6');
+const beats = $$('#s6 .beat').map((li) => ({ li, at: parseFloat(li.dataset.at) }));
+const mmap = $('#mmap');
+const MX = [130, 290, 450], MY = [50, 112, 174];
+const MP = {};
+rs = 5;
+['A', 'B', 'C'].forEach((r, ri) => [1, 2, 3].forEach((c, ci) => {
+  const id = r + c, x = MX[ci], y = MY[ri];
+  const halo = el('ellipse', { cx: x, cy: y, rx: 58, ry: 26, fill: 'none', stroke: '#f0857c', 'stroke-width': 2.5, opacity: 0 }, mmap);
+  const body = el('ellipse', { cx: x, cy: y, rx: 46, ry: 19, fill: '#2a3349', stroke: 'rgba(255,255,255,.14)', 'stroke-width': 1.2 }, mmap);
+  const t = el('text', { x: x - 62, y: y + 5, fill: '#9aa5ba', 'font-family': 'GeistMono', 'font-size': 14, 'font-weight': 600, 'text-anchor': 'end' }, mmap);
+  t.textContent = id;
+  MP[id] = { x, y, halo, body, t };
+}));
+const mA1 = MP.A1, mA2 = MP.A2;
+// A2 lead found earlier in the take
+const leadG = el('g', {}, mmap);
+el('circle', { cx: mA2.x + 16, cy: mA2.y + 2, r: 5, fill: '#ff6b6b', stroke: '#090e18', 'stroke-width': 1.5 }, leadG);
+const leadT = el('text', { x: mA2.x + 26, y: mA2.y + 30, fill: '#ff9b9b', 'font-family': 'GeistMono', 'font-size': 12, 'font-weight': 600 }, leadG);
+leadT.textContent = 'A2-R1 · 8/min';
+// sound rings at A1
+const sRings = [0, 1, 2].map(() => el('ellipse', { cx: mA1.x, cy: mA1.y, rx: 0, ry: 0, fill: 'none', stroke: '#f0857c', 'stroke-width': 2, opacity: 0 }, mmap));
+// bearing lines from two drones toward A1
+const bearings = [0, 1].map(() => el('line', { stroke: '#2cb7af', 'stroke-width': 2, 'stroke-dasharray': '5 5', opacity: 0 }, mmap));
+// LiDAR points and pods on A1
+const a1pts = [];
+for (let i = 0; i < 70; i++) {
+  const ang = rnd() * 6.28, d = Math.sqrt(rnd());
+  a1pts.push(el('circle', { cx: mA1.x + Math.cos(ang) * d * 42, cy: mA1.y + Math.sin(ang) * d * 17, r: 1.5, fill: '#a597ff', opacity: 0 }, mmap));
+}
+const a1pods = [[-22, 4], [4, -6], [24, 5]].map(([dx, dy]) => el('rect', { x: mA1.x + dx - 4, y: mA1.y + dy - 4, width: 8, height: 8, rx: 2, fill: '#f5a35c', opacity: 0 }, mmap));
+const a1cables = [[-22, 4], [4, -6], [24, 5]].map(([dx, dy]) => el('line', { x1: mA1.x + dx, y1: mA1.y + dy - 26, x2: mA1.x + dx, y2: mA1.y + dy, stroke: '#f5a35c', 'stroke-width': 1.2, opacity: 0 }, mmap));
+// drones
+const mDr = COLORS.map((c, i) => {
+  const g = el('g', {}, mmap);
+  el('circle', { r: 9, fill: 'none', stroke: c, 'stroke-width': 1.6, 'stroke-dasharray': '3 3' }, g);
+  el('circle', { r: 4.5, fill: c, stroke: '#090e18', 'stroke-width': 1.5 }, g);
   return g;
 });
-const dStart = [{ x: 250, y: 220 }, { x: 360, y: 300 }, { x: 300, y: 330 }];
-const dEnd = [{ x: 560, y: 215 }, { x: 680, y: 200 }, { x: 640, y: 270 }];
-const dArcs = dStart.map((s, i) => el('path', { d: `M${s.x},${s.y} Q${(s.x + dEnd[i].x) / 2},${Math.min(s.y, dEnd[i].y) - 110} ${dEnd[i].x},${dEnd[i].y}`, fill: 'none', stroke: COLORS[i], 'stroke-width': 2, 'stroke-dasharray': '6 6', opacity: 0 }, dmap));
-const cursor = $('#cursor'), addBtn = $('#addzone'), ban1 = $('#ban1'), ban2 = $('#ban2');
-const logLis = $$('#log li').map((li) => ({ li, at: parseFloat(li.dataset.at) }));
+const OFF = [{ x: -24, y: -24 }, { x: 2, y: -30 }, { x: 26, y: -24 }];
 function renderS6(u) {
-  // voices pulse near T1b
-  vRings.forEach((c, k) => {
-    const ph = pm(u - 0.6 + k * 0.45, 1.35) / 1.35;
-    set(c, { r: (20 + ph * 90).toFixed(1), opacity: u > 0.6 && u < 4.2 ? ((1 - ph) * 0.7).toFixed(3) : 0 });
+  renderWin(wclips6, u);
+  // beats: the current one is highlighted, earlier ones stay readable
+  let cur = -1; beats.forEach((b, i) => { if (u >= b.at) cur = i; });
+  beats.forEach((b, i) => {
+    const p = spring(u - b.at, 7.5);
+    b.li.style.opacity = (clamp(p * 1.4) * (i < cur ? 0.55 : 1)).toFixed(3);
+    b.li.style.transform = `translateX(${((1 - p) * 18).toFixed(2)}px)`;
+    b.li.classList.toggle('on', i === cur);
   });
-  vChip.style.opacity = spring(u - 0.9) * clamp((4.2 - u) / 0.4);
-  // cursor path: enter, travel to button, click
-  const btnX = 842 + 70, btnY = 32 + 2; // within dash
-  const start = { x: 640, y: 560 };
-  const cp = easeInOut((u - 1.3) / 1.5);
-  const cpos = lerpP(start, { x: btnX, y: btnY }, cp);
-  const leave = easeInOut((u - 3.6) / 1.0);
-  const cfinal = lerpP(cpos, { x: 720, y: 520 }, leave);
-  cursor.style.opacity = clamp((u - 1.1) / 0.3) * clamp((4.8 - u) / 0.3);
-  const press = u > 3.0 && u < 3.25 ? 0.9 : 1;
-  cursor.style.transform = `translate(${cfinal.x}px,${cfinal.y}px) scale(${press})`;
-  addBtn.style.transform = `scale(${u > 3.0 && u < 3.25 ? 0.93 : 1})`;
-  addBtn.style.boxShadow = u > 3.0 && u < 3.9 ? `0 0 0 ${8 * (u - 3) / 0.9}px rgba(44,183,175,${0.4 * (1 - (u - 3) / 0.9)})` : '';
-  // zone draw
-  const zp = easeInOut((u - 3.3) / 0.9);
-  set(zB, { opacity: u > 3.3 ? 1 : 0, 'stroke-dasharray': `${zBlen * zp} ${zBlen}` });
-  zB.style.fillOpacity = clamp((u - 3.8) / 0.5);
-  zBl.style.opacity = spring(u - 3.9);
-  // banners
-  const b1 = spring(u - 3.35), b1o = clamp((5.0 - u) / 0.35);
-  ban1.style.opacity = b1 * b1o; ban1.style.transform = `translate(-50%, ${(1 - b1) * -16}px)`;
-  const b2 = spring(u - 5.0);
-  ban2.style.opacity = b2; ban2.style.transform = `translate(-50%, ${(1 - b2) * -16}px)`;
-  // drones fly to T1b
-  dDr.forEach((g, i) => {
-    const a = 5.5 + i * 0.15, p = easeInOut((u - a) / 2.2);
-    const s = dStart[i], e = dEnd[i], c = { x: (s.x + e.x) / 2, y: Math.min(s.y, e.y) - 110 };
-    const hover = { x: Math.sin(u * 2 + i) * 3, y: Math.cos(u * 2.3 + i) * 3 };
-    const pos = quad(s, c, e, p);
-    set(g, { transform: `translate(${(pos.x + hover.x).toFixed(1)},${(pos.y + hover.y).toFixed(1)})` });
+  // banner
+  const bp = spring(u - 10.7);
+  ban6.style.opacity = bp.toFixed(3);
+  ban6.style.transform = `translate(-50%, ${((1 - bp) * -16).toFixed(2)}px)`;
+  // sound at A1 (heard from beat 2)
+  sRings.forEach((c, k) => {
+    const ph = pm(u - 5.6 + k * 0.5, 1.5) / 1.5;
+    const on = u > 5.6 && u < 15.6;
+    set(c, { rx: (12 + ph * 62).toFixed(1), ry: (6 + ph * 27).toFixed(1), opacity: on ? ((1 - ph) * 0.8).toFixed(3) : 0 });
   });
-  dArcs.forEach((a, i) => {
-    const len = 420, p = easeInOut((u - 5.1 - i * 0.1) / 0.6);
-    set(a, { opacity: clamp(1 - (u - 8.2) / 0.5) * (u > 5.1 ? 0.8 : 0), 'stroke-dasharray': `${len * p} ${len}` });
+  set(mA1.halo, { opacity: (clamp((u - 10.7) / 0.5) * (0.6 + 0.3 * Math.sin(u * 4))).toFixed(3) });
+  set(mA1.t, { fill: u > 5.6 ? '#ffb4ad' : '#9aa5ba' });
+  // drones: hover at A2, then fly to A1 and circle it
+  const pos = [];
+  mDr.forEach((g, i) => {
+    const a2 = { x: mA2.x + OFF[i].x * 0.9, y: mA2.y + OFF[i].y * 0.45 + 6 };
+    const ang = (-90 + i * 120 + u * 18) * Math.PI / 180;
+    const orb = { x: mA1.x + Math.cos(ang) * 40, y: mA1.y + Math.sin(ang) * 17 };
+    const t0 = 11.0 + i * 0.25, d = 2.4;
+    let p;
+    if (u < t0) p = a2;
+    else if (u < t0 + d) {
+      const e = { x: mA1.x + Math.cos((-90 + i * 120 + (t0 + d) * 18) * Math.PI / 180) * 40, y: mA1.y + Math.sin((-90 + i * 120 + (t0 + d) * 18) * Math.PI / 180) * 17 };
+      const c = { x: (a2.x + e.x) / 2, y: Math.min(a2.y, e.y) - 34 };
+      p = quad(a2, c, e, easeInOut((u - t0) / d));
+    } else p = orb;
+    const hov = { x: Math.sin(u * 2.1 + i) * 1.5, y: Math.cos(u * 2.4 + i) * 1.5 };
+    pos.push(p);
+    set(g, { transform: `translate(${(p.x + hov.x).toFixed(1)},${(p.y + hov.y).toFixed(1)})` });
   });
-  zA.style.opacity = u > 7.5 ? mix(1, 0.5, clamp((u - 7.5) / 0.6)) : 1;
-  logLis.forEach(({ li, at }) => { const p = spring(u - at); li.style.opacity = p; li.style.transform = `translateX(${(1 - p) * -16}px)`; });
+  bearings.forEach((ln, k) => {
+    const p = pos[k * 2];
+    const on = clamp((u - 6.3) / 0.5) * clamp((10.9 - u) / 0.4);
+    const dx = mA1.x - p.x, dy = mA1.y - p.y, L = Math.hypot(dx, dy);
+    set(ln, { x1: p.x.toFixed(1), y1: p.y.toFixed(1), x2: (p.x + dx * (L - 26) / L).toFixed(1), y2: (p.y + dy * (L - 26) / L).toFixed(1), opacity: (on * 0.9).toFixed(3) });
+  });
+  // map A1, then pods
+  a1pts.forEach((c, k) => set(c, { opacity: (clamp((u - (15.9 + (k / a1pts.length) * 2.2)) / 0.3) * 0.9).toFixed(3) }));
+  a1pods.forEach((r, k) => {
+    const p = clamp((u - 18.3 - k * 0.25) / 0.4);
+    set(r, { opacity: p.toFixed(3) }); set(a1cables[k], { opacity: (p * 0.8).toFixed(3) });
+  });
 }
 
 // =====================================================================
@@ -499,7 +522,7 @@ function renderS6(u) {
 // =====================================================================
 const brand = $('#brand');
 const blobs = $$('.blob');
-const bgClip = { v: $('#s1 .bgclip'), at: 0, dur: 4.35 };
+const bgClip = { v: $('#s1 .bgclip'), at: 0, dur: 4.6 };
 function render(t) {
   // aurora drift
   blobs[0].style.transform = `translate(${Math.sin(t * 0.21) * 90}px, ${Math.cos(t * 0.17) * 60}px)`;
@@ -517,7 +540,7 @@ function render(t) {
     s.el.style.filter = (inP < 0.99 || outP > 0) ? `blur(${((1 - inP) * 10 + outP * 8).toFixed(2)}px)` : 'none';
     s.on = op > 0.001;
   }
-  const b = clamp((t - 19.8) / 0.6) * clamp((89.3 - t) / 0.6);
+  const b = clamp((t - 19.8) / 0.6) * clamp((94.3 - t) / 0.6);
   brand.style.opacity = b;
 
   for (const r of reveals) {
@@ -550,15 +573,15 @@ function render(t) {
     b2.el.style.width = (b2.to * spring(t - b2.s.a - b2.at, 5)).toFixed(2) + '%';
   }
   if (scene.s4.on) renderS4(t - scene.s4.a);
-  if (scene.s5.on) renderS5(t - scene.s5.a); else wclips.forEach((c) => (c.want = null));
-  if (scene.s6.on) renderS6(t - scene.s6.a);
+  if (scene.s5.on) renderS5(t - scene.s5.a); else wclips5.forEach((c) => (c.want = null));
+  if (scene.s6.on) renderS6(t - scene.s6.a); else wclips6.forEach((c) => (c.want = null));
   bgClip.want = scene.s1.on ? clamp(t * 0.62, 0, bgClip.dur) : null; // slowed to fill the scene
   // final fade to black
   $('#stage').style.filter = t > DURATION - 1.0 ? `brightness(${clamp((DURATION - t) / 1.0).toFixed(3)})` : 'none';
 }
 
 // ---- video sync -------------------------------------------------------------
-const vids = [bgClip, ...wclips];
+const vids = [bgClip, ...wclips5, ...wclips6];
 function seekVideo(c) {
   return new Promise((res) => {
     if (c.want == null) return res();
@@ -570,7 +593,8 @@ function seekVideo(c) {
   });
 }
 window.__duration = DURATION;
-window.__seek = async (t) => { render(t); await Promise.all(vids.map(seekVideo)); };
+const nextPaint = () => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+window.__seek = async (t) => { render(t); await Promise.all(vids.map(seekVideo)); await nextPaint(); };
 window.__ready = Promise.all([document.fonts.ready, ...vids.map((c) => new Promise((r) => (c.v.readyState >= 2 ? r() : c.v.addEventListener('loadeddata', r, { once: true }))))]);
 
 // ---- live playback ---------------------------------------------------------

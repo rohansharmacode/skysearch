@@ -25,7 +25,7 @@
 
   <!-- S1: the case -->
   <section class="scene" id="s1">
-    <video class="bgclip" data-clip="aerial" data-start="0" muted playsinline preload="auto" src="clips/aerial.webm"></video>
+    <video class="bgclip" data-clip="launch" data-start="0" muted playsinline preload="auto" src="clips/launch.webm"></video>
     <div class="s1-copy">
       <p class="eyebrow r" data-in="0.3">6 February 2016 · Tainan, Taiwan</p>
       <h1 class="headline words" data-in="0.6">A 16-storey building falls in seconds.</h1>
@@ -33,11 +33,12 @@
     </div>
     <div class="stats">
       <div class="stat r" data-in="2.4"><b class="roll" data-to="115" data-from="0" data-at="2.4">0</b><span>people died in the building</span></div>
-      <div class="stat r" data-in="2.6"><b><span class="roll" data-to="155" data-at="2.6">0</span>+</b><span>trapped in the first 48 hours</span></div>
-      <div class="stat r" data-in="2.8"><b><span class="roll" data-to="60" data-at="2.8">0</span> h</b><span>until the last person was found alive</span></div>
-      <div class="stat r" data-in="3.0"><b><span class="roll" data-to="7.5" data-dec="1" data-at="3.0">0</span> days</b><span>of searching the rubble</span></div>
+      <div class="stat r" data-in="2.6"><b class="roll" data-to="175" data-at="2.6">0</b><span>were rescued alive</span></div>
+      <div class="stat r" data-in="2.8"><b><span class="roll" data-to="62" data-at="2.8">0</span> h</b><span>until the last person was found alive</span></div>
+      <div class="stat r" data-in="3.0"><b><span class="roll" data-to="7.5" data-dec="1" data-at="3.0">0</span> days</b><span>until the last resident was found</span></div>
     </div>
-    <p class="source r" data-in="3.6">Weiguan Jinlong building collapse. Sources: BBC, Reuters, CNN, ReliefWeb, Taipei Times (Feb 2016).</p>
+    <p class="source r" data-in="3.6">Weiguan Jinlong building collapse. Sources: Tainan City Fire Bureau; Pan (2019); Chiu &amp; Tseng.</p>
+    <p class="bgnote r" data-in="3.6">Background: our simulated test town, not the real site</p>
   </section>
 
   <!-- S2: the problem -->
@@ -70,6 +71,7 @@
     </div>
     <div class="mapcard r" data-in="0.15">
       <svg id="map" viewBox="0 0 900 900"></svg>
+      <span class="maptag">Schematic · all people and sounds simulated</span>
     </div>
     <div class="rank glass" id="rank">
       <p class="eyebrow small">Acoustic agent · pile priority</p>
@@ -80,68 +82,70 @@
     </div>
   </section>
 
-  <!-- S5: Isaac footage -->
+  <!-- S5: Isaac footage, the planned search -->
   <section class="scene" id="s5">
     <div class="s5-head">
-      <p class="eyebrow r" data-in="0.1">Simulated end to end</p>
-      <h2 class="headline sm words" data-in="0.25">Tested on a reconstruction of the real collapse site.</h2>
+      <p class="eyebrow r" data-in="0.1">Simulation · one continuous take</p>
+      <h2 class="headline sm words" data-in="0.25">Tested in a simulated town with nine rubble piles.</h2>
     </div>
     <div class="window r" data-in="0.2">
-      <div class="wbar"><i></i><i></i><i></i><span>Isaac Sim 6 · path-traced · NVIDIA L40S</span></div>
+      <div class="wbar"><i></i><i></i><i></i><span>Isaac Sim · our test town, piles A1–C3 · sped up</span><span class="simtag"><b></b>Simulation</span></div>
       <div class="wbody">
-        <video class="wclip" data-clip="aerial" data-start="0.0" data-dur="4.4" muted playsinline preload="auto" src="clips/aerial.webm"></video>
-        <video class="wclip" data-clip="lidar" data-start="4.0" data-dur="4.45" muted playsinline preload="auto" src="clips/lidar.webm"></video>
-        <video class="wclip" data-clip="radar" data-start="8.1" data-dur="3.25" muted playsinline preload="auto" src="clips/radar.webm"></video>
-        <video class="wclip" data-clip="topdown" data-start="11.0" data-dur="4.15" muted playsinline preload="auto" src="clips/topdown.webm"></video>
-        <div class="wcap glass"><span class="num" id="wnum">1</span><span id="wtxt"></span></div>
+        <video class="wclip" data-start="0.0" data-dur="4.7" muted playsinline preload="auto" src="clips/launch.webm"></video>
+        <video class="wclip" data-start="4.3" data-dur="4.7" muted playsinline preload="auto" src="clips/lidar.webm"></video>
+        <video class="wclip" data-start="8.6" data-dur="6.4" muted playsinline preload="auto" src="clips/pods.webm"></video>
+        <div class="wcap glass"><span class="num">1</span><span class="wtxt"></span></div>
       </div>
     </div>
   </section>
 
-  <!-- S6: live change -->
+  <!-- S6: live, unscripted change -->
   <section class="scene" id="s6">
-    <div class="s6-left">
-      <p class="eyebrow r" data-in="0.1">Adapts live</p>
-      <h2 class="headline sm words" data-in="0.25">The plan changes mid-mission. The swarm keeps up.</h2>
-      <p class="lede sm r" data-in="1.1">In one continuous take, the operator adds a search zone. The coordinator re-plans and the drones go, with no restart.</p>
-      <ul class="log" id="log">
-        <li data-at="3.3"><code>0 s</code> Operator adds zone T1b</li>
-        <li data-at="4.5"><code>+14 s</code> The coordinator re-plans</li>
-        <li data-at="5.6"><code>+28 s</code> d1, d2, d3 dispatched to T1b</li>
-      </ul>
+    <div class="s6-head">
+      <p class="eyebrow r" data-in="0.1">Live change · unscripted · same take</p>
+      <h2 class="headline sm words" data-in="0.25">Nobody told the drones. They heard it.</h2>
     </div>
-    <div class="dash glass r" data-in="0.3">
-      <div class="dbar"><span class="brandmini">● LARPVERSE</span><span class="dtab on">Map</span><span class="dtab">Pings</span><span class="dtab">Acoustic</span><span class="spacer"></span><span class="btn" id="addzone">+ Add as zone</span></div>
-      <svg id="dmap" viewBox="0 0 900 560"></svg>
-      <div class="banner" id="ban1"><span class="bd" style="background:#2cb7af"></span>Operator added zone <b>T1b</b></div>
-      <div class="banner" id="ban2"><span class="bd" style="background:#5b8cff"></span>Re-planned · <b>d1–d3</b> dispatched to T1b</div>
-      <svg class="cursor" id="cursor" viewBox="0 0 24 24"><path d="M4 2l14 9-6.5 1.5L15 20l-3 1.5-3-7.5L4 18z" fill="#fff" stroke="#090e18" stroke-width="1.2"/></svg>
+    <div class="window w6 r" data-in="0.2">
+      <div class="wbar"><i></i><i></i><i></i><span>Isaac Sim · same take, continued · sped up</span><span class="simtag"><b></b>Simulation</span></div>
+      <div class="wbody">
+        <video class="wclip" data-start="0.0" data-dur="5.7" muted playsinline preload="auto" src="clips/live.webm"></video>
+        <video class="wclip" data-start="5.1" data-dur="5.7" muted playsinline preload="auto" src="clips/voice.webm"></video>
+        <video class="wclip" data-start="10.2" data-dur="5.7" muted playsinline preload="auto" src="clips/replan.webm"></video>
+        <video class="wclip" data-start="15.3" data-dur="5.6" muted playsinline preload="auto" src="clips/a1.webm"></video>
+        <div class="banner" id="ban6"><span class="bd"></span><span>Plan changed: <b>A2 → A1</b> · new voice heard</span></div>
+      </div>
     </div>
+    <ol class="beats">
+      <li class="beat" data-at="1.2"><span class="bn">1</span><div><b>A hidden voice is switched on</b><span>A teammate turns on a simulated voice near pile A1. Nobody tells the drones.</span></div></li>
+      <li class="beat" data-at="5.6"><span class="bn">2</span><div><b>The drones hear a new voice</b><span>Their microphones, resting on the rubble with rotors off, hear it near A1.</span><em class="chips"><i>Voice priority 57/100</i><i>2/2 drones agree on direction</i></em></div></li>
+      <li class="beat" data-at="10.7"><span class="bn">3</span><div><b>Plan changed</b><span>They cut the search at A2 short and fly to A1.</span></div></li>
+      <li class="beat" data-at="15.8"><span class="bn">4</span><div><b>They search the new pile</b><span>They map A1 with LiDAR and lower radar pods there.</span></div></li>
+    </ol>
+    <div class="minimap glass r" data-in="0.5"><svg id="mmap" viewBox="0 0 560 200"></svg></div>
+    <p class="source r" data-in="1.0">Simulation. The voice is a simulated person. A heard voice is a place to check, not a confirmed person.</p>
   </section>
 
   <!-- S7: evidence -->
   <section class="scene" id="s7">
-    <p class="eyebrow r" data-in="0.1">Results · simulated case study, 30 seeds</p>
-    <h2 class="headline words" data-in="0.25">Minutes, not days.</h2>
+    <p class="eyebrow r" data-in="0.1">Results · simulation, 20 runs in our test town</p>
+    <h2 class="headline words" data-in="0.25">More leads, fewer wasted trips.</h2>
     <div class="ev">
       <div class="evbars glass r" data-in="0.8">
-        <p class="evq">Of the (simulated) trapped people, how many were in an area the drones flagged for digging</p>
-        <div class="grp"><p>Best-case radar</p>
-          <div class="hb"><span>Larpverse: listen + radar</span><span class="track"><i data-to="74" data-at="1.2" style="--c:#5b8cff"></i></span><b class="roll" data-to="74" data-at="1.2" data-suf="%">0</b></div>
-          <div class="hb"><span>Radar only</span><span class="track"><i data-to="30" data-at="1.35" style="--c:#4a5470"></i></span><b class="roll" data-to="30" data-at="1.35" data-suf="%">0</b></div>
+        <p class="evq">Simulated trapped people the drones put a radar lead on, out of 60 (not counting the pile where each search started)</p>
+        <div class="grp">
+          <div class="hb"><span>Larpverse: listen, then radar</span><span class="track"><i data-to="28.3" data-at="1.2" style="--c:#5b8cff"></i></span><b><span class="roll" data-to="17" data-at="1.2">0</span></b></div>
+          <div class="hb"><span>Nearest pile, radar only</span><span class="track"><i data-to="10" data-at="1.4" style="--c:#4a5470"></i></span><b><span class="roll" data-to="6" data-at="1.4">0</span></b></div>
+          <div class="hb"><span>Fixed sweep, radar only</span><span class="track"><i data-to="8.3" data-at="1.6" style="--c:#4a5470"></i></span><b><span class="roll" data-to="5" data-at="1.6">0</span></b></div>
         </div>
-        <div class="grp"><p>Realistic radar</p>
-          <div class="hb"><span>Larpverse: listen + radar</span><span class="track"><i data-to="66" data-at="1.6" style="--c:#2cb7af"></i></span><b class="roll" data-to="66" data-at="1.6" data-suf="%">0</b></div>
-          <div class="hb"><span>Radar only</span><span class="track"><i data-to="1" data-at="1.75" style="--c:#4a5470"></i></span><b class="roll" data-to="1" data-at="1.75" data-suf="%">0</b></div>
-        </div>
+        <p class="evnote">Same 20 runs. Best case: the sounds were generated from the hidden truth.</p>
       </div>
       <div class="evcards">
-        <div class="ecard glass r" data-in="1.1"><b><span class="roll" data-to="12" data-at="1.1">0</span> min</b><span>to a first pass over all 8 sectors. The 2016 search ran for 7.5 days.</span></div>
-        <div class="ecard glass r" data-in="1.3"><b><span class="roll" data-to="0.39" data-dec="2" data-at="1.3">0</span> bpm</b><span>breathing-rate error of our radar DSP on real recordings</span></div>
-        <div class="ecard glass r" data-in="1.5"><b><span class="roll" data-to="3.6" data-dec="1" data-at="1.5">0</span> cm</b><span>SLAM trajectory error, against 1.51 m for odometry alone</span></div>
+        <div class="ecard glass r" data-in="1.1"><b><span class="roll" data-to="0.7" data-dec="1" data-at="1.1">0</span> vs 2.8</b><span>visits per search to piles with no one trapped: ours vs nearest pile, radar only</span></div>
+        <div class="ecard glass r" data-in="1.3"><b><span class="roll" data-to="0" data-at="1.3">0</span> false leads</b><span>in 20 runs, no radar lead was more than 3 m from a simulated person</span></div>
+        <div class="ecard glass r" data-in="1.5"><b><span class="roll" data-to="0.39" data-dec="2" data-at="1.5">0</span> /min</b><span>breathing-rate error of our radar processing on real recordings (no rubble)</span></div>
       </div>
     </div>
-    <p class="source r" data-in="2.2">Simulation on a reconstructed site. People, sounds and radar returns are synthetic.</p>
+    <p class="source r" data-in="2.2">Simulation: the town, the people, their sounds and the radar returns are synthetic. Small sample; we do not claim faster searches.</p>
   </section>
 
   <!-- S8: principles -->

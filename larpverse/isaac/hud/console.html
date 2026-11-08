@@ -81,6 +81,13 @@
   .mbox .pl.x { color:#e9edf0; }
   .mbox .vh { position:absolute; transform:translate(-50%,-50%); pointer-events:none; border:3px solid var(--sound); border-radius:50%;
               box-shadow:0 0 0 2px #000, inset 0 0 0 2px #000; }
+  .mbox .lz { position:absolute; width:11px; height:11px; transform:translate(-50%,-50%); background:#38d27a; border:2px solid #07130c;
+         border-radius:2px; pointer-events:none; }
+  .mbox .lz.c { width:7px; height:7px; background:none; border:2px solid #38d27a; }
+  .mbox .lz.no { background:none; border:none; color:#ff5a52; font-size:13px; font-weight:900; width:auto; height:auto; line-height:1; }
+  .mbox .lzl { position:absolute; transform:translate(-50%,0); pointer-events:none; font-size:11px; font-weight:800; color:#7ff0aa;
+          text-shadow:0 1px 2px #000; white-space:nowrap; }
+  .mbox .lzl.no { color:#ff8a84; }
   .mbox .vhl { position:absolute; transform:translate(-50%,0); pointer-events:none; font-size:12px; font-weight:800; color:#7fe6f2;
                white-space:nowrap; padding:1px 6px; border-radius:5px; background:rgba(0,0,0,0.8); }
   .sc2.rst { margin-left:10px; border-color:#6b3a3a; color:#ffb9b9; }
@@ -149,7 +156,7 @@
       <div class="hrow"><div class="h">Site map · click a rubble pile to search it</div><div class="n" id="mapn"></div></div>
       <div class="mbox" id="mbox"><canvas id="lmap" width="1176" height="620"></canvas><svg id="msvg"></svg><div class="nn">N ↑</div>
         <div class="sc" id="msc"><i></i>10 m</div></div>
-      <div class="mleg">Dashed outlines: rubble piles. White dots: LiDAR laser hits (brighter = higher). Orange: drones. Red: radar leads. Blue ring: searched, a voice was heard but not confirmed. ✕: searched, nothing found.</div>
+      <div class="mleg">Dashed outlines: rubble piles. White dots: LiDAR laser hits (brighter = higher). Orange: drones. Red: radar leads. Green squares: flat spots the drones can land on (slope). Blue ring: searched, a voice was heard but not confirmed. ✕: searched, nothing found.</div>
       <div id="toast"></div>
     </div>
     <div class="card" id="sense">
@@ -379,7 +386,7 @@ function caption0(b, s) {
     return ['The drones decide', `Next: ${esc(pn(to))}`, `${who} chose ${esc(pn(to))} as the next pile to search. Nobody told them where to go.`, 'auto'];
   }
   if (b === 2) return ['Step 1 · LiDAR', `Mapping ${esc(pn(pile))}`, 'Each drone’s laser scanner measures the rubble. The white dots on the map are its hits; the drones use them to find safe spots to land.', ''];
-  if (b === 3) return ['Step 2 · Landing', `Landing on ${esc(pn(pile))}`, drone ? 'The drones land on safe spots the LiDAR map found, with the radar on board.' : 'The drones move over the safe spots the LiDAR map found.', ''];
+  if (b === 3) return ['Step 2 · Landing', `Landing on ${esc(pn(pile))}`, drone ? `The LiDAR map gives the shape of the ground. Each drone lands only where it is flat and clear enough (green squares on the map${landSlopes(s, pile)}); steep or cluttered spots are rejected. The radar is on board.` : 'The drones move over the safe spots the LiDAR map found.', ''];
   if (b === 4 && here.length) return ['Step 3 · Radar', 'Breathing-like signal found', `At ${esc(pn(pile))} the radar picked up a steady breathing rhythm. It is marked red on the map: a place for rescuers to check first, not a confirmed person.`, ''];
   if (b === 4) return ['Step 3 · Radar', 'Feeling for breathing', drone ? 'The radar on each landed drone senses the tiny chest movement of breathing up to about 3 m down.' : 'Each drone lowers a radar pod onto the rubble. The radar senses the tiny chest movement of breathing up to about 3 m down.', ''];
   if (b === 5) {
@@ -576,7 +583,8 @@ async function lmFetch(url) {
 }
 LM.svgSent = pile => { for (const id in LM.zones) LM.zones[id].classList.toggle('sent', id === pile); };
 function lmBuild(s) {                               // (re)build the static layer for a site: outlines, labels, scale
-  for (const el of [...LM.box.querySelectorAll('.pl,.ring,.dr,.ld,.ldl,.vh,.vhl')]) el.remove();
+  for (const el of [...LM.box.querySelectorAll('.pl,.ring,.dr,.ld,.ldl,.vh,.vhl,.lz,.lzl')]) el.remove();
+  LM.lzKey = ''; LM.lz = [];
   LM.svg.innerHTML = ''; LM.labels = {}; LM.zones = {}; LM.drones = {}; LM.leads = {}; lmReset();
   const v = LM.view = lmView(s);
   if (!v) return;
@@ -626,6 +634,36 @@ function lmVoice(s) {
     LM.box.appendChild(ring); LM.box.appendChild(lb); LM.vh[p.id] = [ring, lb];
   }
 }
+// landing spots the drones chose from the LiDAR ground shape (sim/landing.py: slope, roughness, clearance, step):
+// green = flat enough to land (slope in degrees), red = rejected (too steep / rough / no room)
+function landSlopes(s, pile) {                     // ", slopes 17°, 23° and 25°" for the spots used at this pile
+  const u = (s.landing_sites || []).filter(x => x.status === 'used' && String(x.id).startsWith(pile + '-')).slice(-3)
+    .map(x => `${Math.round(+x.slope_deg || 0)}°`);
+  return u.length ? `: ground slopes ${u.length > 1 ? u.slice(0, -1).join(', ') + ' and ' + u[u.length - 1] : u[0]}` : '';
+}
+function lmLand(s) {
+  const v = LM.view, ph = String(s.phase || ''), m = s.mission || {};
+  const on = !held(s) && (['landing', 'radar', 'relocate', 'rescan', 'vitals', 'acoustic'].includes(ph) || /listen/.test(ph));
+  const pid = m.active_pile || '', mine = x => !/-/.test(String(x.id)) || String(x.id).startsWith(pid + '-');
+  const L = on ? (s.landing_sites || []).filter(x => x.xy && mine(x)) : [];
+  const key = on ? `${m.active_pile}|${L.length}|${L.map(x => x.id + x.status).join(',')}` : '';
+  if (key === LM.lzKey) return;
+  LM.lzKey = key; (LM.lz || []).forEach(x => x.remove()); LM.lz = [];
+  const ok = L.filter(x => x.status !== 'rejected').sort((a, b) => (b.status === 'used') - (a.status === 'used')).slice(0, 6),
+        bad = L.filter(x => x.status === 'rejected').slice(0, 3);
+  ok.splice(0, ok.length, ...ok.filter(x => x.status === 'used').slice(0, 3), ...ok.filter(x => x.status !== 'used').slice(0, 3));
+  for (const x of [...ok, ...bad]) {
+    const [cx, cy] = half(lmPx(v, x.xy[0], x.xy[1])), good = x.status !== 'rejected';
+    const d = document.createElement('div'); d.className = good ? 'lz' : 'lz no'; d.textContent = good ? '' : '✕';
+    Object.assign(d.style, { left: `${cx}px`, top: `${cy}px` });
+    const lb = document.createElement('div'); lb.className = good ? 'lzl' : 'lzl no';
+    const why = String(x.reason || '').split(/[ (:]/)[0];
+    if (good) { if (x.status !== 'used') d.classList.add('c'); LM.box.appendChild(d); LM.lz.push(d); continue; }
+    lb.textContent = good ? `${Math.round(+x.slope_deg || 0)}°` : (why ? why.replace(/_/g, ' ') : 'rejected');
+    Object.assign(lb.style, { left: `${cx}px`, top: `${cy + 8}px` });
+    LM.box.appendChild(d); LM.box.appendChild(lb); LM.lz.push(d, lb);
+  }
+}
 function lmCross(s) {
   const v = LM.view, X = held(s) ? new Set() : searchedEmpty(s);
   for (const p of s.piles || []) {
@@ -672,7 +710,7 @@ function lmUpdate(s, b) {
     e.forEach(el => { el.style.transform = `translate(${x.toFixed(1)}px, ${y.toFixed(1)}px)`; });
     e[1].textContent = r != null ? `${pshort(p.id)} · breathing ${f0(r)}/min` : (p.breathing_hz ? `${p.id} · breathing ~${f0(60 * p.breathing_hz)}/min` : p.id);
   }
-  lmCross(s); lmVoice(s);
+  lmCross(s); lmVoice(s); lmLand(s);
   const pc = s.pointcloud || {};
   if (pc.full_count === 360000 || !pc.url) { if (LM.have || LM.count) lmReset(); return; }   // fresh run: nothing scanned yet
   const key = `${pc.count}/${pc.full_count || ''}`;
@@ -715,8 +753,8 @@ function render(s) {
   $('pace').textContent = lap && +lap > 1.01 ? `sped up ×${(+lap).toFixed(0)} (time-lapse)` : 'real time';
 }
 
-async function getJSON(u) {
-  const r = await fetch(u + (u.includes('?') ? '&' : '?') + 'ts=' + Date.now(), { cache: 'no-store' });
+async function getJSON(u) {                          // revalidate (ETag -> 304 through the public gateway), never stale
+  const r = await fetch(u, { cache: 'no-cache' });
   if (!r.ok) throw new Error(r.status);
   return r.json();
 }

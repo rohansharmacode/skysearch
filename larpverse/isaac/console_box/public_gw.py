@@ -9,6 +9,8 @@ Forwards to scripts/serve.py (127.0.0.1:8765) ONLY an allowlist:
 Everything else is 404 (dotfiles, scripts/, agents/, sim/, listings). While /tmp/recording.lock exists, public POSTs get
 423 so nobody can wreck a recording; the box's own kiosk talks to 8765 directly and is unaffected.
 """
+import gzip
+import hashlib
 import http.client
 import json
 import os
@@ -41,6 +43,40 @@ class H(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    def _relay_json(self, path):
+        """Small files (state.json ~240 KB, polled 3x/s): ETag -> 304 when unchanged, gzip otherwise (~6x smaller),
+        so the tunnel's bandwidth goes to the video stream."""
+        c = http.client.HTTPConnection(*UP, timeout=30)
+        try:
+            c.request("GET", path)
+            r = c.getresponse()
+            data, status, ctype = r.read(), r.status, r.getheader("Content-Type") or "application/json"
+        finally:
+            c.close()
+        tag = '"' + hashlib.md5(data).hexdigest()[:16] + '"'
+        if status == 200 and self.headers.get("If-None-Match") == tag:
+            self.send_response(304)
+            self.send_header("ETag", tag)
+            self.send_header("Cache-Control", "no-cache")
+            self.end_headers()
+            return
+        gz = status == 200 and len(data) > 2048 and "gzip" in (self.headers.get("Accept-Encoding") or "")
+        out = gzip.compress(data, 5) if gz else data
+        self.send_response(status)
+        self.send_header("Content-Type", ctype)
+        self.send_header("Content-Length", str(len(out)))
+        self.send_header("Cache-Control", "no-cache")
+        if status == 200:
+            self.send_header("ETag", tag)
+        if gz:
+            self.send_header("Content-Encoding", "gzip")
+            self.send_header("Vary", "Accept-Encoding")
+        self.end_headers()
+        try:
+            self.wfile.write(out)
+        except (BrokenPipeError, ConnectionResetError):
+            pass
+
     def _relay(self, method, path, body=None):
         c = http.client.HTTPConnection(*UP, timeout=30)
         hdrs = {"Content-Type": "application/json"} if body is not None else {}
@@ -72,6 +108,8 @@ class H(BaseHTTPRequestHandler):
             return
         if route not in GET_OK:
             return self._send(404, {"error": "not found"})
+        if route.endswith(".json"):
+            return self._relay_json(route)
         return self._relay("GET", route + (("?" + query) if query and route == CONSOLE else ""))
 
     def do_POST(self):

@@ -71,7 +71,7 @@
     <div class="h">What the drones sense right now</div>
     <div class="chiprow"><div class="chip" id="chip">—</div><div class="say" id="say"></div></div>
     <table id="rows"></table>
-    <div id="wavebox" class="hide"><canvas id="wave" width="1200" height="200"></canvas><div class="wcap" id="wcap"></div></div>
+    <div id="wavebox" class="hide"><canvas id="wave" width="1200" height="270"></canvas><div class="wcap" id="wcap"></div></div>
     <div class="q hide" id="quote"></div>
   </div>
   <div class="card hide" id="leads"><div class="h">Places for rescuers to check first</div><div id="leadlist"></div></div>
@@ -225,10 +225,12 @@ function sense(b, s, ev) {
     }
     if (sc && sc.vitals) {
       const v = sc.vitals;
+      const npk = sc.wave && v.duration_s ? breathPeaks(sc.wave, v.duration_s / (sc.wave.length - 1), v.rate_bpm).length : null;
       return ['RADAR', v.rate_bpm ? `Pod ${esc(sc.drone_id)} feels a rhythm: ${f1(v.rate_bpm)} breaths per minute` : `Pod ${esc(sc.drone_id)}: no breathing rhythm in this scan`, [
-        ['Breaths counted', v.n_breaths != null ? `${v.n_breaths} in ${f0(v.duration_s)} s` : '–'],
+        ['Breaths counted', npk ? `${npk} in ${f0(v.duration_s)} s (white dots)` : (v.n_breaths != null ? `${v.n_breaths} in ${f0(v.duration_s)} s` : '–')],
+        ['Breathing rate', v.rate_bpm != null ? `${f1(v.rate_bpm)} per minute` + (v.rate_ci ? ` (likely ${f1(v.rate_ci[0])}–${f1(v.rate_ci[1])})` : '') : '–'],
         ['Signal above noise', v.snr_db != null ? `${f1(v.snr_db)} dB` : '–'],
-        ['Scan', `${esc(sc.scan_id)} · quality ${f2(sc.quality)}`]], null];
+        ['Distance from the pod', sc.ranges && sc.ranges.length ? `${f1(sc.ranges[0])} m` : '–']], null];
     }
     if (pods.length) return ['RADAR', down ? `${down} radar pod${down > 1 ? 's' : ''} resting on the rubble, feeling for breathing` : 'Lowering radar pods on their cables', [
         ['Pods on the rubble', `${down} of ${pods.length}`],
@@ -256,6 +258,21 @@ function sense(b, s, ev) {
   return ['FLEET', 'Standing by', [['Drones', String(drones.length)]], null];
 }
 
+// Breath markers on the radar trace: local maxima of the band-passed chest signal above 35 % of the trace's own peak
+// level, at least half a breath period apart (period from the DSP's rate; 1.6 s if no rate yet). Checked on scan s7:
+// 9 peaks in 60 s, i.e. 8 breath-to-breath intervals = sim/vitals.py's n_breaths 8 and 8.8/min.
+function breathPeaks(w, secPerSample, rateBpm) {
+  const minGap = rateBpm ? 0.5 * 60 / rateBpm : 1.6;
+  const gap = Math.max(1, Math.round(minGap / secPerSample)), pk = [];
+  const hi = Math.max(...w.map(Math.abs)) || 1;
+  for (let i = 1; i < w.length - 1; i++) {
+    if (w[i] < 0.35 * hi || w[i] < w[i - 1] || w[i] < w[i + 1]) continue;
+    if (pk.length && i - pk[pk.length - 1] < gap) { if (w[i] > w[pk[pk.length - 1]]) pk[pk.length - 1] = i; continue; }
+    pk.push(i);
+  }
+  return pk;
+}
+
 function drawWave(sc) {
   const box = $('wavebox');
   if (!sc || !sc.wave || !sc.wave.length) { box.classList.add('hide'); waveKey = ''; return; }
@@ -265,17 +282,38 @@ function drawWave(sc) {
   const born = key === waveKey ? drawWave.born : vnow();
   if (key !== waveKey) { waveKey = key; drawWave.born = born; }
   const frac = Math.min(1, (vnow() - born) / 1.6);                 // draw the trace on over 1.6 s, not instantly
-  const lo = Math.min(...w), hi = Math.max(...w), sp = (hi - lo) || 1;
+  const v = sc.vitals || {};
+  const dur = +v.duration_s || null;                               // scan window (s); unknown before vitals exist
+  const L = 64, R = 14, T = 24, B = 44, pw = W - L - R, ph = H - T - B;
+  const amp = Math.max(...w.map(Math.abs)) || 1;                   // symmetric scale: 0 = chest at rest position
+  const X = i => L + i / (w.length - 1) * pw, Y = val => T + ph / 2 - val / amp * (ph / 2 - 6);
   g.clearRect(0, 0, W, H);
-  g.strokeStyle = 'rgba(255,255,255,0.10)'; g.lineWidth = 2;
-  g.beginPath(); g.moveTo(0, H / 2); g.lineTo(W, H / 2); g.stroke();
+  g.font = '22px Inter, system-ui, sans-serif'; g.fillStyle = '#8d98a1'; g.strokeStyle = 'rgba(255,255,255,0.13)'; g.lineWidth = 2;
+  g.beginPath(); g.moveTo(L, T + ph / 2); g.lineTo(L + pw, T + ph / 2); g.stroke();          // rest line
+  g.beginPath(); g.moveTo(L, T); g.lineTo(L, T + ph); g.lineTo(L + pw, T + ph); g.stroke(); // axes
+  g.save(); g.translate(22, T + ph / 2); g.rotate(-Math.PI / 2); g.textAlign = 'center';
+  g.fillText('chest', 0, 0); g.restore();
+  if (dur) {                                                       // time axis in seconds of the radar scan
+    g.textAlign = 'center';
+    const step = dur > 40 ? 10 : 5;
+    for (let s0 = 0; s0 <= dur + 1e-6; s0 += step) {
+      const x = L + s0 / dur * pw;
+      g.beginPath(); g.moveTo(x, T + ph); g.lineTo(x, T + ph + 8); g.stroke();
+      g.fillText(s0 === dur ? `${s0} s` : `${s0}`, Math.min(x, W - R - 22), T + ph + 32);
+    }
+  }
   g.strokeStyle = '#ff8a33'; g.lineWidth = 5; g.lineJoin = 'round'; g.beginPath();
   const n = Math.max(2, Math.floor(w.length * frac));
-  for (let i = 0; i < n; i++) { const x = i / (w.length - 1) * W, y = H - 12 - (w[i] - lo) / sp * (H - 24); i ? g.lineTo(x, y) : g.moveTo(x, y); }
+  for (let i = 0; i < n; i++) { const x = X(i), y = Y(w[i]); i ? g.lineTo(x, y) : g.moveTo(x, y); }
   g.stroke();
-  const v = sc.vitals || {};
-  $('wcap').textContent = `Radar pod ${sc.drone_id}, scan ${sc.scan_id} at ${sc.pile}: chest-wall movement over ${f0(v.duration_s || 60)} s` +
-    (v.rate_bpm ? ` · ${f1(v.rate_bpm)} breaths/min` : '');
+  const pk = dur ? breathPeaks(w, dur / (w.length - 1), v.rate_bpm || (sc.breathing_hz ? 60 * sc.breathing_hz : null)) : [];
+  g.fillStyle = '#ffffff';
+  pk.filter(i => i < n).forEach(i => { g.beginPath(); g.arc(X(i), Y(w[i]) - 14, 6, 0, 2 * Math.PI); g.fill(); });
+  const parts = [`Measured by radar pod ${sc.drone_id} at ${sc.pile}: chest movement (relative scale)` + (dur ? ` over ${f0(dur)} s` : '')];
+  if (pk.length) parts.push('white dots = breaths');
+  else if (sc.breathing_hz && !v.rate_bpm) parts.push(`about ${f0(60 * sc.breathing_hz)}/min (first estimate)`);
+  if (v.apnea_events) parts.push(`${v.apnea_events} pause${v.apnea_events > 1 ? 's' : ''} in breathing`);
+  $('wcap').textContent = parts.join(' · ');
 }
 
 function leads(s) {

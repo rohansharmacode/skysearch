@@ -42,6 +42,8 @@ SIMPLE = False                  # --overlay-style simple: no grey non-human dome
 BEAM_MAX = 28.0                 # m: LiDAR beams drawn at most this long (take2: far returns streaked to the frame edge)
 SIMPLE_BEAMS, SIMPLE_BEAM_MAX = 8, 18.0   # simple style: a short downward fan per drone; longer (shallow) rays are
                                           # dropped, not cut (reh5b 10 s: rays to far returns read as rain / wires)
+SIMPLE_BEAM_MIN_H = 0.3        # simple style: keep only rays that land on rubble (public heightmap above the street), so
+                                # rays cast while the drones fly between piles don't streak across a low camera like rain
 RADAR_R = 3.5                   # m: pulse ring radius at the end (the literature reach ~3 m)
 RADAR_PERIOD = 1.3
 RADAR_WAVES = 3
@@ -291,7 +293,14 @@ class SensorFX(NullFX):
             pts = np.asarray(pts, float)[:, :3]
             o = np.asarray(o, float)
             if SIMPLE and len(pts):
-                pts = pts[np.linalg.norm(pts - o[None], axis=1) <= SIMPLE_BEAM_MAX]
+                if len(pts) > 256:      # bound the per-frame heightmap lookups
+                    pts = pts[np.linspace(0, len(pts) - 1, 256).astype(int)]
+                keep = np.linalg.norm(pts - o[None], axis=1) <= SIMPLE_BEAM_MAX
+                try:
+                    keep &= np.asarray(self.surface(pts[:, 0], pts[:, 1]), float).ravel() > SIMPLE_BEAM_MIN_H
+                except Exception:   # noqa: BLE001  (a surface that can't take arrays: keep the length rule only)
+                    pass
+                pts = pts[keep]
                 if not len(pts):
                     continue
             nb = SIMPLE_BEAMS if SIMPLE else BEAMS_PER_DRONE

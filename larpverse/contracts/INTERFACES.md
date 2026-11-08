@@ -180,7 +180,7 @@ Written by `acoustic/run.py` (`ALGO_VERSION` in `acoustic/dsp.py`); every v1 fie
 
 ```jsonc
 {
-  "algo": "assoc-v12",                          // localisation/association version (cache keys should include it)
+  "algo": "assoc-v14",                          // localisation/association version (cache keys should include it)
   "clips": [ {
     "association": "confident",                // confident | ambiguous
     "association_conf": 0.97,                  // 0-1: bearing likelihood of this pile over all nine piles
@@ -274,32 +274,39 @@ When `tasking.json` has no active zones, the mission runs **recon** instead of w
 - **Colour of `radar_ping`:** red is reserved for radar-confirmed candidates in `state.pings`. An acoustic recommendation `radar_ping` ("send radar here") renders as a **teal** lead, the same as `lead`.
 - **`radar_reach_m`:** under the realistic penetration default it must be about 3 m (one metre of concrete or rubble costs about 10–20 dB). The figure of about 29 m from the seed-7 run is the legacy model and must not appear in demo state.
 
-## vitals (BL-20, additive; `sim/vitals.py`, details in docs/VITALS.md)
+## vitals (BL-20, additive; `sim/vitals.py`, details in docs/VITALS.md and docs/RADAR_SIGNATURES.md)
 
-Breathing-pattern features measured from the slow-time signal of a radar candidate's range bin. An AID for rescuers ordering the dig, never a diagnosis. Producer: `vitals.extract(...)` / `vitals.extract_from_obs(obs_debug)`. Attached (a) to each radar observation as `"vitals": [ {...} | null ]` aligned with `range_candidates`, and (b) to each ping/candidate as `"vitals": {...}` (best-`pattern_conf` scan consistent with that ping). Absent or `null` = not measured (e.g. `radar=model`).
+Breathing-pattern features measured from the slow-time signal of a radar candidate's range bin, plus a confounder rejector. An AID for rescuers ordering the dig, never a diagnosis. Producers: `vitals.extract(...)` (one bin), `vitals.extract_from_obs(obs_debug)`, `vitals.identify(iq, params)` (whole scan: picks the return, adds scan context). Attached (a) to each radar observation as `"vitals": [ {...} | null ]` aligned with `range_candidates`, and (b) to each ping/candidate as `"vitals": {...}` (best-`pattern_conf` scan consistent with that ping). Absent or `null` = not measured (e.g. `radar=model`).
 
 ```jsonc
 "vitals": {
   "version": "vitals-v1",
   "condition": "distressed_tachypnea",           // calm | distressed_tachypnea | unconscious_slow | irregular_apneic | unknown
   "condition_text": "rapid shallow breathing, 32/min -> possible injury, pain or distress, check",
+  "source": "human_breathing",                   // human_breathing | no_signal | debris_shift | small_animal | machinery | rotor | moving_person
+  "source_conf": 0.72, "source_reason": "breathing-like rhythm in the human range",
   "pattern": "rapid_shallow",                    // legacy alias: regular_calm | rapid_shallow | slow_regular | irregular_with_pauses | unclear
   "pattern_conf": 0.72, "pattern_reason": "rate 32/min > 30",
-  "triage_hint": "immediate",                    // immediate | immediate (check) | urgent | delayed | assess
+  "triage_hint": "immediate",                    // immediate | immediate (check) | urgent | delayed | assess | reject
   "triage_reason": "breathing over 30/min (START respiratory criterion for IMMEDIATE)",
-  "priority_weight": 0.88,                       // hint rank shrunk toward 'assess' (0.55) as pattern_conf falls
-  "rate_bpm": 31.6, "rate_ci": [29.8, 33.6], "rate_spectral_bpm": 31.2, "rate_count_bpm": 31.6,
-  "cv": 0.21, "amp_cv": 0.3, "ie_ratio": 0.72,   // timing / depth variability (robust); shorter/longer half-cycle
-  "depth_rel": 0.6, "depth_rel_conf": 0.12,      // 1.0 = 5 mm p-p; conf <= 0.3 ALWAYS; not used for the condition
-  "apnea_events": 0, "apnea_events_per_min": 0.0, "apnea_longest_s": 0.0,
-  "movement": 0.03, "snr_db": 18.4, "sqi": 0.81, "n_breaths": 31, "duration_s": 60.0, "demod": "linear+pathloss",
+  "priority_weight": 0.88,                       // hint rank (1, .85, .7, .55, .35, .15) shrunk toward 'assess' (0.55) as pattern_conf falls
+  "rate_bpm": 31.6, "rate_ci": [29.8, 33.6],     // breaths/min (breath count if >= 3 clean intervals, else spectrum)
+  "cv": 0.21, "amp_cv": 0.3,                     // robust breath timing / depth variability; null if too few breaths
+  "depth_rel": 0.6, "depth_rel_conf": 0.12,      // 1.0 = 5 mm p-p; conf <= 0.3 ALWAYS; never used for the condition
+  "apnea_events": 0, "apnea_events_per_min": 0.0, "apnea_longest_s": 0.0,   // pauses >= 10 s
+  "movement": 0.03, "sqi": 0.81, "duration_s": 60.0,
+  "signature": { "step_mm": 0.4, "line_hz": 0.53, "line_db": 31.0, "n_bursts": 0, "...": "rejector features" },
   "caveats": ["aid for rescuers, not a diagnosis: ...", "..."]
+  // also: rate_spectral_bpm, rate_count_bpm, ie_ratio, snr_db, n_breaths, demod
 }
 ```
 
+- No age field; `fast_small` / `slow_deep` are no longer emitted.
+- `source != human_breathing` -> `condition: "unknown"` and `triage_hint: "reject"` (weight 0.15), except `moving_person` -> `"urgent"` ("listen and call out").
 - Dig order: `vitals.dig_score(v, p_mass, depth_m)` = `priority_weight x p_mass x clip(1 - depth_m / 4, 0.2, 1)`; no vitals -> the "assess" weight.
-- Pattern/hint claims need a >= 45-60 s dwell; a 20 s scan is rate-only (a caveat says so).
-- Wording rule (UI, decider, brief): "possible", "check", "aid"; never "diagnosis", "confirmed", or "injured" / "unconscious" as fact. **No age or child wording anywhere** (user decision). Show `condition_text`; `slow_regular` means "deep rest or reduced consciousness — the radar cannot tell which; call out and check responsiveness" (hint `urgent`).
+- Condition claims need a >= 45-60 s dwell; a 20 s scan is rate-only (a caveat says so). `unconscious_slow` text says "could be deep rest or reduced consciousness; the radar cannot tell which".
+- Wording rule (UI, decider, brief): "possible", "check", "aid"; never "diagnosis", "confirmed", or "injured" / "unconscious" as fact.
+- HUD playback streams for the signature library: `assets/radar_signatures/<class>.json`, format `radar-signature-hud-v1` (docs/RADAR_SIGNATURES.md).
 
 ### Mission state fields (v1.3, from the mission builder; additive)
 

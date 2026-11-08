@@ -78,7 +78,48 @@ def _base_parser():
     ap.add_argument("--frames", action="store_true", help="also write frames/state_XXXX.json")
     ap.add_argument("--dry-run", action="store_true", help="no omni/pxr: numpy heightmap LiDAR, null drawing")
     ap.add_argument("--max-steps", type=int, default=0, help="stop after N mission steps (0 = until done)")
-    ap.add_argument("--camera", choices=["director", "free"], default="director")
+    ap.add_argument("--camera", choices=["director", "director-take", "free"], default="director",
+                    help="director-take: one continuous spline camera for the single take (isaac/live.py TakeCamera)")
+    g = ap.add_argument_group("scene assets (docs/ISAAC_ASSETS.md)")
+    g.add_argument("--van", type=int, choices=[0, 1], default=None,
+                   help="command van at staging (isaac/van.py; default 1 with --photoreal 1, else 0); forces --operator 0")
+    g.add_argument("--van-mdl", type=int, choices=[0, 1], default=0,
+                   help="add OmniPBR outputs to the van's emissive screens/lamps if PreviewSurface emission reads too dim")
+    g.add_argument("--dummies", type=int, choices=[0, 1], default=1,
+                   help="victim manikins with SpatialAudio + larpverse:* attrs (isaac/dummies.py); replaces --show-truth ghosts")
+    g.add_argument("--ambient", type=int, choices=[0, 1], default=1, help="--dummies: wind bed + distant siren")
+    g = ap.add_argument_group("live single take (isaac/live.py, isaac/hud.py, docs/VIDEO_PLAN.md)")
+    g.add_argument("--live", dest="live_take", action="store_true",
+                   help="live take: the stage dummies are the victims (read every scan / listen), unscripted triggers "
+                        "(hotkey, dashboard zone, viewport drag, portal), tasking polled every 1 s, live.json + hud.json")
+    g.add_argument("--tasking", default=None,
+                   help="none | default | auto (= <out>/tasking.json, re-read live) | PATH. Default: auto with --live, "
+                        "else none (legacy). Seed editable zones: python isaac/live.py --write-tasking default")
+    g.add_argument("--acoustic", choices=["auto", "stub", "real"], default=None,
+                   help="acoustic generator/pipeline (default auto). With --live and a changed stage every listen is a "
+                        "fresh uncached synthesis: real in-process if importable, else the synthetic generator")
+    g.add_argument("--hud", choices=["off", "auto", "overlay", "window"], default=None,
+                   help="in-Isaac perception HUD (default auto with --live, else off; no-op without omni.ui)")
+    g.add_argument("--live-pace", default=None,
+                   help="--live: sim s per video s per phase, e.g. 'survey=3,radar=12,relocate=24' (default: the take "
+                        "table in isaac/live.py DEFAULT_PACE; 'off' = constant --speed). The HUD always shows the factor")
+    g.add_argument("--live-preroll", type=float, default=None,
+                   help="--live: video seconds the mission waits on the opening (van) shot before deploying (default 4)")
+    g.add_argument("--take-render", type=int, choices=[0, 1], default=None,
+                   help="--live: stream frame-time settings (RTX real-time, DLSS performance, no reflections / "
+                        "translucency / GI; isaac/live.py TAKE_RENDER). Default 1 with --live unless --rtx pathtracing")
+    g.add_argument("--live-warp", type=float, default=1.0,
+                   help="--live: multiply --speed by this during radar/rescan/relocate (time-lapse; shown on the HUD)")
+    g.add_argument("--live-quick-s", type=float, default=None,
+                   help="--live: pod-mic quick listen every N sim s while pods rest on the rubble (default 20; 0 = off)")
+    g.add_argument("--no-preempt", dest="preempt", action="store_false",
+                   help="--live: never cut a radar phase short for new evidence / an operator zone (queue it instead)")
+    g.add_argument("--live-keys", default=None, help="--live hotkeys, e.g. 'U=hidden1,Y=hidden2' or 'U=H1'")
+    g.add_argument("--mission-thread", type=int, default=None,
+                   help="step the mission on a worker thread so slow steps never stall a frame (default 1 with --live "
+                        "outside --dry-run, else 0)")
+    g.add_argument("--test-trigger", default=None,
+                   help="TESTS / DRY RUN ONLY (refused otherwise): scripted trigger, e.g. 'activate:hidden1@150'")
     ap.add_argument("--drone-asset", nargs="?", const="auto", default=None,
                     help="reference Isaac's quadcopter USD (optionally a path/URL) instead of primitives")
     ap.add_argument("--drone-scale", type=float, default=1.6, help="small model only (heavy is true scale)")
@@ -154,6 +195,20 @@ def parse_args(argv=None):
     a.lidar_prof = lidar_profile(a.lidar_profile, a.lidar_budget_ms, a.rays, a.lidar_range)
     a.rays, a.lidar_range = a.lidar_prof["n_rays"], a.lidar_prof["max_range"]
     a.keep_open = not (a.dry_run or a.no_keep_open or a.record or a.selftest or (a.headless and not a.live))
+    if a.tasking is None:
+        a.tasking = "auto" if a.live_take else "none"
+    if a.van is None:
+        a.van = 1 if a.photoreal else 0
+    if a.van and hasattr(a, "operator"):
+        a.operator = 0                      # the van has its own seated operator
+    if a.mission_thread is None:
+        a.mission_thread = 1 if (a.live_take and not a.dry_run) else 0
+    if a.hud is None:
+        a.hud = "auto" if a.live_take else "off"
+    if a.test_trigger and not a.dry_run:
+        raise SystemExit("--test-trigger is for tests / dry-run rehearsals only: the take's change must be a live action")
+    if a.live_take and a.replay:
+        raise SystemExit("--live needs the live brain (GridMission), not --replay")
     return a
 
 
@@ -213,11 +268,22 @@ class ReplayMission:
 def load_mission(a, log):
     if a.replay:
         log(f"replaying {a.replay}")
-        return ReplayMission(a.replay, a.out, a.seed, a.start_pile, a.site)
+        rm = ReplayMission(a.replay, a.out, a.seed, a.start_pile, a.site)
+        for mj in (os.path.join(a.replay, "motion.json"), os.path.join(os.path.dirname(a.replay.rstrip("/")), "motion.json")):
+            if os.path.exists(mj):                  # SmoothFlight.save_motion() (docs/MOTION.md R1): render-time poses
+                os.environ["LARPVERSE_MOTION_JSON"] = mj
+                log(f"flight motion from {mj}")
+                break
+        return rm
     try:
         from isaac.site import mission_for_site
         extra = {k: getattr(a, k) for k in ("platform", "penetration", "delivery") if getattr(a, k, None) is not None}
         extra["autonomous"] = getattr(a, "autonomous", True)
+        tk = getattr(a, "tasking", None)
+        if tk not in (None, "none"):
+            extra["tasking"] = os.path.join(a.out, "tasking.json") if tk == "auto" else tk
+        if getattr(a, "acoustic", None):
+            extra["acoustic"] = a.acoustic
         return mission_for_site(a.site, seed=a.seed, start_pile=a.start_pile, radar=a.radar, out_dir=a.out,
                                 frames=a.frames, verbose=not a.quiet, log=log, **extra)
     except Exception:
@@ -249,10 +315,202 @@ def interp_drones(prev, cur, u):
     return out
 
 
+def _mono_tangent(d0, d1):
+    """Monotone (Fritsch-Carlson style) tangent from the two neighbouring slopes: no overshoot, so the skids never
+    dip under a landing pad and a stopping drone never backs up."""
+    if d0 * d1 <= 0.0:
+        return 0.0
+    m = 0.5 * (d0 + d1)
+    lim = 3.0 * min(abs(d0), abs(d1))
+    return max(-lim, min(lim, m))
+
+
+class PoseTrack:
+    """Render-time drone poses: every rendered frame samples the trajectory at the continuous render time
+    ``t_render`` (sim seconds), never the last sim step.
+
+    With ``isaac.motion`` (the flight-motion agent: jerk-limited trajectories, tilt into acceleration, flare,
+    rotor RPM) its ``pose_at(drone_id, t)`` is used and the states are handed to it with ``ingest(state)``.
+    Until it lands: a monotone cubic Hermite through the mission's step states (C1: continuous velocity, so
+    tilt and camera follow are continuous too). The mission runs at least one step ahead of ``t_render``, so the
+    curve always has the next point (no extrapolation)."""
+
+    KEEP = 12
+
+    def __init__(self, log=None, use_motion=True):
+        self.hist = []                      # [(t, {id: (x, y, z, yaw, state)})]
+        self.motion, self.motion_err = None, None
+        self.say = log or (lambda m: None)
+        if use_motion:
+            try:
+                import isaac.motion as M
+                obj = M.Motion() if hasattr(M, "Motion") else M
+                if hasattr(obj, "pose_at"):
+                    self.motion = obj
+                    self.say("drone poses from isaac.motion.pose_at (render-time trajectories)")
+            except ImportError:
+                pass
+            except Exception as e:          # noqa: BLE001
+                self.say(f"isaac.motion unavailable ({type(e).__name__}: {e}); Hermite render-time interpolation")
+
+    def push(self, state):
+        t = float(state.get("t", 0.0))
+        if self.hist and t <= self.hist[-1][0] + 1e-9:
+            self.hist.pop()                 # same t (e.g. a re-plan rebuilt the state): keep the newest
+        self.hist.append((t, {d["id"]: (*map(float, d["pose"][:4]), d.get("state", "")) for d in state.get("drones", [])}))
+        del self.hist[:-self.KEEP]
+        if self.motion is not None and hasattr(self.motion, "ingest"):
+            try:
+                self.motion.ingest(state)
+            except Exception as e:          # noqa: BLE001
+                self._drop_motion(e)
+
+    def _drop_motion(self, e):
+        self.motion_err = f"{type(e).__name__}: {e}"
+        self.say(f"isaac.motion failed ({self.motion_err}); falling back to Hermite interpolation")
+        self.motion = None
+
+    @property
+    def t_first(self):
+        return self.hist[0][0] if self.hist else 0.0
+
+    @property
+    def t_last(self):
+        return self.hist[-1][0] if self.hist else 0.0
+
+    MISS_DROP = 90                          # consecutive frames without a trajectory -> stop asking (Kinematic)
+
+    def poses(self, t):
+        """{id: (x, y, z, yaw_deg, state, vx, vy[, tilt, raw])}; vx, vy in m/s. With the motion model: tilt (roll,
+        pitch) deg and its raw dict ({xyz, quat (w,x,y,z), rotor_rpm, winch_len, ground_z, tilt, vel, yaw}), which
+        the loop hands to DroneViz.set_state."""
+        if self.motion is not None:
+            try:
+                out = self._motion_poses(t)
+                self.misses = 0
+                return out
+            except KeyError as e:           # no trajectory (KinematicFlight mission, or not planned yet)
+                self.misses = getattr(self, "misses", 0) + 1
+                if self.misses >= self.MISS_DROP:
+                    self._drop_motion(e)
+            except Exception as e:          # noqa: BLE001
+                self._drop_motion(e)
+        H = self.hist
+        if not H:
+            return {}
+        t = min(max(t, H[0][0]), H[-1][0])
+        k = 0
+        while k < len(H) - 2 and H[k + 1][0] <= t:
+            k += 1
+        if len(H) == 1:
+            return {i: (*p[:4], p[4], 0.0, 0.0) for i, p in H[0][1].items()}
+        t0, t1 = H[k][0], H[k + 1][0]
+        h = max(t1 - t0, 1e-6)
+        s = min(max((t - t0) / h, 0.0), 1.0)
+        out = {}
+        for did, p1 in H[k + 1][1].items():
+            p0 = H[k][1].get(did, p1)
+            pm = H[k - 1][1].get(did, p0) if k > 0 else p0
+            p2 = H[k + 2][1].get(did, p1) if k + 2 < len(H) else p1
+            hm = (t0 - H[k - 1][0]) if k > 0 else h
+            h2 = (H[k + 2][0] - t1) if k + 2 < len(H) else h
+            vals, ders = [], []
+            for ax in range(4):
+                a, b, c, d = pm[ax], p0[ax], p1[ax], p2[ax]
+                if ax == 3:                 # yaw: unwrap around p0
+                    a = b + ((a - b + 180.0) % 360.0 - 180.0)
+                    c = b + ((c - b + 180.0) % 360.0 - 180.0)
+                    d = c + ((d - c + 180.0) % 360.0 - 180.0)
+                s0, s1, s2 = (b - a) / max(hm, 1e-6), (c - b) / h, (d - c) / max(h2, 1e-6)
+                m0, m1 = _mono_tangent(s0, s1) * h, _mono_tangent(s1, s2) * h
+                h00, h10, h01, h11 = 2 * s ** 3 - 3 * s ** 2 + 1, s ** 3 - 2 * s ** 2 + s, -2 * s ** 3 + 3 * s ** 2, s ** 3 - s ** 2
+                vals.append(h00 * b + h10 * m0 + h01 * c + h11 * m1)
+                d00, d10, d01, d11 = 6 * s ** 2 - 6 * s, 3 * s ** 2 - 4 * s + 1, -6 * s ** 2 + 6 * s, 3 * s ** 2 - 2 * s
+                ders.append((d00 * b + d10 * m0 + d01 * c + d11 * m1) / h)
+            st = p0[4] if s < 0.5 else p1[4]
+            out[did] = (vals[0], vals[1], vals[2], vals[3] % 360.0, st, ders[0], ders[1])
+        return out
+
+    def _motion_poses(self, t):
+        out = {}
+        ids = list(self.hist[-1][1]) if self.hist else []
+        for did in ids:
+            p = self.motion.pose_at(did, t)
+            if isinstance(p, dict):
+                x, y, z = p["xyz"][:3]
+                v = p.get("vel") or (0.0, 0.0)
+                out[did] = (float(x), float(y), float(z), float(p.get("yaw", p.get("yaw_deg", 0.0))),
+                            p.get("state", self.hist[-1][1][did][4]), float(v[0]), float(v[1]),
+                            tuple(p["tilt"]) if p.get("tilt") is not None else None, p)
+            else:
+                out[did] = tuple(p)
+        return out
+
+
+class MissionRunner:
+    """Steps the mission ahead of the render clock: inline (default; deterministic) or on a worker thread
+    (``--mission-thread``: a slow radar/acoustic step no longer stalls a rendered frame). ``target(t)`` asks for
+    states up to sim time t; ``drain()`` returns the new states in order. The worker never touches USD: stage
+    reads / writes go through a main-thread cache (isaac.live.SyncedSource)."""
+
+    def __init__(self, step_fn, done_fn, threaded=False):
+        import threading
+        self.step_fn, self.done_fn, self.threaded = step_fn, done_fn, threaded
+        self.q, self.err, self._target, self.latest_t = [], None, -1e9, None
+        self._lock = threading.Lock()
+        self._stop = threading.Event()
+        self.thread = None
+        if threaded:
+            self.thread = threading.Thread(target=self._loop, name="larpverse-mission", daemon=True)
+            self.thread.start()
+
+    def _one(self):
+        new = self.step_fn()
+        with self._lock:
+            self.q.append(new)
+            self.latest_t = float(new.get("t", 0.0))
+
+    def _loop(self):
+        while not self._stop.is_set():
+            try:
+                if not self.done_fn() and (self.latest_t is None or self.latest_t < self._target):
+                    self._one()
+                else:
+                    self._stop.wait(0.002)
+            except BaseException as e:     # noqa: BLE001  (surface it on the main thread)
+                self.err = e
+                return
+
+    def target(self, t):
+        self._target = t
+        if not self.threaded:
+            while not self.done_fn() and (self.latest_t is None or self.latest_t < t):
+                self._one()
+        elif self.err is not None:
+            raise self.err
+
+    def drain(self):
+        with self._lock:
+            q, self.q = self.q, []
+        return q
+
+    @property
+    def idle(self):
+        """No state pending and the mission will not produce more."""
+        with self._lock:
+            empty = not self.q
+        return empty and self.done_fn()
+
+    def stop(self):
+        self._stop.set()
+        if self.thread is not None:
+            self.thread.join(timeout=5.0)
+
+
 def is_surveying(drone_state, phase, airborne):
     if drone_state in SURVEY_STATES:
         return True
-    return airborne and phase in ("survey", "surveying") and drone_state in ("flying", "hovering")
+    return airborne and phase in ("survey", "surveying", "recon_mapping") and drone_state in ("flying", "hovering")
 
 
 def nearest_pile(pile_xy, x, y, max_d=22.0):
@@ -329,13 +587,27 @@ def main(argv=None):
                                         "(teammate's checkout: <repo>/collapse_site/collapse_site.usda, branch 3d_model)")
             say(f"referencing {site_usd} at /World/CollapseSite (lights: {a.site_lights}, "
                 f"scan textures: {'on' if a.scan_textures else 'off'})")
-        n = scene.build(stage, sc, show_truth=a.show_truth, physics_scene=rt.own_physics_scene, sun=a.sun,
+        n = scene.build(stage, sc, show_truth=a.show_truth and not a.dummies, physics_scene=rt.own_physics_scene, sun=a.sun,
                         sky=a.sky, materials="none" if a.look == "plain" else "preview", site_usd=site_usd,
                         site_lights=a.site_lights, scan_textures=a.scan_textures, photoreal=bool(a.photoreal))
         say(f"stage built: {n} rubble pieces, {scene.build.materials.bound} material bindings")
         if a.photoreal:                     # visual only; colliders keep the scenario's piece poses
             from isaac import photoreal
             photoreal.dress(stage, sc, a, say)
+        if a.van:                           # command van + staging dressing (visual only, no colliders)
+            from isaac import van
+            vx, vy, vz, vyaw = van.staging_pose(sc)
+            van.hide_legacy_staging(stage)
+            info = van.build_van(stage, "/World/Van", (vx, vy), vyaw, z=vz, mdl=bool(a.van_mdl))
+            say(f"command van at ({vx:.1f}, {vy:.1f}) yaw {vyaw:g}: {info.get('total')} tris")
+        if a.dummies:                       # the victims as stage prims: the live take's source of truth
+            from isaac import dummies as DM
+            man = DM.load_manifest()
+            info = DM.build_dummies(stage, sc, man)
+            if a.ambient:
+                DM.build_ambient(stage, sc, man)
+            say(f"dummies: {len(info.get('dummies', []))} prims under /World/Dummies ({info.get('tris')} tris); "
+                f"hidden: {[e['id'] for e in info.get('dummies', []) if e.get('hidden')]}")
         if a.rtx == "pathtracing" and not a.record:     # interactive hero view; --record sets it below
             from isaac import photoreal
             photoreal.set_renderer(a, say)
@@ -352,7 +624,7 @@ def main(argv=None):
                               model=a.drone_model)
                   for i in ids}
     from isaac.pods import NullPods, PodViz
-    pods = NullPods() if a.dry_run else PodViz(stage, ids)
+    pods = NullPods() if a.dry_run else PodViz(stage, ids, drones=drones)   # pods hang from each drone's own winch
     from isaac.site import base_xy
     overlay = Overlay(make_backend("null" if a.dry_run else a.overlay, stage, dd), surface, pile_xy,
                       base_xy=base_xy(sc), zones=a.zones)
@@ -360,7 +632,16 @@ def main(argv=None):
     if not a.dry_run:
         from isaac import compat
         mirrors = [compat.PERSP] if a.camera == "director" else []
-    cam = DirectorCamera(stage, mode=a.camera, mirrors=mirrors, switch_viewport=(a.camera == "director"))
+    take = a.camera == "director-take"
+    if take:
+        from isaac.live import TakeCamera
+        from isaac.site import drone_pads
+        from isaac.van import staging_pose
+        cam = TakeCamera(stage, pile_xy, base_xy=base_xy(sc), pads=drone_pads(sc), surface=surface,
+                         mirrors=[] if a.dry_run else [compat.PERSP], switch_viewport=True,
+                         van=staging_pose(sc) if (a.van or a.dry_run) else None)
+    else:
+        cam = DirectorCamera(stage, mode=a.camera, mirrors=mirrors, switch_viewport=(a.camera == "director"))
     if not a.dry_run and a.look == "pretty" and a.flow:
         from isaac import look
         dust = look.FlowDust(stage, ids, log=say)
@@ -387,9 +668,9 @@ def main(argv=None):
     virtual = a.dry_run or bool(a.record)   # recording: fixed frame clock, so slow (path-traced) frames don't skip
     if a.record:
         a.speed = a.rec_speed
+    base_speed = a.speed
     clock_v = 0.0
     clock = (lambda: clock_v) if virtual else time.monotonic
-    last_step = next_step = clock()
     tilt_f = {i: (0.0, 0.0) for i in ids}
     moved = {i: 0.0 for i in ids}
     start_xy = {d["id"]: d["pose"][:3] for d in cur.get("drones", [])}
@@ -416,6 +697,37 @@ def main(argv=None):
             rt.step()
     rec_i = lambda: frame // max(1, a.rec_every)    # noqa: E731  video frame index
 
+    # ---- live single take: stage dummies -> generators, unscripted triggers, HUD (isaac/live.py, isaac/hud.py)
+    ctrl = keys = None
+    if a.live_take:
+        from isaac import live as L
+        if not a.dry_run and (a.take_render if a.take_render is not None else a.rtx != "pathtracing"):
+            L.apply_take_render(say)
+        src = L.make_source(stage, sc, surface=surface, log=say)     # stage dummies, else isaac.dummies' plan
+        probe = None
+        if not a.dry_run and not isinstance(lidar, HeightmapLidar):
+            def probe(x, y):                    # top of whatever is over (x, y) now: rubble, terrain, dragged debris
+                h = lidar.cast((float(x), float(y), 80.0), (0, 0, -1), 120.0)
+                return None if h is None else float(h[2])
+        world = L.LiveWorld(sc, src, surface=surface, probe=probe, log=say)
+        ctrl = L.LiveController(mission, world, out_dir=a.out, quick_s=L.QUICK_LISTEN_S if a.live_quick_s is None
+                                else (a.live_quick_s or 1e12), preempt=a.preempt, acoustic=a.acoustic or "auto",
+                                radar=a.radar, keys=a.live_keys or L.DEFAULT_KEYS, log=say, clock=lambda: clock())
+        if a.test_trigger:
+            ctrl.test_triggers = L.parse_test_trigger(a.test_trigger)
+            say(f"TEST TRIGGERS (dry run only, never in the take): {ctrl.test_triggers}")
+        if not a.dry_run:
+            keys = L.Hotkeys(ctrl.on_key, ctrl.keys, log=say)
+        say(f"LIVE take: hook={ctrl.hook}, world source={src.kind}, hidden dummies {src.hidden_ids()}, "
+            f"tasking={getattr(mission, 'tasking_path', None)}, quick listen every {ctrl.quick_s:g} s, "
+            f"preempt={'on' if a.preempt else 'off'}; keys {ctrl.keys}")
+    from isaac.hud import Hud
+    first_key = list((ctrl.keys if ctrl else {}) or {"Y": None})[-1]     # the HUD button = the last key (Y: H2)
+    hud = Hud(a.hud, out_dir=a.out if a.live_take else None, bounds=(cur.get("site") or {}).get("bounds"),
+              piles=cur.get("piles"), speed=a.speed, log=say,
+              on_button=(lambda: ctrl.on_key(first_key)) if ctrl is not None else None)
+    n_events = 0
+
     pending = {}                            # pile -> [new points not yet handed to the mission]
     fed = {}                                # pile -> points ingested
     poses = {}
@@ -427,60 +739,128 @@ def main(argv=None):
         can_ingest = False
         say("scipy missing: LiDAR points are drawn but NOT fed to the mission (pip install scipy)")
 
+    import threading
+    pend_lock = threading.Lock()
+
     def feed():
-        if not can_ingest:
-            pending.clear()
-            return
-        for pile, chunks in list(pending.items()):
-            if chunks:
-                pts = np.concatenate(chunks)
-                if call_ingest(mission, pts, pile, say):
-                    fed[pile] = fed.get(pile, 0) + len(pts)
-            pending[pile] = []
+        with pend_lock:
+            if not can_ingest:
+                pending.clear()
+                return
+            items = [(pile, chunks) for pile, chunks in pending.items() if chunks]
+            for pile in list(pending):
+                pending[pile] = []
+        for pile, chunks in items:
+            pts = np.concatenate(chunks)
+            if call_ingest(mission, pts, pile, say):
+                fed[pile] = fed.get(pile, 0) + len(pts)
+
+    nstep = [0]
+
+    def mission_done():
+        return mission.done or bool(a.max_steps and nstep[0] >= a.max_steps)
+
+    def do_step():                              # inline, or on the worker thread (--mission-thread)
+        feed()                                  # before step(): the survey may end inside this step
+        if ctrl is not None:
+            ctrl.before_step()                  # 1 s poll (tasking, live_cmd.json, stage cache), hotkeys
+        mission.step()
+        nstep[0] += 1
+        new = as_dict(mission.build_state())
+        if ctrl is not None:
+            if ctrl.after_step(new):            # pod-mic quick listen, re-task / portal re-plans (outputs only)
+                new = as_dict(mission.build_state())
+                if hasattr(mission, "_write_state"):
+                    mission._write_state()      # the dashboard sees the re-plan now, not a step later
+            ctrl.write()
+        return new
+
+    threaded = bool(a.mission_thread) and not isinstance(mission, ReplayMission)
+    if threaded and ctrl is not None:
+        ctrl.threaded = True
+        ctrl.live.source = L.SyncedSource(ctrl.live.source, probe=ctrl.live.probe)
+        ctrl.live.probe = ctrl.live.source.probe_cached
+        ctrl.live.source.sync()
+    track = PoseTrack(log=say)
+    track.push(cur)
+    t_render = float(cur.get("t", 0.0))         # sim time on screen: advances continuously every frame
+    lead = 1.0                                  # the mission stays >= one step ahead (no extrapolation)
+    runner = MissionRunner(do_step, mission_done, threaded=threaded)
+    if threaded:
+        say("mission steps on a worker thread (--mission-thread 1); USD stays on the main thread")
+    sync_t = -1e9
+    pace = {}
+    preroll = 0.0
+    if a.live_take:
+        pace = L.parse_pace(L.DEFAULT_PACE if a.live_pace is None else a.live_pace)
+        preroll = 4.0 if a.live_preroll is None else float(a.live_preroll)
+        if pace:
+            a.speed = L.pace_for(pace, cur.get("phase"), base_speed)
+            say(f"take pacing (sim s per video s): {pace}; pre-roll {preroll:g} s")
 
     try:
         while True:
             now = clock()
-            done = mission.done or (a.max_steps and steps >= a.max_steps)
-            while not done and now >= next_step:
-                feed()                         # before step(): the survey may end inside this step
-                mission.step()
-                steps += 1
-                new = as_dict(mission.build_state())
-                dt_sim = max(float(new.get("t", 0)) - float(cur.get("t", 0)), 1e-3)
+            rdt = rdt_v if virtual else max(now - last_frame_t, 1e-3)
+            last_frame_t = now
+            if threaded and ctrl is not None and now - sync_t >= 0.25:
+                sync_t = now
+                ctrl.live.source.sync()         # main thread: apply hotkey writes, re-read dummy prims, probe columns
+                ctrl.live.refresh(None, "sync")  # stage events show within 0.25 s
+            if preroll > 0:
+                preroll -= rdt                  # opening shot: the mission has not started yet (shown on the HUD)
+            elif not runner.idle or t_render < track.t_last:
+                t_render += rdt * a.speed
+            runner.target(t_render + lead)
+            for new in runner.drain():
                 prev, cur = cur, new
+                track.push(cur)
+                steps += 1
                 if a.record and a.rec_warp > 1:     # recording: compress the long radar stretches
                     from isaac.photoreal import WARP_PHASES
                     a.speed = a.rec_speed * (a.rec_warp if cur.get("phase") in WARP_PHASES else 1.0)
-                last_step, next_step = next_step, next_step + dt_sim / max(a.speed, 1e-3)
-                if now - next_step > 1.0:      # fell behind (slow step): resync instead of spiralling
-                    last_step, next_step = now, now + dt_sim / max(a.speed, 1e-3)
+                elif a.live_take and pace:
+                    a.speed = L.pace_for(pace, cur.get("phase"), base_speed)
+                elif a.live_take and a.live_warp > 1:
+                    from isaac.photoreal import WARP_PHASES
+                    a.speed = base_speed * (a.live_warp if cur.get("phase") in WARP_PHASES else 1.0)
                 active = overlay.update(cur)
-                done = mission.done or (a.max_steps and steps >= a.max_steps)
                 if steps % 20 == 0:
                     say(f"step {steps} t={cur.get('t')} phase={cur.get('phase')} pile={active} "
                         f"lidar={accum.total} pts")
-
-            span = max(next_step - last_step, 1e-6)
-            u = 1.0 if done else min(max((now - last_step) / span, 0.0), 1.0)
-            poses = interp_drones(prev, cur, u)
-            rdt = rdt_v if virtual else max(now - last_frame_t, 1e-3)
-            last_frame_t = now
-            dt_sim_cur = max(float(cur.get("t", 0)) - float(prev.get("t", 0)), 1e-3)
-            for did, (x, y, z, yaw, st, vx, vy) in poses.items():
+            if t_render > track.t_last:         # the mission fell behind: slow the picture down, never jump
+                t_render = track.t_last
+            done = runner.idle and t_render >= track.t_last - 1e-6
+            poses = track.poses(t_render)
+            motion_drives = False
+            pod_z = {p["drone_id"]: float(p["z"]) for p in cur.get("pods") or []
+                     if p.get("status") in ("scanning", "resting") and p.get("z") is not None}
+            for did, pz in poses.items():
+                x, y, z, yaw, st, vx, vy = pz[:7]
                 dr = drones.get(did)
                 if dr is None:
                     continue
-                sp = math.hypot(vx, vy) / dt_sim_cur
-                ang = math.radians(math.degrees(math.atan2(vy, vx)) - yaw) if sp > 0.05 else 0.0
-                tilt = min(14.0, 2.5 * sp) if not done else 0.0
-                want = (-math.sin(ang) * tilt, math.cos(ang) * tilt)
-                k = 1.0 - math.exp(-rdt / 0.4)
-                tf = tilt_f[did]
-                tilt_f[did] = (tf[0] + (want[0] - tf[0]) * k, tf[1] + (want[1] - tf[1]) * k)
-                dr.set_pose(x, y, z, yaw, tilt_f[did])
-                air = z - float(surface(x, y)) > 0.4
-                dr.spin(rdt, on=air or st not in GROUNDED)
+                raw = pz[8] if len(pz) > 8 else None
+                if raw is not None and raw.get("quat") is not None and hasattr(dr, "set_state"):
+                    # flight motion (sim/flight_motion.py via isaac/motion.py): attitude, per-rotor rpm, winch
+                    dr.set_state(raw["xyz"], raw["quat"], raw.get("rotor_rpm"), raw.get("winch_len"), rdt,
+                                 sway_deg=raw.get("sway_deg"), ground_z=raw.get("ground_z", pod_z.get(did)))
+                    motion_drives = motion_drives or raw.get("winch_len") is not None
+                    tilt_f[did] = tuple(raw.get("tilt") or (0.0, 0.0))
+                elif len(pz) > 7 and pz[7] is not None:   # the motion model's tilt into acceleration
+                    tilt_f[did] = tuple(pz[7])
+                else:
+                    sp = math.hypot(vx, vy)
+                    ang = math.radians(math.degrees(math.atan2(vy, vx)) - yaw) if sp > 0.05 else 0.0
+                    tilt = min(14.0, 2.5 * sp) if not done else 0.0
+                    want = (-math.sin(ang) * tilt, math.cos(ang) * tilt)
+                    k = 1.0 - math.exp(-rdt / 0.4)
+                    tf = tilt_f[did]
+                    tilt_f[did] = (tf[0] + (want[0] - tf[0]) * k, tf[1] + (want[1] - tf[1]) * k)
+                if raw is None or raw.get("quat") is None or not hasattr(dr, "set_state"):
+                    dr.set_pose(x, y, z, yaw, tilt_f[did])
+                    air = z - float(surface(x, y)) > 0.4
+                    dr.spin(rdt, on=air or st not in GROUNDED)
                 sx = start_xy.get(did, (x, y, z))
                 moved[did] = max(moved[did], math.dist((x, y, z), sx))
                 if not done and is_surveying(st, cur.get("phase"), z - float(surface(x, y)) > 1.5):
@@ -489,7 +869,9 @@ def main(argv=None):
                         pts = rtx.read(did) if rtx is not None else lidar.sweep((x, y, z + mount_z), yaw, frame)
                         new_pts = accum.add(pl, pts)
                         if new_pts is not None and len(new_pts):
-                            pending.setdefault(pl, []).append(new_pts)
+                            with pend_lock:
+                                pending.setdefault(pl, []).append(new_pts)
+                            hud.add_points(new_pts)
                             show = new_pts
                             if a.photoreal and pl in pile_xy:   # the map, not hits sprayed over the whole site
                                 from isaac.photoreal import LIDAR_DRAW_R
@@ -497,12 +879,24 @@ def main(argv=None):
                                 show = new_pts[np.hypot(new_pts[:, 0] - c[0], new_pts[:, 1] - c[1]) < LIDAR_DRAW_R]
                             if len(show):
                                 overlay.add_points(show)
-            pods.update(cur, poses)                    # winch-lowered radar pods (state.pods / winch_len_m)
+            if not motion_drives:                      # winch-lowered radar pods (state.pods / winch_len_m)
+                if isinstance(pods, PodViz):
+                    pods.update(cur, poses, dt=rdt)
+                else:
+                    pods.update(cur, poses)
             if dust is not None:
                 dust.update(poses, surface)
 
             focus, spread = focus_from_state(cur, pile_xy, active, list(poses.values()))
+            if take:
+                if ctrl is not None and len(ctrl.live.events) > n_events:   # display only: frame the stage change
+                    ev = ctrl.live.events[-1]
+                    n_events = len(ctrl.live.events)
+                    if ev["what"] in ("activated", "moved", "added"):
+                        cam.on_event(ev["xyz"], f"{ev['id']} {ev['what']}")
+                cam.observe(cur, poses, active)
             cam.update(rdt, focus, spread)
+            hud.update(cur, ctrl, accum.total, now=clock(), speed=a.speed)
             if rigs is not None:
                 rigs.update(poses, focus, rdt)
             overlay.tick(now)
@@ -528,12 +922,18 @@ def main(argv=None):
                     break
     except Exception:
         traceback.print_exc()
+        runner.stop()
         if rt is None or not a.keep_open:
             if rt is not None:
                 rt.close()
             raise
         say("error above; keeping the window open for inspection")
 
+    runner.stop()
+    if keys is not None:
+        keys.close()
+    if ctrl is not None:
+        ctrl.write()
     state_path = os.path.join(a.out, "state.json") if a.out else None
     summary = {
         "steps": steps, "t": cur.get("t"), "phase": cur.get("phase"), "frames": frame,
@@ -544,6 +944,15 @@ def main(argv=None):
         "mission": type(mission).__name__, "launcher": a.launcher, "site": site_name(sc),
         "pods_max_visible": pods.max_visible,
         "recorded_frames": rec.n if rec is not None else 0,
+        "hud": {"kind": hud.view.kind, "model_updates": hud.model.updates, "draws": hud.view.draws},
+        "live": None if ctrl is None else {
+            "hook": ctrl.hook, "world_source": ctrl.live.source.kind, "world_changed": ctrl.live.changed,
+            "events": [f"t={e['t']} {e['id']} {e['what']} ({e['cause']})" for e in ctrl.live.events],
+            "quick_listens": ctrl._ql_n, "new_evidence": [q["new"] for q in ctrl.quick if q["new"]],
+            "replans": ctrl.replans, "visited": list(getattr(mission, "visited", [])),
+            "dispatch": [(d.get("t"), d.get("from_pile"), d.get("to_pile")) for d in getattr(mission, "dispatch", [])],
+            "last_listen": ctrl.live.last_listen, "world_reads": ctrl.live.reads},
+        "camera_shots": getattr(cam, "shots", None),
     }
     say("summary " + json.dumps(summary))
     if rec is not None and rec.n:

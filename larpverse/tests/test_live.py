@@ -1,0 +1,226 @@
+"""Live single take (isaac/live.py, isaac/hud.py, run_mission.py --live) without omni / pxr / a GPU.
+
+Scripted triggers appear here (tests only): in the take the change is a live human action, and
+run_mission.py refuses --test-trigger outside --dry-run."""
+import json
+import math
+import os
+import sys
+
+import numpy as np
+import pytest
+
+REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, REPO)
+
+
+def _no_omni():
+    return not any(m == "pxr" or m.startswith(("pxr.", "omni.", "carb", "isaaclab")) or m in ("omni", "isaaclab")
+                   for m in sys.modules)
+
+
+def _mission(tmp_path, tasking=True):
+    from isaac.live import write_default_tasking
+    from sim.grid_mission import GridMission
+    tk = write_default_tasking(str(tmp_path)) if tasking else None
+    return GridMission(seed=7, verbose=False, acoustic="stub", tasking=tk, out_dir=None)
+
+
+def _live(m):
+    from isaac.live import ListSource, LiveController, LiveWorld, dummies_from_scenario
+    sc = m.scenario
+    hm = sc.heightmap(0.5)
+    w = LiveWorld(sc, ListSource(dummies_from_scenario(sc, hm.height_at)), surface=hm.height_at, log=lambda s: None)
+    c = LiveController(m, w, acoustic="stub", log=lambda s: None, clock=lambda: m.t)
+    return w, c
+
+
+def test_untouched_stage_is_the_scenario(tmp_path):
+    """Dummies where the scenario put them reproduce its truth exactly (same story as the CPU run), so listens
+    may use the cache; the hidden dummies are inactive."""
+    m = _mission(tmp_path, tasking=False)
+    base = m.scenario
+    w, c = _live(m)
+    assert c.hook in ("stub", "native")
+    assert not w.changed
+    t = w.truth()
+    for v in base.truth["victims"]:
+        lv = next(x for x in t["victims"] if x["id"] == v["id"])
+        assert all(lv[k] == v[k] for k in ("pile", "depth", "breathing_hz", "sound")), (v, lv)
+    for s in base.truth["sounds"]:
+        assert any(all(x.get(k) == s[k] for k in s) for x in t["sounds"]), s
+    hid = w.source.hidden_ids()
+    assert len(hid) >= 1 and not any(v["id"] in hid for v in t["victims"])
+
+
+def test_world_override_changes_acoustic_leads(tmp_path):
+    """A hidden dummy switched on: the next listen (fresh, uncached synthesis) hears a new human lead in its
+    sector, and the radar generator gets it as a target; switching it off again restores the scenario."""
+    m = _mission(tmp_path, tasking=False)
+    w, c = _live(m)
+    hid = w.source.hidden_ids()
+    did = hid[-1]                                   # grid seed 7: H2_A1_id (A1, next to the start pile A2)
+    row = next(d for d in w.source.read() if d["id"] == did)
+    sector = w.locate(*row["xyz"][:2])
+    drones = {"d1": (-18.0, 6.0), "d2": (-26.0, 4.0), "d3": (-20.0, -3.0)}    # landed around A2
+    before = m.acoustic_fn(m.scenario, drones, ["A2"], 101)
+    assert before["live"]["fresh_uncached"] is True  # stub mode is always synthesised
+    lead0 = {p["pile_id"]: p for p in before["piles"]}[sector]
+    assert lead0["status"] != "lead"
+    assert not w.targets_for(sector)
+
+    assert w.set_active(did, True, "test")
+    after = m.acoustic_fn(m.scenario, drones, ["A2"], 101)
+    assert w.changed and after["live"]["world"] != after["live"]["scenario_world"]
+    lead1 = {p["pile_id"]: p for p in after["piles"]}[sector]
+    assert lead1["status"] == "lead" and lead1["priority"] >= 20, lead1
+    assert [t["id"] for t in w.targets_for(sector)] == [did]
+    assert w.events and w.events[-1]["what"] == "activated" and w.events[-1]["id"] == did
+
+    w.set_active(did, False, "test")
+    w.refresh(0.0)
+    assert not w.changed
+
+
+def test_moved_dummy_reaches_the_radar(tmp_path):
+    """Dragging a dummy (viewport) moves the radar target from the next scan on; a dragged slab over it (column
+    probe higher than the map) deepens it."""
+    m = _mission(tmp_path, tasking=False)
+    w, c = _live(m)
+    v = w.targets_for("A2")[0]
+    new = [v["xy"][0] + 3.0, v["xy"][1] - 2.0, 0.6]
+    w.move(next(d["id"] for d in w.source.read() if d.get("victim") == v["id"] or d["id"] == v["id"]), new, "test drag")
+    w.refresh(1.0)
+    t2 = w.targets_for("A2")[0]
+    assert math.dist(t2["xy"], new[:2]) < 1e-6 and t2["z"] == pytest.approx(0.6)
+    assert w.events[-1]["what"] == "moved" and w.changed
+    w.probe = lambda x, y: float(w.surface(x, y)) + 1.0          # a 1 m slab dragged on top
+    w.refresh(2.0)
+    assert w.targets_for("A2")[0]["depth"] > t2["depth"] + 0.9
+
+
+def test_tasking_revision_redirects(tmp_path):
+    """Operator draws a new zone mid-run (POST /api/tasking writes a new revision): the controller's 1 s poll
+    merges it, the radar dwell under way finishes, and the fleet is dispatched to the new zone."""
+    m = _mission(tmp_path)
+    w, c = _live(m)
+    while not (m.stage == "pile" and m.pm.scans):
+        c.before_step()
+        m.step()
+        c.after_step(m.build_state())
+        assert m.t < 200
+    path = os.path.join(str(tmp_path), "tasking.json")
+    doc = json.load(open(path))
+    x, y = m.world.pile_xy["C3"]
+    doc["zones"].append({"id": "Z_NEW", "name": "operator circle", "status": "tasked",
+                         "polygon": [[x - 8, y - 8], [x + 8, y - 8], [x + 8, y + 8], [x - 8, y + 8]]})
+    doc["revision"] = int(doc.get("revision") or 1) + 1
+    doc["source"] = "operator"
+    with open(path, "w") as f:
+        json.dump(doc, f)
+    os.utime(path, None)
+    t0 = m.t
+    while m.t < t0 + 60 and "C3" not in m.visited:
+        c.before_step()
+        m.step()
+        c.after_step(m.build_state())
+    assert m.visited[-1] == "C3", (m.visited, c.replans)
+    assert c.replans and "Z_NEW" in c.replans[0]["why"]
+    assert m.dispatch[-1]["to_pile"] == "C3"
+    assert m.t - t0 < 60
+
+
+def test_hud_noop_import():
+    from isaac.hud import Hud, HudModel, NullHud, make_hud
+    assert isinstance(make_hud("auto"), NullHud) and isinstance(make_hud("off"), NullHud)
+    state = {"t": 300.0, "phase": "acoustic", "mission": {"active_pile": "A2"},
+             "site": {"bounds": [-36, -54, 36, 36]}, "piles": [{"id": "A2", "xy": [-21.6, 0.7]}],
+             "acoustic_clips": [{"listen": 1, "pile_id": "A3", "drone_id": "d1", "bearing_deg": -64, "width_deg": 24,
+                                 "class": "voice", "transcript": "Help!", "priority": 77,
+                                 "scores": {"human": 0.9}}],
+             "pings": [{"id": "A2-R1", "t_found": 275.0, "dig_score": 0.41,
+                        "vitals": {"condition": "irregular_apneic", "rate_bpm": 9.0, "triage_hint": "immediate (check)"}}],
+             "dispatch": [{"t": 381.0, "to_pile": "B1", "reason": "weak voice + radar coverage gap"}]}
+    h = Hud("auto", bounds=state["site"]["bounds"], piles=state["piles"])
+    h.add_points(np.array([[-21.6, 0.7, 2.0], [-20.0, 1.0, 2.0]]))
+    p = h.update(state, None, 1000, now=1.0, force=True)
+    assert "irregular breathing with pauses - check first" in p["vitals"]["text"]
+    assert "not a diagnosis" in p["vitals"]["text"]
+    assert "B1" in p["decision"]["text"] and "A2-R1" in p["decision"]["text"]
+    assert p["listen"]["cones"][0]["drone"] == "d1" and p["lidar"]["coverage"] > 0
+    assert HudModel(speed=8).update(state)["header"]["text"].count("sped up") == 1
+    assert _no_omni()
+
+
+def test_pose_track_is_smooth():
+    """Render-time poses: continuous velocity across step boundaries, no dip below a landing pad."""
+    from isaac.run_mission import PoseTrack
+    tr = PoseTrack(use_motion=False)
+    zs = [9.0, 9.0, 6.0, 3.0, 0.2, 0.2, 0.2]
+    xs = [0.0, 4.0, 8.0, 10.0, 10.0, 10.0, 10.0]
+    for k, (x, z) in enumerate(zip(xs, zs)):
+        tr.push({"t": float(k), "drones": [{"id": "d1", "pose": [x, 0.0, z, 90.0], "state": "flying"}]})
+    ts = np.linspace(0.0, 6.0, 601)
+    P = np.array([tr.poses(t)["d1"][:3] for t in ts])
+    V = np.array([tr.poses(t)["d1"][5] for t in ts])
+    assert P[:, 2].min() >= 0.2 - 1e-9                       # monotone: never below the pad
+    assert np.abs(np.diff(V)).max() < 0.2                    # no velocity jumps at the step boundaries
+    assert np.abs(np.diff(P[:, 0])).max() < 0.06
+
+
+def test_take_camera_never_cuts():
+    from isaac.live import TakeCamera
+    pile_xy = {"A2": (-21.6, 0.7), "C3": (22.0, -22.0)}
+    cam = TakeCamera(None, pile_xy, base_xy=(0.0, -47.0), pads=[(-2.6, -49.0), (0.0, -49.0), (2.6, -49.0)],
+                     van=(10.0, -49.0, 0.0, -90.0))
+    poses = {"d1": (-21.0, 1.0, 9.0, 0.0, "hovering", 0.0, 0.0)}
+    seq = [({"t": 0.0, "phase": "deploy"}, {"d1": (0.0, -49.0, 0.2, 0.0, "docked", 0.0, 0.0)}, None)] * 60 + \
+          [({"t": 50.0, "phase": "survey"}, poses, "A2")] * 90 + \
+          [({"t": 120.0, "phase": "radar", "pods": []}, poses, "A2")] * 60
+    eyes = []
+    for k, (st, ps, act) in enumerate(seq):
+        if k == 200:
+            cam.on_event((22.0, -22.0, 1.0), "H1 activated")
+        cam.observe(st, ps, act)
+        cam.update(1 / 30)
+        eyes.append(cam.eye.copy())
+    E = np.array(eyes)
+    step = np.linalg.norm(np.diff(E, axis=0), axis=1)
+    assert step.max() < 1.5                                   # < 45 m/s at 30 fps: a move, never a cut
+    acc = np.linalg.norm(np.diff(E, 2, axis=0), axis=1)
+    assert acc.max() < 0.05                                   # continuous velocity (spring-followed arcs)
+    names = [s for _, s in cam.shots]
+    assert names[0] == "van" and "survey" in names and "event" in names
+
+
+def test_live_dryrun_with_trigger(tmp_path):
+    """run_mission --dry-run --live with a scripted trigger (tests only): the hidden dummy switched on at t 90 is
+    heard by the pod-mic quick listens (needs an earlier listen that heard A1 silent: the first one is at the pods' first
+    dwell), the A2 dwell finishes and the fleet redirects to its sector; live.json and
+    hud.json are written; no omni / pxr imported."""
+    from isaac.live import write_default_tasking
+    from isaac.run_mission import main
+    out = tmp_path / "data"
+    write_default_tasking(str(out))
+    s = main(["--dry-run", "--live", "--camera", "director-take", "--acoustic", "stub", "--max-steps", "175",
+              "--out", str(out), "--test-trigger", "activate:hidden2@90", "--quiet"])
+    lv = s["live"]
+    assert lv["world_changed"] and lv["events"] and "activated" in lv["events"][0]
+    assert lv["new_evidence"] and lv["replans"]
+    assert lv["visited"][:2] == ["A2", "A1"], lv["visited"]
+    t_event = float(lv["events"][0].split()[0][2:])
+    t_redirect = next(d[0] for d in lv["dispatch"] if d[2] == "A1")
+    assert t_redirect - t_event < 60                          # sim s; ~3-4 s of video at the take pace
+    live = json.loads((out / "live.json").read_text())
+    assert live["schema"] == "larpverse.live/v1" and live["world"]["changed"]
+    hud = json.loads((out / "hud.json").read_text())
+    assert {"lidar", "listen", "radar", "vitals", "decision", "event"} <= set(hud["panels"])
+    assert hud["panels"]["radar"]["wave"]                     # the live slow-time waveform of the last pod scan
+    assert s["camera_shots"][0][1] == "van"
+    assert _no_omni()
+
+
+def test_test_trigger_refused_outside_dry_run():
+    from isaac.run_mission import parse_args
+    with pytest.raises(SystemExit):
+        parse_args(["--live", "--test-trigger", "activate:hidden1@10", "--launcher", "kit"])

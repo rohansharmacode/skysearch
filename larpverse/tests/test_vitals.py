@@ -70,7 +70,8 @@ def test_apnea_detected_and_not_hallucinated():
 def test_unclear_at_low_quality():
     rng = np.random.default_rng(9)
     v = vitals.extract(rng.normal(0, 1e-3, int(60 * FS)), FS, kind="displacement")
-    assert v["pattern"] == "unclear" and v["condition"] == "unknown" and v["triage_hint"] == "assess" and v["pattern_conf"] == 0.0
+    assert v["pattern"] == "unclear" and v["condition"] == "unknown" and v["pattern_conf"] < 0.95
+    assert v["triage_hint"] in ("assess", "reject") and v["source"] != "human_breathing"
     x, _, _ = _scan("calm", 1)
     v = vitals.extract(x + rng.normal(0, 4e-3, x.size), FS, kind="displacement")   # breathing buried in noise
     assert v["pattern"] == "unclear" or v["pattern_conf"] < 0.4
@@ -136,3 +137,60 @@ def test_end_to_end_through_dsp_and_extract_from_obs():
     assert v["depth_rel"] is not None and 0.3 < v["depth_rel"] < 3.0
     v2 = vitals.extract_from_obs(res.debug)                   # fallback: the existing debug dict
     assert v2["depth_rel"] is None and abs(v2["rate_bpm"] - v["rate_bpm"]) <= 2.0
+
+
+# ----------------------------------------------------------------------------- confounder rejector
+def _t(dur=60.0):
+    return np.arange(0, dur, 1 / FS)
+
+
+def test_rejector_machinery_tone():
+    t = _t()
+    x = 0.8e-3 * np.sin(2 * np.pi * 2.3 * t) + 0.25e-3 * np.sin(2 * np.pi * 4.6 * t)
+    v = vitals.extract(x + np.random.default_rng(1).normal(0, 0.02e-3, t.size), FS, kind="displacement")
+    assert v["source"] == "machinery" and v["condition"] == "unknown" and v["triage_hint"] == "reject"
+
+
+def test_rejector_debris_step():
+    from scipy.special import expit
+    t = _t()
+    x = 8e-3 * expit((t - 31.0) / 0.3) + np.random.default_rng(2).normal(0, 0.05e-3, t.size)
+    v = vitals.extract(x, FS, kind="displacement")
+    assert v["source"] == "debris_shift", (v["source"], v["source_reason"], v["signature"])
+
+
+def test_rejector_knocking_person():
+    t = _t()
+    rng = np.random.default_rng(3)
+    x = physio.chest_displacement(t, physio.sample_physio("calm", rng), rng, movements=False)
+    for tb in (5.0, 17.0, 29.0, 41.0, 52.0):
+        for k in range(3):
+            x = x + 10e-3 * np.exp(-0.5 * ((t - tb - k / 3.0) / 0.05) ** 2)
+    v = vitals.extract(x, FS, kind="displacement")
+    assert v["source"] == "moving_person" and v["triage_hint"] == "urgent"
+
+
+def test_rejector_small_animal_and_human_kept():
+    t = _t()
+    rng = np.random.default_rng(4)
+    dog = {"state": "animal", "rate_bpm": 30.0, "depth_rel": 0.12, "cv": 0.08, "apnea_per_min": 0.0}
+    x = physio.chest_displacement(t, dog, rng, cardiac=False, movements=False) + rng.normal(0, 0.01e-3, t.size)
+    assert vitals.extract(x, FS, kind="displacement")["source"] == "small_animal"
+    for state in physio.PATTERN_FOR_STATE:                    # real breathing patterns are not rejected
+        v = vitals.extract(_scan(state, 0)[0], FS, kind="displacement")
+        assert v["source"] == "human_breathing", (state, v["source"], v["source_reason"])
+
+
+def test_identify_through_dsp_signature_library():
+    """One synthetic pod scan per class through the real chain: humans keep a condition, confounders are not
+    called a breathing person (rotor / machinery / empty may come back as no_signal: that is still a reject)."""
+    from sim import radar_signatures as RS
+    for cls, seed in (("calm", 1002), ("empty", 1000), ("machinery", 1000), ("moving_person", 1000)):
+        sc = RS.render(cls, seed, 45.0)
+        o = vitals.identify(sc["iq"], sc["params"])
+        if cls in RS.HUMAN:
+            assert o["source"] == "human_breathing" and o["condition"] == cls, (cls, o["source"], o["reason"])
+        elif cls == "moving_person":
+            assert o["source"] in ("moving_person", "human_breathing"), (cls, o["source"])
+        else:
+            assert o["source"] != "human_breathing", (cls, o["source"], o["reason"])

@@ -1,0 +1,198 @@
+{
+ "n_per_class": [
+  50,
+  50,
+  50,
+  50,
+  50,
+  50,
+  50,
+  50,
+  50,
+  50
+ ],
+ "classes": [
+  "calm",
+  "distressed_tachypnea",
+  "unconscious_slow",
+  "irregular_apneic",
+  "empty",
+  "debris",
+  "small_animal",
+  "machinery",
+  "rotor",
+  "moving_person"
+ ],
+ "predicted": [
+  "calm",
+  "distressed_tachypnea",
+  "unconscious_slow",
+  "irregular_apneic",
+  "no_signal",
+  "debris_shift",
+  "small_animal",
+  "machinery",
+  "rotor",
+  "moving_person"
+ ],
+ "confusion": [
+  [
+   41,
+   1,
+   0,
+   0,
+   8,
+   0,
+   0,
+   0,
+   0,
+   0
+  ],
+  [
+   0,
+   34,
+   0,
+   0,
+   13,
+   0,
+   2,
+   0,
+   1,
+   0
+  ],
+  [
+   0,
+   0,
+   37,
+   4,
+   9,
+   0,
+   0,
+   0,
+   0,
+   0
+  ],
+  [
+   8,
+   0,
+   10,
+   23,
+   9,
+   0,
+   0,
+   0,
+   0,
+   0
+  ],
+  [
+   0,
+   2,
+   0,
+   1,
+   47,
+   0,
+   0,
+   0,
+   0,
+   0
+  ],
+  [
+   0,
+   0,
+   2,
+   15,
+   23,
+   10,
+   0,
+   0,
+   0,
+   0
+  ],
+  [
+   0,
+   0,
+   0,
+   0,
+   26,
+   0,
+   24,
+   0,
+   0,
+   0
+  ],
+  [
+   0,
+   0,
+   0,
+   0,
+   32,
+   0,
+   0,
+   18,
+   0,
+   0
+  ],
+  [
+   0,
+   4,
+   0,
+   1,
+   19,
+   0,
+   0,
+   6,
+   20,
+   0
+  ],
+  [
+   1,
+   0,
+   1,
+   4,
+   5,
+   0,
+   0,
+   0,
+   0,
+   39
+  ]
+ ],
+ "recall": {
+  "calm": 0.82,
+  "distressed_tachypnea": 0.68,
+  "unconscious_slow": 0.74,
+  "irregular_apneic": 0.46,
+  "empty": 0.94,
+  "debris": 0.2,
+  "small_animal": 0.48,
+  "machinery": 0.36,
+  "rotor": 0.4,
+  "moving_person": 0.78
+ },
+ "accuracy": 0.586,
+ "person_vs_not": {
+  "tp": 203,
+  "fn": 47,
+  "fp": 25,
+  "tn": 225,
+  "sensitivity": 0.812,
+  "specificity": 0.9
+ },
+ "moving_person_flagged_urgent": 0.8,
+ "dsp_detection_rate": {
+  "calm": 0.9,
+  "distressed_tachypnea": 0.78,
+  "unconscious_slow": 0.84,
+  "irregular_apneic": 0.86,
+  "empty": 0.1,
+  "debris": 0.46,
+  "small_animal": 0.5,
+  "machinery": 0.0,
+  "rotor": 0.32,
+  "moving_person": 1.0
+ },
+ "dwell_s": [
+  45,
+  60
+ ]
+}

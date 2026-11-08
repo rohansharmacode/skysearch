@@ -19,8 +19,9 @@ Everything runs in NVIDIA Isaac Sim. The trapped people, their voices and the ra
 | What | Where |
 |---|---|
 | 1-minute demo video (screen recording of the live console) | [larpverse_console_taiwan_v10_final_noend.mp4](https://github.com/rohansharmacode/skysearch/blob/larpverse-rehearsals/final/larpverse_console_taiwan_v10_final_noend.mp4) |
-| Live console (runs on our GPU server while it is switched on) | https://descending-coleman-continually-cocktail.trycloudflare.com/ |
+| Live console (runs on our GPU server while it is switched on; switching between the three sites or pressing Reset takes about 3 s, because a preloaded Isaac Sim waits for each site) | https://descending-coleman-continually-cocktail.trycloudflare.com/ |
 | The code | branch [`larpverse-isaac`](https://github.com/rohansharmacode/skysearch/tree/larpverse-isaac/larpverse), folder `larpverse/` |
+| Voiceover script for the video | [final/voiceover_script_v10.md](https://github.com/rohansharmacode/skysearch/blob/larpverse-rehearsals/final/voiceover_script_v10.md) |
 | Detailed README (modules, quickstart, honest limits, credits) | [larpverse/README.md](https://github.com/rohansharmacode/skysearch/blob/larpverse-isaac/larpverse/README.md) |
 | Technical report | [larpverse/docs/TECHNICAL_REPORT.md](https://github.com/rohansharmacode/skysearch/blob/larpverse-isaac/larpverse/docs/TECHNICAL_REPORT.md) |
 
@@ -31,7 +32,7 @@ In the video, the operator clicks once at the start. After that nothing is scrip
 | Where | Model | Job |
 |---|---|---|
 | Police van (command) | `gemini-4-argon` | Picks the next pile from the options the mission lists, with a one-line reason |
-| Each drone (audio) | `gemini-3.5-flash` | For each sound clip: is it a person, what is said (any language), distress cues, and is it under rubble or out in the open |
+| Each drone (audio) | `gemini-3.5-flash` (the demo video and the live console use `gemini-3.5-flash-lite` for lower latency) | For each sound clip: is it a person, what is said (any language), distress cues, and is it under rubble or out in the open |
 | On-drone, offline option | Gemma 4 E2B (`google/gemma-4-E2B-it`) | The same audio step with no network link (open weights) |
 | On the box, always | Silero VAD, YAMNet, faster-whisper, SRP-PHAT | Detection, transcription and direction finding with no LLM |
 

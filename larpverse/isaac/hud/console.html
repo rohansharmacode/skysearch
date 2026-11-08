@@ -79,6 +79,10 @@
   .mbox svg .xk { stroke:#000; stroke-width:8; stroke-linecap:round; pointer-events:none; }
   .mbox svg .xw { stroke:#e9edf0; stroke-width:4; stroke-linecap:round; pointer-events:none; }
   .mbox .pl.x { color:#e9edf0; }
+  .mbox .vh { position:absolute; transform:translate(-50%,-50%); pointer-events:none; border:3px solid var(--sound); border-radius:50%;
+              box-shadow:0 0 0 2px #000, inset 0 0 0 2px #000; }
+  .mbox .vhl { position:absolute; transform:translate(-50%,0); pointer-events:none; font-size:12px; font-weight:800; color:#7fe6f2;
+               white-space:nowrap; padding:1px 6px; border-radius:5px; background:rgba(0,0,0,0.8); }
   .sc2.rst { margin-left:10px; border-color:#6b3a3a; color:#ffb9b9; }
   .sc2.rst:hover { border-color:#ff6b6b; color:#fff; }
   .mbox .sc { position:absolute; left:10px; bottom:8px; font-size:12px; color:#c9d2d9; pointer-events:none; }
@@ -145,7 +149,7 @@
       <div class="hrow"><div class="h">Site map · click a rubble pile to search it</div><div class="n" id="mapn"></div></div>
       <div class="mbox" id="mbox"><canvas id="lmap" width="1176" height="620"></canvas><svg id="msvg"></svg><div class="nn">N ↑</div>
         <div class="sc" id="msc"><i></i>10 m</div></div>
-      <div class="mleg">Dashed outlines: rubble piles. White dots: LiDAR laser hits (brighter = higher). Orange: drones. Red: radar leads. ✕: searched, nothing found.</div>
+      <div class="mleg">Dashed outlines: rubble piles. White dots: LiDAR laser hits (brighter = higher). Orange: drones. Red: radar leads. Blue ring: searched, voice heard. ✕: searched, nothing found.</div>
       <div id="toast"></div>
     </div>
     <div class="card" id="sense">
@@ -565,7 +569,7 @@ async function lmFetch(url) {
 }
 LM.svgSent = pile => { for (const id in LM.zones) LM.zones[id].classList.toggle('sent', id === pile); };
 function lmBuild(s) {                               // (re)build the static layer for a site: outlines, labels, scale
-  for (const el of [...LM.box.querySelectorAll('.pl,.ring,.dr,.ld,.ldl')]) el.remove();
+  for (const el of [...LM.box.querySelectorAll('.pl,.ring,.dr,.ld,.ldl,.vh,.vhl')]) el.remove();
   LM.svg.innerHTML = ''; LM.labels = {}; LM.zones = {}; LM.drones = {}; LM.leads = {}; lmReset();
   const v = LM.view = lmView(s);
   if (!v) return;
@@ -586,16 +590,34 @@ function lmBuild(s) {                               // (re)build the static laye
     lb.style.left = `${x}px`; lb.style.top = `${y}px`; LM.box.appendChild(lb); LM.labels[p.id] = lb;
   }
   const ring = document.createElement('div'); ring.className = 'ring hide'; LM.box.appendChild(ring); LM.ring = ring;
-  LM.xs = {};
+  LM.xs = {}; LM.vh = {};
 }
 // ✕ on a pile the drones searched (radar + listen) and left with nothing found: the mission marks it
 // no_signal_not_cleared / dismissed_nonhuman. The mission's own caveat stands: nothing found is not proof of absence.
 const EMPTY = ['no_signal_not_cleared', 'dismissed_nonhuman'];
-function searchedEmpty(s) {
+function searchedWith(s, ok) {
   const m = s.mission || {}, vis = new Set(m.visited || []), d = lastDispatch(s);
   const leaving = d && ['dispatch', 'deploy'].includes(String(s.phase)) ? d.to_pile : null;
-  return new Set((s.piles || []).filter(p => vis.has(p.id) && EMPTY.includes(p.status)
+  return new Set((s.piles || []).filter(p => vis.has(p.id) && ok(p.status)
     && (p.id !== m.active_pile || (leaving && leaving !== p.id))).map(p => p.id));
+}
+const searchedEmpty = s => searchedWith(s, st => EMPTY.includes(st));
+// blue ring: searched, the radar was unsure, but a voice or knock was heard there (status "lead"): rescuers check it
+const searchedVoice = s => searchedWith(s, st => st === 'lead');
+function lmVoice(s) {
+  const v = LM.view, V = held(s) ? new Set() : searchedVoice(s);
+  LM.vh = LM.vh || {};
+  for (const p of s.piles || []) {
+    const on = V.has(p.id) && p.xy, el = LM.vh[p.id];
+    if (!on) { if (el) { el.forEach(x => x.remove()); delete LM.vh[p.id]; } continue; }
+    if (el) continue;
+    const [cx, cy] = half(lmPx(v, p.xy[0], p.xy[1])), r = 6.5 * v.k / 2;
+    const ring = document.createElement('div'); ring.className = 'vh';
+    Object.assign(ring.style, { left: `${cx}px`, top: `${cy}px`, width: `${2 * r}px`, height: `${2 * r}px` });
+    const lb = document.createElement('div'); lb.className = 'vhl'; lb.textContent = 'voice heard';
+    Object.assign(lb.style, { left: `${cx}px`, top: `${cy + r + 3}px` });
+    LM.box.appendChild(ring); LM.box.appendChild(lb); LM.vh[p.id] = [ring, lb];
+  }
 }
 function lmCross(s) {
   const v = LM.view, X = held(s) ? new Set() : searchedEmpty(s);
@@ -643,7 +665,7 @@ function lmUpdate(s, b) {
     e.forEach(el => { el.style.transform = `translate(${x.toFixed(1)}px, ${y.toFixed(1)}px)`; });
     e[1].textContent = r != null ? `${pshort(p.id)} · breathing ${f0(r)}/min` : (p.breathing_hz ? `${p.id} · breathing ~${f0(60 * p.breathing_hz)}/min` : p.id);
   }
-  lmCross(s);
+  lmCross(s); lmVoice(s);
   const pc = s.pointcloud || {};
   if (pc.full_count === 360000 || !pc.url) { if (LM.have || LM.count) lmReset(); return; }   // fresh run: nothing scanned yet
   const key = `${pc.count}/${pc.full_count || ''}`;

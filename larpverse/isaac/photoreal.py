@@ -65,6 +65,9 @@ def add_args(ap):
     g.add_argument("--facade-kit", default=_fk.default_dir(),
                    help="Blender-built damaged-facade kit folder for the fallen towers (isaac/facade_kit.py; "
                         "default: isaac/assets/facade_kit if built; '' = the box facade)")
+    g.add_argument("--grid-look", type=int, default=1,
+                   help="grid/weiguan sites: dusty textured rubble (facade-kit textures), neutral real-camera grade, "
+                        "less orange sun (isaac/grid_look.py); 0 = the old MDL look")
     g.add_argument("--crew", type=int, default=1, help="collapse map: rescue crew models at the staging area")
     g.add_argument("--props", type=int, default=1, help="collapse map: excavators, crawler crane, fire trucks")
     g.add_argument("--clean-overlay", type=int, default=-1,
@@ -511,6 +514,14 @@ def dress(stage, sc, a, log=print):
         urban_look.grade(a, log)
         if getattr(a, "rt_quality", 0):
             urban_look.rt_quality(a, log)
+    elif not urban_map and getattr(a, "grid_look", 1):
+        try:
+            from isaac import grid_look, urban_look
+            grid_look.apply(stage, sc, a, log)
+            if getattr(a, "rt_quality", 0):
+                urban_look.rt_quality(a, log)
+        except Exception as e:
+            log(f"[grid-look] skipped ({type(e).__name__}: {e})")
 
 
 def set_renderer(a, log=print):

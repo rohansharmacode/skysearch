@@ -1,0 +1,340 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Flight Motion Preview</title>
+<style>
+:root {
+  --ink: #121417; --panel: rgba(18, 20, 23, 0.78); --line: rgba(255, 255, 255, 0.12);
+  --text: #f2f1ed; --muted: #a9a8a1; --d1: #3987e5; --d2: #d95926; --d3: #199e70;
+  --f-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace; --f-sans: system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; background: var(--ink); color: var(--text); font: 13px/1.4 var(--f-sans); overflow: hidden; }
+canvas { display: block; }
+#loading { position: absolute; inset: 0; display: grid; place-items: center; background: var(--ink); color: var(--muted);
+  font: 500 13px var(--f-mono); letter-spacing: 0.06em; z-index: 9; padding: 16px; text-align: center; white-space: pre-wrap; }
+#hud { position: absolute; left: 16px; top: 16px; display: grid; gap: 8px; pointer-events: none; max-width: calc(100% - 32px); }
+#title { font: 600 15px var(--f-sans); background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 6px 10px; justify-self: start; }
+#title small { display: block; font: 400 12px var(--f-sans); color: var(--muted); }
+.cards { display: flex; gap: 8px; flex-wrap: wrap; }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; min-width: 182px;
+  font: 12px/1.5 var(--f-mono); backdrop-filter: blur(4px); }
+.card b { display: flex; align-items: center; gap: 6px; font: 600 12px var(--f-sans); }
+.card b i { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
+.card .ph { color: var(--text); font: 500 12px var(--f-sans); }
+.card .k { color: var(--muted); }
+#clock { position: absolute; right: 16px; top: 16px; background: var(--panel); border: 1px solid var(--line); border-radius: 8px;
+  padding: 6px 10px; font: 600 14px var(--f-mono); }
+#legend { position: absolute; right: 16px; bottom: 64px; background: var(--panel); border: 1px solid var(--line); border-radius: 8px;
+  padding: 8px 10px; font: 12px/1.5 var(--f-sans); color: var(--muted); max-width: 300px; }
+#legend b { color: var(--text); font-weight: 600; }
+#bar { position: absolute; left: 16px; right: 16px; bottom: 16px; display: flex; gap: 10px; align-items: center;
+  background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 6px 10px; }
+#bar button { background: #2b2e33; color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 4px 10px; font: 12px var(--f-sans); cursor: pointer; }
+#bar input[type=range] { flex: 1; min-width: 60px; }
+#bar select { background: #2b2e33; color: var(--text); border: 1px solid var(--line); border-radius: 6px; font: 12px var(--f-sans); }
+@media (max-width: 640px) {
+  #hud { left: 8px; top: 8px; max-width: calc(100% - 16px); }
+  #title { font-size: 13px; margin-right: 76px; }
+  #clock { right: 8px; top: 8px; font-size: 12px; }
+  .cards { flex-wrap: nowrap; gap: 6px; }
+  .card { min-width: 0; flex: 1 1 0; padding: 5px 7px; font-size: 10px; }
+  .card .ph { font-size: 11px; display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .card .v { display: none; }
+  #legend { display: none; }
+  #title small { display: none; }
+  #bar { left: 8px; right: 8px; bottom: 8px; }
+}
+</style>
+</head>
+<body>
+<div id="loading">Loading the flight pose log…</div>
+<div id="hud">
+  <div id="title">Heavy SAR drones: flight motion preview<small>FlyCart 30 / T50-class X8, sim/flight_motion.py sampled at 60 fps · seed-7 grid</small></div>
+  <div class="cards" id="cards"></div>
+</div>
+<div id="clock">t 0.0 s</div>
+<div id="legend"><b>What to look for</b><br>spool-up and a 2 m hover before the climb · lean into acceleration, flare when braking ·
+  yaw turns before the corner · slow final descent and spin-down · S-curve winch payout with a damped sway</div>
+<div id="bar">
+  <button id="play">Pause</button>
+  <input id="scrub" type="range" min="0" max="1000" value="0" aria-label="time">
+  <select id="follow" aria-label="camera">
+    <option value="auto">Director</option><option value="d1">Chase d1</option><option value="d2">Chase d2</option><option value="d3">Chase d3</option><option value="wide">Wide</option>
+  </select>
+</div>
+<script type="importmap">
+{ "imports": { "three": "../dashboard/vendor/three.module.js" } }
+</script>
+<script type="module">
+import * as THREE from 'three';
+
+const qs = new URLSearchParams(location.search);
+const LOG = qs.get('log') || '../media/motion/showcase.json';
+const COLORS = { d1: 0x3987e5, d2: 0xd95926, d3: 0x199e70 };
+const VIS_DPS = 1200;             // rotor visual rate at hover RPM (as isaac/motion.py)
+
+const fail = msg => { const l = document.getElementById('loading'); l.style.color = '#ffd0d0';
+  l.textContent = 'The preview could not start.\n' + msg + '\nGenerate the pose log with:\n.venv/bin/python scripts/motion_preview.py showcase'; };
+
+let data;
+try { const r = await fetch(LOG); if (!r.ok) throw new Error(`${LOG}: HTTP ${r.status}`); data = await r.json(); }
+catch (e) { fail(String(e.message || e)); throw e; }
+
+const N = data.drones.d1.p.length, FPS = data.fps, T0 = data.t0, T1 = T0 + (N - 1) / FPS;
+const IDS = Object.keys(data.drones);
+
+// ---------------------------------------------------------------- renderer / scene
+const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+document.body.prepend(renderer.domElement);
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0xb9c4cc);
+scene.fog = new THREE.Fog(0xb9c4cc, 90, 260);
+const camera = new THREE.PerspectiveCamera(45, innerWidth / innerHeight, 0.1, 1000);
+scene.add(new THREE.HemisphereLight(0xdfe8f0, 0x5a5146, 1.1));
+const sun = new THREE.DirectionalLight(0xfff3e0, 2.2);
+sun.position.set(-60, 90, 40);
+sun.castShadow = true;
+sun.shadow.mapSize.set(2048, 2048);
+Object.assign(sun.shadow.camera, { left: -80, right: 80, top: 80, bottom: -80, near: 1, far: 300 });
+scene.add(sun);
+// sim frame is Z-up (x east, y north); everything lives under `world` rotated to three's Y-up
+const world = new THREE.Group();
+world.rotation.x = -Math.PI / 2;
+scene.add(world);
+const toThree = v => new THREE.Vector3(v[0], v[2], -v[1]);
+
+// ---------------------------------------------------------------- ground from the heightmap
+{
+  const h = data.height, W = h.w, H = h.h;
+  const geo = new THREE.PlaneGeometry((W - 1) * h.res, (H - 1) * h.res, W - 1, H - 1);
+  const pos = geo.attributes.position, col = [];
+  const c = new THREE.Color();
+  for (let j = 0; j < H; j++) for (let i = 0; i < W; i++) {
+    const k = j * W + i;                     // PlaneGeometry rows go top (+y) to bottom
+    const jj = H - 1 - j;
+    const z = h.z[jj * W + i];
+    pos.setXYZ(k, h.origin[0] + (i + 0.5) * h.res, h.origin[1] + (jj + 0.5) * h.res, z);
+    const t = Math.min(1, z / 5);
+    c.setRGB(0.50 + 0.10 * t, 0.48 + 0.04 * t, 0.44 - 0.02 * t);
+    col.push(c.r, c.g, c.b);
+  }
+  geo.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+  geo.computeVertexNormals();
+  const m = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95, flatShading: true }));
+  m.receiveShadow = true; m.castShadow = true;
+  world.add(m);
+  // pads
+  for (const did of IDS) {
+    const p0 = data.drones[did].p[0];
+    const pad = new THREE.Mesh(new THREE.CircleGeometry(1.9, 40), new THREE.MeshStandardMaterial({ color: 0x3a3d42, roughness: 0.8 }));
+    pad.position.set(p0[0], p0[1], p0[2] - 0.13);
+    world.add(pad);
+    const ring = new THREE.Mesh(new THREE.RingGeometry(1.6, 1.75, 40), new THREE.MeshBasicMaterial({ color: COLORS[did] }));
+    ring.position.set(p0[0], p0[1], p0[2] - 0.12);
+    world.add(ring);
+  }
+}
+
+// ---------------------------------------------------------------- heavy X8 drone model (FlyCart 30 class, true scale)
+const ARM = 1.10, PROP_R = 0.6875;
+function makeDrone(did) {
+  const g = new THREE.Group();
+  const dark = new THREE.MeshStandardMaterial({ color: 0x24272b, roughness: 0.5, metalness: 0.2 });
+  const carbon = new THREE.MeshStandardMaterial({ color: 0x111214, roughness: 0.4 });
+  const acc = new THREE.MeshStandardMaterial({ color: COLORS[did], roughness: 0.5 });
+  const add = (geo, mat, x, y, z) => { const m = new THREE.Mesh(geo, mat); m.position.set(x, y, z); m.castShadow = true; g.add(m); return m; };
+  // pose point = skid bottom + 0.15 m, so the body sits ~0.6 m above it
+  add(new THREE.BoxGeometry(0.95, 0.62, 0.34), dark, 0, 0, 0.62);
+  add(new THREE.BoxGeometry(0.55, 0.56, 0.06), acc, 0.05, 0, 0.81);
+  add(new THREE.BoxGeometry(0.30, 0.30, 0.22), carbon, 0.62, 0, 0.42);    // gimbal / sensor nose
+  for (let k = 0; k < 4; k++) {
+    const a = Math.PI / 4 + k * Math.PI / 2;
+    const arm = add(new THREE.CylinderGeometry(0.045, 0.05, ARM, 10), carbon, Math.cos(a) * ARM / 2, Math.sin(a) * ARM / 2, 0.70);
+    arm.rotation.z = a - Math.PI / 2;
+    add(new THREE.CylinderGeometry(0.07, 0.07, 0.34, 12), dark, Math.cos(a) * ARM, Math.sin(a) * ARM, 0.70).rotation.x = Math.PI / 2;
+  }
+  for (const sd of [-1, 1]) {           // skids
+    add(new THREE.BoxGeometry(1.6, 0.05, 0.05), carbon, 0, sd * 0.7, -0.12);
+    for (const fb of [-1, 1]) add(new THREE.BoxGeometry(0.05, 0.05, 0.62), carbon, fb * 0.45, sd * 0.66, 0.18);
+  }
+  const rotors = [];
+  const blurMat = () => new THREE.MeshBasicMaterial({ color: 0x15171a, transparent: true, opacity: 0, depthWrite: false, side: THREE.DoubleSide });
+  for (let k = 0; k < 4; k++) for (const lvl of [0, 1]) {       // ROTOR_ORDER: arm 0..3, lower then upper
+    const a = Math.PI / 4 + k * Math.PI / 2;
+    const r = new THREE.Group();
+    r.position.set(Math.cos(a) * ARM, Math.sin(a) * ARM, lvl ? 0.88 : 0.52);
+    for (const s of [0, 1]) {
+      const b = new THREE.Mesh(new THREE.BoxGeometry(PROP_R * 0.95, 0.09, 0.012), carbon);
+      b.position.x = (s ? -1 : 1) * PROP_R * 0.5;
+      r.add(b);
+    }
+    const disc = new THREE.Mesh(new THREE.CircleGeometry(PROP_R, 40), blurMat());
+    r.add(disc);
+    g.add(r);
+    rotors.push({ g: r, disc, sign: (k + lvl) % 2 ? 1 : -1 });
+  }
+  // winch cable + pod
+  const cable = new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3()]),
+                               new THREE.LineBasicMaterial({ color: 0x1a1a1a }));
+  world.add(cable);
+  const pod = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.5, 0.25), new THREE.MeshStandardMaterial({ color: 0xf08c2a, roughness: 0.6 }));
+  pod.castShadow = true;
+  world.add(pod);
+  world.add(g);
+  return { g, rotors, cable, pod };
+}
+const drones = Object.fromEntries(IDS.map(d => [d, makeDrone(d)]));
+
+// rotor blade angles: cumulative integral of the per-rotor RPM (visual rate) for random-access seek
+const hov = data.spec.hover_rpm;
+for (const did of IDS) {
+  const rpm = data.drones[did].rpm, ang = new Float32Array(N * 8);
+  for (let i = 1; i < N; i++) for (let k = 0; k < 8; k++)
+    ang[i * 8 + k] = (ang[(i - 1) * 8 + k] + drones[did].rotors[k].sign * VIS_DPS * (rpm[i][k] / hov) / FPS) % 360;
+  data.drones[did].ang = ang;
+}
+
+// ---------------------------------------------------------------- HUD
+const cards = document.getElementById('cards');
+for (const did of IDS) {
+  const el = document.createElement('div');
+  el.className = 'card';
+  el.innerHTML = `<b><i style="background:#${COLORS[did].toString(16).padStart(6, '0')}"></i>${did}</b><span class="ph"></span><div class="v"></div>`;
+  cards.appendChild(el);
+  drones[did].card = el;
+}
+const PH_LABEL = { hold: 'on the pad / holding', 'spool-up': 'rotor spool-up', liftoff: 'lift-off', 'hover-2m': 'hover at 2 m',
+  climb: 'climb', cruise: 'cruise', descend: 'descend', stabilise: 'stabilised hover', descent: 'descent', final: 'slow final 0.5 m/s',
+  flare: 'flare, touchdown', 'spin-down': 'rotor spin-down', hover: 'hover', pod: 'hover', land: 'perched, rotors off',
+  takeoff: 'hover', 'winch-in': 'winch in', 'pre-launch': 'waiting to launch',
+  'winch-payout': 'winch payout (S-curve)', 'pod-on-rubble': 'pod on rubble, scanning', 'winch-reel-in': 'winch reel-in' };
+
+// ---------------------------------------------------------------- frame state
+const lerp = (a, b, u) => a + (b - a) * u;
+function frameAt(t) {
+  const f = Math.min(Math.max((t - T0) * FPS, 0), N - 1);
+  return { i: Math.floor(f), u: f - Math.floor(f) };
+}
+const tmpQ0 = new THREE.Quaternion(), tmpQ1 = new THREE.Quaternion();
+function droneState(did, t) {
+  const D = data.drones[did], { i, u } = frameAt(t), j = Math.min(i + 1, N - 1);
+  const p = [0, 1, 2].map(k => lerp(D.p[i][k], D.p[j][k], u));
+  tmpQ0.set(D.q[i][1], D.q[i][2], D.q[i][3], D.q[i][0]);
+  tmpQ1.set(D.q[j][1], D.q[j][2], D.q[j][3], D.q[j][0]);
+  const q = tmpQ0.clone().slerp(tmpQ1, u);
+  return { p, q, i, w: lerp(D.w[i], D.w[j], u), pod: D.pod[i], rpm: D.rpm[i], ph: data.phases[D.ph[i]],
+           tilt: D.tilt[i], spd: D.spd[i], vz: D.vz[i] };
+}
+
+function pose(t) {
+  const out = {};
+  for (const did of IDS) {
+    const s = droneState(did, t), d = drones[did];
+    d.g.position.set(...s.p);
+    d.g.quaternion.copy(s.q);
+    const ang = data.drones[did].ang;
+    d.rotors.forEach((r, k) => {
+      r.g.rotation.z = THREE.MathUtils.degToRad(ang[s.i * 8 + k]);
+      const f = Math.min(1, s.rpm[k] / hov);
+      r.disc.material.opacity = 0.32 * f;
+      r.g.children[0].visible = r.g.children[1].visible = f < 0.55;
+    });
+    if (s.pod && s.w > 0.02) {
+      const exit = new THREE.Vector3(0, 0, 0.30).applyQuaternion(s.q).add(new THREE.Vector3(...s.p));
+      d.pod.visible = d.cable.visible = true;
+      d.pod.position.set(s.pod[0], s.pod[1], s.pod[2] + 0.125);
+      d.cable.geometry.setFromPoints([exit, new THREE.Vector3(s.pod[0], s.pod[1], s.pod[2] + 0.25)]);
+    } else {
+      d.pod.visible = d.cable.visible = false;
+    }
+    const v = d.card.querySelector('.v');
+    d.card.querySelector('.ph').textContent = PH_LABEL[s.ph] || s.ph;
+    v.innerHTML = `<span class="k">speed</span> ${s.spd.toFixed(1)} m/s <span class="k">vz</span> ${s.vz.toFixed(2)}<br>` +
+      `<span class="k">tilt</span> ${s.tilt.toFixed(1)}° <span class="k">rpm</span> ${Math.round(s.rpm.reduce((a, b) => a + b, 0) / s.rpm.length)}` +
+      `<span class="opt"><br><span class="k">alt</span> ${s.p[2].toFixed(1)} m${s.w > 0.02 ? ` <span class="k">winch</span> ${s.w.toFixed(1)} m` : ''}</span>`;
+    out[did] = s;
+  }
+  document.getElementById('clock').textContent = `t ${t.toFixed(1)} s`;
+  return out;
+}
+
+// ---------------------------------------------------------------- director camera (critically damped springs; no cuts)
+const DIRECTOR = [[0, 'wide'], [9, 'd1'], [17.5, 'd3'], [25.5, 'd1'], [31, 'd2'], [46, 'd1'], [51, 'd2']];
+class Spring {
+  constructor(x, half) { this.x = x.clone(); this.v = new THREE.Vector3(); this.half = half; }
+  update(target, dt) {
+    const w = 2 * Math.LN2 / this.half, x0 = this.x.clone().sub(target), j0 = this.v.clone().addScaledVector(x0, w), e = Math.exp(-w * dt);
+    this.x.copy(target).add(x0.addScaledVector(j0, dt).multiplyScalar(e));
+    this.v.copy(this.v.clone().sub(j0.clone().multiplyScalar(w * dt)).multiplyScalar(e));
+    return this.x;
+  }
+}
+const followSel = document.getElementById('follow');
+function camTargets(t) {
+  let who = followSel.value;
+  if (who === 'auto') { who = DIRECTOR[0][1]; for (const [tt, w] of DIRECTOR) if (t >= tt) who = w; }
+  if (who === 'wide') {
+    const c = new THREE.Vector3();
+    for (const did of IDS) c.add(toThree(droneState(did, t).p));
+    c.multiplyScalar(1 / IDS.length);
+    return { look: c, eye: c.clone().add(new THREE.Vector3(14, 9, 20)) };
+  }
+  const s = droneState(who, t), p = toThree(s.p);
+  // chase from behind the drone's heading, a little to the side and above; closer at low altitude
+  const e = new THREE.Euler().setFromQuaternion(s.q, 'ZYX');
+  const yaw = e.z, back = new THREE.Vector3(-Math.cos(yaw), 0, Math.sin(yaw));
+  const side = new THREE.Vector3(Math.sin(yaw), 0, Math.cos(yaw));
+  const dist = 13 + Math.min(s.spd, 10) * 0.6;
+  return { look: p.clone().add(new THREE.Vector3(0, -1.2, 0)), eye: p.clone().addScaledVector(back, dist).addScaledVector(side, 5).add(new THREE.Vector3(0, 5.5, 0)) };
+}
+let eyeS = null, lookS = null, camT = null;
+const CAM_DT = 1 / 120;
+function camAt(t) {
+  if (camT === null || t < camT - 1e-9) {        // (re)start the deterministic spring from t0
+    const c = camTargets(T0);
+    eyeS = new Spring(c.eye, 1.1); lookS = new Spring(c.look, 0.55); camT = T0;
+  }
+  while (camT + CAM_DT <= t + 1e-9) {
+    camT += CAM_DT;
+    const c = camTargets(camT);
+    eyeS.update(c.eye, CAM_DT); lookS.update(c.look, CAM_DT);
+  }
+  camera.position.copy(eyeS.x);
+  camera.lookAt(lookS.x);
+}
+followSel.addEventListener('change', () => { camT = null; });
+
+// ---------------------------------------------------------------- playback
+let T = T0, playing = true, last = performance.now();
+const scrub = document.getElementById('scrub'), playBtn = document.getElementById('play');
+const setPlay = p => { playing = p; playBtn.textContent = p ? 'Pause' : 'Play'; };
+playBtn.onclick = () => setPlay(!playing);
+scrub.oninput = () => { T = T0 + (T1 - T0) * scrub.value / 1000; setPlay(false); };
+addEventListener('keydown', e => {
+  if (e.key === ' ') { setPlay(!playing); e.preventDefault(); }
+  if ('0123'.includes(e.key)) { followSel.value = e.key === '0' ? 'auto' : 'd' + e.key; camT = null; }
+});
+addEventListener('resize', () => { renderer.setSize(innerWidth, innerHeight); camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); });
+function render() { pose(T); camAt(T); renderer.render(scene, camera); scrub.value = Math.round(1000 * (T - T0) / (T1 - T0)); }
+function loop(now) {
+  const dt = Math.min(0.1, (now - last) / 1000); last = now;
+  if (playing) { T += dt; if (T > T1) T = T0, camT = null; }
+  render();
+  requestAnimationFrame(loop);
+}
+window.seek = v => { T = Math.min(T1, Math.max(T0, T0 + v)); setPlay(false); render(); };
+window.motionLog = data;
+render();
+document.getElementById('loading').remove();
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>

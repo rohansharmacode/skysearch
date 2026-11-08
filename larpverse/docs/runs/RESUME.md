@@ -68,7 +68,7 @@ Paused by the user at about 23:15 and resumed at about 23:20. All 11 agents were
 | a02bd98e325a265bc | **Comms / rescue hotspot** (sim/comms.py, tests/test_comms.py, docs/HOTSPOT.md, dashboard/portal/) | DONE (65b16dc..2e14593). serve.py + scenario + contract v1.4.3 applied cbe715f; grid_mission diff §9.2 → mission (queued); dashboard wiring → dashboard |
 | a46e0ecedd0867d45 | **Dummy audio** (assets/audio/dummies/, scripts/build_dummy_audio.py, docs/DUMMY_AUDIO.md) | DONE 2b95209: 126 clips (57 MB), profiles + hidden C3 (vi) / A1 (id). Leakage + sources= hook → acoustic. USER: Hokkien native recordings, CC0 groan |
 | ae7b1717c7d0c4b66 | **Hardware + comms architecture** (docs/HARDWARE.md, docs/COMMS_ARCHITECTURE.md, data/hardware_bom.json) | DONE (41a42bf, 3627d19): ~$61k/drone, 14 kg payload, raw data stays on drone, ArduPilot build airframe (Harris H6HL), custom USRP pod radar. Requests routed (assets, comms, mission) |
-| a74b2c46c151e5b6f | **Flight motion** (sim/flight_motion.py, isaac/motion.py, scripts/motion_preview.py, animation/motion-preview.html, docs/MOTION.md) | NEW 23:15: user says recording is janky. Jerk-limited multirotor trajectories, tilt/flare, perch, rotor RPM, render-time interpolation, offline preview MP4 |
+| a74b2c46c151e5b6f | **Flight motion** (sim/flight_motion.py, isaac/motion.py, scripts/motion_preview.py, animation/motion-preview.html, docs/MOTION.md) | DONE 2cac1d7: 0 velocity jumps (was 471), jerk 55k→6 m/s³, touchdown 0.19 m/s. R1 SmoothFlight → mission, R2 → live, R3 applied. Mission ~25-30% longer → re-derive the take gates |
 | aaa8c6e412c69ccaf | **Isaac scene assets** (isaac/van.py, dummies.py, drone_viz.py, pods.py; docs/ISAAC_ASSETS.md) | DONE 51634ef: van 12k tris, drone 10k with BOM parts, pod, dummies + hidden; hooks 1-5 → live agent |
 | a5aae449f969b5952 | **Isaac live single take** (isaac/run_mission.py, live.py, hud.py; docs/VIDEO_PLAN.md) | NEW: stage = source of truth, live unscripted triggers, perception HUD, 60 s one-take plan |
 | a5e7bdb232aa15f7b | **Speaker** (sim/callout.py, sim/guidance.py, acoustic/speaker_assets.py, docs/SPEAKER.md, tests/test_callout) | DONE (4d46fb4, a8eff22, c8cf446). serve.py /api/broadcast applied b90217d; mission patch §6 → mission (3 langs default); panel → dashboard. Hokkien voice needs native recording |
@@ -79,6 +79,7 @@ Done: tech report a56b6a6dcfe7aacab (`docs/TECHNICAL_REPORT.md`, about 11k words
 
 ## Integration queue (orchestrator does or forwards these)
 
+0. TODO after the mission eval finishes: widen drone pads to 4.5 m spacing (heavy drone span 3.1 m; currently 2.6 m, rotors overlap). Grid (-6,-49),(-1.5,-49),(3,-49); collapse (-62,-150),(-57.5,-150),(-53,-150). Clear of the van cones at base+5.4 m. Then regenerate scenario_seed7.js.
 0. Quick Isaac brief sent: docs/ISAAC_QUICK.md (23:20). FULL brief due once van/dummies/live/motion land, about 00:30. Update ISAAC_BRIEF.md and send it to the user.
 0. **DELIVERABLE (user, 22:55): ≤60 s single-take Isaac stream capture with perception on screen and ONE unscripted live change.** Everything serves this. The user said: no Whisper download, no new downloads for the audio work.
 

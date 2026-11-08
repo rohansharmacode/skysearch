@@ -11,13 +11,27 @@ Code: `sim/radar_dsp.py` (`two_way_loss_db`, `reach_path_m`, `reach_prob`, `use_
 - **Solid path.** `rubble_path` is the length of the sensor→target segment that lies below the LiDAR heightmap surface. Of that length, `SOLID_FRACTION` = 0.65 counts as solid material; the rest is voids ("voids help"). An optional `REBAR_DB_PER_M` adds loss for rebar ("rebar hurts"); it defaults to 0.
 - **Two-way loss.** Power is averaged over the sweep: `loss(L) = -10 log10 mean_f 10^(-2 L (0.65 alpha_c(f) + rebar) / 10)`. This gives 15 dB at 1 m, 29 dB at 2 m, 43 dB at 3 m and 69 dB at 5 m.
 - **Spreading.** Chest amplitude per IF sample is `AMP_1M / R^2 · 10^(-loss/20)`, with `AMP_1M` = 70 (unit complex noise).
-- **Detection.** No shortcut is taken here. The DSP chain (range FFT → clutter removal → respiration-band OS-CFAR → phase → band-pass) decides whether there is a detection. It was calibrated by measuring the chest amplitude at which 90% of scans detect at 6 m. The results, `A90_DB` (12 scans per 3 dB step), are −17 dB at landing quality 0.95, −15 dB at 0.6 and −11 dB at 0.3.
-- **Reach.** `reach_path_m(range, quality)` is the rubble path at which the margin `20 log10(AMP_1M/R^2) − A90(q)` equals `loss(L)`.
+- **Chest motion.** The synthetic chest wall follows `sim/physio.py`: breath-by-breath motion of about 5 mm peak-to-peak for a calm adult and about 2–3 mm for rapid, shallow breathing. This is the default. The earlier 4–8 mm *amplitude* sinusoid (8–16 mm peak-to-peak) overstated the signal by about 14 dB. It remains available only through `LARPVERSE_PHYSIO=0`.
+- **Detection.** No shortcut is taken here. The DSP chain (range FFT → clutter removal → respiration-band OS-CFAR → phase → band-pass) decides whether there is a detection. Calibration measured the chest amplitude at which 90% of scans detect at 6 m, using the physio waveform of a calm adult (15/min, 5 mm peak-to-peak) and 10 scans per 3 dB step. `A90_DB`:
 
-  | slant range | 2 m | 4 m | 6 m | 9 m | 11.5 m |
-  |---|---|---|---|---|---|
-  | reach at q 0.95 | 2.95 m | 2.05 m | 1.53 m | 1.02 m | 0.73 m |
+  | dwell | q 0.95 | q 0.6 | q 0.3 |
+  |---|---|---|---|
+  | 20 s | −3 dB | 0 dB | +9 dB (cap) |
+  | 45 s (pod scan) | −9 dB | −6 dB | +3 dB (cap) |
+  | 60 s (vitals look) | −11.5 dB | −8.5 dB | +0.5 dB (cap) |
 
+  The old sinusoid needed −17 dB at 20 s. Low-quality scans level off below 90% detection, so their entries are caps, not measurements. A shallow, rapid breather (depth_rel ≈ 0.45) needs about 7 dB more than these figures.
+- **Reach.** `reach_path_m(range, quality, dwell)` is the rubble path at which the margin `20 log10(AMP_1M/R^2) + G_rx − A90(q, dwell)` equals `loss(L)`. Here `G_rx` is the platform's receive-aperture advantage.
+
+  heavy_sar pod, q 0.95 (pod face 0.48 × 0.48 m: +7.6 dB):
+
+  | dwell | 2 m | 6 m | 11.5 m |
+  |---|---|---|---|
+  | 20 s | 2.47 m | 1.07 m | 0.31 m |
+  | 45 s (default pod scan) | **2.92 m** | 1.50 m | 0.70 m |
+  | 60 s | 3.11 m | 1.68 m | 0.87 m |
+
+  Legacy small radar, 45 s: 2.35 m beneath. The previous figure of 3.6 m beneath (sinusoid, 0.6 × 0.5 m panel) was optimistic by about 0.7 m.
 - **Per-scan field.** Every scan reports `max_reliable_depth_m` = `reach_path_m(2 m, measured quality)`, the rubble it could see through directly beneath. A target beyond reach returns *no detection*, and no detection is not absence.
 - **Per pile.** `piles[].radar_coverage` and `radar_coverage_shallow` give the share of the pile volume (cells within 9 m that are more than 0.4 m above ground, sampled every 0.5 m down to the ground) that some scan reached, for the whole pile and for its top 2 m. `radar_reach_m` is the median per-scan reach. When the top-2 m coverage is below 0.5, a pile with no ping is reported as "beyond radar reach → acoustic lead only" and is not revisited.
 
@@ -36,7 +50,7 @@ Not modelled: scattering, multipath inside the pile, moisture, layering and the 
 
 | preset | loss | reach beneath | reach at 11 m | 10 m of rubble |
 |---|---|---|---|---|
-| `literature` (default) | as above | ~3.0 m (3.6 m heavy_sar) | ~0.7 m (1.3 m) | ~130 dB, nothing |
+| `literature` (default) | as above | 2.9 m (heavy_sar pod, 45 s) | 0.7 m | ~130 dB, nothing |
 | `legacy` | flat 0.7 dB/m one-way | ~30 m | ~8.5 m | 14 dB, still visible (**not credible**) |
 
 The grid demo lands the drones on flat cells in a ring 9–12 m from the pile centres. Seed 7's victims sit 0.9–1.9 m deep, but the slant path from the ring to them crosses 1–3 m of pile flank. A3's is 2.9 m from the best ring cell.
@@ -47,22 +61,35 @@ The grid demo lands the drones on flat cells in a ring 9–12 m from the pile ce
 
 ## Why a pod
 
-The radar now rides on a 5 kg sensor pod that a heavy drone (heavy_sar, FlyCart 30 class) lowers on a 20 m winch onto the rubble surface (`--delivery pod`, now the default). The pod sits in contact with the rubble, so the scan starts at the surface and there is no air gap.
+The radar rides on a 4.9 kg sensor pod with a 0.48 m face. A heavy drone (heavy_sar, FlyCart 30 class) lowers it on a 20 m winch onto the rubble surface; this is the default, `--delivery pod`. The winch has a 5 kg minimum load, so there is no margin. The pod sits in contact with the rubble, so the scan starts at the surface and there is no air gap.
 
-The pod is placed on the pile within about 3 m of the acoustic lead. Seed-7 placements sit 1.2–2.6 m slant range from each victim, through 1.1–2.5 m of rubble. The realistic reach at those ranges is about 3.0–3.6 m (heavy_sar's receive aperture adds 8.8 dB, giving 3.6 m beneath and 1.3 m at 11.5 m).
+Placement:
 
-The landing ring stood 9–12 m away, behind 2–3 m of pile flank, where reach is 0.7–1.3 m. A re-placement costs about 20 s plus an 8 s lower, a 20 s scan and an 8 s raise, instead of a re-land. The drones still land off the pile, with rotors off, to listen.
+- The pod goes on the pile within 2 m (horizontal) of the lead's posterior mode first, then further out.
+- On a revisit, the lead's posterior mode is the earlier radar mode. On a first visit it is the acoustic bearing crossing, if that falls on the pile, or else the pile centre.
+- A placement costs about 8 s to lower, 45 s to scan and 8 s to raise, instead of a re-land. A firm ping gets one extra 60 s vitals look.
+- The drones land off the pile, with rotors off, to listen.
 
-The attenuation above was **not** changed for the pod. Only the scan geometry changed, plus a seating model for the pod:
+Reach is about 2.9 m beneath the pod and 0.7 m from the old 11 m landing ring. The attenuation was **not** changed for the pod; only the geometry, the dwell and the seating model changed. The seating model:
 
-- roughness is measured at the pod's 0.5 m footprint, about 0.35 × the 1.5 m plane fit;
-- slope up to 30° does not matter;
-- one IMU-checked re-seat is allowed when the pod rocks.
+- roughness is taken at the pod's footprint, about 0.35 × the 1.5 m plane fit;
+- slopes up to 30° do not matter;
+- the pod is re-seated once when it rocks.
 
-**Default today:** `--penetration literature --radar dsp --delivery pod`. `legacy` and `--delivery land` are kept for comparison only.
+**Default:** `--penetration literature --radar dsp --delivery pod`, with the physio chest waveform, 45 s pod scans and the vitals hooks on. `legacy` and `--delivery land` are kept for comparison only.
 
-Seed 7 (stub acoustics) now pings A2, A3 (on a revisit) and B2. Over 20 seeds, the acoustic policy pings 31/60 non-start victims with the pod, against 0/60 from the landing ring (docs/EVAL_GRID.md). Pod depth estimates stay `nominal`: the posterior sigma is 0.5–0.7 m, above the 0.45 m bar.
+**Seed 7** (real-pipeline acoustic fixture): pings on B1 at 1247 s, B2 at 1709 s and A2 at 2502 s, on a revisit; mission time 2626 s, all 36 scans used.
+
+- The vitals match the hidden states: A2 is `unconscious_slow`, B1 `irregular_apneic` and B2 `calm`.
+- **A3 is not pinged.** Its victim breathes rapidly and shallowly (33/min, about 2.2 mm). The three closest seats, 1.5–2.0 m horizontal and 1.2–1.9 m of rubble, rocked (quality 0.03, 0.39, 0.61). The returns there were weak (confidence ≤ 0.3) or empty. After 16 placements A3 remains an open acoustic lead, which is the honest result.
+
+Pod depth estimates stay `nominal`: the posterior sigma is 0.5–0.7 m, above the 0.45 m bar.
 
 ## Reproduce the calibration
 
-The calibration script lived in the session scratchpad. It sweeps chest amplitude from −48 to +21 dB at 6 m for qualities 0.95, 0.6 and 0.3 (12 to 16 seeds per point) and counts candidates within 0.3 m. To repeat it, write a short loop over `radar_dsp.Scene` / `simulate_if` / `process_if` with a `Breather(6.0, 10**(dB/20), ...)`.
+The physio calibration loops over `radar_dsp.Scene` / `simulate_if` / `process_if`:
+
+- breather: `Breather(6.0, 10**(dB/20), physio={"state": "calm", "rate_bpm": 15, "depth_rel": 1.0, "cv": 0.05, "apnea_per_min": 0})`;
+- parameters: `RadarParams(dwell=20|45|60)`;
+- sweep: −24 to +9 dB in 3 dB steps, 10 seeds per point, at qualities 0.95, 0.6 and 0.3;
+- detection: a candidate within 0.3 m of 6 m.

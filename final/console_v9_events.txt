@@ -1,0 +1,8 @@
+12:41:35.816 loading collapse 7 day (TOUCHDOWN=1, audio model gemini-3.5-flash-lite)
+12:41:35.819 site ready (held)
+12:41:46.851 recording started (start screen)
+12:41:54.380 hover T1a sent
+12:41:58.910 click T1b sent
+12:41:58.915 isaac: first click received
+12:43:32.654 first autonomous dispatch: [t= 197.0] Dispatch d1-d3 -> pile M32 at (57.7, 9.7): Both M32 and M33 are top-scoring acoustic voice leads (priority 19, human 0.90 and 0.92) with ambiguous di
+12:43:45.812 stopped: 118.766000 s, 98347301 B

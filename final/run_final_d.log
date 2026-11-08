@@ -1,0 +1,22 @@
+/home/ubuntu/lv/larpverse/dashboard/data/tasking.json
+serve /isaac/hud/panel.html 200
+serve /assets/audio/dummies/manifest.json 200
+serve /dashboard/ 200
+09:01:22 mission launched (held)
+09:01:37 stream up: 1
+09:02:37 scene ready (take pacing logged)
+09:02:45 GO (t released)
+09:03:03 +18s (t=100.0 phase=radar ) -> live button clicked
+09:04:05 +80s (t=780.0 phase=rescan ) stop
+[t=   0.0] Grid mission start (seed 7, dsp radar, acoustic dispatch): 3 drones at the staging area, start pile A2 (operator choice); autonomous: up to 36 radar scans, 3600 s, battery reserve 25% with swaps at the pads
+[isaac] [overlay] simple style: active/new zone outlines, latest dispatch arc, firm pings; sensor effects for human sounds only
+[isaac] hotkeys armed in the Isaac window: U -> hidden1, Y -> hidden2
+[isaac] take pacing (sim s per video s): {'deploy': 6.0, 'survey': 7.0, 'recon_mapping': 6.0, 'recon_listening': 10.0, 'landing': 6.0, 'radar': 12.0, 'relocate': 24.0, 'rescan': 24.0, 'acoustic': 17.0, 'dispatch': 5.0, '
+[isaac] STAGE EVENT t=129.0: dummy H2_A1_id activated near A1 (stage edit); the generators see it from the next scan / listen
+[isaac] phase dispatch at t=377.0 wall=37.5s x5 behind=2.2s
+[isaac] step 380 t=380.0 phase=dispatch pile=B1 lidar=95560 pts wall=39.5s x5 behind=2.2s
+[isaac] step 400 t=400.0 phase=dispatch pile=B1 lidar=95560 pts wall=43.5s x5 behind=2.2s
+Terminated
+-rw-rw-r-- 1 ubuntu ubuntu 38980310 Nov  8 09:04 final_d.mkv
+CAPTURE_DONE
+exit 0

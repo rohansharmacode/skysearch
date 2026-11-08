@@ -29,7 +29,7 @@ Weak sources are flagged *(weak)*.
    About 2,000 rescuers [D] and 23 dogs [S] worked the site. Manual search reached its limit at 64 h, when demolition with heavy machinery began [S],
    and the demolition took 192 h [S].
    **Honest caveat:** for the last live victims at Weiguan, the bottleneck was getting them out (12–29 h per deep victim [S]), not finding them.
-   Our claim is that the system clears empty sectors faster, finds the silent victims, and checks for life signs layer by layer while machines dig.
+   Our claim is narrower: in simulation the system **prioritises** where to dig sooner (sectors are only ever "searched, not cleared"), it **can detect breathing in silent or unconscious victims within about 2.9 m of the pod** (synthetic radar generator; validated only on line-of-sight real data), and it can re-check for life signs layer by layer while machines dig. It also misses some victims (seed 7: A3 stays an open lead).
    We do not claim it does the extrication.
 5. **Power is feasible on rescue trucks, not on cars.** Half a tank in an average car (25 L) gives one heavy drone about
    **74 min of flight through the alternator** (range 29–186 min) [D], but converting that fuel takes about 14 h of idling [D].

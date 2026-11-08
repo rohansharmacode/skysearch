@@ -20,7 +20,8 @@
 How we meet it:
 - **One OBS capture, no cuts.** On the left, the Isaac livestream (`/viewer`). On the right, the live dashboard from the same run. Optionally, an in-Isaac HUD overlay too.
 - **One continuous camera** (`--camera director-take`): spline arcs and spring smoothing, never a cut. It's a per-phase time-lapse (×5–×30), and the HUD always shows "sped up ×N".
-- **The unscripted change:** a teammate presses **Y** in the Isaac window during the listen. That switches on a hidden manikin's Indonesian voice at A1. The system **hears it**, re-plans and redirects the drones on camera, about 7 s of video later in our dry run.
+- **The unscripted change:** a teammate presses **Y** in the Isaac window. That switches on a hidden manikin's Indonesian voice at A1. The system **hears it at its next listen**, re-plans and redirects the drones on camera.
+  - **Timing with the real acoustic pipeline:** press while A2's pods are down (about 17–29 s of video). A later press forces a full listen re-run while the mission waits (currently 50–62 s on a laptop CPU; being cut to ≤ 8 s and faster on the GPU box). The "~7 s reaction" was measured with stub acoustics.
   - Fallback trigger: the operator draws a zone on the dashboard.
   - Nothing is scheduled: `--test-trigger` refuses to run outside `--dry-run`.
 - **Honesty boundary, enforced in code:**
@@ -35,9 +36,9 @@ How we meet it:
 1. **Van and lift-off:** the operator in the command van at three screens, then three heavy 8-rotor drones lift off. They move like real multirotors: spool-up, lean into acceleration, flare when braking, soft perch landings.
 2. **Survey:** a purple LiDAR map paints over pile A2.
 3. **Winch pods:** pods lower onto the rubble and run 45 s radar dwells. The HUD shows the breathing waveform.
-4. **Red ping at A2:** "slow regular breathing — possibly unconscious — check first", with "aid for rescuers, not a diagnosis".
+4. **Red ping at A2:** "slow, regular breathing — deep rest or reduced consciousness — check responsiveness", with "aid for rescuers, not a diagnosis".
 5. **Listen:** the drones land off the pile and the loudspeaker calls out (zh-TW, Hokkien, en). Knock and shout replies show as yellow cones with transcripts.
-6. **★ Unscripted change:** a teammate presses **Y**. A new voice at A1 is heard ("Tolong! … kaki saya terjepit"), and the fleet redirects to A1 instead of B2.
+6. **★ Unscripted change:** a teammate presses **Y**. A new voice at A1 is heard and becomes the top lead, and the fleet redirects to A1. The on-screen transcript of the Indonesian call needs Gemini (quota permitting); offline Whisper `base.en` gives none. Without Gemini, the clip shows as "voice-like, language not identified".
 7. **End:** the pods lower at A1, with the dig order on screen.
 
 Colours, everywhere: red = radar ping, yellow = human-audio direction, teal = acoustic priority, purple = LiDAR, green = dispatch, **blue = rescue Wi-Fi / phones**, white dashed = operator zones.
@@ -108,7 +109,7 @@ OBS: one scene at 1920×1080 / 30 fps. Put the viewer at 0,0 sized 1280×1080 an
    - whether pressing **Y** produced `STAGE EVENT … H2_A1_id activated (hotkey Y)` and a redirect, and how many video seconds it took.
 4. **The same on the collapse site** (`--site collapse --site-usd …`) with debris on and off, for frame time only.
 5. **Report** in `larpverse/docs/FROM_ISAAC.md` on `larpverse-isaac`: answers to 2–4, plus screenshots (van door shot, a drone close-up, pods on the rubble, the HUD).
-6. **Final take** only after **READY TO RE-RECORD**. The teammate pressing Y must not be the camera operator, and decides the moment themselves during the listen window (about 33–40 s).
+6. **Final take** only after **READY TO RE-RECORD**. The teammate pressing Y must not be the camera operator. They decide the moment themselves inside the trigger window, which VIDEO_PLAN.md will re-time with real acoustics (currently about 17–29 s of video, while the pods are down).
 
 ## 6. Assets you'll see (`docs/ISAAC_ASSETS.md`)
 

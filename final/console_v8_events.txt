@@ -1,0 +1,8 @@
+12:29:36.487 loading collapse 7 day (TOUCHDOWN=1, audio model gemini-3.5-flash-lite)
+12:29:36.492 site ready (held)
+12:29:47.528 recording started (start screen)
+12:29:55.059 hover T1a sent
+12:29:59.589 click T1b sent
+12:29:59.594 isaac: first click received
+12:32:14.309 first autonomous dispatch: [t= 393.0] Dispatch d1-d3 -> pile T1c at (-31.0, -16.5): Dispatch to T1c (score 64), which has a high-reliability (0.85) voice lead ("Hey, Loita already there. 
+12:32:27.495 stopped: 159.766000 s, 126520894 B

@@ -875,14 +875,14 @@ function pkStatus() {                                 // what the 3D map's pill 
   Picker.setStatus(busy ? 'A run is already going on this site. Press ↺ Reset on the console, or pick it again to restart.'
     : `Isaac Sim is loading this site${secs ? ` (${secs} s, usually about 80)` : ''}… pick your spot now`, busy ? 'bad' : 'loading');
 }
-async function pkSite(ps) {
-  PK.err = '';
+async function pkSite(ps, again) {
+  PK.err = ''; if (!again) PK.retry = 0;
   const x = ps.ref, same = siteOf(SITE) === x, L = window._last;
   let url = null, body = null;
   if (!same) { url = API_SITE; body = { site: x.site, seed: x.seed, look: x.look }; }
   else if (SITE && SITE.status !== 'loading' && !(L && held(L))) { url = API_RESET; body = {}; }   // same site, used: reset it
   if (url) PK.wait = vnow();
-  pkTopo(ps);
+  if (!again) pkTopo(ps);
   if (!url) return;
   try {
     let r = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
@@ -894,6 +894,10 @@ async function pkSite(ps) {
     SITE = { site: x.site, seed: x.seed, look: x.look, status: 'loading', label: x.label }; SEEN.clear();
   } catch (err) {
     const m = String(err.message || err);
+    if ((m === '409' || /already loading/i.test(m)) && PK.cur === ps && PK.open === 'topo' && (PK.retry = (PK.retry || 0) + 1) <= 40) {
+      PK.wait = vnow(); setTimeout(() => { if (PK.cur === ps && PK.open === 'topo' && siteOf(SITE) !== x) pkSite(ps, true); }, 5000);
+      return Picker.setStatus('Another site is still loading. Yours starts right after it…', 'loading');
+    }
     PK.err = m === '429' ? 'Someone just switched sites. Wait a minute, then pick the site again.'
       : m === '423' ? 'A recording is in progress. Try again when it ends.' : `Could not load ${x.label} (${m}). Pick the site again.`;
     PK.wait = 0; toast(PK.err, true); pkStatus();
@@ -909,7 +913,23 @@ async function pkTry() {
   else if (!PK.failAt) PK.failAt = vnow();
   else if (vnow() - PK.failAt > 45) { PK.queued = null; PK.failAt = 0; PK.err = 'The simulation did not accept the pick. Click the pile again.'; }
 }
+// a run is already flying: offer to watch it instead of starting a new one (picking would reset it)
+function pkWatchBtn() {
+  const root = document.querySelector('.pk-root'), L = window._last;
+  const show = PK.open === 'start' && root && L && !held(L) && (+L.t || 0) > 1 && L.phase !== 'done';
+  let b = document.getElementById('pkwatch');
+  if (!show) { if (b) b.remove(); return; }
+  if (b && b.parentNode === root) return;
+  b = document.createElement('div'); b.id = 'pkwatch';
+  b.innerHTML = `<b>● A search is running${SITE && SITE.label ? ` on ${esc(SITE.label)}` : ''}.</b> Watch it live →`;
+  Object.assign(b.style, { position: 'absolute', left: '50%', top: '880px', transform: 'translateX(-50%)', padding: '14px 28px',
+    borderRadius: '999px', background: 'rgba(255,176,32,0.14)', border: '2px solid #ffb020', color: '#ffe2a8', fontSize: '22px',
+    cursor: 'pointer', zIndex: 5, whiteSpace: 'nowrap' });
+  b.onclick = () => { PK.open = null; PK.queued = null; Picker.close(); };
+  root.appendChild(b);
+}
 function pkTick() {
+  pkWatchBtn();
   if (!PK.open) return;
   if (REMOTE && ((REC && REC.recording) || (CONSOLE && CONSOLE.recording))) { PK.open = null; Picker.close(); return; }
   if (PK.open === 'topo') { pkStatus(); if (PK.queued) pkTry(); }

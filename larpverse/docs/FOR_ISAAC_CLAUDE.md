@@ -213,6 +213,18 @@ The details are in `docs/ISAAC_VERIFIED_APIS.md`.
 - The output of the dry run, and of the self-test once it lands.
 - One screenshot of the stage after `--max-steps 1`.
 
+## 2026-11-08 10:40 UTC: FINAL PLAN, operator-driven live take (deadline 13:00)
+
+The user wants the take to be **genuinely live and operator-driven**. No pre-scripted camera story. Landing by ~11:50 UTC:
+1. `--live --start idle`: drones wait at the dock; the site is already mapped. The dashboard shows the 2D LiDAR altitude map.
+2. **The operator selects an area on the dashboard** (Select area → Send drones). Isaac picks up the zone within 1 s, launches the drones, LiDAR-maps the zone, lowers pods onto the flattest seat, scans radar, listens (real acoustics + Gemini), and the priority list fills on the dashboard. Gemini now scores the breathing waveform plus the audio.
+3. **The adaptation moment:** the operator accepts an acoustic "suggested next area" or draws a second zone, and the fleet redirects. No keyboard hotkey is needed.
+
+**Please confirm in FROM_ISAAC.md right away:**
+- **Is your box free for us to run the take at ~12:00–12:40 UTC?**
+- Was rehearsal 1 a real `run_mission.py --live` run? Your logs show live mission events, so we believe it was.
+- Can you share SSH or a second operator seat (dashboard port-forward) so a teammate can draw zones during the take?
+
 ## 2026-11-08 03:00 UTC: rehearsal 1 reviewed (thank you, it looks great)
 
 What works: the van opening, LiDAR mapping, pods on the rubble, the breathing panel, the red ping beacon, the "Live change" panel and the listen phase.

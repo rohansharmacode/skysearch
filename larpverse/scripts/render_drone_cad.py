@@ -81,7 +81,7 @@ def font(sz, bold=False):
     return ImageFont.load_default()
 
 LABELS = [("Lidar", "LiDAR (Ouster OS1-128 class), 45° mount"), ("GpsPuck", "RTK GNSS"), ("Antennas", "Mesh radio antennas (5.8 GHz)"),
-          ("WifiAnt", "Rescue Wi-Fi hotspot (2.4 GHz)"), ("SpeakerHorn", "Loudspeaker (call-out)"), ("WinchDrum", "Winch + radar/mic pod tether"),
+          ("WifiAnt", "Rescue Wi-Fi hotspot (2.4 GHz)"), ("SpeakerHorn", "Loudspeaker (call-out)"), ("WinchFrame", "Through-rubble radar (belly, faces down)"),
           ("MicCapsules", "8-mic array (perch-and-listen)"), ("ComputeBox", "Onboard compute (Jetson Orin class)"),
           ("Batteries", "Smart batteries (hot-swap)"), ("Motors", "8 motors, 4 coaxial pairs"), ("LandingGear", "Carbon landing gear"),
           ("Strobe", "Anti-collision strobe")]
@@ -95,7 +95,7 @@ img, proj, s = render("iso", 1500, 1300, (246, 246, 243))
 sheet = Image.new("RGB", (W, H), (246, 246, 243)); sheet.paste(img, (470, 120)); d = ImageDraw.Draw(sheet)
 f_t, f_l, f_s = font(46, True), font(25), font(20)
 d.text((60, 40), "LARPVERSE heavy SAR drone — component layout", fill=(25, 27, 30), font=f_t)
-d.text((60, 100), "8 rotors (4 coaxial pairs) · LiDAR · winch-lowered radar + mic pod · loudspeaker · rescue Wi-Fi · mesh radio", fill=(90, 94, 100), font=f_s)
+d.text((60, 100), "8 rotors (4 coaxial pairs) · LiDAR · downward through-rubble radar · mic array · loudspeaker · rescue Wi-Fi · mesh radio", fill=(90, 94, 100), font=f_s)
 left = [l for l in LABELS if anchor(l[0]) @ np.array([0, -1, 0]) >= -0.02]
 pts = []
 for part, text in LABELS:

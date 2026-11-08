@@ -47,7 +47,7 @@ ul{margin:0;padding-left:14px;display:grid;gap:3px}
   <div class="hero">
     <div class="eyebrow">Larpverse · AgentVerse 2026 robotics track · fact sheet · 8 Nov 2026</div>
     <h1>Finding the survivors who can't call for help</h1>
-    <p class="thesis">Rubble search still waits for a knock or a shout. Larpverse sends heavy drones that map the pile, call out, and <b>winch a breathing-detection radar onto the rubble</b>, so unconscious and silent people get on the dig list in the first hour.</p>
+    <p class="thesis">Rubble search still waits for a knock or a shout. Larpverse sends heavy drones that map the pile, call out, and <b>land on the rubble and scan it with a breathing-detection radar</b>, so unconscious and silent people get on the dig list in the first hour.</p>
     <p class="src"><span class="tag s">S</span> sourced &nbsp; <span class="tag d">D</span> derived from sources &nbsp; <span class="tag a">A</span> our assumption &nbsp;·&nbsp; simulation results are marked as simulation</p>
   </div>
 
@@ -81,15 +81,15 @@ ul{margin:0;padding-left:14px;display:grid;gap:3px}
       <ul>
         <li><b>Recon:</b> three heavy-lift drones map the ruin with 128-channel LiDAR. Satellite imagery is stale after a quake.</li>
         <li><b>Listen and call out:</b> drones perch with rotors off. A loudspeaker asks "if you can hear me, knock three times" in Mandarin, Taiwanese Hokkien and English.</li>
-        <li><b>Breathing radar pod:</b> a radar and microphone pod is winched onto the rubble over each lead. It reads breathing and gives a condition hint, such as "irregular breathing with pauses — check first".</li>
+        <li><b>Land and scan:</b> each drone lands on a flat spot on the pile over a lead, and its downward-facing radar reads breathing through the rubble. It gives a condition hint, such as "irregular breathing with pauses — check first".</li>
         <li><b>Rescue Wi-Fi:</b> every drone serves an open hotspot. A trapped person's phone can tap "I'm trapped" in six languages.</li>
         <li><b>AI decides, code verifies:</b> an agent ranks the dig order. Rules block unsafe or overconfident wording, and a deterministic fallback runs if the AI is unavailable.</li>
       </ul>
     </div>
     <div style="display:grid;gap:6px;align-content:start">
-      <h3>Why a drone-lowered radar is the gap</h3>
+      <h3>Why a drone-carried radar is the gap</h3>
       <p>Breathing radar already works on rubble when a person carries it there. <b>NASA/DHS FINDER</b> found two heartbeats under each of two collapsed buildings in Nepal 2015, and 4 men were dug out. It's lab-rated through <b>9 m of rubble or 6 m of solid concrete</b>. GSSI LifeLocator units (about 270 MHz) were used at Sichuan 2008 and Haiti 2010.</p>
-      <p>Today a rescuer carries these units onto an unstable pile, one spot at a time. Larpverse <b>gives that class of radar wings and an autonomous planner</b>. The pod can carry a FINDER- or LifeLocator-class sensor.</p>
+      <p>Today a rescuer carries these units onto an unstable pile, one spot at a time. Larpverse <b>gives that class of radar wings and an autonomous planner</b>: each drone carries a FINDER- or LifeLocator-class sensor and lands it on the pile.</p>
       <div class="src"><span class="tag s">S</span> DHS 2015 · NASA JPL · GSSI · Frontiers in Earth Science 2023</div>
     </div>
   </div>
@@ -106,7 +106,7 @@ ul{margin:0;padding-left:14px;display:grid;gap:3px}
   <table>
     <thead><tr><th>Radar detection depth</th><th>Figure</th><th>Basis</th></tr></thead>
     <tbody>
-      <tr><td>Our simulation, deliberately conservative</td><td>2.9 m beneath the pod (45 s scan)</td><td><span class="tag d">D</span> literature concrete loss (10–20 dB/m), realistic chest motion</td></tr>
+      <tr><td>Our simulation, deliberately conservative</td><td>2.9 m beneath the landed drone (45 s scan)</td><td><span class="tag d">D</span> literature concrete loss (10–20 dB/m), realistic chest motion</td></tr>
       <tr><td>Commercial rubble life detector (LifeLocator)</td><td>4.5–7 m breathing</td><td><span class="tag s">S</span> vendor and trade press</td></tr>
       <tr><td>NASA/DHS FINDER lab rating</td><td>9 m rubble / 6 m solid concrete</td><td><span class="tag s">S</span> NASA JPL</td></tr>
     </tbody>
@@ -118,7 +118,7 @@ ul{margin:0;padding-left:14px;display:grid;gap:3px}
   <h2><span class="mk">$</span>Economics</h2>
   <div class="cols">
     <table>
-      <thead><tr><th>City kit: 3 drones + pods, van, training</th><th class="r">Central</th><th class="r">Range</th></tr></thead>
+      <thead><tr><th>City kit: 3 radar drones, van, training</th><th class="r">Central</th><th class="r">Range</th></tr></thead>
       <tbody>
         <tr><td>Up front</td><td class="r">$673k</td><td class="r">$361k–1.10M</td></tr>
         <tr><td>Per year to run</td><td class="r">$193k</td><td class="r">$70–469k</td></tr>
@@ -146,7 +146,7 @@ ul{margin:0;padding-left:14px;display:grid;gap:3px}
 
   <h2><span class="mk">+</span>Impact model (preliminary)</h2>
   <table>
-    <thead><tr><th>If the pod works as designed</th><th class="r">Central</th><th class="r">90% range</th></tr></thead>
+    <thead><tr><th>If the radar performs as designed</th><th class="r">Central</th><th class="r">90% range</th></tr></thead>
     <tbody>
       <tr><td>Extra survivors among the 113 people brought out of Weiguan after day 1</td><td class="r">~+6</td><td class="r">0.6–14</td></tr>
       <tr><td>Extra survivors per 100 trapped, 3×3 test site</td><td class="r">+3.0</td><td class="r">1.1–6.6</td></tr>
@@ -158,7 +158,7 @@ ul{margin:0;padding-left:14px;display:grid;gap:3px}
   <h2><span class="mk">!</span>What we claim, and what we don't</h2>
   <div class="cols">
     <ul class="ok">
-      <li>A drone-lowered breathing radar on a real pile fills a gap that no deployed system covers.</li>
+      <li>A drone that lands a breathing radar on the pile fills a gap that no deployed system covers.</li>
       <li>It ranks where to dig sooner, including people who make no sound.</li>
       <li>Drone finds get the INSARAG "V" (victim suspected) mark for rescuers to confirm.</li>
     </ul>

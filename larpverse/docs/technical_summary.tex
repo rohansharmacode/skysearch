@@ -27,12 +27,12 @@
 {\small\color{cairngrey} Larpverse \;\textbullet\; AgentVerse 2026 Robotics \;\textbullet\; Figures are simulation or model results unless marked as real data.}
 
 \section*{What it is}
-CAIRN is a team of heavy-lift drones that search a collapsed building for survivors \textbf{by detecting their breathing}. A rescue lead circles an area on a tablet. The drones fly there on their own, lower a radar pod onto the rubble, and send back a ranked list of where to dig first, with the reason for each spot. It finds people who are unconscious or too weak to knock or shout, the people today's search misses.
+CAIRN is a team of heavy-lift drones that search a collapsed building for survivors \textbf{by detecting their breathing}. A rescue lead circles an area on a tablet. The drones fly there on their own, land on the rubble, scan it with their onboard radar, and send back a ranked list of where to dig first, with the reason for each spot. It finds people who are unconscious or too weak to knock or shout, the people today's search misses.
 
 \section*{How it works}
 \begin{itemize}
   \item \textbf{Pick an area.} The rescue lead selects a pile on the dashboard. The drones leave the truck and fly to it.
-  \item \textbf{Lower the radar.} Each drone hovers and winches a radar pod onto the rubble. The pod senses the tiny chest movement of breathing up to about 3\,m down, and tells it apart from settling debris, machinery and rotor noise.
+  \item \textbf{Land and scan.} Each drone finds a flat spot on the pile, lands, and its downward-facing radar senses the tiny chest movement of breathing up to about 3\,m down. It tells breathing apart from settling debris, machinery and rotor noise.
   \item \textbf{Rank who to reach first.} Gemini reads each breathing pattern (rapid and shallow, slow and deep, irregular with pauses) and scores it 0--100 with a plain reason, e.g.\ ``irregular breathing with a 14\,s pause: check first''. Code checks every answer, and a rule-based fallback takes over if the AI is unavailable.
   \item \textbf{Adapt live.} When something new appears, such as a new voice or a new area, the plan changes on screen and the drones re-route. No one has to intervene.
   \item \textbf{Help on the spot.} Each drone carries a loudspeaker (``help is coming'') and an open Wi-Fi hotspot, so trapped people's phones can send ``I'm trapped''.
@@ -59,7 +59,7 @@ false alarms: debris, machinery and rotors are rejected (simulation) \\
 
 \begin{itemize}
   \item \textbf{Fast:} the first radar ping is about \textbf{49 minutes after the quake}; national teams took up to 12 hours to arrive at Weiguan (model).
-  \item \textbf{Worth it:} a city kit (3 drones, pods and van fit-out) costs about \$673k and \textbf{pays for itself if it saves one life every 18 years} (Taiwan's value of a statistical life; model). In a Weiguan-style collapse it could mean \textbf{about 6 more survivors} if the pod works as designed (range 0.6--14; model).
+  \item \textbf{Worth it:} a city kit (3 drones with radar, plus van fit-out) costs about \$673k and \textbf{pays for itself if it saves one life every 18 years} (Taiwan's value of a statistical life; model). In a Weiguan-style collapse it could mean \textbf{about 6 more survivors} if the radar performs as designed (range 0.6--14; model).
   \item \textbf{Real system:} running in NVIDIA Isaac Sim, operated live from a dashboard, with an unscripted change during the recorded take.
 \end{itemize}
 

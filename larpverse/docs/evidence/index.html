@@ -85,7 +85,7 @@ footer{padding-block:2rem 0;display:grid;gap:.8rem;color:var(--muted);font-size:
 <header class="top">
   <div class="eyebrow">Larpverse · evidence brief · Weiguan Jinlong, Tainan 2016 case study</div>
   <h1>Silent survivors are the ones today's search can't find.</h1>
-  <p class="thesis">Rubble search still depends on the victim making a sound. Larpverse sends heavy drones that map the pile, call out, and <b>lower a radar pod onto the rubble to detect breathing</b>, so people who can't knock or shout get on the dig list too.</p>
+  <p class="thesis">Rubble search still depends on the victim making a sound. Larpverse sends heavy drones that map the pile, call out, and <b>land on the rubble to scan it with a breathing-detection radar</b>, so people who can't knock or shout get on the dig list too.</p>
   <p class="lede">Every figure below is tagged <span class="tag s">S</span> sourced, <span class="tag d">D</span> derived from sources, or <span class="tag a">A</span> our assumption. Simulation results are labelled as simulation. Full references are in the repo docs named under each section.</p>
 </header>
 
@@ -161,17 +161,17 @@ footer{padding-block:2rem 0;display:grid;gap:.8rem;color:var(--muted);font-size:
 <section aria-labelledby="h-what">
   <div class="sechead"><div class="markbox" aria-hidden="true">L?</div><h2 id="h-what">What Larpverse adds, and what we've measured</h2></div>
   <div class="claims">
-    <div><h3>Finds people who can't make a sound</h3><p>A 4.9 kg radar pod is winched onto the rubble and reads breathing <b>up to 2.9 m beneath it</b> in a 45 s scan. It reports a condition hint, such as "irregular breathing with pauses — check first", and rejects debris, animals and machinery.</p><div class="src"><span class="tag d">D</span> synthetic radar generator, real DSP; validated on line-of-sight real data only (6/6 breath holds, rate within 0.5/min)</div></div>
+    <div><h3>Finds people who can't make a sound</h3><p>Each drone lands on a flat spot on the pile, and its downward-facing radar reads breathing <b>up to 2.9 m beneath it</b> in a 45 s scan. It reports a condition hint, such as "irregular breathing with pauses — check first", and rejects debris, animals and machinery.</p><div class="src"><span class="tag d">D</span> synthetic radar generator, real DSP; validated on line-of-sight real data only (6/6 breath holds, rate within 0.5/min)</div></div>
     <div><h3>Triage in the first half hour</h3><p>In simulation on the Weiguan-scale site, the drones put <b>53% of trapped people inside a flagged search sector within 30 minutes</b> of launch (median 8 min), and 83% within an hour.</p><div class="src"><span class="tag d">D</span> 10 simulated missions, docs/IMPACT_MODEL.md</div></div>
     <div><h3>Gets phones and voices connected</h3><p>Each drone runs an open rescue Wi-Fi. A trapped person's phone can tap "I'm trapped" in six languages, and the speaker calls out "knock three times". Both feed the same ranking.</p><div class="src">docs/HOTSPOT.md, docs/SPEAKER.md</div></div>
   </div>
-  <p class="note">Where the system stands today: on the small 3×3 grid it pings 12 of 40 victims across 10 seeds, with zero false pings. On the full Weiguan-scale map the pod currently pings none (0 of 170). A placement fix for that site is in progress, and the impact numbers below will be recomputed when it lands.</p>
+  <p class="note">Where the system stands today: on the small 3×3 grid it pings 12 of 40 victims across 10 seeds, with zero false pings. On the full Weiguan-scale map the radar currently pings none (0 of 170), because the drones find too few safe landing spots on the pile. A placement fix for that site is in progress, and the impact numbers below will be recomputed when it lands.</p>
 </section>
 
 <section aria-labelledby="h-impact">
   <div class="sechead"><div class="markbox" aria-hidden="true">+</div><h2 id="h-impact">What it could be worth (preliminary)</h2></div>
   <div class="tablewrap"><table>
-    <thead><tr><th>Measure</th><th>As simulated today</th><th>If the pod works as designed</th></tr></thead>
+    <thead><tr><th>Measure</th><th>As simulated today</th><th>If the radar performs as designed</th></tr></thead>
     <tbody>
       <tr><td>Extra survivors per 100 trapped (grid site)</td><td>+1.3 (0.3–4.0)</td><td>+3.0 (1.1–6.6)</td></tr>
       <tr><td>Weiguan counterfactual: extra survivors among the 113 brought out after day 1</td><td>0 (0–1.6)</td><td>~+6 (0.6–14)</td></tr>
@@ -185,7 +185,7 @@ footer{padding-block:2rem 0;display:grid;gap:.8rem;color:var(--muted);font-size:
   <div class="sechead"><div class="markbox" aria-hidden="true">$</div><h2 id="h-econ">Cost and break-even</h2></div>
   <div class="two">
     <div class="tablewrap"><table>
-      <thead><tr><th>City kit (3 drones + pods, van, training)</th><th class="num">Low</th><th class="num">Central</th><th class="num">High</th></tr></thead>
+      <thead><tr><th>City kit (3 radar drones, van, training)</th><th class="num">Low</th><th class="num">Central</th><th class="num">High</th></tr></thead>
       <tbody>
         <tr><td>Up front</td><td class="num">$361k</td><td class="num">$673k</td><td class="num">$1.10M</td></tr>
         <tr><td>Running cost per year</td><td class="num">$70k</td><td class="num">$193k</td><td class="num">$469k</td></tr>
@@ -226,7 +226,7 @@ footer{padding-block:2rem 0;display:grid;gap:.8rem;color:var(--muted);font-size:
       <div class="stat"><div class="n wifi">250 min</div><div class="t">of heavy-drone flight from half a car tank via a generator (74 min via a car alternator). Rescue trucks with 25 kW generators keep about 4 drones working, so no city hub is needed.</div><div class="src"><span class="tag d">D</span> docs/IMPACT_EVIDENCE.md §6</div></div>
     </div>
   </div>
-  <p class="note">The slowest step is regulation. With aviation-authority consent, government agencies can already fly disaster missions at night, beyond sight and over people. The 0.4–2 GHz radar pod needs special approval from Taiwan's telecoms regulator, which only allows ultra-wideband at 4–9 GHz and bans it on aircraft. The plan is for the pod to transmit only while seated on the rubble. Allow 12–18 months.</p>
+  <p class="note">The slowest step is regulation. With aviation-authority consent, government agencies can already fly disaster missions at night, beyond sight and over people. The 0.4–2 GHz radar needs special approval from Taiwan's telecoms regulator, which only allows ultra-wideband at 4–9 GHz and bans it on aircraft. The plan is for the radar to transmit only while the drone has landed on the rubble. Allow 12–18 months.</p>
 </section>
 
 <section aria-labelledby="h-honest">

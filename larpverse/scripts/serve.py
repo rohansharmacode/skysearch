@@ -158,6 +158,60 @@ def validate(doc):
     return res
 
 
+POOL_ON = "/home/ubuntu/warm/pool_on"
+POOL = os.path.join(ROOT, "dashboard", "pool.json")
+DATA_LINK = os.path.join(ROOT, "dashboard", "data")
+
+
+def pool_activate(site, seed, look):
+    """Point dashboard/data + the viewer at a warm (held, unused) slot for this site; retire the previous active slot.
+    Returns (code, doc). 409 while no warm slot exists yet (the console retries on 409)."""
+    import fcntl
+    with open(POOL + ".lock", "w") as lk:
+        fcntl.flock(lk, fcntl.LOCK_EX)
+        return _pool_activate(site, seed, look)
+
+
+def _pool_activate(site, seed, look):
+    import signal
+    import subprocess
+    pool = _read_json(POOL, {"slots": {}})
+    slots = pool.get("slots", {})
+    warm = [n for n, s in slots.items() if s.get("state") == "warm" and s.get("site") == site
+            and int(s.get("seed", 7)) == int(seed) and s.get("look", "day") == look]
+    if not warm:
+        return 409, {"error": "This site is warming up, try again in a minute.", "site": site}
+    n = sorted(warm, key=lambda k: slots[k].get("t_warm", 0))[0]
+    for k, s in slots.items():
+        if s.get("state") == "active":
+            s["state"] = "retire"
+    slots[n]["state"], slots[n]["t_active"] = "active", time.time()
+    if not os.path.islink(DATA_LINK):                       # first switch: stop the legacy console_run instance
+        out = subprocess.run(["pgrep", "-f", "--", "--out " + DATA_LINK + " "], capture_output=True, text=True).stdout.split()
+        for pid in out:
+            try:
+                os.killpg(os.getpgid(int(pid)), signal.SIGTERM)
+            except Exception:  # noqa: BLE001
+                pass
+        os.rename(DATA_LINK, DATA_LINK + "_legacy_" + str(int(time.time())))
+    tmp = DATA_LINK + ".tmp"
+    if os.path.lexists(tmp):
+        os.remove(tmp)
+    os.symlink(f"slot{n}", tmp)
+    os.replace(tmp, DATA_LINK)
+    with open("/tmp/viewer_port.tmp", "w") as f:
+        f.write(str(5173 + int(n)))
+    os.replace("/tmp/viewer_port.tmp", "/tmp/viewer_port")
+    tmpp = POOL + ".tmp"
+    with open(tmpp, "w") as f:
+        json.dump(pool, f, indent=1)
+    os.replace(tmpp, POOL)
+    doc = _read_json(os.path.join(DATA_LINK, "site.json"), {}) or {}
+    doc.update(site=site, seed=seed, look=look, status="ready", slot=int(n), switched="instant")
+    _write_json(os.path.join(DATA_LINK, "site.json"), doc)
+    return 200, doc
+
+
 def portal_store():
     """One PortalStore per process: its rate-limit salt is random per process and never written to disk."""
     global _portal_store
@@ -298,9 +352,13 @@ class Handler(SimpleHTTPRequestHandler):
             return self._json(code, doc)
         return self._json(HTTPStatus.OK, dict(ok=True, mode="reload", **doc))
 
-    def _launch(self, site, seed, look, reply=True):
-        """Start live2/console_run.sh detached (this server keeps running); force is implied (always relaunches)."""
+    def _launch(self, site, seed, look, reply=True, reset=False):
+        """Warm pool (/home/ubuntu/warm/pool_on): switch instantly to a held slot for this site; otherwise start
+        live2/console_run.sh detached (this server keeps running); force is implied (always relaunches)."""
         import subprocess
+        if os.path.exists(POOL_ON):
+            res = pool_activate(site, seed, look)
+            return self._json(*res) if reply else res
         cur = _read_json(SITE_JSON) or {}
         if cur.get("status") == "loading" and time.time() - float(cur.get("wall") or 0) < 300:
             res = (HTTPStatus.CONFLICT, {"error": "A site is already loading, try again in a minute.", "site": cur})

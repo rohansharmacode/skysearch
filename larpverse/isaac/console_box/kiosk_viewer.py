@@ -16,9 +16,22 @@ async def main():
         if "compose" not in pg.url:
             await pg.goto("file:///home/ubuntu/live2/compose_console.html")
         t0 = time.time(); ready = False; last = 0; pressed = False; lastlog = 0
+        port = None
         while True:
             await asyncio.sleep(1)
-            vf = next((f for f in pg.frames if ":5173" in f.url), None)
+            try:
+                want = open("/tmp/viewer_port").read().strip() or "5173"
+            except OSError:
+                want = "5173"
+            if want != port:
+                port = want
+                try:
+                    await pg.evaluate(f"document.getElementById('v').src='http://localhost:{port}/?r='+Date.now()")
+                    print(f"[kiosk] {time.strftime('%T')} viewer -> port {port}", flush=True)
+                except Exception as e:
+                    print("[kiosk] port switch failed", e, flush=True)
+                ready = False
+            vf = next((f for f in pg.frames if f != pg.main_frame and f.url.startswith("http://localhost:51")), None)
             st = None
             try: st = await vf.evaluate(JS) if vf else None
             except Exception: st = None
@@ -29,7 +42,7 @@ async def main():
                 except Exception as e: print("[kiosk] unmute failed", e, flush=True)
             if not ok and time.time() - last > 8:
                 last = time.time()
-                try: await pg.evaluate("document.getElementById('v').src='http://localhost:5173/?r='+Date.now()")
+                try: await pg.evaluate(f"document.getElementById('v').src='http://localhost:{port or 5173}/?r='+Date.now()")
                 except Exception: pass
                 if ready: print(f"[kiosk] {time.strftime('%T')} stream lost, reloading", flush=True)
                 ready = False

@@ -1007,6 +1007,13 @@ def main(argv=None):
                         if not rt.is_running():
                             raise SystemExit("app closed while waiting for the first click")
                         rt.step()
+                        if os.environ.get("LV_STANDBY") == "1":   # warm standby: ~3 fps while held (spares the CPU)
+                            try:                                    # ...unless this slot is the one on screen
+                                on_air = open("/tmp/viewer_port").read().strip() == str(5173 + int(os.environ.get("SLOT", "0")))
+                            except OSError:
+                                on_air = False
+                            if not on_air:
+                                time.sleep(0.3)
                     else:
                         time.sleep(0.2)
             a.launch_pile = g.get("pile")

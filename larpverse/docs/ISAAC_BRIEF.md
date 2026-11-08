@@ -1,156 +1,150 @@
-# Isaac Sim brief for the teammate's Claude session
+# Isaac Sim brief (full version): read this first
 
-**Interim fast version: `docs/ISAAC_QUICK.md` (7 Nov 23:20); start there.** **Read this first, every time you pull.** It's the single, current, Isaac-only brief. Older docs (`ISAAC_HANDOFF.md`, `FOR_ISAAC_CLAUDE.md`) carry history; when they disagree, this file wins. Status labels:
-- ✅ means committed and tested here: dry-run, tests, and USD checks without a GPU.
-- 🟡 means it lands in the next push.
-- 🎯 means you need to do it.
+**For:** Rohan's Claude session running Isaac Sim. **From:** the Larpverse build loop. **Updated:** 8 Nov, about 01:00.
+- This file replaces `ISAAC_QUICK.md` and every earlier brief. `FOR_ISAAC_CLAUDE.md` is the running log.
+- **Detail lives in `docs/VIDEO_PLAN.md`:** the second-by-second plan, OBS settings, pre-flight checklist and trigger fallbacks.
 
-## ★ The deliverable (read this first)
+**Status marks:**
+- ✅ dry-run or unit tested on our side (no GPU here);
+- 🟡 a fix is landing in the next push;
+- 🎯 you do it on the GPU.
 
-**Simulation video, up to 1 minute, captured from the stream.** Perception must be shown on screen next to the actions, plus **one unscripted change**, all in a **single continuous take**. This replaces the multi-shot cut plan in §5 step 4: no edits, no camera cuts in post.
+**Nothing below has been rendered on a GPU yet.** Your rehearsal is the first time.
 
-What that means for us (details in `docs/VIDEO_PLAN.md`, landing next):
-- **One continuous screen capture** of the Isaac livestream client, next to a perception panel. That's either the live dashboard fed by the same run, or an in-Isaac HUD showing LiDAR, radar breathing signatures, acoustic cones and the vitals label. Use one smooth director camera path, never a cut.
-- **The unscripted change happens live** during the take, and the system must perceive it and react. For example, someone switches on a hidden dummy's voice in the stage, or drags a dummy or a debris slab, or the operator circles a new zone on the dashboard. To make it work, Isaac becomes the source of truth: radar and acoustics read the **dummy prims' live positions and active sounds** from the stage.
-- **New assets we're building for you:** dummy victims with audio clips, a heavy drone showing its real components, and an **operator command van** at staging, with monitors showing the dashboard, a mesh mast and a Starlink dish.
-- **Please check now:** does your box support the Isaac **livestream** client (WebRTC), and can we capture its audio? What's the screen-capture route (OBS on the client)? Write the answers in `FROM_ISAAC.md`.
+---
 
-## 0. Coordination rules
+## 1. The deliverable
 
-- **Code:** branch `larpverse-sensing`, folder `larpverse/`. Our pushes replace that folder wholesale, so **don't edit it on that branch**.
-- **Your work:** branch `larpverse-isaac` (rebased on `larpverse-sensing`) and branch `3d_model` (the map). We fetch both and merge your `isaac/` changes into ours. Your implementation stays canonical where it's GPU-verified; our builders adopted your photoreal pipeline, recorder and ribbon overlay that way.
-- **Report back** in `larpverse/docs/FROM_ISAAC.md` on your branch, newest first. Include the Isaac version, the commands you ran, PASS/FAIL lines, contact-sheet paths and what you changed. Put large media in a GitHub Release.
-- **Secrets:** `GEMINI_API_KEY` only goes in `larpverse/.env`, which is gitignored. Isaac doesn't need it.
+> **Simulation video.** Up to **1 minute**, **captured from the stream**. Show **perception on screen next to the actions**, and **one unscripted change** in a **single continuous take**.
 
-## 1. What the demo is now
+How we meet it:
+- **One OBS capture, no cuts.** On the left, the Isaac livestream (`/viewer`). On the right, the live dashboard from the same run. Optionally, an in-Isaac HUD overlay too.
+- **One continuous camera** (`--camera director-take`): spline arcs and spring smoothing, never a cut. It's a per-phase time-lapse (×5–×30), and the HUD always shows "sped up ×N".
+- **The unscripted change:** a teammate presses **Y** in the Isaac window during the listen. That switches on a hidden manikin's Indonesian voice at A1. The system **hears it**, re-plans and redirects the drones on camera, about 7 s of video later in our dry run.
+  - Fallback trigger: the operator draws a zone on the dashboard.
+  - Nothing is scheduled: `--test-trigger` refuses to run outside `--dry-run`.
+- **Honesty boundary, enforced in code:**
+  - The mission never reads the stage. It re-plans only from sensor-generator outputs, operator tasking and the phone portal.
+  - LiDAR is real Isaac raycasting.
+  - Radar is a labelled synthetic IF generator with the real DSP chain, fed by the dummies' live positions.
+  - Audio is synthesised from the dummies' live positions and clips.
+  - Pings are "candidate regions, not a confirmed person".
 
-Heavy-lift drones (agricultural or industrial class) search the **real collapse site you built**: the 320 m × 320 m Weiguan Jinlong reconstruction plus the extrapolated neighbourhood. The story runs in this order:
+## 2. What the run looks like (seed 7, grid site)
 
-1. **Recon:** with no zones tasked yet, the drones fly a coverage path and build a fresh LiDAR map, because satellite imagery predates the collapse. They perch to listen with rotors off, and the system proposes rubble outlines.
-2. **Operator tasking:** the operator accepts or circles search zones on the dashboard. Zones already searched aren't re-searched without new evidence.
-3. **Land and scan:** the drones land on flat cells (larger cells for the big drones). Radar looks for breathing: a ping marks a candidate position with depth, and the radar's reliable reach is about 3 m.
-4. **Survivor condition from breathing:** the radar breathing pattern gives a condition hint. Rapid shallow breathing means possible injury or distress; irregular breathing with pauses and slow deep breathing (possibly unconscious) score highest; calm, regular breathing means stable and waiting. The agent ranks the dig order from this. It doesn't guess age.
-5. **Listen and call out:** a speaker says "if you can hear me, knock three times" in several languages, then the drones listen. An open-model filter forwards unusual sounds to Gemini for multilingual analysis, and the results rank the zones. The drones dispatch to the top zone and the loop repeats.
-6. **Operator view:** the operator sees pings, dig order, transcripts, zones and the LiDAR model with the depth marker.
+1. **Van and lift-off:** the operator in the command van at three screens, then three heavy 8-rotor drones lift off. They move like real multirotors: spool-up, lean into acceleration, flare when braking, soft perch landings.
+2. **Survey:** a purple LiDAR map paints over pile A2.
+3. **Winch pods:** pods lower onto the rubble and run 45 s radar dwells. The HUD shows the breathing waveform.
+4. **Red ping at A2:** "slow regular breathing — possibly unconscious — check first", with "aid for rescuers, not a diagnosis".
+5. **Listen:** the drones land off the pile and the loudspeaker calls out (zh-TW, Hokkien, en). Knock and shout replies show as yellow cones with transcripts.
+6. **★ Unscripted change:** a teammate presses **Y**. A new voice at A1 is heard ("Tolong! … kaki saya terjepit"), and the fleet redirects to A1 instead of B2.
+7. **End:** the pods lower at A1, with the dig order on screen.
 
-Every radar return is a labelled synthetic generator (Isaac doesn't model breathing through rubble). Pings are **candidate search regions**, never "survivor found".
+Colours, everywhere: red = radar ping, yellow = human-audio direction, teal = acoustic priority, purple = LiDAR, green = dispatch, **blue = rescue Wi-Fi / phones**, white dashed = operator zones.
 
-### The collapse site, as our sim sees it
+## 3. Status
 
-- **Heightmap:** 640 × 640 cells at 0.5 m, rasterised from your terrain and buildings (`assets/maps/collapse_site_heightmap.npz`).
-- **157 search sectors:**
-  - T1a–c and T2a–c: the two fallen towers, in thirds north to south;
-  - CN/CS/RN/RS/RW/RE: rubble around the towers;
-  - L###: collapsed lots, numbered as in your USD;
-  - M01–M44: rubble mounds.
-- **Standing buildings:** the 93 standing or tilted buildings are obstacles, not sectors. The tallest is 24 m.
-- **Staging:** a clear lot at the south edge, (−56, −152.5).
-- **Seed 7:** starts at T1a, with 22 synthetic victims mostly in the tower core.
-- **Radar delivery:** the heavy drone lowers a ~5 kg radar + mic **pod on its winch** onto the rubble. Realistic radar reach is about 3 m, so landing off-pile and scanning from 11 m away finds nothing.
-
-## 2. Runtime (verified on your box)
-
-- Isaac Sim **6.0.1** + Isaac Lab **3.0** on Brev L40S, and a 2× RTX PRO 6000 box for path tracing.
-- Launch through Isaac Lab (AppLauncher), or plain `SimulationApp` with `--launcher kit` (your `_isaac_sim/python.sh` route).
-- Verified facts, with sources: `docs/ISAAC_VERIFIED_APIS.md`. These include scene queries enabled for PhysX raycasts, the black-viewport camera re-pose fix and the lighting values.
-
-## 3. Commands
-
-Set `L=/workspace/skysearch/larpverse`, then run each command from `/workspace/isaaclab`. Workstation: replace `./isaaclab.sh -p` with `~/isaacsim/python.sh` and add `--launcher kit`.
-
-| Step | Command | Status |
-|---|---|---|
-| scipy (needed) | `./isaaclab.sh -p -m pip install scipy` | ✅ |
-| Self-test | `./isaaclab.sh -p $L/isaac/run_mission.py --selftest --headless --enable_cameras --out /workspace/selftest` | ✅ |
-| Dry run (no omni) | `./isaaclab.sh -p $L/isaac/run_mission.py --dry-run --max-steps 60 --out /tmp/d` | ✅ |
-| Grid demo, photoreal, recorded | `./isaaclab.sh -p $L/isaac/run_mission.py --seed 7 --photoreal 1 --overlay usd --show-truth --record /workspace/frames --rec-cams director,wide,chase:d1,fpv:d2,top --rec-res 1920x1080 --rec-fps 30 --rec-speed 6 --rec-stop-t 380 --headless` | ✅ (story fix pending, §5) |
-| **Your collapse map** | `./isaaclab.sh -p $L/isaac/run_mission.py --site collapse --site-usd /workspace/skysearch/collapse_site/collapse_site.usda --headless --show-truth --speed 4` (add `--photoreal 1`, recording flags as above). The site is attached at `/World/CollapseSite`, and all 600 site meshes get colliders. Dry-run verified here: `python isaac/run_mission.py --dry-run --site collapse --lidar-profile heavy --max-steps 40` | ✅ dry-run / USD-checked (not yet on GPU) |
-| Heavy drones + dense LiDAR + winch pod | add `--platform heavy_sar --lidar-profile heavy --delivery pod`. The 8-rotor heavy model is now the default (`--drone-model heavy`). LiDAR tries RTX OS1-128, then XT32, then frame-budgeted PhysX rays (`--lidar-budget-ms`, 4 ms per drone). The **pod** is drawn as a box on a cable from the drone, resting on the rubble while it scans. Dry run: 120 steps, 109k points, 3 pods | ✅ dry-run (RTX LiDAR never run on 6.0.1: report which path you got) |
-| Replay a CPU run (same story as the dashboard) | on any machine `python -m sim.grid_mission --seed 7 --radar dsp --frames --out dashboard/data`, then `… run_mission.py --replay $L/dashboard/data …` | ✅ |
-| Path-traced hero shots | `--rtx pathtracing --spp 16` | ✅ |
-
-**Flags you added, unchanged on our branch** ✅:
-- `--photoreal`, `--assets`, `--hdri`, `--sky`, `--sun`, `--sun-elev`, `--veg`, `--operator`
-- `--record`, `--rec-cams`, `--rec-res`, `--rec-fps`, `--rec-speed`, `--rec-warp`, `--rec-stop-t`, `--rec-windows` (`chase:d1:5-9` now parses), `--rec-every`
-- `--rtx`, `--spp`
-
-**Ours:**
-- `--launcher auto|lab|kit`
-- `--selftest`
-- `--look pretty`, which is an alias for `--photoreal 1` plus Flow dust
-- `--radar dsp`, the default
-- `--site grid|weiguan|collapse|mesh:<path>`, `--site-usd`, `--site-lights auto|site|ours|both`, `--no-scan-textures`
-- `--platform`, `--penetration literature|legacy`, `--delivery pod|land`, `--no-autonomous`, `--lidar-profile small|heavy`, `--lidar-budget-ms`, `--drone-model heavy|small`
-
-## 4. Overlay (`isaac/overlay.py`) ✅ merged with your ribbon lines (0f41c53)
-
-- **Lines:** your `LINE_MESH` flat ribbons of exact width are canonical.
-- **LiDAR:** a **single purple** (#9b6bff, brightness by height), shown only during the survey, then a 2.5 s fade-out (`LIDAR_SURVEY_ONLY`, `LIDAR_FADE_S`).
-- **Ping:** an emissive pulsing red beacon (`BEACON_R`, `BEACON_GLOW`, `PULSE_HZ`) that reads in wide shots.
-- **Acoustic cones:** shown only for human-classified clips with score ≥ 0.4.
-- **Operator zones:** draped outlines coloured by status: tasked/unsearched dashed white, in-progress green, searched-no-ping grey, ping red, lead teal. Turn them off with `LARPVERSE_ZONES=0`.
-- **Recon:** the coverage path, perch markers and proposed outlines (dashed grey).
-- **Labels:** `label_specs()` returns the dashboard's pill-style text specs for burning in during post.
-
-Colour language everywhere, which must match the dashboard and animation:
-
-| Colour | Means |
+| Piece | Status |
 |---|---|
-| Red | Radar ping / candidate |
-| Yellow | Human-audio direction |
-| Teal | Acoustic priority |
-| Purple | LiDAR |
-| Green | Coordinator / dispatch |
+| `--live` loop: stage as the source of truth, hotkeys U/Y, tasking poll, mission off the render thread | ✅ dry run: stage event at t400 → dispatch to A1 at t471 (verified by us tonight) |
+| `--camera director-take` (no-cut spline + springs) | ✅ unit test: never jumps |
+| HUD (`--hud overlay\|window`): LiDAR, cones, top clip, breathing waveform, vitals, decision, dig order | ✅ no-op without omni; 🎯 does it appear **in the stream**? |
+| Command van (`--van`), manikin dummies with SpatialAudio (`--dummies`), ambient sound (`--ambient`) | ✅ USD-checked; 🎯 looks, emissive screens at dusk, audio in the stream |
+| Heavy drone with its real components (BOM positions), rotor blur discs, winch pod hanging plumb with sway | ✅ USD-checked; 🎯 blur discs under RTX real-time |
+| Smooth multirotor motion (`isaac.motion`, rendered per frame) | ✅ in the renderer; 🟡 the mission switches to `SmoothFlight` (correct arrival timing) in the next push |
+| Pods visible in `--live` runs | 🟡 bug: our `--live` dry run showed 0 pods; being fixed |
+| Real acoustic pipeline on live dummy sources (not the synthetic stub) | 🟡 landing; `VIDEO_PLAN.md` will state exactly what the box needs |
+| Collapse site (`--site collapse --site-usd …`) | ✅ dry run (60 steps, 98k LiDAR points, 11 pod placements on T1a); the take plan is timed on the grid site |
+| Frame-time settings (`--take-render`) | ✅ applied with try/except; 🎯 confirm in Render Settings |
 
-## 5. 🎯 Your to-do list, in order
+**Before the final take:** rehearse now, but wait for **READY TO RE-RECORD** in `FOR_ISAAC_CLAUDE.md`. That comes once the three 🟡 items land.
 
-1. **Pull and switch.** After your current recording, rebase `larpverse-isaac` onto `larpverse-sensing`, or just use `larpverse-sensing`. Then tell us whether `3d_model` should be merged into it. That's our preference: it would put the map at `<repo>/collapse_site/`.
-2. **Hold the final re-record** until we post **"READY TO RE-RECORD"** in `FOR_ISAAC_CLAUDE.md`. Three fixes are landing first:
-   - A2 never pinged in your lv2 run because one disagreeing scan blocked the localisation. That's fixed on our side and being committed.
-   - The acoustic ranking is getting cross-talk and misattribution fixes.
-   - Vitals and triage on pings.
+## 4. Commands
 
-   When we post READY:
-   - Record with `--rec-stop-t 380`.
-   - **Gate each take on `timeline.csv`:** an A2 ping before t 110, and at least one dispatch before the stop.
-   - If your Isaac story differs from the CPU run (your landing sites come from your own LiDAR), use `--replay` from our CPU frames so the video matches the dashboard.
-3. **Collapse-site run** (`--site collapse` has landed ✅). Self-test it, then do one short run with `--max-steps 120`. Report:
-   - raycast hits on your colliders;
-   - landing cells found, so we can check footprint and clearance on your terrain;
-   - frame time with debris on and off.
-4. **Shots** for the 1-minute video, in order:
-   1. Wide establishing shot of the whole collapse site at dusk.
-   2. **Recon sweep:** three drones over the site while the purple LiDAR map paints in.
-   3. One drone **perching**, rotors spinning down.
-   4. Proposed zone outlines appear.
-   5. **Mid shot** of drones landing on a rubble face near a void: 30–40 m out, 25° down, about 35 mm.
-   6. Radar rings converge and the red beacon appears, with a ghost via `--show-truth` for the explanation shot only.
-   7. Speaker **call-out** ring, then yellow **knock** replies.
-   8. Dispatch line to the next zone.
-   9. Top-down 80 m shot that mirrors the dashboard map.
-5. **Scene look** (from our reviewer):
-   - `--veg 0` on the collapse site, so it reads as urban, not a park.
-   - Push fog start out to about 60 m and lower its density; the `fpv_d2` frame was hazy.
-   - Tilt `fpv_d2` down 35–45° and put chase at 6 m behind, 3 m up.
-   - Use Flow dust only for touchdowns.
-6. **Identification overlays for post:** save each camera's pose and intrinsics per frame next to `timeline.csv`, so we can burn in pile/zone IDs, ping tags and a phase/clock lower-third with `scripts/cut_video.py`.
-7. **Heavy drone model** ✅ (default): if you have a better agri/industrial airframe USD (6–8 rotors), say so. Ours is primitive-based with a sensor gimbal, LiDAR puck, radar panel and speaker horn.
-8. **Licence:** keep a **procedural-texture variant** of the scanned core (no scan-photo albedo) for any public showing, unless NCKU grants permission for their model.
+Set `L=/workspace/skysearch/larpverse`; Isaac commands run from `/workspace/isaaclab`. On the workstation, replace `./isaaclab.sh -p` with `~/isaacsim/python.sh` and add `--launcher kit`.
 
-## 6. Answers we need in `FROM_ISAAC.md`
+**Box side** (leave running):
+```bash
+cd $L && python3 isaac/live.py --write-tasking default --out dashboard/data    # editable zones, revision 1
+python3 scripts/serve.py --port 8765                                         # dashboard + /api/tasking, /api/broadcast, /api/portal
+```
 
-- Should `3d_model` merge into `larpverse-sensing`? Or which branch does the demo use?
-- Do you have the 0.125 m heightfield as an `.npz`? It's faster for us than rasterising the USD.
-- Which footprints are the original Weiguan blocks A–I, if known?
-- Frame time on the L40S for the collapse site with 3 drones plus recording, with debris on and off.
+**Dry rehearsal** (any machine, no GPU, about 1 min; prints the stage event, quick listens, re-plan and dispatch) ✅:
+```bash
+python3 isaac/live.py --write-tasking default --out /tmp/take
+python3 isaac/run_mission.py --dry-run --live --camera director-take --acoustic stub --max-steps 560 --out /tmp/take \
+    --test-trigger "activate:hidden2@400"      # dry run only: stands in for the teammate's key press
+```
 
-## 7. Troubleshooting
+**Self-test** (once per session) ✅:
+```bash
+./isaaclab.sh -p $L/isaac/run_mission.py --selftest --headless --enable_cameras --out /workspace/selftest
+```
+
+**The take** 🎯:
+```bash
+./isaaclab.sh -p $L/isaac/run_mission.py --live --livestream 2 --viz kit --enable_cameras \
+    --site grid --seed 7 --photoreal 1 --veg 0 --camera director-take --hud overlay --overlay usd --radar dsp
+# collapse site instead: --site collapse --site-usd /workspace/skysearch/collapse_site/collapse_site.usda
+#   (hidden dummies H1_RW_vi / H2_M39_id; re-time it with the dry rehearsal on --site collapse first)
+```
+Defaults that `--live` sets for you: van on (with `--photoreal 1`), dummies on, heavy drones, winch pods, realistic radar, tasking polled every 1 s, mission thread on, take render settings, keys `U=hidden1, Y=hidden2`, 4 s pre-roll on the van.
+
+**Client side** (Rohan's laptop):
+```bash
+brev port-forward <instance> --port 8765:8765      # or: ssh -L 8765:localhost:8765 <brev-host>
+# window 1: <brev URL>/viewer                         (Isaac stream; ONE viewer tab only)
+# window 2: http://localhost:8765/dashboard/          (same run, live)
+```
+OBS: one scene at 1920×1080 / 30 fps. Put the viewer at 0,0 sized 1280×1080 and the dashboard at 1280,0 sized 640×1080. Full settings are in `VIDEO_PLAN.md` §6.5.
+
+## 5. 🎯 Your to-do, in order
+
+1. **Pull** `larpverse-sensing`. Run the **self-test** and the **dry rehearsal**.
+2. **Stream and capture check:** does `/viewer` stream? Can OBS capture it? Does the stream carry **audio** (dummy voices)? Does the **HUD overlay show inside the stream**?
+3. **Rehearsal take** on the grid site with the take command, recorded with OBS, at least 60 s. Note:
+   - the **fps** on the survey shot (target ≥30 at 1080p; fallbacks in `VIDEO_PLAN.md` §5);
+   - every glitch (pops, jitter, camera snaps, drones vs camera judder), with the video time;
+   - whether pressing **Y** produced `STAGE EVENT … H2_A1_id activated (hotkey Y)` and a redirect, and how many video seconds it took.
+4. **The same on the collapse site** (`--site collapse --site-usd …`) with debris on and off, for frame time only.
+5. **Report** in `larpverse/docs/FROM_ISAAC.md` on `larpverse-isaac`: answers to 2–4, plus screenshots (van door shot, a drone close-up, pods on the rubble, the HUD).
+6. **Final take** only after **READY TO RE-RECORD**. The teammate pressing Y must not be the camera operator, and decides the moment themselves during the listen window (about 33–40 s).
+
+## 6. Assets you'll see (`docs/ISAAC_ASSETS.md`)
+
+- **Command van** at staging (`isaac/van.py`, about 12k triangles):
+  - generic "SEARCH & RESCUE / MOBILE COMMAND UNIT" livery (no real organisation's branding), open side door;
+  - operator in a hi-vis vest at three emissive dashboard screens;
+  - 6 m mast with mesh antennas, a satellite panel, an amber light bar, a rescue tent, a generator and cones.
+- **Manikin dummies** (`isaac/dummies.py`): partly buried training manikins, posed by condition. No injuries.
+  - Each has a `SpatialAudio` prim and `larpverse:active|clip|physio` attributes.
+  - Hidden ones: `H1_C3_vi` (key U) and `H2_A1_id` (key Y); on the collapse site, `H1_RW_vi` and `H2_M39_id`.
+  - No colliders, so the LiDAR doesn't see buried people.
+- **Heavy drone** (`isaac/drone_viz.py`, about 10k triangles):
+  - parts at their real positions from `data/hardware_bom.json`: OS1-128 LiDAR on a 45° nose mount, thermal gimbal, 8-mic ring, speaker horn, Jetson + mesh radio with antennas, GNSS mast, blue Wi-Fi antenna, winch and pod;
+  - `component_anchors()` gives label points for a close pass.
+- **Audio** (`assets/audio/dummies/`): 126 clips. Real CC0 shouts, TTS voices (zh-TW wording / en / id / vi), knocks, weak voices, distractors, and through-rubble variants.
+  - Credit ESC-50 (CC BY-NC) in the video description.
+- **Radar signatures** (`assets/radar_signatures/`, gallery `docs/img/radar_signatures.png`): 4 breathing conditions plus 6 rejects, with HUD playback streams.
+
+## 7. Questions for `FROM_ISAAC.md`
+
+1. Stream: does it work, can OBS capture it, is there audio in it, and does the HUD show in it?
+2. fps on the grid and collapse sites: debris on/off, photoreal on/off.
+3. The glitch list from the rehearsal, with video times.
+4. The hotkey: did Y register, and what was the reaction time?
+5. How was the collapse-site core built? This is for the licence: public showing needs NCKU permission or a procedural core.
+6. Should `3d_model` be merged into `larpverse-sensing`?
+
+## 8. Troubleshooting
 
 | Symptom | Fix |
 |---|---|
-| No LiDAR points | Scene queries are off or colliders weren't cooked. Check the self-test raycast step and `ISAAC_VERIFIED_APIS.md`. On the collapse site the terrain cooks once at Play (1.9 M tris), so wait. |
-| Black viewport | The camera re-pose fix is already in. Try `--camera free`. |
-| Overlays missing in recordings | `--overlay usd` (ribbon meshes), not debug draw. |
-| `--help` / dry-run crashes on `rubble` | scipy is missing. Install it (step 1). |
-| Story differs from the dashboard | Use `--replay` on the CPU frames. |
-| Slow frames on the collapse site | Hide `/CollapseSite/Debris` while iterating; `--rec-windows` renders only the cut ranges. |
+| No LiDAR points | Scene queries are off or colliders aren't cooked: check the self-test raycast step. The collapse terrain cooks once at Play (1.9M triangles), so wait for it. |
+| Black viewport | The camera re-pose fix is in; also try `--camera free`. |
+| HUD not in the stream | Use the split screen (dashboard on the right) and keep going. |
+| Key Y does nothing | Click the HUD button, or tick `larpverse:active` on `/World/Dummies/H2_A1_id`, or run `python3 isaac/live.py --cmd toggle --id H2_A1_id`. |
+| No redirect by about 50 s of video | Fallback trigger: draw a zone around A1 on the dashboard (it reacts in 1–4 s). |
+| Below 30 fps | `--photoreal 0`, then hide `/World/CollapseSite/Debris`, then `--drone-model small`, then stream at 1600×900. |
+| Drones look frozen | `--mission-thread 1` (the default with `--live`). Otherwise lower the pace: `--live-pace "radar=10,relocate=20,rescan=20"`. |
+| scipy missing | `./isaaclab.sh -p -m pip install scipy` |

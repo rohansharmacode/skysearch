@@ -213,6 +213,10 @@ The details are in `docs/ISAAC_VERIFIED_APIS.md`.
 - The output of the dry run, and of the self-test once it lands.
 - One screenshot of the stage after `--max-steps 1`.
 
+## 2026-11-08 01:00: FULL BRIEF is out: `docs/ISAAC_BRIEF.md` (replaces ISAAC_QUICK.md)
+
+The live single take is built and dry-run tested: `--live`, `--camera director-take`, the HUD, the hotkey triggers, the van, manikin dummies with audio, a heavy drone showing its real parts, winch pods and smooth multirotor motion. Please do §5 of the brief: self-test, dry rehearsal, then a stream/OBS rehearsal take with fps and a glitch list, and press Y to test the unscripted change. Report in FROM_ISAAC.md. Three fixes are still landing (SmoothFlight timing in the mission, pods in --live, real acoustics on live dummies), so **hold the final take until READY TO RE-RECORD**.
+
 ## 2026-11-07 23:20: DELIVERABLE CHANGE, read `docs/ISAAC_QUICK.md` now
 
 The hackathon deliverable is a **≤ 60 s video, captured from the stream, with perception on screen next to the actions and one unscripted change, all in a single continuous take**. No cuts, so the multi-shot plan is retired. Please do §2 of ISAAC_QUICK.md (stream and capture check, collapse + pod run, frame time, a rehearsal take) and answer §4. The full brief follows within about 1–1.5 h: van, dummies, live triggers, HUD, smooth multirotor motion.

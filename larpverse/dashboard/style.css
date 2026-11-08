@@ -546,3 +546,14 @@ body.planning #map { cursor: crosshair; }
 .dev .rerr { font: 11px var(--f-mono); }
 #commsMeta .opn { display: inline-flex; align-items: center; gap: 4px; margin-left: auto; }
 #commsMeta .opn input { width: 90px; height: 22px; background: #0d1319; color: var(--fg); border: 1px solid var(--line); border-radius: 3px; padding: 0 5px; font: 11px var(--f-ui); }
+/* radar rejector: grey, out of the dig order */
+.tri.t-reject { color: var(--muted); border: 1px dashed var(--muted); }
+details.rej { border: 1px dashed var(--line); border-radius: 4px; padding: 5px 8px; margin-bottom: 6px; }
+details.rej summary { cursor: pointer; font: 500 11px var(--f-mono); color: var(--muted); }
+.dig.rejd { opacity: 0.85; background: transparent; margin: 6px 0 0; }
+.dig.rejd .mk { background: transparent; border: 1.5px dashed var(--muted); }
+.dig.rejd .l1 b, .dig.rejd .go { color: var(--muted); }
+.sigth { margin: 8px 0 0; }
+.sigth img { width: 100%; height: auto; border-radius: 3px; border: 1px solid var(--line); display: block; }
+.sigth figcaption { font: 10.5px var(--f-ui); color: var(--muted); margin-top: 3px; }
+.vkv dd small.sr { display: block; margin-left: 0; }

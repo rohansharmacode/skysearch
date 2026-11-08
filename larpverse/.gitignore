@@ -20,3 +20,5 @@ agents/cache/
 !data/audio_real/fleurs/SOURCE.md
 dashboard/data/portal.json
 dashboard/data/comms_replies.json
+!data/impact_params.json
+!data/impact_results.json

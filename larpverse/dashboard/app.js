@@ -8,6 +8,7 @@ import { demoState, demoCloud } from './demo.js';
 import { createTasking, reconText } from './tasking.js';
 import { createComms, linkChip, evidenceChip } from './comms.js';
 import { createSpeaker, respChip } from './speaker.js';
+import { createLive } from './live.js';
 import { digScore, triageOf, conditionOf, conditionLabel, confMeter, rateOf, spark, caveatsOf, triageChip, drawTriageRing, ALWAYS, sourceOf, isRejected, signatureAsset } from './vitals.js';
 
 const params = new URLSearchParams(location.search);
@@ -17,6 +18,10 @@ const STATE_URL = (() => {
 })();
 const DATA = STATE_URL.slice(0, STATE_URL.lastIndexOf('/')).replace(/\/frames$/, '');   // frames/state_NNNN.json share the run's pointcloud.bin
 const POLL_MS = Math.max(100, +params.get('poll') || 1000), DEMO_POLL_MS = Math.max(POLL_MS, 5000);
+// ?layout=take: the video's right half (960x1080, docs/VIDEO_PLAN.md D1): big map, dig order, LIVE line, radar waveform,
+// top clip; nothing else. live.json / hud.json (next to the state file) are polled in take mode or with ?live=1.
+const TAKE = params.get('layout') === 'take', LIVE_FILES = TAKE || params.get('live') === '1';
+document.body.classList.toggle('take', TAKE);
 const COL = { detect: '#ff4545', cone: '#ffe14a', coord: '#6fd36f', radar: '#ff9f43', teal: '#22c3d6', good: '#4fd18b', bad: '#ff6464', fg: '#e3eaef', muted: '#8a9caa', grid: 'rgba(150,180,200,0.10)' };
 // status -> [long label, short label (small map scale), colour]
 const STATUS = {
@@ -52,7 +57,7 @@ const openRows = new Set(), openWhy = new Set(), decOpen = new Map();
 let dismOpen = false, showAllPiles = false;
 let DIG = [], DIG_BY = new Map(), REJ = [];   // REJ: pings the radar rejector says are not a person (kept out of the dig order)
 let rejOpen = false;
-let TK = null, CM = null, SP = null;   // SP: loudspeaker panel + guidance overlay (speaker.js)   // CM: rescue hotspot / comms relay (comms.js)                          // operator tasking + recon overlay (tasking.js)       // dig order (ranked pings), recomputed per state
+let TK = null, CM = null, SP = null, LV = null;   // LV: live.json / hud.json (live.js)   // SP: loudspeaker panel + guidance overlay (speaker.js)   // CM: rescue hotspot / comms relay (comms.js)                          // operator tasking + recon overlay (tasking.js)       // dig order (ranked pings), recomputed per state
 
 // ---------------- data ----------------
 async function poll() {
@@ -658,7 +663,8 @@ function renderSide() {
   renderBasemapUI();
   TK?.renderRail();
   CM?.render(); if (S.comms) CM?.start();
-  SP?.render(); if (grid) SP?.start();
+  SP?.render(); if (grid && !TAKE) SP?.start();
+  LV?.render();
   renderCands(grid);
   $('secAgent').hidden = !grid; $('secPiles').hidden = !grid || !(S.piles || []).length; $('secAc').hidden = grid;
   if (grid) { renderPiles(); renderDecisions(); renderClips(); }
@@ -939,6 +945,8 @@ $('caseBtn').onclick = () => setCase($('casePop').hidden);
 $('caseClose').onclick = () => setCase(false);
 
 // ---------------- operator tasking ----------------
+LV = createLive({ S: () => S, DATA, $, take: TAKE });
+if (LIVE_FILES) LV.start();
 SP = createSpeaker({ S: () => S, toPx, scale: () => view.scale, ctx: () => ctx, draw: () => draw(), qLabel, font: FONT_L, $ });
 CM = createComms({ S: () => S, toPx, scale: () => view.scale, ctx: () => ctx, draw: () => draw(), qLabel, font: FONT_L, $ });
 TK = createTasking({ S: () => S, toPx, toM, scale: () => view.scale, ctx: () => ctx, draw: () => draw(), qLabel, font: FONT_L, $ });

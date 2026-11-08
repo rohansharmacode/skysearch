@@ -9,7 +9,7 @@ import { createTasking, reconText } from './tasking.js';
 import { createComms, linkChip, evidenceChip } from './comms.js';
 import { createSpeaker, respChip } from './speaker.js';
 import { createLive } from './live.js';
-import { digScore, triageOf, conditionOf, conditionLabel, confMeter, rateOf, spark, caveatsOf, triageChip, drawTriageRing, ALWAYS, sourceOf, isRejected, signatureAsset } from './vitals.js';
+import { digScore, triageOf, conditionOf, conditionLabel, conditionShort, confMeter, rateOf, spark, caveatsOf, triageChip, drawTriageRing, ALWAYS, sourceOf, isRejected, signatureAsset } from './vitals.js';
 
 const params = new URLSearchParams(location.search);
 const STATE_URL = (() => {
@@ -254,8 +254,9 @@ function fit() {
   const b = S?.site?.bounds || [-25, -25, 25, 25];
   view.cx = (b[0] + b[2]) / 2; view.cy = (b[1] + b[3]) / 2;
   if (isGrid()) {   // keep the whole site clear of the tool bar (top) and the legend + scale bar (bottom)
-    const top = Math.max(50, $('tools').getBoundingClientRect().bottom - r.top + 10);
-    const lg = $('legend').getBoundingClientRect(), bot = Math.max(70, (lg.height ? r.bottom - lg.top : 0) + 34);
+    const lg = $('legend').getBoundingClientRect();
+    const top = TAKE ? 14 : Math.max(50, $('tools').getBoundingClientRect().bottom - r.top + 10);
+    const bot = TAKE ? (lg.height ? r.bottom - lg.top : 0) + 34 : Math.max(70, (lg.height ? r.bottom - lg.top : 0) + 34);
     const avail = Math.max(100, r.height - top - bot);
     view.scale = Math.min((r.width - 24) / (b[2] - b[0]), avail / (b[3] - b[1]));
     const topPx = top + (avail - (b[3] - b[1]) * view.scale) / 2;
@@ -321,20 +322,23 @@ const pileById = id => (S.piles || []).find(p => p.id === id);
 
 // Labels are queued while drawing and placed at the end, highest priority first; movable labels slide
 // vertically until they no longer overlap anything already placed (R1-021, R1-022).
-const FONT_L = '500 11px "IBM Plex Mono", ui-monospace, monospace';
+const TS = TAKE ? 1.4 : 1;
+const LEAN = () => TAKE && innerWidth <= 800;   // narrow take (640 px right third): names, priorities and ranked pings only   // take layout: map text 1.4x so it reads at 1080p video scale (11 px -> ~15 px)
+const FONT_L = `500 ${11 * TS}px "IBM Plex Mono", ui-monospace, monospace`;
 let LQ = [];
 const overlaps = (a, b) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
 function qLabel(t, x, y, color, bg = 'rgba(11,16,22,0.84)', prio = 5, stroke = null) {
   ctx.font = FONT_L; const w = ctx.measureText(t).width;
-  LQ.push({ prio, r: { x: x - 3, y: y - 11, w: w + 6, h: 15 }, draw: dy => {
-    ctx.font = FONT_L; ctx.textAlign = 'left'; ctx.fillStyle = bg; ctx.fillRect(x - 3, y - 11 + dy, w + 6, 15);
-    if (stroke) { ctx.strokeStyle = stroke; ctx.lineWidth = 1; ctx.strokeRect(x - 3.5, y - 11.5 + dy, w + 7, 16); }
+  const a = 3 * TS, up = 11 * TS, hh = 15 * TS;
+  LQ.push({ prio, r: { x: x - a, y: y - up, w: w + 2 * a, h: hh }, draw: dy => {
+    ctx.font = FONT_L; ctx.textAlign = 'left'; ctx.fillStyle = bg; ctx.fillRect(x - a, y - up + dy, w + 2 * a, hh);
+    if (stroke) { ctx.strokeStyle = stroke; ctx.lineWidth = 1; ctx.strokeRect(x - a - 0.5, y - up - 0.5 + dy, w + 2 * a + 1, hh + 1); }
     ctx.fillStyle = color; ctx.fillText(t, x, y + dy);
   } });
 }
 function flushLabels() {
   LQ.sort((a, b) => a.prio - b.prio);
-  const placed = [], OFF = [0, 16, -16, 32, -32, 48, -48, 64];
+  const placed = [], OFF = [0, 16, -16, 32, -32, 48, -48, 64].map(o => o * TS);
   for (const L of LQ) {
     let dy = 0;
     if (!L.fixed) for (const o of OFF) { const r = { ...L.r, y: L.r.y + o }; if (!placed.some(p => overlaps(p, r))) { dy = o; break; } }
@@ -453,7 +457,8 @@ function draw(now = performance.now()) {
     if (t) drawTriageRing(ctx, x, y, t);   // triage = ring style around the red ping (dig order), never a new hue
     const tri = t && c.vitals ? ` · ${t.label}${t.key === 'reject' && t.sub ? ': ' + t.sub : ''}` : '';
     const txt = small ? `${rk}${c.id}${tri}` : weak ? `${rk}${c.id}${tri} · ${supText(c)}` : `${rk}${c.id}${tri || ' · belief share ' + f2(c.p_mass)}`;
-    qLabel(txt, x + 12, y - 10, weak ? '#ffd9a6' : '#ffd0d0', weak ? 'rgba(58,35,6,0.92)' : 'rgba(60,8,8,0.88)', 1, weak ? 'rgba(255,159,67,0.7)' : null);
+    if (LEAN() && (!dg?.rank)) continue;
+    qLabel(LEAN() ? `#${dg.rank}` : txt, x + 12, y - 10, weak ? '#ffd9a6' : '#ffd0d0', weak ? 'rgba(58,35,6,0.92)' : 'rgba(60,8,8,0.88)', 1, weak ? 'rgba(255,159,67,0.7)' : null);
   }
   // drones; drones close together in the same state share one label ("d1–d3 · docked")
   const groups = [];
@@ -472,7 +477,7 @@ function draw(now = performance.now()) {
   for (const g of groups) {
     const n = g.ids.map(i => +i.replace(/\D/g, '')), seq = g.ids.length > 2 && n.every((v, k) => k === 0 || v === n[k - 1] + 1);
     const ids = seq ? `${g.ids[0]}–${g.ids[g.ids.length - 1]}` : g.ids.join(' ');
-    qLabel(`${ids} · ${g.state}${g.lk ? ' · ' + g.lk : ''}`, g.x + 10, g.y + 18, g.lk ? '#a9c8ff' : COL.fg, undefined, 6, g.lk ? 'rgba(59,130,246,0.6)' : null);
+    if (!LEAN()) qLabel(`${ids} · ${g.state}${g.lk ? ' · ' + g.lk : ''}`, g.x + 10, g.y + 18, g.lk ? '#a9c8ff' : COL.fg, undefined, 6, g.lk ? 'rgba(59,130,246,0.6)' : null);
   }
   flushLabels();
   scaleBar();
@@ -486,7 +491,7 @@ function drawGridLayer(now) {
     ctx.save(); ctx.fillStyle = 'rgba(200,210,220,0.06)'; ctx.strokeStyle = 'rgba(200,210,220,0.55)'; ctx.setLineDash([4, 3]); ctx.lineWidth = 1.2;
     ctx.fillRect(x0, y0, x1 - x0, y1 - y0); ctx.strokeRect(x0, y0, x1 - x0, y1 - y0); ctx.setLineDash([]);
     for (const p of stg.pads || []) { const [px, py] = toPx(...p); ctx.strokeStyle = 'rgba(200,210,220,0.85)'; ctx.strokeRect(px - 4, py - 4, 8, 8); }
-    ctx.restore(); qLabel(W < 600 ? 'Staging' : 'Staging · operator console', x0 + 4, y1 + 16, '#c3d0d9', undefined, 7);
+    ctx.restore(); if (!LEAN()) qLabel(W < 600 ? 'Staging' : 'Staging · operator console', x0 + 4, y1 + 16, '#c3d0d9', undefined, 7);
   }
   if (!layers.piles) return;
   const m = S.mission || {}, active = m.active_pile, short = view.scale < 6.5;
@@ -495,7 +500,7 @@ function drawGridLayer(now) {
   const ds = (S.dispatch || []).filter(d => d.to_pile && pileById(d.from_pile) && pileById(d.to_pile));
   ds.forEach((d, k) => {
     const latest = k === ds.length - 1, to = pileById(d.to_pile);
-    arrow(pileById(d.from_pile).xy, to.xy, COL.coord, latest ? 0.95 : 0.35, latest ? `dispatch → ${d.to_pile}${to.priority != null && !short ? ' · priority ' + to.priority : ''}` : null);
+    arrow(pileById(d.from_pile).xy, to.xy, COL.coord, latest ? 0.95 : 0.35, latest && !LEAN() ? `dispatch → ${d.to_pile}${to.priority != null && !short ? ' · priority ' + to.priority : ''}` : null);
   });
   if (layers.reach) for (const p of S.piles || []) drawReach(p, short);
   for (const p of S.piles || []) {
@@ -512,12 +517,13 @@ function drawGridLayer(now) {
     const notable = isActive || vis.has(p.id) || ['ping', 'lead', 'radar_ping', 'scanning', 'surveying'].includes(p.status) || (p.priority ?? 0) >= pmin || pings.has(p.id);
     if (!notable && many && (lx1 - lx0) < 90) continue;
     // name, priority badge, status chip (above the pile), placed as one fixed block
-    const ty = (poly ? topY : y - 8.5 * view.scale) - 8;
+    const ty = (poly ? topY : y - 8.5 * view.scale) - 8 * TS;
     ctx.font = '600 15px "IBM Plex Sans Condensed", sans-serif'; const nw = ctx.measureText(p.id).width;
     ctx.font = '600 12px "IBM Plex Mono", monospace'; const pt = p.priority != null ? String(p.priority) : null, bw = pt ? ctx.measureText(pt).width + 10 : 0;
     ctx.font = '500 10.5px "IBM Plex Mono", monospace'; const cw = ctx.measureText(txt).width;
     const left = Math.min(x - nw / 2 - 5, x - cw / 2 - 5), right = Math.max(x + nw / 2 + 8 + bw, x + cw / 2 + 5);
-    LQ.push({ prio: 0, fixed: true, pile: true, r: { x: left, y: ty - 15, w: right - left, h: 38 }, draw: () => {
+    LQ.push({ prio: 0, fixed: true, pile: true, r: { x: x + (left - x) * TS, y: ty - 15 * TS, w: (right - left) * TS, h: 38 * TS }, draw: () => {
+      ctx.save(); if (TS !== 1) { ctx.translate(x, ty); ctx.scale(TS, TS); ctx.translate(-x, -ty); }   // whole block scaled about its anchor
       ctx.textAlign = 'left';
       ctx.font = '600 15px "IBM Plex Sans Condensed", sans-serif';
       ctx.fillStyle = 'rgba(11,16,22,0.85)'; ctx.fillRect(x - nw / 2 - 5, ty - 15, nw + 10, 20); ctx.fillStyle = COL.fg; ctx.fillText(p.id, x - nw / 2, ty);
@@ -526,9 +532,11 @@ function drawGridLayer(now) {
         ctx.fillStyle = p.status === 'lead' || p.priority >= (m.priority_min ?? 20) ? COL.teal : 'rgba(34,195,214,0.35)';
         roundRect(bx, ty - 14, bw, 18, 9); ctx.fill(); ctx.fillStyle = '#04161a'; ctx.fillText(pt, bx + 5, ty);
       }
+      if (LEAN()) { ctx.restore(); return; }   // narrow take: the ring colour carries the status
       ctx.font = '500 10.5px "IBM Plex Mono", monospace';
       ctx.fillStyle = 'rgba(11,16,22,0.88)'; ctx.fillRect(x - cw / 2 - 5, ty + 7, cw + 10, 15); ctx.strokeStyle = col; ctx.lineWidth = 1; ctx.setLineDash(pileAmb(p) ? [3, 2] : []); ctx.strokeRect(x - cw / 2 - 5, ty + 7, cw + 10, 15); ctx.setLineDash([]);
       ctx.fillStyle = col; ctx.fillText(txt, x - cw / 2, ty + 18);
+      ctx.restore();
     } });
   }
 }
@@ -596,13 +604,13 @@ function drawReach(p, short) {
   if ((S.zones || []).length) return;   // tasked zones carry the reach status in their own label
   const t = short ? 'beyond radar reach' : `beyond radar reach — acoustic leads only${p.radar_coverage != null ? ` (${f0(100 * g.beyond)}%)` : ''}`;
   ctx.font = FONT_L; const w = ctx.measureText(t).width;
-  qLabel(t, cx - w / 2, y1 + 15, '#c3d0d9', 'rgba(11,16,22,0.84)', 8, 'rgba(205,218,228,0.35)');
+  if (!LEAN()) qLabel(t, cx - w / 2, y1 + 15, '#c3d0d9', 'rgba(11,16,22,0.84)', 8, 'rgba(205,218,228,0.35)');
 }
 function roundRect(x, y, w, h, r) { ctx.beginPath(); ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r); ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath(); }
 function scaleBar() {
   const nice = [1, 2, 5, 10, 20, 50], m = nice.find(v => v * view.scale > 70) || 50, px = m * view.scale, x = 14, y = Hh - (W < 900 ? (tilesOn() ? 62 : 40) : 44);
   ctx.strokeStyle = COL.fg; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + px, y); ctx.moveTo(x, y - 4); ctx.lineTo(x, y + 4); ctx.moveTo(x + px, y - 4); ctx.lineTo(x + px, y + 4); ctx.stroke();
-  ctx.fillStyle = COL.fg; ctx.font = '500 11px "IBM Plex Mono", monospace'; ctx.textAlign = 'left'; ctx.fillText(`${m} m`, x + px + 6, y + 4);
+  ctx.fillStyle = COL.fg; ctx.font = `500 ${11 * TS}px "IBM Plex Mono", monospace`; ctx.textAlign = 'left'; ctx.fillText(`${m} m`, x + px + 6, y + 4);
   const b = (geo().bearing_deg || 0) * RAD, nx = W - 30, ny = 66;   // true north relative to the site frame
   ctx.save(); ctx.translate(nx, ny); ctx.rotate(-b); ctx.beginPath(); ctx.moveTo(0, -11); ctx.lineTo(5, 4); ctx.lineTo(0, 1); ctx.lineTo(-5, 4); ctx.closePath(); ctx.fill();
   ctx.textAlign = 'center'; ctx.fillText('N', 0, -14); ctx.restore(); ctx.textAlign = 'left';
@@ -719,11 +727,11 @@ function renderCands(grid) {
       <span class="rk">${d.rank}</span>
       <span class="l1"><i class="mk"></i><b>${esc(c.id)}</b><small>${lab}</small>${triageChip(t)}</span>
       <span class="sp${sp?.rateOnly ? ' ro' : ''}">${sp ? sp.svg + `<small>${esc(sp.label)}</small>` : '<small>no breathing signal</small>'}</span>
-      <span class="l2 ${cond ? 'k-' + cond.key : 'none'}">${esc(pl || 'No breathing signal at this ping')}</span>
+      <span class="l2 ${cond ? 'k-' + cond.key : 'none'}"><span class="cl-full">${esc(pl || 'No breathing signal at this ping')}</span><span class="cl-short">${esc(conditionShort(v, c) || pl || 'No breathing signal')}</span></span>
       <span class="l5">${v ? confMeter(v.pattern_conf) : '<span class="cm none">no pattern analysis</span>'}${respChip(c.responsiveness)}</span>
       <span class="l3">depth <b>${esc(di.short)}</b> · ${weak ? `<span class="sup">${esc(supText(c))}</span>` : `belief share <b>${f2(c.p_mass)}</b>`}${v?.rate_ci?.length === 2 && v.rate_ci[0] != null ? ` · rate 95% ${f0(v.rate_ci[0])}–${f0(v.rate_ci[1])}` : ''}</span>
       <span class="l4"><span class="aid">Aid, not a diagnosis</span><span class="cv">${cav.length} caveat${cav.length === 1 ? '' : 's'}</span><span class="go">3D view →</span></span></button>`;
-  }).join('') + (REJ.length ? `<details class="rej"${rejOpen ? ' open' : ''}><summary>Not a person, says the radar · ${REJ.length} (not ranked)</summary>${REJ.map(d => {
+  }).join('') + `<p class="takenote">Candidate regions, not confirmed people · aid for rescuers, not a diagnosis</p>` + (REJ.length ? `<details class="rej"${rejOpen ? ' open' : ''}><summary>Not a person, says the radar · ${REJ.length} (not ranked)</summary>${REJ.map(d => {
       const { c, triage: t } = d, src = sourceOf(c.vitals);
       return `<button class="dig rejd" data-id="${esc(c.id)}" title="${esc(c.vitals?.source_reason || '')}"><span class="rk">–</span>
         <span class="l1"><i class="mk"></i><b>${esc(c.id)}</b>${triageChip(t)}</span>
@@ -952,7 +960,7 @@ CM = createComms({ S: () => S, toPx, scale: () => view.scale, ctx: () => ctx, dr
 TK = createTasking({ S: () => S, toPx, toM, scale: () => view.scale, ctx: () => ctx, draw: () => draw(), qLabel, font: FONT_L, $ });
 
 // ---------------- boot ----------------
-new ResizeObserver(() => resize()).observe(cv);
+new ResizeObserver(() => (TAKE && S ? fit() : resize())).observe(cv);   // take: nobody pans, so keep the site fitted as panels load
 renderBasemapUI();
 resize();
 poll();

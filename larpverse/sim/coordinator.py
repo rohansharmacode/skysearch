@@ -515,7 +515,7 @@ class Mission:
         """One long in-place dwell from the drone best placed on R1: breathing patterns need 45-60 s."""
         m = res["modes"][0]["xy"]
         best = None
-        idle = {d["id"] for d in self._idle()}
+        idle = sorted(d["id"] for d in self._idle())      # a list: set order varies with PYTHONHASHSEED
         for o in self.loc.obs:
             sid = o.get("site_id")
             if sid is None or not o["range_candidates"]:
@@ -610,6 +610,8 @@ class Mission:
 
     def _on_scan(self, ev):
         did, sid = ev["drone_id"], ev["site"]
+        if str(sid).startswith("listen-") and did not in self.pending:
+            return                         # a drone that landed to listen (rotors off), not a radar scan
         self.pending.pop(did, None)
         site = self._site(sid)
         pose = sensor_pose_at(site)

@@ -152,6 +152,29 @@ def test_hud_noop_import():
     assert _no_omni()
 
 
+def test_hud_radar_verdict_gated():
+    """Radar panel: 'analysing breathing... (n s)' until 45 s of dwell, then the whole-dwell verdict; with no live
+    scan it plays the synthetic library's reference stream, labelled NOT this scan."""
+    from isaac.hud import HudModel, load_signature
+    if load_signature("irregular_apneic") is None:
+        pytest.skip("assets/radar_signatures not present")
+    st = {"t": 280.0, "pings": [{"id": "A2-R1", "t_found": 275.0, "vitals": {"condition": "irregular_apneic"}}]}
+    h = HudModel()
+    early = h.update(st, None, 0, now=0.0, sim_t=280.0)["radar"]
+    assert early["source"] == "library" and early["verdict"] is None and "analysing breathing... (5 s)" in early["text"]
+    assert "NOT this scan" in early["text"] and early["wave"]
+    late = h.update(st, None, 0, now=1.0, sim_t=275.0 + 50.0)["radar"]
+    assert late["verdict"]["condition"] == "irregular_apneic" and "check first" in late["text"]
+    live = {"last_scan": {"t": 100.0, "drone_id": "d2", "scan_id": "s7", "pile": "A2", "quality": 0.9,
+                          "sig": {"fps": 10.0, "dwell_s": 20.0, "range_m": 2.1, "wave_mm": list(np.sin(np.arange(200) / 6.0)),
+                                  "final": {"source": "machinery", "condition": "unknown", "conf": 0.9,
+                                            "text": "pure tone with harmonics", "rate_bpm": None}}}}
+    r = h.update(st, live, 0, now=2.0, sim_t=110.0)["radar"]
+    assert r["source"] == "live" and r["verdict"] is None and len(r["wave"]) == 101
+    r = h.update(st, live, 0, now=3.0, sim_t=125.0)["radar"]       # a 20 s dwell: its verdict once it is all in
+    assert r["verdict"]["source"] == "machinery" and "not dug for" in r["text"]
+
+
 def test_pose_track_is_smooth():
     """Render-time poses: continuous velocity across step boundaries, no dip below a landing pad."""
     from isaac.run_mission import PoseTrack
@@ -215,7 +238,11 @@ def test_live_dryrun_with_trigger(tmp_path):
     assert live["schema"] == "larpverse.live/v1" and live["world"]["changed"]
     hud = json.loads((out / "hud.json").read_text())
     assert {"lidar", "listen", "radar", "vitals", "decision", "event"} <= set(hud["panels"])
-    assert hud["panels"]["radar"]["wave"]                     # the live slow-time waveform of the last pod scan
+    rad = hud["panels"]["radar"]
+    assert rad["wave"] and rad["source"] == "live"            # the pod scan's own slow-time signal
+    assert rad["verdict"] is not None or "analysing breathing" in rad["text"]
+    sig = live["last_scan"]["sig"]
+    assert sig["final"]["source"] and len(sig["wave_mm"]) >= 10 * 20
     assert s["camera_shots"][0][1] == "van"
     assert _no_omni()
 
@@ -224,3 +251,20 @@ def test_test_trigger_refused_outside_dry_run():
     from isaac.run_mission import parse_args
     with pytest.raises(SystemExit):
         parse_args(["--live", "--test-trigger", "activate:hidden1@10", "--launcher", "kit"])
+
+
+def test_real_acoustic_preflight_fails_loudly(tmp_path):
+    """No .venv-audio -> the service refuses to start (the take never silently falls back to the stub); the live
+    sources go to the pipeline as the dummies' own WAVs."""
+    from isaac.live import AcousticService, ListSource, LiveWorld, _sources_payload, dummies_from_scenario
+    from sim.scenario import make_scenario
+    sc = make_scenario(7)
+    with pytest.raises(RuntimeError, match="setup.sh"):
+        AcousticService(sc, python=str(tmp_path / "no-python")).start()
+    hm = sc.heightmap(0.5)
+    w = LiveWorld(sc, ListSource(dummies_from_scenario(sc, hm.height_at)), surface=hm.height_at, log=lambda s: None)
+    src = _sources_payload(w.truth())
+    if src is None:
+        pytest.skip("dummy audio assets not present")
+    assert all(os.path.exists(x["clip"]) and x["clip"].endswith(".wav") for x in src)
+    assert {x["kind"] for x in src} >= {"voice", "weak_voice", "knock"}

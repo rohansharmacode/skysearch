@@ -1,64 +1,54 @@
-# Larpverse: technical summary (draft for the one-page PDF)
+# Larpverse: technical summary (one-page PDF draft)
 
-Placeholders «…» are numbers still being produced; see the table at the top of `docs/PITCH_LARPVERSE.md`.
+Updated 8 Nov 2026. Sources: `docs/review/PASS3_CLAIMS.md` and the docs named. Open slots: «SEED7-CANON», «ISAAC-CLIP», «GEMINI-DISPATCH».
 
-**User and problem.** The user is the incident commander or USAR team leader at a building collapse. Survivors are trapped in voids inside rubble piles, where thermal and RGB cameras can't see. A site has many piles and few crews, so the commander must triage which pile to work first and where on it to dig. Today listening devices and radar are placed by hand, often from unstable rubble, and crews dig on a best guess.
+**User and problem.** The user is the incident commander at a building collapse. People are trapped in voids that cameras can't see, listening devices only hear people who can call or tap, and radar life detectors must be carried onto unstable piles one spot at a time. The commander has to choose which pile to work, and where to dig, before time runs out. At Weiguan Jinlong (Tainan, 2016), 309 people were in the building: 175 were rescued alive and 115 died, and nobody came out alive after 62.3 h.
 
-**What Larpverse does.** Three drones search a 3×3 field of rubble piles as one system and hand the commander **candidate search regions**, not confirmations.
-1. **Map and land.** The drones orbit a pile with a spinning LiDAR. KISS-ICP SLAM builds the pile map, and every 1 m cell is scored for slope, roughness, step and clearance. The drones land on flat cells.
-2. **Radar, rotors off.** Each landed drone looks for a respiration-like signal and reports a range. A Bayes grid fuses the ranges.
-3. **Plan the next measurement.** When the ranges disagree, the planner moves one drone to the landing cell with the highest expected information gain and rescans. Three agreeing ranges give a **ping**: a position, a 95% region and a belief share. Otherwise the result is `insufficient_evidence`.
-4. **Listen and triage.** Still landed, the drones listen to the other piles. Silero VAD, Whisper, YAMNet and SRP-PHAT direction finding turn audio into clips. An agent (Gemini, or a rule-based fallback) scores how human and how urgent each clip is, and the piles are ranked.
-5. **Dispatch.** A dispatch gate weighs pile priority, travel time and battery, and sends the fleet to the next pile. The cycle repeats until the scan budget is spent. The commander then gets a handover brief: pings, open leads, and piles **not cleared**.
+**What Larpverse does.** Three heavy-lift drones search a field of rubble piles as one system. They hand the commander **candidate search regions**, a breathing **condition** for each one (an aid, not a diagnosis), and a ranked pile list.
+1. **Map.** A LiDAR orbit and KISS-ICP SLAM build the pile map. Pod sites are scored on 0.5 m cells with a 1.5 m plane fit.
+2. **Pod scans.** Each drone hovers and lowers a 4.9 kg radar and microphone pod on a 20 m winch onto the rubble: about 8 s down, a 45 s scan, 8 s up. A Bayes grid fuses the ranges, and the pod is re-placed by expected information gain.
+3. **Ping and condition.** Three agreeing strong ranges give a ping with a belief share and a depth source; otherwise the result is `insufficient_evidence`. A 60 s vitals look labels the breathing calm, rapid-shallow, slow-regular or irregular with pauses. Non-human returns are rejected.
+4. **Listen, call out, connect.** Landed off the pile with rotors off, the drones listen (Silero VAD, YAMNet, Whisper, SRP-PHAT with a rotor veto; Gemini audio when the quota allows). They call out in zh-TW, Taiwanese Hokkien and English, and serve a consent-based rescue Wi-Fi portal.
+5. **Dispatch.** A gate weighs priority, travel and the 25% battery reserve. Gemini or a fallback picks from listed options, and code validates the pick. Every pile without a ping ends "searched, **not cleared**".
 
-**Key features**
-- **Measurement planning:** expected-information-gain relocation, not fixed landing patterns.
-- **Uncertainty everywhere:** belief share, 95% region, an explicit `insufficient_evidence` outcome, and depth labelled "assumed 1.5 m" because ranges can't separate depth from position.
-- **Acoustic agent:** multi-drone bearing association to piles, LCMV separation with nulls on other sources, cross-talk removal, gated transcripts.
-- **Bounded LLM:** picks only from planner options; a validator enforces battery reserve, no-go piles and banned claims, and a deterministic fallback runs on any failure. Answers are recorded and replay offline.
-- **One scenario everywhere:** the same seeded scenario drives Isaac Sim, the numpy simulator and the dashboard.
+**Architecture and where it runs.** Today the mission runs on a laptop CPU and Isaac Sim 6.0.1 on a cloud L40S.
 
-**Architecture and where each model runs.** Intended split below. Today everything runs on one laptop CPU without a GPU; Isaac Sim 6.0.1 runs on a cloud L40S.
-
-| Component | Runs on | Latency |
+| Component | Runs on | Latency today |
 | --- | --- | --- |
-| LiDAR odometry (KISS-ICP), pile map, landing cells | drone (Jetson-class target) | 0.38 s per 23k-point scan on the laptop CPU, offline; to measure on Jetson |
-| Radar breathing DSP (range FFT, phase, 0.1–0.5 Hz band-pass, peak, CFAR) | drone | not separately timed |
-| Bayes fusion, EIG planner, ping logic | staging edge box | 0.7 s compute per single-pile mission (mean, 30 seeds) |
-| Acoustic pipeline: association, LCMV, VAD, YAMNet, Whisper; fallback scorer | staging edge box | about 81 s per 26 s listen on the laptop CPU (cache miss); needs a GPU or smaller models to be real time |
-| Dispatch gate, handover brief, dashboard | staging edge box | — |
-| Gemini: dispatch pick, clip triage, operator notes, brief rewrite | cloud, optional | expected 1–4 s per call, 25 s timeout; not yet measured «GEMINI: …» |
+| LiDAR SLAM, pod-site scoring, stage-1 audio | drone (Jetson AGX Orin target) | 0.38 s per 23k-point sweep, laptop, offline |
+| Radar DSP, vitals, rejector | pod / drone | not timed |
+| Fusion, EIG planner, acoustic association and agent, gate, dashboard, speaker, portal | command van | about 50–62 s per real acoustic listen (laptop CPU) |
+| Gemini: audio analysis, dispatch pick, brief | cloud, optional (OneWeb or LTE in Tainan) | audio 1.6–1.8 s median per clip; free tier, about 20/day per model |
 
-**Evaluation.** Real data where stated; everything else is simulation only, not real-world performance.
+Radios: a 5.8 GHz mesh, a 5.2 GHz pod link and a 2.4 GHz hotspot, all clear of the radar's 0.4–2 GHz sweep. Raw data stays on board.
 
-| What | Result | Source and caveat |
+**Evaluation.** Simulation unless it says real data.
+
+| What | Result | Caveat |
 | --- | --- | --- |
-| Breathing DSP on **real** radar recordings | MAE **0.39 bpm** (176 windows of 30 s), 95% within 2 bpm | `docs/RADAR_VALIDATION.md`. Schellenberger 2020: 3 resting subjects, 24 GHz CW at 0.4 m, line of sight, **no rubble**. Validates the DSP only |
-| SLAM pose error (B2, seed 7, 300 scans) | ATE **3.6 cm** vs 1.51 m odometry only | commit 110fdd2, `mapping.run`. Simulated LiDAR, one pile |
-| Landing map vs true terrain | IoU **0.98**; 16/16 SLAM landing sites valid (odometry only 11/16) | same run. Geometry only, not structural safety |
-| Planning vs fixed landing sites (single pile, 30 seeds, 6 scans) | resolved **43% vs 10%**; 95% area **100 vs 285 m²**; truth in 95% region 93% vs 93%; 0 false alerts each | `sim/evaluate.py`, 16:33 run on older code, provisional «B5-RERUN» |
-| Acoustic dispatch vs nearest-first vs raster (multi-pile) | «EVAL-GRID: victims pinged, time to first ping, false leads, N seeds» | `docs/EVAL_GRID.md`; state whether the acoustic stub or the real pipeline was used |
-| Acoustic front end on **real** audio | «ACOUSTIC-REAL: detection P/R, Whisper vs SNR» | `docs/ACOUSTIC_VALIDATION.md` |
-| Seed-7 demo mission | 3 pings, each ~0.1–0.15 m from the hidden position; **1 of 4 hidden people missed** (faint voice at B1 attributed to empty C3) | `dashboard/data/state.json` 18:58. One seed, synthetic radar. «SEED7-RERUN» after the assignment fix |
+| Multi-pile dispatch, 20 seeds (EVAL_GRID.md) | non-start victims pinged: acoustic **17/60** vs nearest 6/60 vs raster 5/60 (28% [15–42] vs 10% vs 8%); 0 false pings | acoustic clips generated from truth, so an **upper bound**; kinematic flight; not faster (independent start: first ping 1413 s vs 1042 s) |
+| Radar reach (RADAR_PENETRATION.md) | about **2.9 m** of rubble beneath the pod (45 s); 0.7 m from 11.5 m | synthetic propagation model |
+| Breathing DSP, **real data** | 0.39 breaths/min MAE (176 windows) | 24 GHz CW, 0.4 m, line of sight, no rubble |
+| Breathing condition | synthetic recall 95/100/84/65%; **real** rate MAE 0.51/min, 6/6 breath holds | relaxed volunteers read "slow, regular" 38/57 |
+| Acoustic recognisers, **real data** | human vs non-human F1 0.70–0.82 rotors off; 0.58 with rotor noise at 0 dB | single mic, no rubble; rotor veto not re-validated |
+| Gemini audio, live | language ID 89/90 clean, 78/90 noisy; cue recall 0.76, precision 1.00 | free tier |
+| SLAM | ATE 3.6 cm; landing IoU 0.98 | one pile, own ray-caster |
+| Seed-7 demo | A2 pings (radar-only, silent); further pings vary by pod seating «SEED7-CANON» | one review run also pinged B1 and B2; A3 stayed open |
 
-**What the numbers say, including where they disagree with us.**
-- **Planning earns its place on one pile:** same scan budget, four times as many runs resolve to a single region, with a third of the search area. Provisional until re-run.
-- **The acoustic stage is the weakest link.** In the seed-7 demo it heard the faint voice but put it on the wrong pile, so the real person's pile ended "not cleared" and 12 scans went to an empty pile. «ASSIGN: …»
-- **Depth is not measured.** Three ranges fix position on the pile, not depth below the surface.
+**Limits.**
+- Through-rubble radar returns and victim audio are synthetic.
+- The pod is designed, not built; hardware costs are estimates.
+- Smooth flight trajectories, but no flight controller or aerodynamics.
+- The take has not been rendered on a GPU yet.
+- The Gemini dispatch decider has not run live.
+- No drone loss, aftershock or dust handling.
 
-**Limits**
-- Radar returns are a labelled synthetic generator. Isaac does not model RF breathing through rubble.
-- Acoustic scenes are simulated: TTS voices, synthetic knocks, one ESC-50 dog clip, free-field propagation.
-- Flight is kinematic: no flight controller, no aerodynamics, no wind. Isaac renders the world, bodies and LiDAR; our code moves the drones.
-- No drone-loss, aftershock, radio-loss or dust handling in this build.
-- Gemini has not been called for real yet; every decision so far is `argmax` or `fallback`.
+**Critical failure mode and safety.**
+- **Missed person:** no pile is ever "cleared"; open leads go in the brief. Seed 7's A3 is a real example.
+- **Over-trust:** pings are candidate regions; conditions are aids that describe chest motion only; no age inference.
+- **Speaker:** vetted templates only; translations need operator approval.
+- **Phones:** consent only; no sniffing or interception.
+- **LLM:** listed options, a validator, banned claims ("confirmed", "survivor found"), a fallback, and a `by` badge.
+- **Ground truth:** only generators and evaluators read it; tests enforce this.
 
-**Critical failure mode and safety**
-- **Critical failure: a missed person.** No detection is not proof of absence. Silent piles end "not cleared", never "cleared", and the brief lists them.
-- **False lead:** a ping needs three agreeing ranges; a lead without them ends as `insufficient_evidence`, not a ping.
-- **Over-trust:** every ping is a candidate search region with its belief share, 95% region and assumed depth. Stationary is not trapped; periodic is not human.
-- **Landing:** flat geometry says nothing about structural safety. People decide who goes onto a pile.
-- **LLM:** sees summaries only, never ground truth, never the numeric loop; a validator and deterministic fallback guard every pick.
-- **Ground truth:** only observation generators and evaluators read it; tests enforce the boundary.
-- **Battery:** options that leave a drone under a 25% reserve are rejected; batteries swap at the staging pads.
-- **Privacy:** audio is used only to score human presence and urgency. Transcripts are stored in the mission state for the commander, and there's no speaker identification.
+**Impact (model, not a record; v1.0 run, to be refreshed per docs/IMPACT_MODEL.md).** In a counterfactual model (docs/IMPACT_MODEL.md; stub acoustics), the system adds +0.2 (−0.1 to +0.7) survivors per 100 trapped as simulated, and +0.75 (−1.8 to +2.7) at the radar upper bound. On the Weiguan-scale site the pod made 0 firm pings in 170 people, so **we do not claim lives saved at Weiguan scale**. A city kit costs about $2.8M over 10 years ($1.1–6.3M) and breaks even at 0.56 lives per decade at Taiwan's value of life (docs/ECONOMICS.md). A truck-mounted kit could give a first radar candidate at about T+50 min (23–94) after a quake (docs/DEPLOYMENT.md).

@@ -38,6 +38,7 @@ import numpy as np
 
 from .acoustic_grid import STUB_SOURCE, listen as acoustic_listen
 from .coordinator import KinematicFlight, Mission
+from .flight_motion import SmoothFlight
 from .grid_world import GridWorld
 from . import radar_dsp
 from .radar_dsp import REACH_REF_RANGE_M, reach_path_m
@@ -137,7 +138,8 @@ class GridMission:
                  autonomous=True, mission_scans=None, dispatch_policy="acoustic", reserve=RESERVE, swap_s=SWAP_S,
                  listen_s=None, revisit_max=2, penetration=None, launch_pile=None, site="grid", platform=None,
                  delivery=None, speaker=True, callout_fn=None,
-                 tasking=None, recon_accept_s=RECON_ACCEPT_S, comms=True, uplink="oneweb", comms_llm=False):
+                 tasking=None, recon_accept_s=RECON_ACCEPT_S, comms=True, uplink="oneweb", comms_llm=False,
+                 flight_model="smooth"):
         """``autonomous`` (default): keep searching until the mission scan budget (``mission_scans``, default
         24), the time limit or the open leads run out; battery swaps at the pads; open leads without a firm
         ping are revisited once. ``pile_budget`` caps pile visits (None = no cap; legacy mode uses 3).
@@ -194,9 +196,11 @@ class GridMission:
         if platform not in (None, "legacy_small"):
             from .platform import get_platform
             self.platform_spec = get_platform(platform)
-        self.flight = flight if flight is not None else KinematicFlight(
+        Flight, fkw = (SmoothFlight, {"seed": seed}) if flight_model == "smooth" else (KinematicFlight, {})
+        self.flight_model = flight_model
+        self.flight = flight if flight is not None else Flight(
             self.grid, starts=pads, platform=None if self.platform_spec is None else self.platform_spec,
-            max_alt=pd.get("flight_ceiling_m"))
+            max_alt=pd.get("flight_ceiling_m"), **fkw)
         self.sensor_factory = sensor_factory or (lambda pw, s: make_generator(pw, s, radar))
         self.acoustic_fn = acoustic_fn
         self.decider = decider         # optional (context, options) -> {"choice", "rationale", "by"}
@@ -364,6 +368,34 @@ class GridMission:
         if m.any():
             pm.loc.logb = pm.loc.logb + np.log(np.where(m, 1.0, ZONE_PRIOR_FLOOR))
             pm.loc._p = None
+
+    # ---- Isaac live take (isaac/live.py): generator-side world override + live re-planning hooks (VIDEO_PLAN A1-A3)
+    def set_world_sources(self, scenario_view, sensor_factory=None, acoustic_fn=None):
+        """Generators read the victims / sounds from the Isaac stage: the scenario view's hidden part (call-out and acoustic
+        generators), ``sensor_factory(pile_world, seed)`` (radar, rebuilt per scan). The coordinator never reads
+        them. ``acoustic_fn`` bypasses the acoustic cache while the stage differs from the scenario."""
+        self.scenario = scenario_view
+        if sensor_factory is not None:
+            self.sensor_factory = sensor_factory
+            if self.pm is not None:
+                self.pm.sensors = sensor_factory(self.pm.world, self.seed)
+        if acoustic_fn is not None:
+            self.acoustic_fn = acoustic_fn
+
+    def ingest_listen(self, res, drones, source="pod-mic"):
+        """Fold an extra listen (pod mics resting on the rubble) into clips, pile priorities and zones; no gate."""
+        keep = self.acoustic_fn
+        self.acoustic_fn = lambda *_a: res
+        try:
+            self._finish_listen(drones=drones, gate=False)
+        finally:
+            self.acoustic_fn = keep
+        self._say(f"Extra listen ({source}) folded in: {len(res.get('clips', []))} clips")
+
+    def preempt(self, reason, to_pile=None):
+        """New evidence / operator order: end the active pile's radar phase once the dwell under way finishes, then
+        run the dispatch gate (``to_pile`` wins it). The cut pile stays not cleared and open for a revisit."""
+        self._preempt = (reason, to_pile)
 
     def _poll_tasking(self):
         """Re-read the operator tasking file when its mtime changes; merge the revision live."""
@@ -618,7 +650,18 @@ class GridMission:
             self.pm.step()
             self.t, self.k = self.pm.t, self.k + 1
             self._track_pile()
-            if self.pm.stage == "done" or self.t - self.pm_t0 > PILE_MAX_T:
+            self._idle_listen(self.pm)
+            if getattr(self, "_preempt", None) and self.pm.scans and not self.pm.pending:
+                reason, to = self._preempt
+                self._preempt = None
+                self._say(f"RE-PLAN: {reason}; radar phase at {self.pm.pile} cut short after {len(self.pm.scans)} scans")
+                self._order, keep = to, self.listen_s
+                self.listen_s = 0.0
+                try:
+                    self._finish_pile()
+                finally:
+                    self.listen_s = keep
+            elif self.pm.stage == "done" or self.t - self.pm_t0 > PILE_MAX_T:
                 self._finish_pile()
         else:
             self.t += self.dt
@@ -668,6 +711,7 @@ class GridMission:
         self._write_state()
         while not self.done:
             self.step()
+        self._write_motion()
         return self
 
     def _swap_battery(self, did):
@@ -746,11 +790,23 @@ class GridMission:
         reach_txt = (f"Radar reached {100 * cov['radar_coverage']:.0f}% of the pile volume "
                      f"({100 * cov['radar_coverage_shallow']:.0f}% of its top 2 m) from the "
                      f"{'pod placements' if self.delivery == 'pod' else 'landing sites'} used; "
-                     + (f"per-scan reach ≈{cov['radar_reach_m']:.1f} m of rubble directly beneath" if cov.get('radar_reach_m') is not None
-                      else "no scan reached the rubble"))
+                     + (f"per-scan reach ≈{cov['radar_reach_m']:.1f} m of rubble directly beneath"
+                        if cov.get("radar_reach_m") is not None else "no completed scan"))
         res = pm.result
+        rejected = []
         for c in firm:
             self._attach_vitals(pm, c)
+            v = c.get("vitals") or {}
+            if v.get("triage_hint") == "reject" or v.get("source") not in (None, "human_breathing"):
+                rejected.append(c)            # the return is periodic but not human breathing: never a ping
+        for c in rejected:
+            why = (c["vitals"].get("source_reason") or c["vitals"].get("source") or "non-human signature")
+            c["status"], c["rejected_nonhuman"] = "insufficient_evidence", why
+            p["radar_note"] = f"radar return rejected: {why} (not a person)"
+            p["no_revisit"] = True            # a machine / vibration does not deserve another radar pass
+            self._say(f"[{name}] Radar return {c['id']} rejected as not a person: {why}. Kept as a scan note, "
+                      "not a ping; no revisit spent on it")
+        firm = [c for c in firm if c not in rejected]
         if firm:
             c = firm[0]
             p["status"] = "ping"
@@ -833,15 +889,45 @@ class GridMission:
                   f"pattern {v.get('pattern')}, rate {v.get('rate_bpm')}/min, hint {v.get('triage_hint')} "
                   f"(confidence {v.get('pattern_conf')}); dig score {c['dig_score']}. A triage aid for rescuers to check")
 
+    def _listen_patches(self, pm):
+        """Flat off-pile patches around the active pile where a drone can sit with rotors off (cached per pile)."""
+        key = (pm.pile, id(pm))
+        if getattr(self, "_patch_cache", (None,))[0] != key:
+            kw = {"search_radius": 14.0}
+            if self.platform_spec is not None:
+                kw["limits"] = self.platform_spec.landing_limits()
+            sites = [s for s in detect_landing_sites(pm.grid, centre=self.world.pile_xy[pm.pile], **kw)
+                     if s["status"] == "candidate" and not s.get("perch")
+                     and abs(float(self.grid.height_at(*s["xy"])) - s["z"]) < 0.3]   # the window flattens other piles
+            self._patch_cache = (key, sites)
+        return self._patch_cache[1]
+
+    def _idle_listen(self, pm):
+        """VIDEO_PLAN A4: during pod rescans, drones with nothing to do land on a flat patch (rotors off) so their
+        mics can listen; the planner takes them off again for the next placement."""
+        if self.delivery != "pod" or pm.scans_cmd < 3 or pm.stage != "decide":
+            return
+        busy = set(pm.pending)
+        idle = [p for p in self.flight.poses() if p["state"] == "hovering" and p["id"] not in busy
+                and self.flight.drone_state(p["id"])[2] is None]
+        if not idle:
+            return
+        taken = {j["site"] for d in self.flight.drones
+                 if (j := self.flight.drone_state(d)[2]) and str(j.get("site", "")).startswith("listen-")}
+        for p in idle:
+            free = [s for s in self._listen_patches(pm) if f"listen-{s['id']}" not in taken]
+            if not free:
+                return
+            s = min(free, key=lambda s: np.hypot(s["xy"][0] - p["pose"][0], s["xy"][1] - p["pose"][1]))
+            taken.add(f"listen-{s['id']}")
+            z = max(float(s["z"]), float(self.grid.height_at(*s["xy"])))
+            self.flight.command({"drone_id": p["id"], "type": "goto_land_scan", "destination": [s["xy"][0], s["xy"][1], z],
+                                 "landing_site_id": f"listen-{s['id']}", "scan_duration": 0.5})
+
     def _land_for_listen(self, pm):
         """Pod delivery: the drones hover while the pods scan, but listening needs rotors off, so each drone lands
         on the nearest free flat patch around the pile (landing-ring detector, platform limits)."""
-        kw = {"search_radius": 14.0}
-        if self.platform_spec is not None:
-            kw["limits"] = self.platform_spec.landing_limits()
-        sites = [s for s in detect_landing_sites(pm.grid, centre=self.world.pile_xy[pm.pile], **kw)
-                 if s["status"] == "candidate" and not s.get("perch")
-                 and abs(float(self.grid.height_at(*s["xy"])) - s["z"]) < 0.3]   # the window flattens other piles
+        sites = self._listen_patches(pm)
         poses = {p["id"]: p["pose"] for p in self.flight.poses()}
         if len(sites) < len(poses):
             self._say("WARNING: not enough flat patches to land for the listen; listening while hovering (rotor noise)")
@@ -930,6 +1016,7 @@ class GridMission:
                     "scores": {k: c.get(k) for k in ("human", "urgency", "reliability")},
                     "priority": c.get("priority"), "rationale": c.get("rationale", ""), "by": c.get("by", "fallback"),
                     "doa_agree": c.get("doa_agree"), "vad_speech_ratio": c.get("vad_speech_ratio"),
+                    "language": c.get("language") or c.get("lang"),
                     "association": c.get("association"), "association_conf": c.get("association_conf"),
                     "ambiguous_with": list(c.get("ambiguous_with") or []),
                     "bearings": self._clip_bearings(c, drones), "notes": list(c.get("notes") or [])}
@@ -1125,8 +1212,14 @@ class GridMission:
             self._say(f"Decider ({out.get('by')}): {out.get('text')}")
 
     def _gate(self, res):
-        self._suggest_zone()
         """Dispatch gate after a pile (and its listen): re-rank, then dispatch / revisit / swap / stop."""
+        if getattr(self, "_order", None) and self._order in self.piles:
+            to, self._order = self._order, None
+            self.dispatch.append({"t": round(self.t, 1), "from_pile": self.visited[-1], "to_pile": to,
+                                  "reason": "operator order / new evidence", "by": "operator"})
+            return self._start_pile(to, "operator order / new evidence")
+        self._order = None
+        self._suggest_zone()
         tasked = self._tasked_piles()
         ranked = sorted((p for p in self.piles.values() if p["id"] not in self.visited and p["priority"] is not None
                          and (tasked is None or p["id"] in tasked)), key=lambda p: (-p["priority"], p["id"]))
@@ -1194,7 +1287,7 @@ class GridMission:
                     out.append((name, "rescan_current" if name == self.visited[-1] else "revisit",
                                 max(p["priority"] or 0, self.priority_min)))
                 elif p["status"] != "ping" and (p["priority"] or 0) >= self.priority_min \
-                        and self.visited.count(name) < self.revisit_max \
+                        and self.visited.count(name) < self.revisit_max and not p.get("no_revisit") \
                         and p.get("radar_coverage_shallow", 1.0) >= REVISIT_MIN_COVERAGE:
                     out.append((name, "rescan_current" if name == self.visited[-1] else "revisit",
                                 round(p["priority"] * REVISIT_DISCOUNT, 1)))
@@ -1527,6 +1620,10 @@ class GridMission:
         """Full state dict (contract v1 + v1.1 grid extensions), exactly what is written to state.json."""
         return self._state()
 
+    def _write_motion(self):
+        if self.out_dir and hasattr(self.flight, "save_motion"):
+            self.flight.save_motion(os.path.join(self.out_dir, "motion.json"))   # isaac --replay samples it
+
     def _write_state(self):
         if not self.out_dir:
             return
@@ -1540,6 +1637,8 @@ class GridMission:
         paths = [os.path.join(self.out_dir, "state.json")]
         if self.frames:
             paths.append(os.path.join(self.out_dir, "frames", f"state_{self.k:04d}.json"))
+        if self.k % 30 == 0:
+            self._write_motion()
         for path in paths:
             tmp = path + ".tmp"
             with open(tmp, "w", encoding="utf-8") as f:
@@ -1603,6 +1702,8 @@ def main(argv=None):
                     help="disable the rescue hotspot / comms relay (contract v1.4)")
     ap.add_argument("--uplink", default="oneweb", choices=["oneweb", "lte", "starlink", "none"],
                     help="van internet backhaul (Tainan: OneWeb via Chunghwa Telecom, or LTE); none = local only")
+    ap.add_argument("--flight", choices=["smooth", "kinematic"], default="smooth",
+                    help="smooth: sim/flight_motion.py multirotor trajectories (docs/MOTION.md); kinematic: legacy")
     ap.add_argument("--quiet", action="store_true")
     a = ap.parse_args(argv)
     t0 = time.time()
@@ -1619,7 +1720,7 @@ def main(argv=None):
                     dispatch_policy=a.dispatch, penetration=a.penetration, site=a.site,
                     platform=a.platform, delivery=a.delivery, speaker=a.speaker,
                     tasking=os.path.join(a.out, "tasking.json") if a.tasking == "auto" else a.tasking,
-                    recon_accept_s=a.recon_accept_s, comms=a.comms,
+                    recon_accept_s=a.recon_accept_s, flight_model=a.flight, comms=a.comms,
                     uplink=None if a.uplink == "none" else a.uplink)
     m.run()
     s = m.summary()

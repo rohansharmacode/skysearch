@@ -207,12 +207,58 @@ def rotor_noise(rng, dur, bpf=None) -> np.ndarray:
     return _rms_norm(x) + 0.7 * _rms_norm(sps.lfilter(b, a, rng.normal(0, 1, n)))
 
 
+def _load16(clip):
+    """np.ndarray (16 kHz mono) or a WAV path (any rate, first channel) -> float 16 kHz."""
+    if isinstance(clip, (str, os.PathLike)):
+        import soundfile as sf
+        x, fs = sf.read(str(clip), dtype="float64", always_2d=True)
+        x = x[:, 0]
+        if fs != FS:
+            from math import gcd
+            g = gcd(int(fs), FS)
+            x = sps.resample_poly(x, FS // g, int(fs) // g)
+        return x
+    return np.asarray(clip, float)
+
+
+def _active_rms(x):
+    a = x[np.abs(x) > 1e-4]
+    return float(np.sqrt(np.mean(a ** 2))) if len(a) else 1.0
+
+
+def source_track(src: dict, n: int) -> np.ndarray:
+    """One external source (live Isaac dummy / dummy-audio library) as a dry track at the 1 m level.
+
+    src: {"xy": [x, y], "clip": ndarray|path, "kind": scene.KINDS key or other, "level_db": 0.0,
+          "depth_m": 0.0 (apply through_rubble; 0 for clips that already carry rubble loss),
+          "t0_s": 0.0 or [start, ...], "loop": False, "ref_rms": None (RMS of the dry parent clip, so
+          a rubble variant keeps its loss; default the clip's own active RMS)}"""
+    x = _load16(src["clip"])
+    x = x / (src.get("ref_rms") or _active_rms(x))
+    track = np.zeros(n)
+    starts = src.get("t0_s", 0.0)
+    starts = [float(starts)] if np.isscalar(starts) else [float(v) for v in starts]
+    if src.get("loop"):
+        period = len(x) / FS + float(src.get("gap_s", 0.0))
+        starts = [t for s0 in starts for t in np.arange(s0, n / FS, period)]
+    for t0 in starts:
+        _place(track, x, t0)
+    depth = float(src.get("depth_m") or 0.0)
+    if depth > 0:
+        track = through_rubble(track, depth)
+    level = KINDS.get(src.get("kind"), {}).get("level", 1.0)
+    return track * level * 10 ** (float(src.get("level_db", 0.0)) / 20)
+
+
 def build_scene(scenario, drones: dict | None = None, seed: int | None = None,
-                duration=DURATION, noise_rms=4.0e-3, rotors: dict | None = None, rotor_level=2.0):
+                duration=DURATION, noise_rms=4.0e-3, rotors: dict | None = None, rotor_level=2.0,
+                sources: list | None = None):
     """Synthesise what the landed arrays hear. ONLY this function reads scenario.truth.
 
     drones: {id: (x, y)}; default three points DRONE_RADIUS from the start pile at 120 deg.
     rotors: {id: (x, y)} of our own drones hovering during the listen (blade-pass noise sources).
+    sources: external sources (isaac/live.py dummies, assets/audio/dummies) that REPLACE the
+    scenario's sounds; see source_track for the dict. The scenario then only gives pile geometry.
     Returns (Scene, truth_summary); the summary is for evaluation printouts only."""
     import pyroomacoustics as pra
 
@@ -226,7 +272,7 @@ def build_scene(scenario, drones: dict | None = None, seed: int | None = None,
     offs = mic_offsets()
     n = int(duration * FS)
 
-    sounds = list(scenario.truth["sounds"])
+    sounds = [] if sources is not None else list(scenario.truth["sounds"])
     slots = list(np.array([0.5, 4.5, 8.5, 12.5]) + rng.uniform(0, 1.0, 4))
     rng.shuffle(slots)
     slot = dict(zip(["voice", "weak_voice", "knock", "dog"], slots))
@@ -259,6 +305,14 @@ def build_scene(scenario, drones: dict | None = None, seed: int | None = None,
         track = through_rubble(track, p["depth"]) * gain
         room.add_source(list(snd["xy"]), signal=track)
         truth[snd["pile"]] = {"kind": kind, "xy": snd["xy"], "events_s": events, "text": snd.get("text")}
+
+    for src in sources or []:
+        xy = [float(src["xy"][0]), float(src["xy"][1])]
+        room.add_source(xy, signal=source_track(src, n))
+        pile = src.get("pile") or nearest_pile(piles, xy)
+        starts = src.get("t0_s", 0.0)
+        truth[pile] = {"kind": src.get("kind"), "xy": xy, "text": src.get("text"),
+                       "events_s": [round(float(v), 2) for v in (np.atleast_1d(starts))]}
 
     for rid, xy in (rotors or {}).items():          # our own hovering drones (public positions)
         room.add_source([float(xy[0]), float(xy[1])], signal=rotor_noise(rng, duration) * rotor_level)

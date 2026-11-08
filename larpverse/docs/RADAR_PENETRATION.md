@@ -78,12 +78,17 @@ Reach is about 2.9 m beneath the pod and 0.7 m from the old 11 m landing ring. T
 
 **Default:** `--penetration literature --radar dsp --delivery pod`, with the physio chest waveform, 45 s pod scans and the vitals hooks on. `legacy` and `--delivery land` are kept for comparison only.
 
-**Seed 7** (real-pipeline acoustic fixture): pings on B1 at 1247 s, B2 at 1709 s and A2 at 2502 s, on a revisit; mission time 2626 s, all 36 scans used.
+**Seed 7.** The canonical, deterministic run is in docs/SEED7_STORY.md. It uses smooth flight and the real-pipeline acoustic fixture.
 
-- The vitals match the hidden states: A2 is `unconscious_slow`, B1 `irregular_apneic` and B2 `calm`.
-- **A3 is not pinged.** Its victim breathes rapidly and shallowly (33/min, about 2.2 mm). The three closest seats, 1.5–2.0 m horizontal and 1.2–1.9 m of rubble, rocked (quality 0.03, 0.39, 0.61). The returns there were weak (confidence ≤ 0.3) or empty. After 16 placements A3 remains an open acoustic lead, which is the honest result.
+- **Pings:** A2 at 364 s, B1 at 1712 s and B2 at 2312 s. A3 stays an open acoustic lead.
+- **Totals:** 34 of 36 scans, mission time 3109 s.
+- **Vitals:** each ping's condition matches the hidden state. A2 is `unconscious_slow`, B1 `irregular_apneic`, B2 `calm`.
+- **Why A3 fails:** its victim breathes rapidly and shallowly (33/min, about 2.2 mm). The closest pod seats rock (scan quality 0.03–0.6), and after 16 placements the returns are weak (confidence ≤ 0.3) or empty.
 
-Pod depth estimates stay `nominal`: the posterior sigma is 0.5–0.7 m, above the 0.45 m bar.
+**Depth.** The radar gives an estimate (`depth_source: "radar_estimate"`) only when at least 3 scans support the ping and the posterior sigma is ≤ 0.45 m. Otherwise the depth stays `nominal` (assumed 1.5 m).
+
+- In seed 7, A2 has 5 supporting pod scans: **1.62 ± 0.45 m** (the evaluator's hidden value is 1.64 m).
+- B1 and B2 stay `nominal`: their sigma is 0.45–0.6 m with 3 supporting scans.
 
 ## Reproduce the calibration
 

@@ -144,6 +144,11 @@ def _base_parser():
                         "table in isaac/live.py DEFAULT_PACE; 'off' = constant --speed). The HUD always shows the factor")
     g.add_argument("--live-preroll", type=float, default=None,
                    help="--live: video seconds the mission waits on the opening (van) shot before deploying (default 4)")
+    g.add_argument("--allow-stub-acoustic", action="store_true",
+                   help="--live outside --dry-run: start even if the REAL acoustic pipeline (.venv-audio worker) fails "
+                        "its pre-flight. Rehearsal only: a take must not use the stub (docs/VIDEO_PLAN.md section 6)")
+    g.add_argument("--live-gemini", type=int, choices=[0, 1], default=0,
+                   help="--live real pipeline: Gemini audio stage on (adds seconds per listen + 10 RPM throttling)")
     g.add_argument("--take-render", type=int, choices=[0, 1], default=None,
                    help="--live: stream frame-time settings (RTX real-time, DLSS performance, no reflections / "
                         "translucency / GI; isaac/live.py TAKE_RENDER). Default 1 with --live unless --rtx pathtracing")
@@ -802,9 +807,25 @@ def main(argv=None):
                 h = lidar.cast((float(x), float(y), 80.0), (0, 0, -1), 120.0)
                 return None if h is None else float(h[2])
         world = L.LiveWorld(sc, src, surface=surface, probe=probe, log=say)
+        service = None
+        want_real = (a.acoustic or "auto") != "stub" and (not a.dry_run or a.acoustic == "real")
+        if want_real:                           # the take: the REAL pipeline on the live dummies, or nothing
+            try:
+                service, info = L.preflight_acoustic(sc, world, log=say, gemini=bool(a.live_gemini))
+                a.acoustic_info = info
+            except Exception as e:              # noqa: BLE001
+                msg = (f"ACOUSTIC PRE-FLIGHT FAILED: {e}. This take would use STUB acoustics (clips generated from "
+                       "the world list). Fix .venv-audio (docs/VIDEO_PLAN.md section 6) or pass --allow-stub-acoustic "
+                       "for a rehearsal.")
+                say("!" * 78)
+                say(msg)
+                say("!" * 78)
+                if not a.allow_stub_acoustic:
+                    raise SystemExit(msg)
         ctrl = L.LiveController(mission, world, out_dir=a.out, quick_s=L.QUICK_LISTEN_S if a.live_quick_s is None
                                 else (a.live_quick_s or 1e12), preempt=a.preempt, acoustic=a.acoustic or "auto",
-                                radar=a.radar, keys=a.live_keys or L.DEFAULT_KEYS, log=say, clock=lambda: clock())
+                                radar=a.radar, keys=a.live_keys or L.DEFAULT_KEYS, log=say, clock=lambda: clock(),
+                                service=service)
         if a.test_trigger:
             ctrl.test_triggers = L.parse_test_trigger(a.test_trigger)
             say(f"TEST TRIGGERS (dry run only, never in the take): {ctrl.test_triggers}")
@@ -891,6 +912,16 @@ def main(argv=None):
                  "acoustic=14,dispatch=3,return=12,battery_swap=40,done=8")
         pace = L.parse_pace(L.DEFAULT_PACE if a.live_pace is None else CLEAR if a.live_pace == "clear" else a.live_pace)
         preroll = 4.0 if a.live_preroll is None else float(a.live_preroll)
+        info = getattr(a, "acoustic_info", None)
+        if pace and info and info.get("latency_s"):
+            # the prefetched listen starts when the drones are down; ~66 sim s later (26 s listen + call-out) the gate
+            # needs it. Slow the listen phase so the real pipeline answers inside that window (floor x4: below that
+            # the mission clock is simply held, shown on the HUD).
+            cap = max(4.0, L.LISTEN_AFTER_DOWN_S / (float(info["latency_s"]) + 1.0))
+            if cap < pace.get("acoustic", base_speed):
+                say(f"real acoustic pipeline answers in {info['latency_s']:.0f} s: listen pace x{pace['acoustic']:g} -> "
+                    f"x{cap:.1f} so it lands inside the listen window")
+                pace["acoustic"] = round(cap, 1)
         if pace:
             a.speed = L.pace_for(pace, cur.get("phase"), base_speed)
             say(f"take pacing (sim s per video s): {pace}; pre-roll {preroll:g} s")
@@ -984,11 +1015,10 @@ def main(argv=None):
                                 show = new_pts[np.hypot(new_pts[:, 0] - c[0], new_pts[:, 1] - c[1]) < LIDAR_DRAW_R]
                             if len(show):
                                 overlay.add_points(show)
-            if not motion_drives:                      # winch-lowered radar pods (state.pods / winch_len_m)
-                if isinstance(pods, PodViz):
-                    pods.update(cur, poses, dt=rdt)
-                else:
-                    pods.update(cur, poses)
+            if motion_drives or not isinstance(pods, PodViz):
+                NullPods.update(pods, cur, poses)      # count / targets only: set_state already drew each winch pod
+            else:                                      # winch-lowered radar pods (state.pods / winch_len_m)
+                pods.update(cur, poses, dt=rdt)
             if dust is not None:
                 dust.update(poses, surface)
 
@@ -1004,7 +1034,7 @@ def main(argv=None):
                         cam.on_event(ev["xyz"], f"{ev['id']} {ev['what']}")
                 cam.observe(cur, poses, active)
             cam.update(rdt, focus, spread)
-            hud.update(cur, ctrl, accum.total, now=clock(), speed=a.speed)
+            hud.update(cur, ctrl, accum.total, now=clock(), speed=a.speed, sim_t=t_render)
             if rigs is not None:
                 rigs.update(poses, focus, rdt)
             overlay.tick(now)
@@ -1040,6 +1070,8 @@ def main(argv=None):
     runner.stop()
     if keys is not None:
         keys.close()
+    if ctrl is not None and ctrl.service is not None:
+        ctrl.service.close()
     if ctrl is not None:
         ctrl.write()
     state_path = os.path.join(a.out, "state.json") if a.out else None
@@ -1059,7 +1091,9 @@ def main(argv=None):
             "quick_listens": ctrl._ql_n, "new_evidence": [q["new"] for q in ctrl.quick if q["new"]],
             "replans": ctrl.replans, "visited": list(getattr(mission, "visited", [])),
             "dispatch": [(d.get("t"), d.get("from_pile"), d.get("to_pile")) for d in getattr(mission, "dispatch", [])],
-            "last_listen": ctrl.live.last_listen, "world_reads": ctrl.live.reads},
+            "last_listen": ctrl.live.last_listen, "world_reads": ctrl.live.reads,
+            "real_acoustic": ctrl.service is not None,
+            "acoustic_latency_s": ctrl.service.latency if ctrl.service is not None else None},
         "camera_shots": getattr(cam, "shots", None),
     }
     say("summary " + json.dumps(summary))

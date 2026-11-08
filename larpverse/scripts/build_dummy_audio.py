@@ -3,8 +3,10 @@
     .venv-audio/bin/python scripts/build_dummy_audio.py            # build every clip + manifest.json
     scripts/heavy.sh .venv-audio/bin/python scripts/build_dummy_audio.py check   # seed-7 listen through acoustic/
 
-No downloads: sources are the Piper voices already in acoustic/models, the teammate's CC0 recordings
-(data/audio_real/frances), ESC-50 clips (CC BY-NC 3.0, data/audio_real/esc50) and numpy/scipy synthesis.
+No downloads: sources are eSpeak NG (system libespeak-ng) for en/zh/id speech, the Piper vi_VN-vivos voice in
+acoustic/models (CC BY-NC-SA 4.0; the other Piper voices on disk are not used, see VOICE_LICENCES), the teammate's
+CC0 recordings (data/audio_real/frances), ESC-50 clips (CC BY-NC 3.0) and numpy/scipy synthesis.
+Also writes assets/audio/dummies/ATTRIBUTION.md (authors, licences, credit line for the video).
 Output: 48 kHz mono 16-bit WAV, loudness-matched (gated RMS, see ``gated_rms_db``), peak <= -1 dBFS.
 Every clip gets "through rubble" variants at 0.5/1.0/1.5/2.0 m (``rubble``: an ESTIMATED
 frequency-dependent loss, not a measurement). docs/DUMMY_AUDIO.md explains the library and how Isaac uses it.
@@ -35,19 +37,44 @@ PEAK_CEIL_DB = -1.0
 MODELS = os.path.join(ROOT, "acoustic", "models")
 FRANCES = os.path.join(ROOT, "data", "audio_real", "frances")
 ESC = os.path.join(ROOT, "data", "audio_real", "esc50")
-VOICES = {"en": os.path.join(MODELS, "en_US-lessac-low.onnx"),
-          "zh": os.path.join(MODELS, "piper_multi", "zh_CN-huayan-x_low.onnx"),
-          "id": os.path.join(MODELS, "piper_multi", "id_ID-news_tts-medium.onnx"),
-          "vi": os.path.join(MODELS, "piper_multi", "vi_VN-vivos-x_low.onnx")}
-VOICE_NOTES = {
-    "en": "Piper en_US-lessac-low (MIT code; voice: see its model card)",
-    "zh": "Piper zh_CN-huayan-x_low (Mainland female voice; the model's phoneme map has no tone symbols, so "
-          "tones are weak). Placeholder until a native Taiwanese Mandarin recording",
-    "id": "Piper id_ID-news_tts-medium",
-    "vi": "Piper vi_VN-vivos-x_low (multi-speaker)",
+# ---- TTS voices. Licences checked 2026-11-08 against the rhasspy/piper-voices MODEL_CARD files on Hugging Face
+# (the .onnx.json configs on disk carry no licence) and the dataset licence pages:
+#   en_US-lessac   : Blizzard 2013 Lessac data, licence "Research Purposes only", commercial use and voice-synthesis
+#                    development excluded (cstr.ed.ac.uk/projects/blizzard/2013/lessac_blizzard2013/license.html) -> NOT USED
+#   id_ID-news_tts : card says "Finetuned from U.S. English lessac voice", dataset link points at a Malayalam corpus,
+#                    licence "See URL" -> inherits the lessac research-only terms and is unclear -> NOT USED
+#   zh_CN-huayan   : card licence "Unknown" (github.com/PlayVoice/HuaYan_TTS) -> NOT USED
+#   vi_VN-vivos    : VIVOS corpus (AILAB, VNU-HCM University of Science), CC BY-NC-SA 4.0 -> USED, non-commercial,
+#                    share-alike: every clip rendered from it is CC BY-NC-SA 4.0
+# en / zh / id are rendered with eSpeak NG (system libespeak-ng 1.52, Debian package; formant synthesis, no
+# training data). The program is GPL-3.0-or-later; audio it generates is program output, not a copy of the program.
+PIPER_VI = os.path.join(MODELS, "piper_multi", "vi_VN-vivos-x_low.onnx")
+ESPEAK_VOICE = {"en": "en-us", "zh": "cmn", "id": "id"}
+TTS_ENGINE = {"en": "espeak", "zh": "espeak", "id": "espeak", "vi": "piper"}
+VOICE_LICENCES = {
+    "espeak-ng": {"used_for": ["en", "zh-TW", "id"], "licence": "eSpeak NG 1.52 (GPL-3.0-or-later program); generated "
+                  "audio carries no licence restriction", "non_commercial": False,
+                  "attribution": "eSpeak NG (github.com/espeak-ng/espeak-ng)"},
+    "piper vi_VN-vivos-x_low": {"used_for": ["vi"], "licence": "CC BY-NC-SA 4.0 (training data: VIVOS corpus)",
+                                "non_commercial": True,
+                                "attribution": "Piper vi_VN-vivos-x_low voice (rhasspy/piper-voices), trained on the VIVOS "
+                                               "corpus, AILAB, University of Science, VNU-HCM (ailab.hcmus.edu.vn/vivos), "
+                                               "CC BY-NC-SA 4.0"},
 }
-PIPER_LICENCE = "Piper TTS (MIT); voice model licence per its model card (rhasspy/piper-voices)"
+EXCLUDED_VOICES = {
+    "piper en_US-lessac-low": "Blizzard 2013 Lessac data: research purposes only (commercial use and voice-synthesis "
+                              "development excluded); a public demo video is not clearly research",
+    "piper id_ID-news_tts-medium": "fine-tuned from the lessac voice (inherits its research-only terms); its card's "
+                                   "dataset link points at a Malayalam corpus with licence 'See URL'",
+    "piper zh_CN-huayan-x_low": "model card licence 'Unknown'",
+}
 ESC_LIC = "CC BY-NC 3.0 (non-commercial; hackathon demo only)"
+# Per-clip Freesound credits, checked on freesound.org 2026-11-08 (ESC-50's meta/esc50.csv has ids only).
+ESC_FREESOUND = {"1-101336-A-30": ("Robinhood76", "01801 knocking.wav", "CC BY-NC 4.0"),
+                 "2-108017-A-24": ("ErocShadow", "Cough.wav", "CC Sampling+ 1.0"),
+                 "3-151080-A-20": ("PickleJones", "01 baby crying hard and long.wav", "CC0 1.0")}
+# Frances-set uploaders as shown on Freesound 2026-11-08 (all CC0); differs from her manifest for one clip.
+FREESOUND_UPLOADER = {"voice_04.wav": "Feed_"}
 ESC_CITE = "ESC-50, K. J. Piczak, ACM Multimedia 2015 (github.com/karolpiczak/ESC-50)"
 
 # Target loudness per kind: gated RMS in dBFS for the DRY clip ("as heard 1 m from the dummy").
@@ -227,15 +254,46 @@ def rubble(x, depth, seed=0, fs=FS):
 
 # ============================================================================ voices
 _piper = {}
+_espeak = {}
 
 
-def tts(lang, text, length_scale=1.0, speaker=None):
-    from piper import PiperVoice, SynthesisConfig
-    v = _piper.get(lang) or _piper.setdefault(lang, PiperVoice.load(VOICES[lang]))
-    cfg = SynthesisConfig(speaker_id=speaker, length_scale=length_scale, noise_scale=0.6, noise_w_scale=0.7)
-    ch = list(v.synthesize(text, cfg))
-    x = np.concatenate([c.audio_float_array for c in ch]).astype(float)
-    return to48(trim(x, ch[0].sample_rate), ch[0].sample_rate)
+def espeak_tts(voice, text, rate=160, pitch=50):
+    """eSpeak NG through the system libespeak-ng (ctypes, synchronous mode). Returns (float array, sample rate)."""
+    import ctypes
+    if not _espeak:
+        lib = ctypes.CDLL("libespeak-ng.so.1")
+        cbt = ctypes.CFUNCTYPE(ctypes.c_int, ctypes.POINTER(ctypes.c_short), ctypes.c_int, ctypes.c_void_p)
+        buf = []
+
+        def cb(wav, n, ev):
+            if n > 0:
+                buf.append(np.ctypeslib.as_array(wav, shape=(n,)).copy())
+            return 0
+        _espeak.update(lib=lib, cb=cbt(cb), buf=buf, sr=lib.espeak_Initialize(2, 0, None, 0))
+        lib.espeak_SetSynthCallback(_espeak["cb"])
+    lib, buf = _espeak["lib"], _espeak["buf"]
+    buf.clear()
+    if lib.espeak_SetVoiceByName(voice.encode()) != 0:
+        raise RuntimeError(f"espeak-ng voice {voice} missing")
+    lib.espeak_SetParameter(1, int(rate), 0)            # espeakRATE (words per minute)
+    lib.espeak_SetParameter(3, int(pitch), 0)           # espeakPITCH (0-100)
+    b = text.encode("utf-8") + b"\0"
+    lib.espeak_Synth(b, len(b), 0, 1, 0, 1, None, None)  # POS_CHARACTER, espeakCHARS_UTF8
+    lib.espeak_Synchronize()
+    return np.concatenate(buf).astype(float) / 32768.0, _espeak["sr"]
+
+
+def tts(lang, text, slow=False):
+    """Calm TTS at 48 kHz: eSpeak NG for en/zh/id, Piper vivos (speaker 12) for vi. slow=True for weak voices."""
+    if TTS_ENGINE[lang] == "espeak":
+        x, sr = espeak_tts(ESPEAK_VOICE[lang], text, rate=115 if slow else 165, pitch=45 if slow else 55)
+    else:
+        from piper import PiperVoice, SynthesisConfig
+        v = _piper.get(lang) or _piper.setdefault(lang, PiperVoice.load(PIPER_VI))
+        cfg = SynthesisConfig(speaker_id=12, length_scale=1.35 if slow else 0.95, noise_scale=0.6, noise_w_scale=0.7)
+        ch = list(v.synthesize(text, cfg))
+        x, sr = np.concatenate([c.audio_float_array for c in ch]).astype(float), ch[0].sample_rate
+    return to48(trim(x, sr), sr)
 
 
 def shout_fx(x, fs=FS):
@@ -447,8 +505,11 @@ def frances(fname):
             for r in csv.DictReader(f):
                 FRANCES_META[r["file"]] = r
     r = FRANCES_META[fname]
+    who = FREESOUND_UPLOADER.get(fname, r["creator"])
+    note = f" (listed as {r['creator']} in the URL and the teammate manifest)" if who != r["creator"] else ""
     return {"source": f"teammate recording set (F. Valisalo), data/audio_real/frances/{fname}",
-            "licence": "CC0 1.0", "attribution": f"\"{r['title']}\" by {r['creator']} ({r['page']}), CC0",
+            "licence": "CC0 1.0", "non_commercial": False,
+            "author": who, "attribution": f"\"{r['title']}\" by {who}{note} ({r['page']}), CC0",
             "origin_url": r["page"]}
 
 
@@ -461,20 +522,30 @@ def esc(key):
             for r in csv.DictReader(f):
                 ESC_META[r["filename"][:-4]] = r
     r = ESC_META[key]
+    who, title, fl = ESC_FREESOUND[key]
     return {"source": f"ESC-50 clip {key} ({r['category']}), data/audio_real/esc50/{key}_16k.wav",
-            "licence": ESC_LIC,
-            "attribution": f"{ESC_CITE}; Freesound sound {r['src_file']} (freesound.org/s/{r['src_file']})",
+            "licence": f"{ESC_LIC}; Freesound original: {fl}", "non_commercial": True, "author": who,
+            "attribution": f"\"{title}\" by {who} (freesound.org/s/{r['src_file']}, {fl}), via {ESC_CITE}",
             "origin_url": f"https://freesound.org/s/{r['src_file']}"}
 
 
 def synth(what):
     return {"source": f"procedural synthesis in scripts/build_dummy_audio.py ({what})", "licence": "CC0 1.0 (generated here)",
+            "non_commercial": False, "author": "Larpverse team",
             "attribution": "Larpverse team (generated)", "origin_url": None}
 
 
 def tts_src(lang, extra=""):
-    return {"source": f"TTS: {VOICE_NOTES[lang]}" + (f"; {extra}" if extra else ""), "licence": PIPER_LICENCE,
-            "attribution": f"Synthesised with Piper ({os.path.basename(VOICES[lang])})", "origin_url": None}
+    if TTS_ENGINE[lang] == "espeak":
+        v = VOICE_LICENCES["espeak-ng"]
+        src = f"TTS: eSpeak NG voice '{ESPEAK_VOICE[lang]}' (formant synthesis, robotic)"
+        if lang == "zh":
+            src += "; Mandarin read from Traditional characters, placeholder until a native Taiwanese Mandarin recording"
+    else:
+        v = VOICE_LICENCES["piper vi_VN-vivos-x_low"]
+        src = "TTS: Piper vi_VN-vivos-x_low, speaker 12"
+    return {"source": src + (f"; {extra}" if extra else ""), "licence": v["licence"],
+            "non_commercial": v["non_commercial"], "author": None, "attribution": v["attribution"], "origin_url": None}
 
 
 # Multilingual phrases. zh: Mandarin with Taiwanese wording in Traditional characters (有沒有人, 腳, 啦).
@@ -568,10 +639,9 @@ def build(out=OUT, verbose=True):
     # ---- 1b. multilingual TTS calls (processed towards a raised voice)
     for lang, ph in PHRASES.items():
         for key, (text, en) in ph.items():
-            spk = 12 if lang == "vi" else None
-            x = shout_fx(tts(lang, text, 0.95, spk))
+            x = shout_fx(tts(lang, text))
             emit(f"voice_{lang}_{key}_tts", x, "voice", tts_src(lang), LANG_TAG[lang], text, en or text,
-                 ["Piper TTS", "raised-voice processing: +10 % pitch, +5 dB presence at 2.5 kHz, soft saturation",
+                 [f"TTS ({TTS_ENGINE[lang]})", "raised-voice processing: +10 % pitch, +5 dB presence at 2.5 kHz, soft saturation",
                   "loudness match"],
                  schedule("loop", period_s=9.0, jitter_s=2.0) if key == "call" else
                  schedule("after_callout", latency_s=[1.5, 3.5], repeats=2, period_s=4.0),
@@ -579,11 +649,11 @@ def build(out=OUT, verbose=True):
 
     # ---- 2. weak / fading voices (processed)
     for lang, (frags, en) in WEAK.items():
-        parts = [tts(lang, f, 1.35, 12 if lang == "vi" else None) for f in frags]
+        parts = [tts(lang, f, slow=True) for f in frags]
         x = weak_fx(parts, rng)
         text = ("……" if lang == "zh" else "... ").join(frags) + ("……" if lang == "zh" else "...")
         emit(f"weak_{lang}_tts", x, "weak_voice", tts_src(lang, "PROCESSED to a weak voice"), LANG_TAG[lang],
-             text, en, ["Piper TTS, slow (length_scale 1.35)", "long pauses 1.5-2.4 s with faint inhales",
+             text, en, [f"TTS ({TTS_ENGINE[lang]}), slow", "long pauses 1.5-2.4 s with faint inhales",
                         "energy decay -6 dB across the clip", "pitch/tempo decay -6 %", "breathy noise mix (-14 dB)",
                         "low-pass 4 kHz", "loudness match at -32 dBFS (12 dB under normal voice)"],
              schedule("loop", period_s=25.0, jitter_s=5.0), synthetic=True)
@@ -595,20 +665,22 @@ def build(out=OUT, verbose=True):
           "breathy noise, low-pass 4 kHz", "loudness match at -32 dBFS"],
          schedule("loop", period_s=25.0, jitter_s=5.0))
 
-    # ---- 3. knocks
-    emit("knock_pipe_3x", knock_pattern(hit_pipe, rng), "knock",
+    # ---- 3. knocks. Each synthesised clip has its own seeded RNG, so a TTS change never changes it. The
+    # concrete seed (1) was picked among 8: its 3-knock pattern keeps a knock_periodicity of 0.80-0.83 through
+    # 0.5-1.5 m of rubble, where other seeds fall to 0-0.5 (the reverberant tail blurs onsets 0.30 s apart).
+    emit("knock_pipe_3x", knock_pattern(hit_pipe, np.random.default_rng(5)), "knock",
          synth("modal steel pipe: free-free beam modes of a 1.5 m DN50 pipe, half-sine contact 0.6 ms"),
          processing=["3 groups of 3 knocks, 0.30 s apart, every ~2.6 s", "loudness match"],
          sched=schedule("loop", period_s=20.0, jitter_s=3.0), synthetic=True)
-    emit("knock_concrete_3x", knock_pattern(hit_slab, rng), "knock",
+    emit("knock_concrete_3x", knock_pattern(hit_slab, np.random.default_rng(1)), "knock",
          synth("concrete slab: Kirchhoff plate modes of a 3.0 x 2.4 x 0.15 m slab + contact thud"),
          processing=["3 groups of 3 knocks, 0.30 s apart, every ~2.6 s", "loudness match"],
          sched=schedule("loop", period_s=20.0, jitter_s=3.0), synthetic=True)
-    emit("knock_pipe_3x_once", knock_pattern(hit_pipe, rng, groups=1), "knock",
+    emit("knock_pipe_3x_once", knock_pattern(hit_pipe, np.random.default_rng(15), groups=1), "knock",
          synth("modal steel pipe, one group of three: the instructed reply to the call-out"),
          processing=["one group of 3 knocks", "loudness match"],
          sched=schedule("after_callout", latency_s=[1.0, 4.0], repeats=3, period_s=4.0), synthetic=True)
-    emit("knock_concrete_3x_once", knock_pattern(hit_slab, rng, groups=1), "knock",
+    emit("knock_concrete_3x_once", knock_pattern(hit_slab, np.random.default_rng(11), groups=1), "knock",
          synth("concrete slab, one group of three: the instructed reply to the call-out"),
          processing=["one group of 3 knocks", "loudness match"],
          sched=schedule("after_callout", latency_s=[1.0, 4.0], repeats=3, period_s=4.0), synthetic=True)
@@ -635,15 +707,17 @@ def build(out=OUT, verbose=True):
     emit("dog_bark", highpass(to48(best_window(x, fs, 4.0), fs), 60), "dog", frances("dog_03.wav"),
          processing=["best 4 s window (one bout)", "resample 16 -> 48 kHz", "high-pass 60 Hz", "loudness match"],
          sched=schedule("loop", period_s=15.0, jitter_s=5.0), rubble_variants=False)
-    emit("generator_60hz", generator(rng, 60.0), "generator",
+    # generator seed 2: its 60 Hz firing pattern aliases least with the pipeline's 10 ms onset envelope
+    # (knock_rhythm 0.09 vs up to 0.78 for other seeds), so it is not mistaken for rapping
+    emit("generator_60hz", generator(np.random.default_rng(2), 60.0), "generator",
          synth("4-cyl diesel genset at 1800 rpm, 60 Hz mains (Taiwan)"),
          processing=["seamless 12 s loop", "loudness match"], sched=schedule("continuous"),
          synthetic=True, rubble_variants=False)
-    emit("generator_50hz", generator(rng, 50.0), "generator",
+    emit("generator_50hz", generator(np.random.default_rng(1), 50.0), "generator",
          synth("4-cyl diesel genset at 1500 rpm, 50 Hz (as acoustic/scene.py)"),
          processing=["seamless 12 s loop", "loudness match"], sched=schedule("continuous"),
          synthetic=True, rubble_variants=False)
-    emit("settling_creak_trickle", settling(rng), "settling",
+    emit("settling_creak_trickle", settling(np.random.default_rng(7)), "settling",
          synth("stick-slip creak, crack + thump, Poisson gravel trickle, low rumble"),
          processing=["loudness match"], sched=schedule("loop", period_s=30.0, jitter_s=10.0),
          synthetic=True, rubble_variants=False)
@@ -667,6 +741,8 @@ def build(out=OUT, verbose=True):
                          "void_reverb": "RT60 0.22 s, direct-to-reverberant +8 dB",
                          "status": "ESTIMATE, not measured. 3 dB/m broadband matches acoustic/scene.py and "
                                    "sim/callout.py; the frequency slope is a heuristic for porous granular rubble"},
+        "voice_licences": VOICE_LICENCES,
+        "excluded_voices": EXCLUDED_VOICES,
         "kinds": list(KINDS),
         "clips": clips,
         "todo": TODO,
@@ -676,7 +752,71 @@ def build(out=OUT, verbose=True):
     }
     with open(os.path.join(out, "manifest.json"), "w", encoding="utf-8") as f:
         json.dump(manifest, f, indent=1, ensure_ascii=False)
+    write_attribution(manifest, out)
     return manifest
+
+
+def _used_clips(man):
+    used = set()
+    for p in man["profiles"] + man["hidden_dummies"]:
+        for key in ("idle", "after_callout"):
+            if p.get(key):
+                used |= {c.split("__")[0] for c in p[key]["playlist"]}
+    return used | {a["clip"] for a in man["ambient"]}
+
+
+def write_attribution(man, out=OUT):
+    """assets/audio/dummies/ATTRIBUTION.md: every non-original clip, its author and licence, and credit lines."""
+    base = [c for c in man["clips"] if c["parent"] is None]
+    used = _used_clips(man)
+    L = ["# Dummy audio: attribution and licences", "",
+         "Generated by `scripts/build_dummy_audio.py` from `manifest.json`. Freesound authors and licences were checked "
+         "on freesound.org, and the TTS voice licences on the rhasspy/piper-voices model cards, on 2026-11-08.",
+         "Each clip's `rubble/<id>__<depth>m.wav` variants carry the same credit and licence as the clip.", "",
+         "**Non-commercial:** the library as a whole is for this non-commercial hackathon demo only. The ESC-50 clips "
+         "(CC BY-NC 3.0 as distributed) and the Vietnamese TTS (CC BY-NC-SA 4.0, share-alike) are non-commercial; "
+         "`non_commercial` is true on those clips in the manifest.", "",
+         "## Credit line for the video description", "",
+         "Short version, covering the clips that the dummy profiles play:", "", "> " + credit_line(man, used), "",
+         "Full version, covering every clip in the library:", "", "> " + credit_line(man, {c["id"] for c in base}), "",
+         "## Recorded clips (not made by us)", "",
+         "| clip | used in a profile | author | original | licence | source |", "|---|---|---|---|---|---|"]
+    for c in base:
+        if c["synthetic"]:
+            continue
+        L.append(f"| `{c['id']}` | {'yes' if c['id'] in used else 'no'} | {c['author']} | {c['origin_url']} | "
+                 f"{c['licence']} | {c['source'].split(', data/')[0]} |")
+    L += ["", "## Text-to-speech clips", "", "| clip | used in a profile | engine | licence | non-commercial |",
+          "|---|---|---|---|---|"]
+    for c in base:
+        if c["synthetic"] and c["source"].startswith("TTS"):
+            L.append(f"| `{c['id']}` | {'yes' if c['id'] in used else 'no'} | {c['source'].split(';')[0][5:]} | "
+                     f"{c['licence']} | {'yes' if c['non_commercial'] else 'no'} |")
+    L += ["", "Voices on disk that are **not used**, and why:", ""]
+    L += [f"- {k}: {v}" for k, v in man["excluded_voices"].items()]
+    L += ["", "## Generated here (no third-party content)", "",
+          ", ".join(f"`{c['id']}`" for c in base if c["synthetic"] and not c["source"].startswith("TTS")) +
+          ": procedural numpy/scipy synthesis by the Larpverse team, CC0.", ""]
+    with open(os.path.join(out, "ATTRIBUTION.md"), "w", encoding="utf-8") as f:
+        f.write("\n".join(L))
+
+
+def credit_line(man, ids):
+    clips = [c for c in man["clips"] if c["parent"] is None and c["id"] in ids]
+    cc0 = sorted({c["author"] for c in clips if not c["synthetic"] and c["licence"].startswith("CC0")})
+    parts = []
+    if cc0:
+        parts.append("Recordings from Freesound by " + ", ".join(cc0) + " (CC0)")
+    esc_ = [c for c in clips if c["source"].startswith("ESC-50")]
+    if esc_:
+        parts.append("; ".join(c["attribution"].split(", via ")[0] for c in esc_) +
+                     ", via the ESC-50 dataset (K. J. Piczak, 2015, CC BY-NC 3.0)")
+    if any("vivos" in c["source"] for c in clips):
+        parts.append("Vietnamese speech synthesised with the Piper vi_VN-vivos voice, trained on the VIVOS corpus "
+                     "(AILAB, University of Science, VNU-HCM), CC BY-NC-SA 4.0")
+    if any("eSpeak" in c["source"] for c in clips):
+        parts.append("Other synthetic speech by eSpeak NG")
+    return "Audio: " + ". ".join(parts) + ". Non-commercial demo."
 
 
 # ============================================================================ profiles
@@ -691,9 +831,9 @@ PROFILES = [
      "burial_depth_m": 0.5, "prim": "/World/Dummies/A3",
      "depth_note": "acoustic path 0.5 m (the voice escapes through a void opening; acoustic/scene.py uses 0.4 m "
                    "for voices); the radar depth stays the scenario's 0.89 m",
-     "idle": {"playlist": [_r("voice_zh_call_tts", 0.5), _r("voice_en_help_real_b", 0.5), _r("voice_en_call_tts", 0.5)],
+     "idle": {"playlist": [_r("voice_zh_call_tts", 0.5), _r("voice_en_help_real_b", 0.5), _r("voice_en_please_real", 0.5)],
               "order": "cycle", **schedule("loop", start_s=1.0, period_s=9.0, jitter_s=2.0)},
-     "after_callout": {"playlist": [_r("voice_zh_here_tts", 0.5), _r("voice_en_here_tts", 0.5)], "order": "cycle",
+     "after_callout": {"playlist": [_r("voice_zh_here_tts", 0.5), _r("voice_en_help_real_a", 0.5)], "order": "cycle",
                        **schedule("after_callout", latency_s=[1.5, 3.5], repeats=2, period_s=4.0)},
      "story": "shouts in Mandarin (Taiwanese wording) and English: 'my leg is trapped'"},
     {"dummy_id": "B1", "pile": "B1", "scenario_kind": "weak_voice", "physio": "irregular_apneic",
@@ -791,7 +931,7 @@ def check(out=OUT):
     # (pile, scene.KINDS key for the 1 m level, clips at seconds)
     plan = {
         "baseline": [
-            ("A3", "voice", [("voice_zh_call_tts__0.5m", 1.0), ("voice_en_call_tts__0.5m", 12.5)]),
+            ("A3", "voice", [("voice_zh_call_tts__0.5m", 1.0), ("voice_en_please_real__0.5m", 12.5)]),
             ("B1", "weak_voice", [("weak_en_tts__1.0m", 5.0)]),
             ("B2", "knock", [("knock_concrete_3x__1.0m", 9.0)]),
             ("C2", "dog", [("dog_bark", 2.0), ("dog_bark", 18.5)]),

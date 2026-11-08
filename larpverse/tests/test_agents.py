@@ -74,7 +74,7 @@ def test_provider_resolution(monkeypatch):
     monkeypatch.setenv("ANTHROPIC_API_KEY", "x")
     assert llm.resolve()[0] == "anthropic"
     _with_key(monkeypatch)
-    assert llm.resolve() == ("gemini", "gemini-3.5-flash")
+    assert llm.resolve() == ("gemini", "gemini-3.7-flash")
     monkeypatch.setenv("LLM_PROVIDER", "none")
     assert llm.resolve()[0] == "none"
 
@@ -87,7 +87,7 @@ def test_gemini_request_shape_and_parse(monkeypatch):
     out = llm.call_json("hello", gemini_decider.SCHEMA, system="sys", meta=meta)
     assert out == {"choice": "o1", "rationale": "ok"} and meta["provider"] == "gemini"
     c = fake.calls[0]
-    assert c["url"].endswith("/models/gemini-3.5-flash:generateContent")
+    assert c["url"].endswith("/models/gemini-3.7-flash:generateContent")
     assert c["headers"]["x-goog-api-key"] == "test-key-not-real"
     gen = c["body"]["generationConfig"]
     assert gen["responseMimeType"] == "application/json" and gen["temperature"] == 0.2

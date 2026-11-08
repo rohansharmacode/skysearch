@@ -22,3 +22,6 @@ dashboard/data/portal.json
 dashboard/data/comms_replies.json
 !data/impact_params.json
 !data/impact_results.json
+!data/case_studies.json
+!data/economics_params.json
+!data/deployment_params.json

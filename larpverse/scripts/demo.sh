@@ -74,7 +74,7 @@ fi
 URL="http://localhost:$PORT/dashboard/"
 if curl -sf -o /dev/null --max-time 3 "$URL"; then echo "server   : dev server up on :$PORT"
 else warn "dev server NOT reachable on :$PORT. Start it in another terminal (from the repo root):"
-  warn "    python3 -m http.server $PORT --bind 127.0.0.1 --directory \"$ROOT\""
+  warn "    python3 scripts/serve.py --port $PORT      # ops server: dashboard + /api/tasking, /api/broadcast, /api/portal"
   warn "The mission still runs and writes dashboard/data; reload the page once the server is up."
 fi
 

@@ -425,3 +425,20 @@ def test_pointcloud_preview_and_tiles(tmp_path):
     assert sum(t["count"] for t in pc["tiles"]) == 40000
     t = pc["tiles"][0]
     assert os.path.getsize(tmp_path / t["url"]) == 12 * t["count"] and t["bounds"][2] - t["bounds"][0] == 16.0
+
+
+def test_nonhuman_radar_return_is_not_a_ping(monkeypatch):
+    """A firm radar fix whose vitals say 'not human breathing' stays a scan note, never a ping, no revisit."""
+    from sim import grid_mission as G
+
+    def fake_attach(self, pm, c):
+        c["vitals"] = {"source": "machinery_vibration", "source_reason": "machinery vibration at 1.2 Hz",
+                       "triage_hint": "reject", "condition": "unclear"}
+        c["dig_score"] = 0.0
+    monkeypatch.setattr(G.GridMission, "_attach_vitals", fake_attach)
+    m = GridMission(seed=7, verbose=False, acoustic="stub", flight_model="kinematic", penetration="legacy",
+                    delivery="land", pile_budget=2)
+    m.run()
+    assert not [c for c in m.done_cands if c["status"] == "candidate"]
+    noted = [p for p in m.piles.values() if p.get("radar_note")]
+    assert noted and all("not a person" in p["radar_note"] and p.get("no_revisit") for p in noted)

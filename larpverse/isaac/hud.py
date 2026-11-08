@@ -10,7 +10,10 @@ Panels (colours as everywhere: red radar, yellow human audio, teal acoustic prio
   header    LIVE, sim clock, time-lapse factor ("sped up xN"), phase, pile
   lidar     points/s and map coverage (2 m cells of the sectors with at least one LiDAR return)
   listen    per-drone bearing cones of the latest listen + the top clip (class, language, transcript, human score)
-  radar     the live slow-time breathing waveform of the last pod scan + range-bin intensity, rate, quality
+  radar     the pod scan's own slow-time displacement (vitals.identify on its IF cube; last 10 s window, replayed at
+            the take pace) + range-bin intensity; "analysing breathing... (n s)" until 45 s of dwell, then the
+            whole-dwell verdict (early verdicts flip). No live scan: the synthetic library's reference stream for the
+            latest ping's condition, labelled "NOT this scan". Red / white on dark, like docs/img/radar_signatures.png
   vitals    the condition label of the latest ping (e.g. "irregular breathing with pauses - check first") + the
             "aid for rescuers, not a diagnosis" note
   decision  the agent's latest dispatch / re-plan line and the dig order
@@ -27,12 +30,26 @@ import time
 import numpy as np
 
 AID_NOTE = "aid for rescuers, not a diagnosis"
+VERDICT_AFTER_S = 45.0          # radar verdicts flip early in a dwell: show "analysing" before this (or the final)
+SIG_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "assets", "radar_signatures")
+_SIG_CACHE = {}
+
+
+def load_signature(cls):
+    """assets/radar_signatures/<class>.json (radar-signature-hud-v1), cached; None if missing."""
+    if cls not in _SIG_CACHE:
+        try:
+            with open(os.path.join(SIG_DIR, f"{cls}.json")) as f:
+                _SIG_CACHE[cls] = json.load(f)
+        except (OSError, ValueError):
+            _SIG_CACHE[cls] = None
+    return _SIG_CACHE[cls]
 CONDITION_TEXT = {"irregular_apneic": "irregular breathing with pauses - check first",
                   "unconscious_slow": "slow regular breathing (possibly unconscious) - check first",
                   "distressed_tachypnea": "rapid shallow breathing - possible injury / distress",
                   "calm": "calm regular breathing - stable, waiting",
                   "unknown": "breathing pattern unclear - rescan"}
-COL = {"red": 0xFF4444EE, "yellow": 0xFF33CCFF, "teal": 0xFFB4C814, "purple": 0xFFFF6B9B, "green": 0xFF5EC522,
+COL = {"red": 0xFF3C3CE8, "radar_bg": 0xE0100C0B, "yellow": 0xFF33CCFF, "teal": 0xFFB4C814, "purple": 0xFFFF6B9B, "green": 0xFF5EC522,
        "white": 0xFFEEEEEE, "grey": 0xFFAAAAAA, "bg": 0xB0141414, "blue": 0xFFF6823B}   # omni.ui is 0xAABBGGRR
 
 
@@ -104,7 +121,7 @@ class HudModel:
         return self.rate
 
     # ------------------------------------------------------------------ build
-    def update(self, state, live=None, lidar_total=0, now=None, speed=None):
+    def update(self, state, live=None, lidar_total=0, now=None, speed=None, sim_t=None):
         st = state or {}
         if self.bounds is None and (st.get("site") or {}).get("bounds"):
             self._grid(st["site"]["bounds"], st.get("piles") or [])
@@ -122,8 +139,8 @@ class HudModel:
         P["lidar"] = {"pts_per_s": round(rate), "total": int(lidar_total or 0), "coverage": round(cov, 3),
                       "text": f"LiDAR  {rate / 1000:.0f}k pts/s  |  {int(lidar_total or 0) / 1e6:.2f} M pts  |  "
                               f"map {100 * cov:.0f}% of the sectors"}
-        P["listen"] = self._listen(st)
-        P["radar"] = self._radar(st, lj)
+        P["listen"] = self._listen(st, lj)
+        P["radar"] = self._radar(st, lj, float(st.get("t") or 0.0) if sim_t is None else float(sim_t))
         P["vitals"] = self._vitals(st)
         P["decision"] = self._decision(st, lj)
         P["event"] = self._event(lj)
@@ -132,7 +149,12 @@ class HudModel:
         self.updates += 1
         return P
 
-    def _listen(self, st):
+    def _listen(self, st, lj=None):
+        w = ((lj or {}).get("acoustic") or {}).get("waiting")
+        if w:
+            return {"cones": [], "top": None, "waiting": w,
+                    "text": f"Listen  -  real acoustic pipeline analysing the rotors-off listen ({w['s']:.0f} s); "
+                            "mission clock held until it answers"}
         clips = st.get("acoustic_clips") or []
         if not clips:
             return {"cones": [], "top": None, "text": "Listen  -  no listen yet (rotors-off listens after each radar phase)"}
@@ -159,22 +181,68 @@ class HudModel:
                                         "pile": top.get("pile_id"), "priority": top.get("priority")},
                 "text": f"Listen {n}  cones: {cone_txt}\n{line}" + (f"\n\"{tx}\"" if tx else "")}
 
-    def _radar(self, st, lj):
+    def _radar(self, st, lj, t):
+        """The pod scan's own slow-time signal (vitals.identify on the actual IF cube), replayed from the moment
+        the dwell's data is in, at the take pace; the verdict only after VERDICT_AFTER_S of dwell (early partial
+        verdicts flip, docs/RADAR_SIGNATURES.md). Without a live scan: the library's reference stream for the
+        latest ping's condition, labelled as such (pre-viz / fallback)."""
         sc = (lj or {}).get("last_scan")
+        if sc and sc.get("sig") and sc["sig"].get("wave_mm"):
+            sig = sc["sig"]
+            p = min(max(t - float(sc["t"]), 0.0), float(sig["dwell_s"]))
+            head = (f"Radar  pod {sc.get('drone_id')} scan {sc.get('scan_id')} at {sc.get('pile')}  |  dwell "
+                    f"{sig['dwell_s']:.0f} s at the take pace  |  return at {sig['range_m']:.1f} m  |  quality {sc.get('quality')}")
+            return self._play(sig["wave_mm"], sig.get("fps", 10.0), p, sig["dwell_s"], sig["final"], head,
+                              sc.get("range_db"), "live")
+        ref = self._library(st, t)
+        if ref is not None:
+            return ref
         if sc:
             hz = sc.get("breathing_hz")
-            rate = f"{60 * hz:.0f}/min" if hz else "no breathing-like return"
-            return {"wave": sc.get("wave"), "range_db": sc.get("range_db"), "range_axis": sc.get("range_axis"),
-                    "text": f"Radar  {sc.get('drone_id')} pod scan {sc.get('scan_id')} at {sc.get('pile')}  |  "
-                            f"quality {sc.get('quality')}  |  {rate}  |  ranges {sc.get('ranges')}"}
+            return {"wave": sc.get("wave"), "range_db": sc.get("range_db"), "verdict": None, "source": "live",
+                    "text": f"Radar  {sc.get('drone_id')} scan {sc.get('scan_id')} at {sc.get('pile')}  |  quality "
+                            f"{sc.get('quality')}  |  " + (f"{60 * hz:.0f}/min" if hz else "no breathing-like return")}
         scans = st.get("scans") or []
         if not scans:
-            return {"wave": None, "range_db": None, "text": "Radar  -  no scan yet"}
-        s = scans[-1]
-        hz = s.get("breathing_hz")
-        return {"wave": None, "range_db": None,
-                "text": f"Radar  {s.get('drone_id')} scan {s.get('scan_id')}  |  quality {s.get('quality')}  |  "
+            return {"wave": None, "range_db": None, "verdict": None, "source": None, "text": "Radar  -  no scan yet"}
+        s_ = scans[-1]
+        hz = s_.get("breathing_hz")
+        return {"wave": None, "range_db": None, "verdict": None, "source": "state",
+                "text": f"Radar  {s_.get('drone_id')} scan {s_.get('scan_id')}  |  quality {s_.get('quality')}  |  "
                         + (f"{60 * hz:.0f}/min" if hz else "no breathing-like return")}
+
+    def _play(self, wave, fps, p, dwell, final, head, range_db, source):
+        k = int(p * fps)
+        win = wave[max(0, k - int(10 * fps)):k + 1]
+        gate = min(VERDICT_AFTER_S, float(dwell))
+        if p < gate - 1e-6:
+            verdict, line = None, f"analysing breathing... ({p:.0f} s)"
+        else:
+            verdict = final
+            if final.get("source") == "human_breathing":
+                lab = CONDITION_TEXT.get(final.get("condition")) or final.get("text")
+                rate = f", {final['rate_bpm']:.0f}/min" if final.get("rate_bpm") else ""
+                line = f"{lab}{rate} (confidence {final.get('conf')})  |  {AID_NOTE}"
+            else:
+                line = f"{final.get('source')}: {_short(final.get('text'), 90)} (not dug for)"
+        return {"wave": win, "range_db": range_db, "verdict": verdict, "source": source, "elapsed_s": round(p, 1),
+                "text": f"{head}\n{line}"}
+
+    def _library(self, st, t):
+        pings = [c for c in (st.get("pings") or []) if (c.get("vitals") or {}).get("condition") not in (None, "unknown")]
+        if not pings:
+            return None
+        c = max(pings, key=lambda c: c.get("t_found") or 0)
+        cond = c["vitals"]["condition"]
+        ref = load_signature(cond)
+        if ref is None:
+            return None
+        n = len(ref["wave_mm"])
+        p = min(max(t - float(c.get("t_found") or 0.0), 0.0), n / ref["fps"])
+        out = self._play(ref["wave_mm"], ref["fps"], p, n / ref["fps"], {**ref["final"], "rate_bpm": None},
+                         f"Radar  reference signature '{cond}' (synthetic library, NOT this scan) for {c['id']}",
+                         None, "library")
+        return out
 
     def _vitals(self, st):
         pings = [c for c in (st.get("pings") or []) if c.get("vitals")]
@@ -219,7 +287,7 @@ class HudModel:
     def _sources(st, lj):
         mi = st.get("mission") or {}
         src = ((lj or {}).get("last_listen") or {}).get("source") or mi.get("acoustic_source") or "-"
-        synth = "synthetic generator" if str(src).startswith("stub") else "acoustic pipeline"
+        synth = "SYNTHETIC generator (not for the take)" if str(src).startswith("stub") else "acoustic pipeline"
         return (f"Sources: radar = synthetic IF + real DSP; acoustic = {synth} ({src}); victims from the Isaac stage. "
                 "Pings are candidate regions.")
 
@@ -298,13 +366,13 @@ class OmniHud:
             label("event", "blue", 15)
             label("lidar", "purple")
             label("listen", "yellow")
-            label("radar", "red")
-            ui.Label("breathing waveform (slow time)", height=0, style={"color": COL["grey"], "font_size": 12})
+            label("radar", "white")             # radar: red / white on dark (docs/img/radar_signatures.png)
+            ui.Label("chest displacement, last 10 s (mm, slow time)", height=0, style={"color": COL["red"], "font_size": 12})
             self.plots["wave"] = ui.Plot(ui.Type.LINE, -1.0, 1.0, *([0.0] * self.WAVE_N), height=64,
-                                         style={"color": COL["red"], "background_color": 0x40000000})
-            ui.Label("range-bin intensity (dB)", height=0, style={"color": COL["grey"], "font_size": 12})
+                                         style={"color": COL["white"], "background_color": COL["radar_bg"]})
+            ui.Label("range-bin intensity (dB)", height=0, style={"color": COL["red"], "font_size": 12})
             self.plots["range"] = ui.Plot(ui.Type.HISTOGRAM, 0.0, 1.0, *([0.0] * self.RANGE_N), height=48,
-                                          style={"color": COL["red"], "background_color": 0x40000000})
+                                          style={"color": COL["red"], "background_color": COL["radar_bg"]})
             label("vitals", "teal", 16)
             label("decision", "green", 15)
             label("source", "grey", 12)
@@ -365,11 +433,11 @@ class Hud:
         self.view = make_hud(kind, log, on_button)
         self.out, self.period, self._last = out_dir, 1.0 / max(hz, 0.1), -1e9
 
-    def update(self, state, live=None, lidar_total=0, now=0.0, speed=None, force=False):
+    def update(self, state, live=None, lidar_total=0, now=0.0, speed=None, force=False, sim_t=None):
         if not force and now - self._last < self.period:
             return None
         self._last = now
-        panels = self.model.update(state, live, lidar_total, now, speed)
+        panels = self.model.update(state, live, lidar_total, now, speed, sim_t=sim_t)
         self.view.draw(panels)
         if self.out:
             path = os.path.join(self.out, "hud.json")

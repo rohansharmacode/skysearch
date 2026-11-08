@@ -65,6 +65,7 @@ const CSS = `
   background:rgba(10,14,18,0.8); border:1px solid #39424a; white-space:nowrap; margin-top:4px; }
 .pk-status i { width:12px; height:12px; border-radius:50%; background:#4fd18b; box-shadow:0 0 10px #4fd18b; }
 .pk-status.loading { border-color:rgba(255,176,32,0.55); }
+.pk-status.bad { border-color:rgba(255,90,82,0.7); color:#ffb4ae; } .pk-status.bad i { background:#ff5a52; box-shadow:0 0 10px #ff5a52; animation:none; }
 .pk-status.loading i { background:var(--amber, #ffb020); box-shadow:0 0 10px var(--amber, #ffb020); animation: pkblink 1.1s ease-in-out infinite; }
 @keyframes pkblink { 50% { opacity:.25; } }
 .pk-hint { position:absolute; left:50%; bottom:34px; transform:translateX(-50%); font-size:21px; color:#cfd8de; white-space:nowrap;
@@ -630,6 +631,15 @@ function setLoading(on) {
   el.querySelector('span').textContent = on ? 'Isaac Sim is loading this site… pick your spot now' : 'Ready';
 }
 
+// status pill with custom text: kind = 'loading' (amber, blinking) | 'ready' (green) | 'bad' (red)
+function setStatus(text, kind) {
+  if (!S) return;
+  S.loading = kind === 'loading';
+  const el = S.root.querySelector('.pk-status'); if (!el) return;
+  el.classList.toggle('loading', kind === 'loading'); el.classList.toggle('bad', kind === 'bad');
+  el.querySelector('span').textContent = text;
+}
+
 // test hook: stage-pixel position of a pile centre (or any world xy) in the current topo view
 function screenOf(idOrXY) {
   const T = S && S.topo; if (!T || !T.m) return null;
@@ -638,5 +648,5 @@ function screenOf(idOrXY) {
   const q = proj(T.m, xy[0], xy[1], H.at(xy[0], xy[1])), W = S.stage.offsetWidth || 1920, Hs = S.stage.offsetHeight || 1080;
   return [(q[0] + 1) / 2 * W, (1 - q[1]) / 2 * Hs];
 }
-window.Picker = { start, topo, setLoading, close, _prep: prep, _screenOf: screenOf };
+window.Picker = { start, topo, setLoading, setStatus, close, _prep: prep, _screenOf: screenOf };
 })();

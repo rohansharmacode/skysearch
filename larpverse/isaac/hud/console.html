@@ -835,7 +835,7 @@ function siteOverlay() {
 // A visitor starts on "Choose a disaster site", then a 3D LiDAR dot map of it: hover lights the dots yellow, a click
 // on a pile sends the drones (POST /api/goto, queued while Isaac loads). ?picker=0 turns it off.
 const PICK_ON = !!window.Picker && !window.__burn && !Q.has('still') && Q.get('picker') !== '0';
-const PK = { open: null, seq0: null, queued: null, busy: false, wait: 0, cur: null, failAt: 0,
+const PK = { open: null, seq0: null, queued: null, busy: false, wait: 0, cur: null, failAt: 0, err: '',
   sites: SITES.map(x => ({ key: `${x.site}-${x.seed}-${x.look}`, label: x.label, site: x.site, seed: x.seed, look: x.look, data: null, ref: x })) };
 const pkStage = () => $('stage');
 const pkSeq = () => { const g = lastGoto(); return g ? +g.seq || 0 : 0; };
@@ -859,7 +859,7 @@ async function pkStart() {
 function pkTopo(ps) {
   PK.open = 'topo'; PK.cur = ps; PK.seq0 = pkSeq(); PK.queued = null;
   Picker.topo({ stage: pkStage(), data: pkData(ps) || { piles: [] }, title: ps.label, loading: !pkReady(),
-    onPick: p => { if (!p || !p.pile) return; PK.queued = p.pile; PK.failAt = 0; pkTry(); },
+    onPick: p => { if (!p || !p.pile) return; PK.queued = p.pile; PK.failAt = 0; if (!/switched|recording|Could not load/.test(PK.err)) PK.err = ''; pkTry(); },
     onBack: () => pkStart() });
 }
 // the chosen site is up and its run is waiting for the first click
@@ -867,7 +867,16 @@ function pkReady() {
   const L = window._last;
   return !!(PK.cur && siteOf(SITE) === PK.cur.ref && SITE.status !== 'loading' && L && held(L) && vnow() - PK.wait > 6);
 }
+function pkStatus() {                                 // what the 3D map's pill says, so a stuck load is never silent
+  if (PK.err) return Picker.setStatus(PK.err, 'bad');
+  if (pkReady()) return Picker.setStatus(PK.queued ? `Ready. Sending the drones to ${PK.queued}…` : 'Ready', 'ready');
+  const secs = PK.wait ? Math.round(vnow() - PK.wait) : 0, L = window._last;
+  const busy = !PK.wait && siteOf(SITE) === (PK.cur && PK.cur.ref) && L && !held(L);
+  Picker.setStatus(busy ? 'A run is already going on this site. Press ↺ Reset on the console, or pick it again to restart.'
+    : `Isaac Sim is loading this site${secs ? ` (${secs} s, usually about 80)` : ''}… pick your spot now`, busy ? 'bad' : 'loading');
+}
 async function pkSite(ps) {
+  PK.err = '';
   const x = ps.ref, same = siteOf(SITE) === x, L = window._last;
   let url = null, body = null;
   if (!same) { url = API_SITE; body = { site: x.site, seed: x.seed, look: x.look }; }
@@ -883,22 +892,27 @@ async function pkSite(ps) {
     }
     if (!r.ok) { let j = {}; try { j = await r.json(); } catch (e2) { } throw new Error(j.error || j.message || r.status); }
     SITE = { site: x.site, seed: x.seed, look: x.look, status: 'loading', label: x.label }; SEEN.clear();
-  } catch (err) { toast(`Could not load ${x.label}: ${err.message}`, true); }
+  } catch (err) {
+    const m = String(err.message || err);
+    PK.err = m === '429' ? 'Someone just switched sites. Wait a minute, then pick the site again.'
+      : m === '423' ? 'A recording is in progress. Try again when it ends.' : `Could not load ${x.label} (${m}). Pick the site again.`;
+    PK.wait = 0; toast(PK.err, true); pkStatus();
+  }
 }
 async function pkTry() {
   if (!PK.queued || PK.busy) return;
-  if (!pkReady()) { Picker.setLoading(true); return; }
+  if (!pkReady()) { pkStatus(); return; }
   PK.busy = true;
   const ok = await gotoPile(PK.queued);
   PK.busy = false;
   if (ok) { PK.queued = null; PK.open = null; Picker.close(); }
   else if (!PK.failAt) PK.failAt = vnow();
-  else if (vnow() - PK.failAt > 45) { PK.queued = null; PK.failAt = 0; }
+  else if (vnow() - PK.failAt > 45) { PK.queued = null; PK.failAt = 0; PK.err = 'The simulation did not accept the pick. Click the pile again.'; }
 }
 function pkTick() {
   if (!PK.open) return;
   if (REMOTE && ((REC && REC.recording) || (CONSOLE && CONSOLE.recording))) { PK.open = null; Picker.close(); return; }
-  if (PK.open === 'topo') { Picker.setLoading(!pkReady()); if (PK.queued) pkTry(); }
+  if (PK.open === 'topo') { pkStatus(); if (PK.queued) pkTry(); }
   // someone else started the drones (another viewer, the recorder's API call): step aside and show the mission
   if (!PK.queued && !PK.busy && pkSeq() > (PK.seq0 || 0) && !held(window._last || {})) { PK.open = null; Picker.close(); }
 }

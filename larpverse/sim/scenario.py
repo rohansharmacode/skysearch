@@ -17,6 +17,8 @@ from __future__ import annotations
 import json
 from dataclasses import asdict, dataclass, field
 
+import os
+
 import numpy as np
 
 SPACING = 22.0
@@ -170,7 +172,53 @@ def _top_face_points(pc: Piece, step=0.25):
 SITES = ("grid", "weiguan", "collapse")
 
 
+HUMAN_SOUNDS = ("voice", "weak_voice", "knock", "shout", "tapping", "knocking")
+
+
+def limit_people(sc, n, seed):
+    """Keep exactly ``n`` simulated people, each under a DIFFERENT pile, chosen with a seeded RNG (repeatable).
+    Hidden truth only: positions, depths and breathing stay as generated; a dropped person's own sounds and phone
+    go with them (no knock from an empty pile); ambient/false sources (dog, generator, settling) are untouched."""
+    t = getattr(sc, "truth", None) or {}
+    vs = list(t.get("victims") or [])
+    if n is None or n <= 0 or len(vs) <= n:
+        return sc
+    rng = np.random.default_rng([int(seed), 303])
+    order = [vs[i] for i in rng.permutation(len(vs))]
+    order.sort(key=lambda v: 0 if v.get("sound") else 1)     # audible people first (stable within each group)
+    keep, piles = [], set()
+    for v in order:
+        if v["pile"] not in piles:
+            keep.append(v)
+            piles.add(v["pile"])
+        if len(keep) == n:
+            break
+    kept_ids = {v["id"] for v in keep}
+    dropped = [v for v in vs if v["id"] not in kept_ids]
+    gone_xy = [tuple(v["xy"]) for v in dropped if v.get("sound")]
+    t["victims"] = [v for v in vs if v["id"] in kept_ids]
+    sounds = []
+    for snd in t.get("sounds") or []:
+        if snd.get("kind") in HUMAN_SOUNDS and tuple(snd.get("xy") or ()) in gone_xy:
+            if t.get("roles", {}).get(snd["pile"]) == snd["kind"]:
+                t["roles"][snd["pile"]] = "silent"
+            continue
+        sounds.append(snd)
+    t["sounds"] = sounds
+    if isinstance(t.get("phones"), list):
+        t["phones"] = [ph for ph in t["phones"] if ph.get("person") in kept_ids or ph.get("person") is None]
+    t["people_limit"] = n
+    return sc
+
+
 def make_scenario(seed: int = 7, start_pile: str | None = None, site: str = "grid") -> Scenario:
+    """Scenario for ``site``. LARPVERSE_PEOPLE=N (opt-in): exactly N simulated people under N different piles."""
+    sc = _make_scenario(seed, start_pile, site)
+    n = os.environ.get("LARPVERSE_PEOPLE")
+    return limit_people(sc, int(n), seed) if n else sc
+
+
+def _make_scenario(seed: int = 7, start_pile: str | None = None, site: str = "grid") -> Scenario:
     if site == "weiguan":     # Weiguan Jinlong case study (procedural stand-in): sim/site_weiguan.py
         from .site_weiguan import make_weiguan
         return make_weiguan(seed, start_pile)

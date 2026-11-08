@@ -81,6 +81,9 @@ async def main():
                     log("console reloaded")
                     continue
                 xy = c.get("xy")
+                if c.get("site_chip") is not None:              # the console's site picker chip i
+                    xy = await pg.evaluate(f"""(() => {{ const e = document.querySelector('.sc2[data-i="{int(c['site_chip'])}"]');
+                        if (!e) return null; const r = e.getBoundingClientRect(); return [r.x + r.width / 2, r.y + r.height / 2]; }})()""")
                 if c.get("pile"):
                     xy = await pg.evaluate(f"window.pileCentre && window.pileCentre({json.dumps(c['pile'])})")
                 if not xy:

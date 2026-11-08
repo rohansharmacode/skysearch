@@ -6,12 +6,17 @@ SITE=${SITE:-grid}; SEED=${SEED:-7}; LOOK=${LOOK:-day}
 C=/home/ubuntu/live2; cd $C
 . ~/isaac/bin/activate; export OMNI_KIT_ACCEPT_EULA=YES ACCEPT_EULA=Y LARPVERSE_WHISPER_DEVICE=cuda
 export LV_OVERLAY_ONCE=1 LV_RPM_DIV=2 LV_PHYSX_DIV=2
+export LARPVERSE_PEOPLE=${PEOPLE:-3}          # simulated people, each under a different pile (sim/scenario.py)
 L=~/lv/larpverse; D=$L/dashboard/data
 mkdir -p $D
 MYWALL=$(date +%s.%N)
 echo "{\"site\": \"$SITE\", \"seed\": $SEED, \"look\": \"$LOOK\", \"status\": \"loading\", \"wall\": $MYWALL}" > $D/site.json.tmp \
   && mv $D/site.json.tmp $D/site.json
-pkill -f "Xvfb :99"; pkill -f kiosk_take; pkill -f kiosk_console; pkill -f run_mission.py; pkill -f scripts/mjpeg.py; sleep 3
+if [ "${KEEP_SERVE:-0}" = 1 ]; then                # site switch from the console: keep the display, kiosk and recorder
+  pkill -f run_mission.py; sleep 3
+else
+  pkill -f "Xvfb :99"; pkill -f kiosk_take; pkill -f kiosk_console; pkill -f run_mission.py; pkill -f scripts/mjpeg.py; sleep 3
+fi
 pulseaudio --check || pulseaudio --start --exit-idle-time=-1
 rm -rf $D/tasking.json $D/state.json $D/frames $D/live.json $D/hud.json $D/live_cmd.json $D/motion.json \
   $D/pc_tiles $D/pointcloud.bin $D/goto.json $D/console.json
@@ -29,11 +34,17 @@ esac
 if [ "${KEEP_SERVE:-0}" != 1 ]; then
   pkill -f "scripts/serve.py"; sleep 1; (cd $L && setsid nohup python scripts/serve.py --port 8765 > ~/serve.log 2>&1 < /dev/null &)
 fi
-nohup Xvfb :99 -screen 0 1920x1080x24 -nolisten tcp > xvfb.log 2>&1 &
-sleep 2
-rm -rf /tmp/kiosk_console; DISPLAY=:99 nohup python -u kiosk_console.py > console_kiosk.log 2>&1 &
-(cd $L && setsid nohup python scripts/mjpeg.py --display :99 --size 1920x1080 --out 1280x720 --fps 20 --port 8766 \
-  > ~/mjpeg.log 2>&1 < /dev/null &)
+if ! pgrep -f "Xvfb :99" >/dev/null; then
+  nohup Xvfb :99 -screen 0 1920x1080x24 -nolisten tcp > xvfb.log 2>&1 &
+  sleep 2
+fi
+if ! pgrep -f "kiosk_console.py|kiosk_viewer.py" >/dev/null; then
+  rm -rf /tmp/kiosk_console; DISPLAY=:99 setsid nohup python -u kiosk_console.py > console_kiosk.log 2>&1 < /dev/null &
+fi
+if ! pgrep -f "scripts/mjpeg.py" >/dev/null; then
+  (cd $L && setsid nohup python scripts/mjpeg.py --display :99 --size 1920x1080 --out 1280x720 --fps 20 --port 8766 \
+    > ~/mjpeg.log 2>&1 < /dev/null &)
+fi
 cd ~/IsaacLab && ./isaaclab.sh -p $L/isaac/run_mission.py --live --livestream 2 --viz kit --enable_cameras \
   $SITEARGS --seed $SEED --photoreal 1 --veg 0 --camera director-take --overlay usd --radar dsp --comms 0 \
   --live-pace clear --hud off --overlay-style simple --out $D --frames \

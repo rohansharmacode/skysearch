@@ -27,6 +27,8 @@ POST /api/goto          operator console (isaac/hud/console.html): {"pile": "B1"
 POST /api/site          operator console: {"site": "grid"|"weiguan", "seed": int, "look": "day"|"dusk"} stops the running
                         Isaac and relaunches live2/console_run.sh on that site, held until the first goto.
                         GET /api/site = dashboard/data/site.json {site, seed, look, status: loading|ready|running, wall}
+POST /api/reset         operator console: back to the held state on the same site/seed/look (relaunch, like /api/site
+                        with force) -> {ok, mode: "reload"}; drones on the pads, goto history and LiDAR map cleared
 POST /api/live          the take's unscripted change from any browser (isaac/hud/live_button.html):
                         {cmd: activate|deactivate|toggle, id: <dummy id or hidden1/hidden2>} -> dashboard/data/live_cmd.json,
                         the same file `python3 isaac/live.py --cmd ...` writes; the running take applies it within 1 s.
@@ -238,6 +240,8 @@ class Handler(SimpleHTTPRequestHandler):
             return self._live_cmd()
         if route == "/api/site":
             return self._site()
+        if route == "/api/reset":
+            return self._reset()
         if route == "/api/goto":
             n = int(self.headers.get("Content-Length") or 0)
             if n <= 0 or n > 4096:
@@ -276,16 +280,38 @@ class Handler(SimpleHTTPRequestHandler):
         seed = body.get("seed", 7)
         if site not in SITES or look not in LOOKS or not isinstance(seed, int) or not (0 <= seed < 100000):
             return self._json(HTTPStatus.BAD_REQUEST, {"error": f"site in {SITES}, look in {LOOKS}, seed an int"})
+        return self._launch(site, seed, look)
+
+    def _reset(self):
+        """Back to the held state on the current site: same path as /api/site (Isaac relaunch, ~80 s)."""
+        n = int(self.headers.get("Content-Length") or 0)
+        if n > 4096:
+            return self._json(HTTPStatus.BAD_REQUEST, {"error": "body too large"})
+        if n:
+            self.rfile.read(n)
+        cur = _read_json(SITE_JSON) or {}
+        site, seed, look = cur.get("site", "grid"), cur.get("seed", 7), cur.get("look", "day")
+        if site not in SITES or look not in LOOKS or not isinstance(seed, int):
+            site, seed, look = "grid", 7, "day"
+        code, doc = self._launch(site, seed, look, reply=False)
+        if code != 200:
+            return self._json(code, doc)
+        return self._json(HTTPStatus.OK, dict(ok=True, mode="reload", **doc))
+
+    def _launch(self, site, seed, look, reply=True):
+        """Start live2/console_run.sh detached (this server keeps running); force is implied (always relaunches)."""
+        import subprocess
         cur = _read_json(SITE_JSON) or {}
         if cur.get("status") == "loading" and time.time() - float(cur.get("wall") or 0) < 300:
-            return self._json(HTTPStatus.CONFLICT, {"error": "a site is already loading", "site": cur})
+            res = (HTTPStatus.CONFLICT, {"error": "A site is already loading, try again in a minute.", "site": cur})
+            return self._json(*res) if reply else res
         doc = {"site": site, "seed": seed, "look": look, "status": "loading", "wall": time.time()}
         _write_json(SITE_JSON, doc)
         env = dict(os.environ, SITE=site, SEED=str(seed), LOOK=look, KEEP_SERVE="1")
         log = open(os.path.expanduser("~/console.log"), "w")
         subprocess.Popen(["bash", CONSOLE_RUN], env=env, stdout=log, stderr=subprocess.STDOUT,
                          stdin=subprocess.DEVNULL, start_new_session=True, cwd=os.path.dirname(CONSOLE_RUN))
-        return self._json(HTTPStatus.OK, doc)
+        return self._json(HTTPStatus.OK, doc) if reply else (HTTPStatus.OK, doc)
 
     def _mjpeg_proxy(self, route):
         """The console's Isaac view: relay scripts/mjpeg.py (127.0.0.1:LARPVERSE_MJPEG_PORT, default 8766), so one

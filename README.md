@@ -1,68 +1,77 @@
-# SkySearch: autonomous search-and-rescue drone swarm (Agentverse 2026, Robotics track)
+# Larpverse: drones that search collapsed-building rubble for trapped people
 
-A swarm of 10 drones searches a partly collapsed office building after an earthquake and hands the rescue crew a
-map: where each trapped person is, how sure the swarm is, which rooms are still unsearched, and a safe crawl route.
-Every flight and search decision is made on the drones, with no cloud in the loop.
+**AgentVerse 2026, Robotics track.** Team on GitHub: rohansharmacode, fannivvv, phupha-yao, manocw.
 
-| Drone | How many | Sensors | Job |
-| --- | --- | --- | --- |
-| **Coordinator (M)** | 1, large | radio relay, loudspeaker, docking pads | stays outside, relays radio, allocates tasks, calls quiet periods, swaps batteries |
-| **Scouts (S1–S3)** | 3, medium | S1, S2: 360° LiDAR + ultrasound + RGB. S3: UWB through-rubble radar | map rooms and corridors; S3 takes over where smoke blinds LiDAR |
-| **Crevice drones** | 6, palm-sized | microphone, RGB camera, ToF; C1, C2 also carry 60 GHz breathing radar | L1–L4 land and listen for knocking (2 stay landed, 2 lift off to search voids). C1, C2 fly into voids and confirm breathing |
+After a building collapses, rescuers have to decide which rubble pile to dig first, while the people trapped inside are often silent, weak or out of sight. In the Weiguan Jinlong collapse (Tainan, 6 February 2016), 309 people were in the building: 175 were rescued alive and 115 died.
 
-## The demo mission (team storyboard)
-1. Launch from the coordinator.
-2. Scouts map while listeners land on flat spots picked from the LiDAR map.
-3. Knock heard with a bearing. A confirmer hovers, breathing is confirmed, and Victim A is marked high confidence.
-4. Fire in the east wing: smoke degrades LiDAR and RGB, so the mapper pulls out.
-5. The coordinator hands the east wing to the radar scout S3.
-6. A knock comes from a room already cleared (room 7). The room is re-opened, and radar finds breathing behind a collapsed shelf. Victim B is marked medium confidence, radar only.
-7. Hand map to crew: pins with confidence, unsearched area hatched, safe route, and a radio briefing written by Gemini from the swarm's findings.
+Larpverse gives the incident commander a live operator console. You click one rubble pile. From then on, three drones work on their own:
 
-Videos: `out/skysearch_story.mp4` (mission control, `scripts/render_story.py`), `media/isaac_story.mp4` (Isaac Sim + dashboard), `media/drafts/` (physics earthquake, drone chase / first-person clips).
+1. **Map.** They fly to the pile and map it with LiDAR.
+2. **Land safely.** Each drone lands only where the LiDAR map shows the ground is flat and clear enough. Steep or cluttered spots are rejected.
+3. **Feel for breathing.** A radar on the underside of each landed drone looks for the tiny chest movement of breathing, up to about 3 m down.
+4. **Listen.** The rotors stop and the drones listen for voices and knocking. Gemini understands speech in any language and picks out cries for help, which go to the top of the priority list.
+5. **Choose the next pile.** Gemini in the police van weighs everything heard and sensed and sends the drones to the next pile. Nobody tells it where to go.
 
-## Quick start (CPU, any laptop)
+Everything runs in NVIDIA Isaac Sim. The trapped people, their voices and the radar returns are simulated, and the console says so on screen.
+
+## Start here
+
+| What | Where |
+|---|---|
+| 1-minute demo video (screen recording of the live console) | [larpverse_console_taiwan_v10_final_noend.mp4](https://github.com/rohansharmacode/skysearch/blob/larpverse-rehearsals/final/larpverse_console_taiwan_v10_final_noend.mp4) |
+| Live console (runs on our GPU server while it is switched on) | https://descending-coleman-continually-cocktail.trycloudflare.com/ |
+| The code | branch [`larpverse-isaac`](https://github.com/rohansharmacode/skysearch/tree/larpverse-isaac/larpverse), folder `larpverse/` |
+| Detailed README (modules, quickstart, honest limits, credits) | [larpverse/README.md](https://github.com/rohansharmacode/skysearch/blob/larpverse-isaac/larpverse/README.md) |
+| Technical report | [larpverse/docs/TECHNICAL_REPORT.md](https://github.com/rohansharmacode/skysearch/blob/larpverse-isaac/larpverse/docs/TECHNICAL_REPORT.md) |
+
+In the video, the operator clicks once at the start. After that nothing is scripted. Slow stretches are fast-forwarded (3×, 8×, 16×) and the two landings are slowed to ½×, and each speed change is labelled on screen. The live Isaac view renders at about 3 to 15 frames per second on one NVIDIA L40S, so motion can look choppy. That only affects the picture: the decisions come from the mission code, not the rendered frames.
+
+## Models (exact IDs)
+
+| Where | Model | Job |
+|---|---|---|
+| Police van (command) | `gemini-4-argon` | Picks the next pile from the options the mission lists, with a one-line reason |
+| Each drone (audio) | `gemini-3.5-flash` | For each sound clip: is it a person, what is said (any language), distress cues, and is it under rubble or out in the open |
+| On-drone, offline option | Gemma 4 E2B (`google/gemma-4-E2B-it`) | The same audio step with no network link (open weights) |
+| On the box, always | Silero VAD, YAMNet, faster-whisper, SRP-PHAT | Detection, transcription and direction finding with no LLM |
+
+## How model output is checked
+
+No model output acts directly.
+- **Fixed choices only.** The van's Gemini can only choose from the piles the mission lists. Code checks the choice, the pile budget and a 25 % battery reserve. A missing or invalid answer falls back to a fixed rule, labelled `fallback` on screen.
+- **Schema-checked answers.** Audio answers must match a schema.
+- **Distress words verified.** A second, independent transcription must reproduce any distress words, or they are demoted.
+- **Sound priority.** Every sound is ranked: trapped person > check > safe person on the surface > not a person. Only the top two can pull the drones.
+- **Who decided is always shown.** Every decision and every sound on screen says who made it: you, Gemini 4 Argon in the van, Gemini on the drones, or the on-box models.
+- **Pings are leads.** A radar ping is a candidate search region, never a confirmed person, and no pile is ever marked "cleared".
+
+## What is real and what is simulated
+
+- **Simulated:** the people, their voices and the radar returns, generated as labelled synthetic data.
+- **Real models on that data:** the breathing-detection signal processing, the speech and sound models, LiDAR mapping and the planning.
+- **Validation:** the breathing processing was checked on real radar recordings (no rubble). The sound recognisers were checked on real recordings with the rotors off.
+- **Sites:** a synthetic 3×3 rubble grid, a procedural collapsed tower, and a Tainan collapsed-building model. The Tainan model's geometry is derived from NCKU's scan of the Weiguan Jinlong site, with scan textures off.
+- **Hardware:** the drones and the belly radar are a design study. Prices are estimates.
+
+Full limits: [larpverse/README.md#honest-limits](https://github.com/rohansharmacode/skysearch/blob/larpverse-isaac/larpverse/README.md#honest-limits).
+
+## Run it yourself (CPU, no GPU)
+
 ```bash
-pip install numpy scipy matplotlib
-python -m skysearch.usar.live --story --port 8090        # mission control with unscripted-event buttons
-python scripts/render_story.py --seed 3 --out out/skysearch_story.mp4 --workers 3   # storyboard video
-GEMINI_API_KEY=... python scripts/render_story.py --seed 3 --gemini                 # with the Gemini crew briefing
-python -m eval.usar_benchmark --seeds 12 --workers 3     # why three drone types (random placement)
-python -m eval.usar_benchmark --seeds 12 --story --duration 300                     # storyboard-type buildings
+git clone -b larpverse-isaac https://github.com/rohansharmacode/skysearch && cd skysearch/larpverse
+uv venv .venv && uv pip install --python .venv numpy scipy matplotlib pytest kiss-icp open3d
+.venv/bin/python -m sim.grid_mission --seed 7 --out dashboard/data
+.venv/bin/python scripts/serve.py --port 8765        # then open http://localhost:8765/dashboard/
 ```
-Dashboard buttons: start a fire, make a trapped person knock, trigger an aftershock (click the map), kill a drone,
-hand the map to the crew, pause, restart. The swarm is never told in advance; it has to notice through its sensors.
 
-## Isaac Sim 6 on NVIDIA Brev
-```bash
-cd /workspace/isaaclab
-./isaaclab.sh -p ~/skysearch/isaac/earthquake_scene.py --story --livestream 2 --enable_cameras      # live
-./isaaclab.sh -p ~/skysearch/isaac/earthquake_scene.py --story --headless --enable_cameras --record out/isaac
-# physics earthquake before launch + drone cameras (chase = 3rd person, fpv = 1st person, collapse = corridor eye level)
-./isaaclab.sh -p ~/skysearch/isaac/earthquake_scene.py --story --headless --enable_cameras --collapse \
-    --record out/quake --rec_cams fpv:C1,chase:C1,collapse --stop_t 75
-```
-The building is built from the same search grid the swarm uses (walls, rubble heaps, voids under slabs).
-- **`--collapse` (`isaac/quake.py`, `isaac/rubble.py`).** The earthquake is simulated in PhysX. Ground acceleration is applied as a gravity tilt, which is physically equivalent in the building's frame. About 1,700 pieces of irregular broken concrete are released in stages: slab pieces with bent rebar, chipped blocks and lumps, and wall tops. Each collides as its own convex hull, and unanchored furniture slides and topples. Damaged walls get ragged tops, the rubble zone becomes a mound covered in gravel, and slabs come to rest at the void heights in the swarm's map.
-- **`--look` (`isaac/look.py`, on by default).** MDL concrete and plaster, an HDRI sky, Crazyflie and quadcopter models, people models, and office furniture.
-- **The drones.** They are moved by the swarm code, not by a flight controller. The confirmer's RGB camera feed comes from Isaac. Dashboard at `<VS Code URL>/proxy/8090/`. See [docs/BREV_SETUP.md](docs/BREV_SETUP.md) and
-[docs/ISAAC6_API.md](docs/ISAAC6_API.md).
+With no Gemini key, every decision uses the rule-based fallback and is labelled that way. To use Gemini, put `GEMINI_API_KEY=...` in `larpverse/.env`; that file is gitignored. The Isaac Sim live console needs a GPU: see [larpverse/isaac/README.md](https://github.com/rohansharmacode/skysearch/blob/larpverse-isaac/larpverse/isaac/README.md).
 
-## Layout
-| Path | What |
-| --- | --- |
-| `skysearch/usar/fleet.py` | per-drone autonomy and the coordinator: task auctions, listening posts, knock triangulation, smoke handover, confirmation, battery swaps, radio links |
-| `skysearch/usar/building.py` | ground-truth building and every sensor model (LiDAR, ultrasound, UWB radar, mmWave radar, microphone, RGB) |
-| `skysearch/usar/scenario.py` | events: quake, aftershocks, fire, storyboard timing |
-| `skysearch/usar/render.py`, `live.py` | video renderer and live mission control |
-| `scripts/briefing.py` | Gemini crew briefing (one call at handoff, facts only, template fallback) |
-| `eval/usar_benchmark.py` | fleet-mix ablations |
-| `isaac/earthquake_scene.py`, `quake.py`, `look.py` | Isaac Sim 6 scene driven by the same swarm; physics earthquake; photoreal look |
-| `skysearch/*.py`, `eval/benchmark.py`, `isaac/isaac_bridge.py` | the earlier forest scenario (v1) |
+## Branches
 
-## Honesty notes
-- All data is simulated. Sensors are models with noise, range limits and degradation from dust and smoke, not real hardware.
-- The world is a 2.5D grid (0.4 m cells with a clearance height each); flight is kinematic, with no aerodynamics.
-- In Isaac, the building and drones are rendered and the debris is simulated by PhysX, but the drones are moved by the swarm code, not by a flight controller.
-- Gemini only writes the crew briefing at handoff. The drones never wait for it, and it is told to use only the swarm's facts.
-- Benchmark numbers come from 12 simulated buildings per variant and are not real-world performance.
+| Branch | What it holds |
+|---|---|
+| `larpverse-isaac` | **The submission.** The mission, sensing, agents, Isaac Sim scenes and the live console. |
+| `larpverse-sensing` | The team's working branch for sensing, agents and documents. Its latest one-page summary and slide assets are only here. |
+| `3d_model` | The Tainan collapsed-building 3D model. |
+| `larpverse-rehearsals` | Recorded takes and the final videos. |
+| `main`, `v2-earthquake` | Earlier SkySearch prototypes from the first day of the hackathon (forest search, then an office-building earthquake). Kept for history; their old READMEs are in `docs/`. |

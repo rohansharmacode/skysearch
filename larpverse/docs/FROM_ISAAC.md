@@ -1,5 +1,50 @@
 # From the Isaac Sim session (newest first)
 
+### 2026-11-08 02:55: merged 04a4d34. ⚠ A Y press after A2's first dwell doesn't redirect to A1 (stub acoustics)
+
+**Merge.** larpverse-sensing 04a4d34 is merged into larpverse-isaac. The only conflict was a log string in `sim/grid_mission.py`; we took your version, so `sim/`, `tests/` and `contracts/` are identical to yours. `tests/test_live.py`: 11 passed. The rehearsal take (with the real acoustic pipeline if `--preflight` passes, otherwise `--allow-stub-acoustic`) starts now on this commit.
+
+**⚠ The live change, measured on the merged code.** Dry rehearsals: seed 7, grid, `--acoustic stub --allow-stub-acoustic --comms 0 --live-pace clear`, with Y (`activate:hidden2`) at four times:
+
+| Y at | Where in the story | What happens |
+|---|---|---|
+| t 100 | A2's first 3-pod dwell | Pod-mic quick listen hears A1 at t 125: priority 79, confirmed twice. The A2 dwell ends at t 130 with 1 of 3 ranges, so **no A2 ping**. Fleet to **A1** at t 130 |
+| t 200 | A2 rescans | A2 ping (t 275, vitals t 364). Listen t 399–541: **A3 76, A1 71**. Fleet to **A3** |
+| t 300 | A2 rescans | Same: A3 76, A1 71. Fleet to **A3** |
+| t 420 | During the listen | Same. Fleet to **A3** |
+
+- **After the first dwell the change has no visible effect.**
+  - A3's scenario voice outranks the A1 dummy. A3: "Help! Can anyone hear me? My leg is trapped.", human 0.86, urgency 0.94.
+  - At the listen, the dummy's stub clip is a partial transcript: "… Ada yang bisa dengar … Kaki saya terjepit!", urgency 0.88, priority 71. The same dummy scores 79 at the pod-mic quick listen.
+  - A3 is also where the fleet goes with no trigger (SEED7_STORY: A2 → A3 → …). Judges would see no adaptation, which is the 25% criterion.
+- **We haven't touched `sim/`. Options, your call:**
+  - (a) make the hidden voice reliably clear at the listen positions, e.g. the dummy's depth or clip choice (a stage/scenario parameter, not planner logic);
+  - (b) press Y in A2's first dwell: video 16.9–20.7 s at the clear pace. A1 is then reliable, but there's no A2 ping before the change;
+  - (c) the operator draws a zone around A1 as the change.
+- The real pipeline may score differently. The rehearsal reports what it did.
+
+**`--live-pace clear` re-timed for SmoothFlight.** It is now `deploy=6,survey=7,recon_mapping=6,recon_listening=10,landing=6,radar=12,relocate=24,rescan=24,acoustic=17,dispatch=5,return=12,battery_swap=40,done=8`.
+
+The old values gave 76 s with the new flight timings: the survey alone now takes t 20–65. The new values give 56.3 s. Times are measured on the dry-run frames:
+
+| Video s | What |
+|---|---|
+| 0–4 | Van pre-roll |
+| 7.2 | Survey of A2 starts |
+| 16.8 | Pods down at A2 |
+| 21–30.7 | Rescans at ×24 |
+| 30.7–41.1 | Listen |
+| 41.1 | Dispatch |
+| 45.9 | Survey of the next pile |
+| 54.5 | Pods down there |
+
+Panel captions (each held ≥ 5 s): Launch 4.1, Mapping 9.2, Feeling for breathing 14.2, Breathing-like signal found 27.1, Live change 32.1, Listening 37.1, the re-plan 42.1, Searching the new area 51.4.
+
+**Panel.**
+- It says **"Plan changed"** only when the dispatch goes to the changed pile, or follows an operator zone. Otherwise it says "The swarm decides", so it never claims an adaptation that didn't happen.
+- The decision rows add **"Next best option: A3 (priority 72)"**, the runner-up taken from `state.decisions`. That makes the change visible on screen.
+- The steps bar no longer marks Listen as done when the change comes before the listen.
+
 ### 2026-11-08 01:35: plain-language perception panel, slower "clear" take pacing, Blender drone
 
 **`isaac/hud/panel.html` (new): a right-hand perception column for OBS layout B, written for people with no robotics background.**

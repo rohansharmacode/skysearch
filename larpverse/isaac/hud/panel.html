@@ -111,7 +111,8 @@ function heard(c) {                                 // what was said, in English
   return (en ? `“${esc(en)}”` : `“${esc(c.transcript)}”`) +
          (orig ? `<small>heard${lang ? ' in ' + esc(LANG[lang] || lang) : ''}: “${esc(orig)}”</small>` : '');
 }
-let LIVE = null, HUD = null, firstEv = null, evSeenAt = null, opRev = null, opT = null;
+let LIVE = null, HUD = null, firstEv = null, evSeenAt = null, opRev = null, opT = null, listenT0 = null;
+const SEEN = new Set();                            // story steps that have really been on screen
 let shown = { beat: -1, at: -1e9, title: '' }, rowsAt = -1e9, sayKey = '', waveKey = '', maxBeat = -1;
 
 const esc = x => String(x ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -145,8 +146,13 @@ function beatOf(s, ev) {
     if (['deploy', 'dispatch'].includes(ph) || (m.in_transit)) return 5;
     return 6;
   }
-  if (ev && !after.length && (m.stage === 'listen' || ['acoustic', 'return', 'battery_swap'].includes(ph))) return 4;
-  if (m.stage === 'listen' || ph === 'acoustic' || ph.startsWith('recon_listen')) return 3;
+  const listening = m.stage === 'listen' || ph === 'acoustic' || ph.startsWith('recon_listen');
+  if (listening && listenT0 === null) listenT0 = t;
+  // a change made during the listen keeps "Live change" up until the re-plan; one made earlier (e.g. while the pods
+  // were down) has had its own 8 s, so the listen then gets its own caption
+  if (ev && !after.length && (listenT0 === null || ev.t >= listenT0 - 1e-6)
+      && (listening || ['return', 'battery_swap'].includes(ph))) return 4;
+  if (listening) return 3;
   if (['landing', 'radar', 'relocate', 'rescan'].includes(ph)) return visited.length > 1 && d.length ? 6 : 2;
   if (ph === 'survey' || ph.startsWith('recon_mapping')) return visited.length > 1 && d.length ? 6 : 1;
   if (['deploy', 'dispatch'].includes(ph)) return d.length ? 5 : 0;
@@ -166,9 +172,13 @@ function caption(b, s, ev) {
     return ['Live change (unscripted)', `A teammate has just switched on a hidden voice near ${esc(ev.ev.sector || 'another pile')}. Nobody tells the drones. They have to hear it themselves.`];
   if (b === 4) return ['Live change (unscripted)', 'The operator has just added a new search area. Nobody tells the drones what to do next.'];
   if (b === 5) {
-    const why = ev && ev.kind === 'stage' && d && d.to_pile === ev.ev.sector ? ', because that is where the new voice came from'
-      : /voice|acoustic|heard|priority/i.test((d || {}).reason || '') ? ', because the strongest voice came from there' : '';
-    return ['The swarm re-plans', `The drones heard it and decided by themselves to search ${esc(d ? d.to_pile : 'a new area')} next${why}.`];
+    const to = esc(d ? d.to_pile : 'a new area');
+    // "Plan changed" only when the re-plan really follows the change: the new voice's pile, or an operator zone
+    if (ev && ev.kind === 'stage' && d && d.to_pile === ev.ev.sector)
+      return ['Plan changed', `The drones heard the new voice and decided by themselves to search ${to} next, because that is where it came from.`];
+    if (ev && ev.kind === 'zone') return ['Plan changed', `The drones decided by themselves to search ${to} next.`];
+    const why = /voice|acoustic|heard|priority/i.test((d || {}).reason || '') ? ', because the strongest voice came from there' : '';
+    return ['The swarm decides', `The drones decided by themselves to search ${to} next${why}.`];
   }
   if (b === 6 && here.length) return ['Breathing-like signal found', `At ${esc(pile)} the radar picked up a breathing rhythm. Another place for rescuers to check. A lead, not a confirmed person.`];
   return ['Searching the new area', `The same steps at ${esc(pile || 'the new area')}: map it, then lower the radar pods to feel for breathing.`];
@@ -191,6 +201,11 @@ function sense(b, s, ev) {
     const rows = [['Next area', d.to_pile || '–'], ['Decided at', `mission time ${f0(d.t)} s`]];
     if (c) rows.push(['Voice priority', `${c.priority} / 100`], ['Drones agreeing on direction', String(c.doa_agree || '–')],
                       ['Loudness above noise', c.snr_db != null ? `${f1(c.snr_db)} dB` : '–']);
+    // the runner-up from the logged dispatch gate: what the drones weighed it against (state.decisions)
+    const g = (s.decisions || []).filter(x => x.gate === 'dispatch' && Math.abs((+x.t || 0) - (+d.t || 0)) < 1.5).slice(-1)[0];
+    const alt = g && (g.options || []).filter(o => o.action === 'dispatch' && o.pile_id && o.pile_id !== d.to_pile && o.priority != null)
+                                      .sort((x, y) => y.priority - x.priority)[0];
+    if (alt) rows.push(['Next best option', `${alt.pile_id} (priority ${alt.priority})`]);
     return ['DECISION', `Flying to ${esc(d.to_pile || 'the new area')}`, rows, c ? heard(c) : null];
   }
   if (ph === 'deploy' || ph === 'dispatch' || ph === 'return' || ph === 'battery_swap') {
@@ -342,8 +357,8 @@ function render(s) {
     rowsAt = -1e9;                                  // the rows follow the caption at once
   }
   b = shown.beat >= 0 ? shown.beat : b;
-  maxBeat = Math.max(maxBeat, b);
-  [...$('steps').children].forEach((el, i) => { el.className = i === b ? 'now' : (i < b || i <= maxBeat && i !== b ? 'done' : ''); });
+  maxBeat = Math.max(maxBeat, b); SEEN.add(b);
+  [...$('steps').children].forEach((el, i) => { el.className = i === b ? 'now' : (SEEN.has(i) || i < Math.min(b, 3) ? 'done' : ''); });
   if (now - rowsAt >= ROWS_S) {
     rowsAt = now;
     const [chip, say, rows, quote] = sense(b, s, ev);

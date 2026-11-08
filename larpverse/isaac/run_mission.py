@@ -905,11 +905,13 @@ def main(argv=None):
     pace = {}
     preroll = 0.0
     if a.live_take:
-        # "clear": every story step >= 5 s of video for the judges (mapping, landing and the re-plan flight slower;
-        # the pod relocations at x20 instead of x30 so the hops read as flights, the listen at x14 so the live change
-        # still gets ~6 s before the re-plan). 53.7 s for the seed-7 grid take, measured on the dry-run frames.
-        CLEAR = ("deploy=5,survey=4,recon_mapping=6,recon_listening=10,landing=4,radar=12,relocate=20,rescan=20,"
-                 "acoustic=14,dispatch=3,return=12,battery_swap=40,done=8")
+        # "clear": a readable take under 60 s with the smooth-flight timings of 04a4d34 (survey t20-65, first 3-pod
+        # dwell t85-130, rescans to t364, listen t364-541, dispatch t541-565). Measured on the dry-run frames
+        # (seed 7, grid, stub acoustics): survey 6.4 s, pods down at A2 from 16.8 s, rescans 21-30.7 s at x24 (the hops
+        # still read as flights), listen 30.7-41.1 s, flight to the next pile 41.1-45.9 s, its survey 45.9-51.4 s and its
+        # pods down at 54.5 s. The real acoustic pipeline can slow the listen (its pace is capped from the latency).
+        CLEAR = ("deploy=6,survey=7,recon_mapping=6,recon_listening=10,landing=6,radar=12,relocate=24,rescan=24,"
+                 "acoustic=17,dispatch=5,return=12,battery_swap=40,done=8")
         pace = L.parse_pace(L.DEFAULT_PACE if a.live_pace is None else CLEAR if a.live_pace == "clear" else a.live_pace)
         preroll = 4.0 if a.live_preroll is None else float(a.live_preroll)
         info = getattr(a, "acoustic_info", None)

@@ -65,6 +65,10 @@ def add_args(ap):
     g.add_argument("--facade-kit", default=_fk.default_dir(),
                    help="Blender-built damaged-facade kit folder for the fallen towers (isaac/facade_kit.py; "
                         "default: isaac/assets/facade_kit if built; '' = the box facade)")
+    g.add_argument("--cam-grade", type=float, default=0.0,
+                   help="grid site: a drone-camera colour grade on top of the default tonemap, 0 = off, 1 = full "
+                        "(contrast / saturation x1.12, faint warm gain, vignette, fine grain: rehearsal 5b read grey "
+                        "and low-saturation)")
     g.add_argument("--grid-look", type=int, default=1,
                    help="grid/weiguan sites: dusty textured rubble (facade-kit textures), neutral real-camera grade, "
                         "less orange sun (isaac/grid_look.py); 0 = the old MDL look")
@@ -518,6 +522,9 @@ def dress(stage, sc, a, log=print):
         s.set_float("/rtx/fog/fogColor/0", 0.78); s.set_float("/rtx/fog/fogColor/1", 0.70); s.set_float("/rtx/fog/fogColor/2", 0.60)
     except Exception:
         pass
+    k = float(getattr(a, "cam_grade", 0.0) or 0.0)
+    if k > 0 and not urban_map:
+        cam_grade(k, log)
     if urban_map and getattr(a, "urban_look", 1):
         from isaac import urban_look
         urban_look.grade(a, log)
@@ -531,6 +538,40 @@ def dress(stage, sc, a, log=print):
                 urban_look.rt_quality(a, log)
         except Exception as e:
             log(f"[grid-look] skipped ({type(e).__name__}: {e})")
+
+
+def cam_grade(k=1.0, log=print):
+    """A drone camera's grade (DJI-style 'normal' profile) over Kit's default tonemap: a little more contrast and
+    colour, a faint warm gain, light vignette and fine sensor grain. k scales it (0 = off). No exposure change."""
+    c, sat = 1.0 + 0.12 * k, 1.0 + 0.12 * k
+    gain = [1.0 + 0.02 * k, 1.0, 1.0 - 0.03 * k]
+    G = {"/rtx/post/colorcorr/enabled": True, "/rtx/post/colorcorr/contrast": [c, c, c],
+         "/rtx/post/colorcorr/saturation": [sat, sat, sat], "/rtx/post/colorcorr/gamma": [1.0, 1.0, 1.0],
+         "/rtx/post/colorcorr/gain": gain, "/rtx/post/colorcorr/offset": [0.0, 0.0, 0.0],
+         "/rtx/post/tvNoise/enabled": True, "/rtx/post/tvNoise/enableVignetting": True,
+         "/rtx/post/tvNoise/vignettingSize": 107.0, "/rtx/post/tvNoise/vignettingStrength": 0.06 * k,
+         "/rtx/post/tvNoise/enableFilmGrain": True, "/rtx/post/tvNoise/grainAmount": 0.012 * k,
+         "/rtx/post/tvNoise/grainSize": 1.2, "/rtx/post/tvNoise/enableScanlines": False,
+         "/rtx/post/tvNoise/enableScrollBug": False, "/rtx/post/tvNoise/enableVignettingFlickering": False,
+         "/rtx/post/tvNoise/enableGhostFlickering": False, "/rtx/post/tvNoise/enableWaveDistortion": False,
+         "/rtx/post/tvNoise/enableVerticalLines": False, "/rtx/post/tvNoise/enableRandomSplotches": False}
+    try:
+        import carb
+        s, ok = carb.settings.get_settings(), 0
+        for key, v in G.items():
+            try:
+                if isinstance(v, bool):
+                    s.set_bool(key, v)
+                elif isinstance(v, list):
+                    s.set(key, [float(x) for x in v])            # as urban_look.grade (proven on Kit 110)
+                else:
+                    s.set_float(key, float(v))
+                ok += 1
+            except Exception:
+                pass
+        log(f"[photoreal] camera grade x{k:g}: contrast/saturation {c:.2f}, warm gain, vignette, grain ({ok}/{len(G)})")
+    except Exception as e:
+        log(f"[photoreal] camera grade skipped ({type(e).__name__}: {e})")
 
 
 def set_renderer(a, log=print):

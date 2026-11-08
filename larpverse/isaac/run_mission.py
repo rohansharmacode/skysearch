@@ -899,6 +899,19 @@ def main(argv=None):
             rt.step()
     rec_i = lambda: frame // max(1, a.rec_every)    # noqa: E731  video frame index
 
+    glow = None                             # isaac/lv_trim.py: opt-in crude trims + display-only grey dummies
+    if not a.dry_run and stage is not None:
+        try:
+            from isaac import lv_trim
+            pxy = {k: tuple(v[:2]) for k, v in pile_xy.items()}
+            lv_trim.apply(stage, pxy, [p for p in pxy if p.startswith(("T1", "T2"))] or list(pxy)[:6],
+                          [p for p in ("T1a", "T1b", "T1c", "T2a", "T2b", "T2c", "RE", "RW", "RN", "RS", "CN", "CS")
+                           if p in pxy], (VAN_POSE[:2] if VAN_POSE else None), log=say)
+            if lv_trim.on("LV_GLOWDUMMIES"):
+                glow = lv_trim.GlowDummies(stage, (getattr(sc, "truth", None) or {}).get("victims") or [], surface, log=say)
+        except Exception as e:              # noqa: BLE001  (display only)
+            say(f"[trim] skipped ({type(e).__name__}: {e})")
+    PTS_STRIDE = max(1, int(os.environ.get("LV_PTS_STRIDE", "1")))
     # ---- live single take: stage dummies -> generators, unscripted triggers, HUD (isaac/live.py, isaac/hud.py)
     ctrl = keys = None
     if a.cinema and not a.dry_run and not a.live_take:
@@ -1135,6 +1148,30 @@ def main(argv=None):
     # height and roll/pitch, eased in with a short damped follow; eased back to level on lift-off. Same xy, same
     # mission poses and landing spots (sim/landing.py chose them from the LiDAR topology).
     TOUCH = os.environ.get("LV_TOUCHDOWN") == "1" and not a.dry_run
+    # LV_SAFEPATH=1 (opt-in, visual only): an airborne drone is never drawn below the tallest structure under its
+    # footprint (site heightmap incl. buildings, max over r=2.5 m) + 2 m; the lift is eased (no jumps)
+    SAFE = os.environ.get("LV_SAFEPATH") == "1"
+    safe_lift, clip_log = {}, []
+    if SAFE:
+        import atexit
+        atexit.register(lambda: print(f"[isaac] SAFEPATH: CLIP events (drawn < 0.5 m above structure top) = {len(clip_log)}", flush=True))
+
+    def safe_z(did, x, y, z, grounded, dt):
+        if not SAFE:
+            return 0.0
+        need = 0.0
+        if not grounded:
+            top = max(float(surface(x + dx, y + dy)) for dx in (-2.5, 0.0, 2.5) for dy in (-2.5, 0.0, 2.5))
+            need = max(0.0, top + 2.0 - z)
+        cur0 = safe_lift.get(did, 0.0)
+        k = 1.0 - math.exp(-max(dt, 1e-3) / (0.25 if need > cur0 else 0.6))
+        new = cur0 + (need - cur0) * k
+        safe_lift[did] = new
+        if not grounded and z + new < top + 0.5:
+            clip_log.append((round(float(z), 2), did))
+            if len(clip_log) <= 20:
+                say(f"CLIP t={cur.get('t')} {did} at ({x:.1f}, {y:.1f}) drawn z {z + new:.1f} < structure {top:.1f}+0.5")
+        return new
     touch_fit, touch_cur = {}, {}
 
     def touchdown(did, x, y, z, yaw, landed, dt):
@@ -1236,6 +1273,8 @@ def main(argv=None):
                 if dr is None:
                     continue
                 zo = roof_lift(x, y, z)             # police van: on the roof until the climb passes roof height
+                grounded_now = st in GROUNDED or (z - float(surface(x, y))) < 0.8
+                zo += safe_z(did, x, y, z, grounded_now or zo > 0.01, rdt)
                 raw = pz[8] if len(pz) > 8 else None
                 if raw is not None and raw.get("quat") is not None and hasattr(dr, "set_state"):
                     # flight motion (sim/flight_motion.py via isaac/motion.py): attitude, per-rotor rpm, winch
@@ -1284,6 +1323,8 @@ def main(argv=None):
                                 from isaac.photoreal import LIDAR_DRAW_R
                                 c = np.asarray(pile_xy[pl], float)[:2]
                                 show = new_pts[np.hypot(new_pts[:, 0] - c[0], new_pts[:, 1] - c[1]) < LIDAR_DRAW_R]
+                            if PTS_STRIDE > 1:
+                                show = show[::PTS_STRIDE]
                             if len(show):
                                 overlay.add_points(show)
             if motion_drives or not isinstance(pods, PodViz):
@@ -1332,6 +1373,11 @@ def main(argv=None):
                     say(f"LIDAR FLASH {active}: {len(P)} points, red {red_pct}% yellow {yel_pct}% (own points, slope/step)")
                 except Exception as e:          # noqa: BLE001  (display only: never stop the run)
                     say(f"LIDAR FLASH failed ({type(e).__name__}: {e})")
+            if glow is not None and frame % 15 == 0:
+                try:
+                    glow.update(cur)
+                except Exception:                 # noqa: BLE001
+                    pass
             if flash_hold is not None:
                 if now < flash_hold:
                     overlay._new_pts = True             # keeps overlay.tick from starting the fade yet

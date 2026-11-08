@@ -287,6 +287,8 @@ def _gemini(model, system, prompt, schema, timeout, max_tokens, temperature, aud
     gen = {"temperature": temperature, "maxOutputTokens": max_tokens, "responseMimeType": "application/json"}
     if schema:
         gen["responseSchema"] = gemini_schema(schema)
+    if not thinking and os.environ.get("GEMINI_THINKING_LEVEL"):   # e.g. low: Gemini 4 Argon's latency control
+        thinking = {"thinkingLevel": os.environ["GEMINI_THINKING_LEVEL"]}       # (it ignores temperature)
     if thinking:
         gen["thinkingConfig"] = dict(thinking)
     text_in = f"{system}\n\n{prompt}" if system else prompt

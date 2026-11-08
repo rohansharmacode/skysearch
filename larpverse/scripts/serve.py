@@ -58,7 +58,7 @@ MAX_ZONES, MAX_VERTS = 64, 400
 GOTO = os.path.join(ROOT, "dashboard", "data", "goto.json")
 SITE_JSON = os.path.join(ROOT, "dashboard", "data", "site.json")
 CONSOLE_RUN = os.environ.get("LARPVERSE_CONSOLE_RUN", "/home/ubuntu/live2/console_run.sh")
-SITES, LOOKS = ("grid", "weiguan"), ("day", "dusk")
+SITES, LOOKS = ("grid", "weiguan", "collapse"), ("day", "dusk")
 STATE = os.path.join(ROOT, "dashboard", "data", "state.json")
 SNAP_M = 15.0
 

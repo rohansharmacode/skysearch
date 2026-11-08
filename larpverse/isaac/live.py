@@ -2120,6 +2120,8 @@ TAKE_RENDER = [
     ("int", "/app/runLoops/main/rateLimitFrequency", int(os.environ.get("LV_RATE", "60"))),   # fps opt-in: LV_RATE=30
     ("bool", "/app/runLoops/main/rateLimitEnabled", True),
 ]
+if os.environ.get("LV_AO") == "1":                            # opt-in: RTX ambient occlusion
+    TAKE_RENDER.append(("bool", "/rtx/ambientOcclusion/enabled", True))
 
 
 def apply_take_render(log=None, extra=()):

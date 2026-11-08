@@ -7,8 +7,13 @@ C=/home/ubuntu/live2; cd $C
 . ~/isaac/bin/activate; export OMNI_KIT_ACCEPT_EULA=YES ACCEPT_EULA=Y LARPVERSE_WHISPER_DEVICE=cuda
 export LV_OVERLAY_ONCE=1 LV_RPM_DIV=2 LV_PHYSX_DIV=2
 export GEMINI_MODEL=${GEMINI_MODEL:-gemini-4-argon}
-export GEMINI_AUDIO_MODEL=${GEMINI_AUDIO_MODEL:-gemini-3.5-flash}   # drones: audio analysis + transcription check   # live runs only (not a code default: replay caches are keyed by model)
+export GEMINI_AUDIO_MODEL=${GEMINI_AUDIO_MODEL:-$(cat /tmp/lv_audio_model 2>/dev/null || echo gemini-3.5-flash)}   # drones: audio analysis + transcription check   # live runs only (not a code default: replay caches are keyed by model)
 export LV_VAN_STYLE=${VAN_STYLE:-police}            # generic police van; the drones launch from its roof
+export LV_TOUCHDOWN=${TOUCHDOWN:-$(cat /tmp/lv_touchdown 2>/dev/null || echo 0)}   # opt-in landing settle (record_v5.sh)
+export LV_AO=$(cat /tmp/lv_ao 2>/dev/null || echo 0)
+export LV_SAFEPATH=$(cat /tmp/lv_safepath 2>/dev/null || echo 0)
+export LV_EXTRA_ARGS_FILE=/tmp/lv_extra_args
+[ -f /tmp/lv_env ] && . /tmp/lv_env                 # opt-in trims for a take (LV_CROP, LV_NODEBRIS, ...)
 export LARPVERSE_PEOPLE=${PEOPLE:-3}          # simulated people, each under a different pile (sim/scenario.py)
 L=~/lv/larpverse; D=$L/dashboard/data
 mkdir -p $D
@@ -26,6 +31,7 @@ rm -rf $D/tasking.json $D/state.json $D/frames $D/live.json $D/hud.json $D/live_
 case "$SITE" in
   grid)    SITEARGS="--site grid --grid-look 0 --town isaac/assets/town_kit" ;;
   weiguan) SITEARGS="--site weiguan" ;;
+  collapse) SITEARGS="--site collapse --site-usd /home/ubuntu/cs3d/collapse_site/collapse_site.usda --no-scan-textures" ;;
   *) echo "unknown SITE $SITE"; exit 2 ;;
 esac
 case "$LOOK" in
@@ -52,7 +58,7 @@ cd ~/IsaacLab && ./isaaclab.sh -p $L/isaac/run_mission.py --live --livestream 2 
   $SITEARGS --seed $SEED --photoreal 1 --veg 0 --camera director-take --overlay usd --radar dsp --comms 0 \
   --live-pace clear --hud off --overlay-style simple --out $D --frames \
   --drone-style blender --take-open wide --live-asr multi $LOOKARGS \
-  --delivery land --interactive --decider ${DECIDER:-gemini} $EXTRA
+  --delivery land --interactive --decider ${DECIDER:-gemini} $EXTRA $(cat /tmp/lv_extra_args 2>/dev/null)
 RC=$?
 python3 - "$D/site.json" "$RC" "$MYWALL" <<'PY'
 import json, sys, time

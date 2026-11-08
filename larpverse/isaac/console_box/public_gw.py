@@ -22,7 +22,7 @@ UP = ("127.0.0.1", 8765)
 CONSOLE = "/isaac/hud/console.html"
 HOME = CONSOLE + "?state=../../dashboard/data/state.json&stream=/stream.mjpg"
 GET_OK = {CONSOLE, "/isaac/hud/picker.js", "/stream.mjpg", "/stream_full.mjpg", "/frame.jpg", "/assets/audio/dummies/manifest.json"} | {f"/dashboard/data/{n}" for n in (
-    "state.json", "live.json", "hud.json", "site.json", "goto.json", "console.json", "pointcloud.bin", "recording.json")} | {f"/dashboard/data/sites/{n}.json" for n in ("grid-7", "weiguan-7", "grid-11")}
+    "state.json", "live.json", "hud.json", "site.json", "goto.json", "console.json", "pointcloud.bin", "recording.json")} | {f"/dashboard/data/sites/{n}.json" for n in ("grid-7", "weiguan-7", "grid-11", "collapse-7")}
 POST_GAP = {"/api/goto": 3.0, "/api/site": 90.0, "/api/reset": 20.0}
 LOCK = "/tmp/recording.lock"
 _last, _mu = {}, threading.Lock()

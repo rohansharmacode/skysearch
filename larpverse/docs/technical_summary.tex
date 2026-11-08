@@ -1,6 +1,6 @@
 \documentclass[10pt,a4paper]{extarticle}
 
-\usepackage[margin=1.3cm]{geometry}
+\usepackage[margin=1.15cm]{geometry}
 \usepackage{enumitem}
 \usepackage{titlesec}
 \usepackage{xcolor}
@@ -14,10 +14,10 @@
 \hypersetup{colorlinks=true,linkcolor=cairnblue,urlcolor=cairnblue}
 
 \setlength{\parindent}{0pt}
-\setlength{\parskip}{0.5em}
+\setlength{\parskip}{0.35em}
 \titleformat{\section}{\large\bfseries\color{cairnblue}}{}{0em}{}[{\color{cairnblue}\titlerule}]
-\titlespacing*{\section}{0pt}{1.0em}{0.4em}
-\setlist[itemize]{leftmargin=1.2em,itemsep=0.25em,topsep=0.2em,parsep=0pt}
+\titlespacing*{\section}{0pt}{0.7em}{0.3em}
+\setlist[itemize]{leftmargin=1.2em,itemsep=0.12em,topsep=0.1em,parsep=0pt}
 \newcommand{\stat}[1]{{\Large\bfseries\color{cairnred}#1}}
 
 \begin{document}
@@ -65,7 +65,7 @@ false alarms: debris, machinery and rotors are rejected (simulation) \\
 
 {\small\textbf{Limits.} Radar results come from a simulated sensor; it hasn't been tested on real rubble yet, and the radar's frequency band needs a licence. CAIRN finds people faster; digging them out still takes as long. Every result is a place for rescuers to check, not a confirmed person.}
 
-\vfill
+\vspace{0.3em}
 {\footnotesize\color{cairngrey} Sources: Nia et al.\ 2008 (Prehosp Disaster Med) via Rom \& Kelman 2020 (BMJ Global Health); Chiu \& Tseng 2018 and Tainan City Fire Bureau (Weiguan); Schellenberger et al.\ 2020 (radar dataset); our Isaac Sim evaluation and cost model.}
 
 \end{document}

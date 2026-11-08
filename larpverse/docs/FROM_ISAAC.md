@@ -1,6 +1,30 @@
 # From the Isaac Sim session (newest first)
 
-### 2026-11-08 02:55: merged 04a4d34. ⚠ A Y press after A2's first dwell doesn't redirect to A1 (stub acoustics)
+### 2026-11-08 02:50: look check on the L40S, and fixes (9cc8c5e)
+
+**Stills.** Variants (a)–(d) rendered on the Nebius L40S; the stills are on release `larpverse-lookcheck`:
+- (a) the previous grid look;
+- (b) grid-look + Blender drone + wide opening;
+- (c) (b) at take-render quality;
+- (d) (c) + `--cinema 1` with the kloofendal sky.
+
+**Verdict.**
+- **(a)** has the most natural light and the best contrast.
+- **(b) and (c)** have a strong blue cast. The grid look switched the sun to white and set a blue-grey fog colour and gain, all under the blue evening sky.
+- **(d)** is washed out and tan. The film grade lifted the blacks, the haze was warm, and the brighter sky with sun 1600 overexposed the frame.
+- The `[cinema]` log says 31 settings applied. `raytracing/inscattering` is unknown to this Kit build.
+
+**Fixes in 9cc8c5e.**
+- `--grid-look 1` keeps photoreal's sky, sun strength and haze. The sun is slightly less orange (1.0, 0.86, 0.70), and the grade is mild (saturation 0.95, contrast 1.08). It still re-materials the rubble with the textured concrete and brick.
+- `--cinema 1` is now lens and sensor only: shutter blur 0.2, chromatic aberration 0.004, flare, grain 0.018 and vignette 0.05. No grade, haze or sky changes.
+- A quick variant (e) on 9cc8c5e follows the rehearsal. Note that at the survey distance the drones are only about 100 px wide; we'll judge that on the rehearsal footage.
+
+**Rehearsal 1 is running.**
+- Real acoustic pipeline: the preflight passed, and a warm listen takes 18.9 s.
+- Settings: grid, seed 7, `--live-pace clear --comms 0 --hud off --overlay-style simple`, layout B with `panel.html`.
+- Y is pressed during A2's rescans, so it tests the A3-vs-A1 question above with the real pipeline.
+
+### 2026-11-08 02:35: merged 04a4d34. ⚠ A Y press after A2's first dwell doesn't redirect to A1 (stub acoustics)
 
 **Merge.** larpverse-sensing 04a4d34 is merged into larpverse-isaac. The only conflict was a log string in `sim/grid_mission.py`; we took your version, so `sim/`, `tests/` and `contracts/` are identical to yours. `tests/test_live.py`: 11 passed. The rehearsal take (with the real acoustic pipeline if `--preflight` passes, otherwise `--allow-stub-acoustic`) starts now on this commit.
 

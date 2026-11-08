@@ -36,7 +36,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CACHE_PATH = os.path.join(ROOT, "agents", "cache", "llm.jsonl")
 GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
 ANTHROPIC_URL = "https://api.anthropic.com/v1/messages"
-DEFAULT_MODELS = {"gemini": "gemini-3.5-flash", "anthropic": "claude-opus-5-5"}
+DEFAULT_MODELS = {"gemini": "gemini-3.7-flash", "anthropic": "claude-opus-5-5"}
 PROVIDERS = ("gemini", "anthropic", "none")
 
 _env_loaded = False
@@ -420,7 +420,7 @@ def call_json_audio(prompt, wav_bytes: bytes, schema=None, *, system=None, mime=
     ``meta`` also gets ``usage`` (prompt/candidates/thoughts/audio token counts) on a live call.
     ``thinking``: optional thinkingConfig, e.g. {"thinkingLevel": "low"} (not part of the cache key).
     ``retries``: extra attempts on 429/5xx (default LLM_RETRIES = 3; see _post_retry). ``model``: override the Gemini model
-    (default GEMINI_MODEL, else gemini-3.5-flash)."""
+    (default GEMINI_MODEL, else gemini-3.7-flash)."""
     m = meta if meta is not None else {}
     p, _ = resolve(provider)
     model = model or resolve("gemini")[1]

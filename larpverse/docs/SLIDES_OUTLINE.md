@@ -1,46 +1,50 @@
-# Larpverse: slide outline (9 slides)
+# Larpverse: slide outline (10 slides)
 
-Placeholders «…» are numbers or media still being produced; see the table at the top of `docs/PITCH_LARPVERSE.md`. Every number on a slide carries its source in small type and its caveat in one line.
+Updated 8 Nov 2026 to the current system: winch pod, `literature` radar, condition-only vitals, rotor veto, speaker, hotspot, single-take video. Every number on a slide carries its source in small type and its caveat in one line. Open slots: «SEED7-CANON», «ISAAC-CLIP», «GEMINI-DISPATCH».
 
-## Visuals that exist now
+## Visuals
 
-| File | What it shows | Good for |
+| File | What it shows | Use on |
 |---|---|---|
-| `docs/img/isaac_grid_map.png` | Seed-7 site map: 9 piles A1–C3 and the staging area (from the Isaac handoff; check it shows no ground-truth markers before using it on a slide) | Slide 3 |
-| Team branch `larpverse-isaac`: `larpverse/media/preview/isaac_lv2_f150_contact_sheet.png` | Isaac Sim 6.0.1 photoreal frame 150, five cameras: director, wide, top, chase d1, FPV d2 | Slides 1, 3 |
-| `larpverse-isaac`: `larpverse/media/preview/isaac_lv_test_contact_sheet.png`, `pt_test.png` | First GPU bring-up frames; one path-traced director frame | Backup for slide 1 |
-| `docs/slam.png` | KISS-ICP pile map vs truth, landing cells | Slide 5 |
-| `docs/radar_dsp.png` | Synthetic FMCW chain: range FFT, phase, band-pass, breathing peak | Slide 5 |
-| `docs/radar_real_validation.png` | Real recordings: radar waveform vs reference, rate over time | Slide 7 |
-| `docs/screenshots/grid-dispatch-t384.png`, `grid-final.png`, `ping-detail-A2-R1.png` | Dashboard mid-mission, final state, ping in the LiDAR model | Captured 17:58, **before** the dashboard honesty fixes (7c39d06): they may show the old depth "estimate" wording. Re-capture from the current dashboard for slides 6 and 8 |
-| `docs/review/img/dash-b2-desk-1440.png`, `dash-b2-desk-ping.png` | Dashboard after the honesty fixes (depth "assumed", belief share, decision panel) | Slides 4, 6 (prefer these over the older screenshots) |
-| `docs/review/img/dash-b2-phone-400.png` | Dashboard at phone width | Backup |
-| `docs/review/img/anim-seed7-t10.png` … `anim-seed7-t80.png`, `anim-seed7-topdown.png` | Concept animation of the seed-7 story | Slides 2, 4 |
-| `media/larpverse-grid-seed7.mp4` (88 s), `media/larpverse-grid-search.mp4`, `media/larpverse-concept.mp4` | Concept animations (not in git; storyboard release on the team repo) | Video, slide 4 |
-| «DASH-MP4» `media/larpverse-dashboard-seed7.mp4` | Real pipeline recording | Not recorded yet |
-| «ISAAC-CLIP» `media/isaac/` on `larpverse-isaac` | Isaac mission footage | Pending; `lv2_dash.tgz` and `timeline.csv` exist for the cut |
+| «ISAAC-CLIP» frames from the single take (docs/VIDEO_PLAN.md) | van, lift-off, pods on the rubble, ping, re-plan | 1, 4, 7 (not rendered yet) |
+| `docs/img/isaac_assets_drone.png`, `isaac_assets_van.png`, `isaac_assets_dummies.png` | heavy drone with winch pod, command van, training-manikin dummies (Isaac asset checks) | 4, 9 |
+| `docs/img/isaac_grid_map.png` | seed-7 grid site, 9 piles (check that no ground-truth markers show) | 3 |
+| `docs/img/report_radar_reach.png` | modelled reach through rubble vs range for the pod (synthetic model) | 5 |
+| `docs/img/radar_signatures.png` | synthetic breathing and confounder signatures through the real DSP | 6 |
+| `docs/radar_real_validation.png`, `docs/vitals_validation.png` | real line-of-sight recordings: waveform, rate, breath holds | 8 |
+| `docs/acoustic_real_validation.png` | recognisers on real audio | 8 |
+| `docs/img/motion_profiles.png` | smooth flight profiles | backup |
+| `docs/slam.png` | KISS-ICP pile map and landing cells | backup |
+| `docs/screenshots/portal_390_*.png` | rescue Wi-Fi portal (zh, en, id) | 7 |
+| Dashboard in `?layout=take` (fresh capture) | condition chip, dig order, waveform, decision badge | 6, 7 |
 
-Avoid: `docs/review/img/phone-400-ping.png` and `desk-1440-final.png` (they show the old "dig here" and constant-depth "estimate" wording that review pass 1 flagged).
+**Do not use:**
+- `docs/screenshots/grid-*.png` and `ping-detail-A2-R1.png` (7 Nov: old depth wording, landed radar);
+- `docs/img/impact_*.png` only with their caption from docs/IMPACT_MODEL.md ("counterfactual model; stub acoustics; upper bound needs the pod working"). Never pull out a single lives-saved number;
+- the collapse-site renders (NCKU-derived geometry; private only).
 
 ## Slides
 
 | # | Title | One line of copy | Visual |
 |---|---|---|---|
-| 1 | **Larpverse** | "Three drones that decide where to measure next in collapsed-building rubble, and tell rescuers where to search first." | Isaac `director` frame from `isaac_lv2_f150_contact_sheet.png` (crop one panel). Small tag: "Isaac Sim 6.0.1, simulated" |
-| 2 | **Many piles, one crew, digging blind** | "Survivors are in voids that cameras can't see. The commander has to pick which pile, and where on it, with few crews and little time." «STAT: one checked figure with its source» | `anim-seed7-topdown.png` (nine piles, no annotation) |
-| 3 | **The user: the incident commander** | "They don't need a 'person found' alarm. They need: where to look, how sure we are, and what's not checked yet." | `docs/img/isaac_grid_map.png` next to the Isaac `top` camera panel |
-| 4 | **The loop** | "Survey → land → radar → ping → listen → rank → dispatch. One range is a ring; three agreeing rings are a candidate search region." | Loop diagram (build it), with `anim-seed7-t42.png` inset and `dash-b2-desk-ping.png` for the ping |
-| 5 | **What's new: autonomy, not new sensors** | "Drones choose the next landing spot by expected information gain, report uncertainty, and say 'insufficient evidence' when the scans don't agree." | `docs/slam.png` (landing cells) + `docs/radar_dsp.png`; seed-7 log line: "Relocate d1 → L15 … EIG 0.56 nats" |
-| 6 | **The acoustic agent triages piles** | "Rotors off, drones listen to the other piles. Real models score how human and how urgent; a bounded agent picks the next pile, and code checks every pick." | `dash-b2-desk-1440.png` (acoustic panel + decisions panel). Badge: "decision by argmax / Gemini" |
-| 7 | **Evidence** | "Breathing DSP on real radar recordings: 0.39 bpm MAE (line of sight, no rubble). SLAM landing map IoU 0.98 (sim). Planning resolves 43% vs 10% for fixed sites (sim, provisional). «EVAL-GRID» «ACOUSTIC-REAL»" | `docs/radar_real_validation.png` + one small table. Caveat line under each number |
-| 8 | **What it can't do yet** | "Radar returns are synthetic; audio scenes are simulated; flight is kinematic. In our own demo run, a faint voice was put on the wrong pile: that pile stays 'not cleared'. No detection is not absence." | Fresh capture of the final dashboard state (or the last frame of «DASH-MP4») with B1 "not cleared" circled «SEED7-RERUN: replace if BL-3 fixes it, but keep the 'not cleared' message» |
-| 9 | **Where it runs, and next** | "On the drone: LiDAR odometry, landing, radar DSP. Edge box at staging: fusion, planner, acoustic agent. Cloud optional. Next: real UWB radar, PX4 flight, recordings on a USAR training site." | Three-box deployment diagram (build it); close on the title line "Candidates, not confirmations." |
+| 1 | **Larpverse** | "Heavy drones that put a breathing radar on the rubble, so nobody has to stand on it, and tell rescuers where to dig first." | take frame: pods on the pile. Tag: "Simulated, NVIDIA Isaac Sim 6.0.1" |
+| 2 | **Time kills; cameras can't see in** | "Weiguan Jinlong, 2016: 309 in the building, 175 rescued alive, 115 dead; nobody came out alive after 62.3 h. Listening devices only hear people who can call or tap." (IMPACT_EVIDENCE.md) | plain type on dark |
+| 3 | **The user: the incident commander** | "Which pile, where on it, is someone breathing, and what hasn't been checked." | `isaac_grid_map.png` |
+| 4 | **The loop** | "Survey → winch the pod down → 45 s breathing scan → re-place by information gain → ping + condition → listen and call out → rank → dispatch." | drone + pod asset image; loop diagram |
+| 5 | **Why a pod** | "Modelled reach: about 2.9 m of rubble beneath the pod, 0.7 m from 11 m away. From a landing ring, realistic radar pinged 0–1 of 60 victims." (RADAR_PENETRATION.md, EVAL_GRID.md; synthetic model) | `report_radar_reach.png` |
+| 6 | **Breathing condition, not diagnosis** | "Calm / rapid-shallow / slow-regular / irregular with pauses, as an aid to dig order. Debris, animals, machinery and rotors are rejected, never pinged." | `radar_signatures.png` + condition chip |
+| 7 | **Listen, call out, connect** | "Rotors off: real recognisers, a rotor veto, call-outs in zh-TW, Hokkien and English, and a rescue Wi-Fi portal that phones choose to join." | portal screenshots + clip card |
+| 8 | **Evidence** | "In 20 simulated seeds, acoustic-led dispatch pinged 17 of 60 non-start victims vs 6 and 5 for radar-only baselines (upper bound: acoustic clips generated from truth; 0 false pings; not faster). Breathing DSP 0.39 bpm MAE on real line-of-sight recordings (no rubble)." | small table + `radar_real_validation.png` |
+| 9 | **What it can't do yet** | "Radar returns and victim audio are synthetic; the pod is designed, not built; no flight controller. Seed 7: A2 pings; A3's rapid, shallow breather can stay an open lead. Nothing is ever 'cleared'." «SEED7-CANON» | dashboard capture with A3 "searched, not cleared" |
+| 10 | **Where it runs, and next** | "Drone: SLAM, stage-1 audio. Pod: radar DSP. Van: fusion, planner, agent, dashboard. Cloud optional (OneWeb or LTE). Next: build the pod, fly a winch drone, record on a USAR training site. A city kit: about $2.8M over 10 years; first radar candidate about T+50 min after a quake (model)." (ECONOMICS.md, DEPLOYMENT.md) | van asset image + three-box diagram |
 
-Optional slide 10 (Q&A backup): the rubric map table from `docs/PITCH_LARPVERSE.md` §11.
+Q&A backup: the rubric map and judge Q&A in `docs/PITCH_LARPVERSE.md` §10–11.
 
 ## Copy rules for every slide
 
-- Say "candidate search region" or "ping", never "survivor detected" or "confirmed".
-- Put "simulated" on every Isaac or animation frame, and "synthetic radar returns" wherever radar appears.
-- Depth is "assumed", never "estimated".
-- Every number: source in small type, caveat in one line.
+- Say "candidate search region" or "ping". Never "survivor found", "confirmed" or "cleared"; say "searched, not cleared".
+- Say "breathing condition, an aid for rescuers". Never "diagnosis", and never an age or "child".
+- Put "simulated" on every Isaac frame, and "synthetic radar returns" wherever radar appears.
+- Quote the evaluation only with its row and caveat (upper bound, kinematic flight). Never "faster", never "3×".
+- The decision badge must show who decided (Gemini / fallback / argmax).
+- Credits on the last slide or in the description: README "Credits & honesty".

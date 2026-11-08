@@ -1,135 +1,166 @@
 # Larpverse: technical report
 
-**Autonomous multi-drone search of collapsed-building rubble.** AgentVerse 2026, robotics track.
+**Autonomous heavy-drone search of collapsed-building rubble.** AgentVerse 2026, robotics track.
 Case study: the Weiguan Jinlong building collapse, Yongkang District, Tainan, 6 February 2016.
 
-Status: 2026-11-07, written against commit `9907ad6` plus the uncommitted work of other builders noted inline. Short version: [TECHNICAL_REPORT_ABSTRACT.md](TECHNICAL_REPORT_ABSTRACT.md).
+Status: 8 Nov 2026. Brought up to date against HEAD `8600905`, using review pass 3 (`docs/review/PASS3_CLAIMS.md`, `a79a4c1`). Short version: [TECHNICAL_REPORT_ABSTRACT.md](TECHNICAL_REPORT_ABSTRACT.md).
 
-> **How to read this report.** Every number has a source (a doc, a file or a command) and a caveat. "Real" means real-world data or a real library. "Synthetic" means we generated it. The system produces **candidate search regions** and a **pile priority list** for rescuers. It does not detect, confirm or diagnose anyone. Silent piles are **not cleared**.
+> **How to read this report.** Every number has a source (a doc, a file or a command) and a caveat. "Real" means real-world data or a real library. "Synthetic" means we generated it. The system produces **candidate search regions**, a **pile priority list** and a breathing **condition** read for rescuers. It does not detect, confirm or diagnose anyone, and it infers no age. Piles without a ping are "searched, **not cleared**".
 
 ## Open placeholders
 
-Other builders are producing these inputs now. Each «PENDING» marker in the text points to one row below. None of these numbers may be quoted until the source doc exists.
-
 | Marker | Fills from | State at writing |
 |---|---|---|
-| «PENDING: EVAL-GRID» | `docs/EVAL_GRID.md` (`sim/evaluate_grid.py`: acoustic dispatch vs nearest-first vs raster, N seeds) | doc absent |
-| «PENDING: ACOUSTIC-REAL» | `docs/ACOUSTIC_VALIDATION.md` (`acoustic/validate_real.py`: DroneAudioSet, ESC-50, teammate recordings) | doc absent; `docs/acoustic_real_validation.png` exists, uncommitted |
-| «PENDING: ACOUSTIC-GEMINI» | `docs/ACOUSTIC_GEMINI.md` (`acoustic/eval_gemini.py`: stage-1 recall / false-forward, stage-2 language ID, CER, translation F1, latency, cost) | doc absent; modules committed in `06013f5`, not yet wired into the mission |
-| «PENDING: VITALS» | `docs/VITALS.md` (`scripts/validate_vitals.py`, `sim/vitals.py`) | doc absent; `docs/vitals_validation.png` exists, uncommitted |
-| «PENDING: RADAR-PEN» | `docs/RADAR_PENETRATION.md` (sources and calibration of the penetration model; decision on the default preset) | doc absent; code landed in `0eab65b` |
-| «PENDING: SITE-WEIGUAN» | `docs/SITE_WEIGUAN.md` (`sim/site_weiguan.py` assumptions) | doc absent; `docs/img/weiguan_site.png`, `weiguan_sectors.png` exist, uncommitted |
-| «PENDING: B5-RERUN» | `python -m sim.evaluate --n 30 --budget 6` on current code | only a 16:33 run on older code |
-| «PENDING: SEED7-RERUN» | seed-7 demo mission after the acoustic fix (BL-3, `eb8cdba`) and the coordinator outlier rule | latest committed-state run predates both |
-| «PENDING: ISAAC-CLIP» | re-recorded Isaac footage (teammate, after R2-002) | first recording has no ping (R2-005) |
-| «PENDING: GEMINI-LIVE» | first live Gemini dispatch run (BL-11) | key saved 19:58; first calls hit HTTP 429, logged as `fallback` |
-
+| «PENDING: SEED7-CANON» | the mission agent's canonical seed-7 doc (config + command + result) | not landed. Until it lands we say: **A2 pings (radar-only, silent); further pings vary by pod seating** |
+| «PENDING: B5-RERUN» | `python -m sim.evaluate --n 30 --budget 6` on current code | only a 7 Nov 16:33 run on older code |
+| «PENDING: ISAAC-CLIP» | the teammate's GPU take (`docs/FROM_ISAAC.md`) | nothing in the take plan has been rendered on a GPU yet |
+| «PENDING: GEMINI-DISPATCH» | a live Gemini dispatch decision in `agents/cache/llm.jsonl` | Gemini **audio** ran live (§4.3.5); the dispatch decider has 0 recorded live decisions |
+| «PENDING: FHWA-SOURCE» | the specific FHWA GPR document and the RADIOTECT link | `RADAR_PENETRATION.md` names the rule of thumb without a document |
 ---
 
 ## 1. Problem and operational context
 
 ### 1.1 Urban search and rescue in collapse rubble
 
-After a building collapse, people who survive are usually trapped in **voids**: spaces left between pancaked floor slabs, beside stairwells and under leaning walls. Urban search-and-rescue (USAR) teams locate them with search dogs, listening devices, search cameras pushed into gaps, and sometimes radar life detectors, and then dig or breach towards them. Each breach takes hours, so the questions that decide the outcome are **which pile to work first** and **where on that pile to dig**.
+After a building collapse, people who survive are usually trapped in **voids**: spaces between pancaked slabs, beside stairwells and under leaning walls. Urban search-and-rescue (USAR) teams find them with search dogs, listening devices, search cameras and sometimes radar life detectors. Then they dig or breach towards them, and each breach takes hours. The decisions that matter are **which pile to work first** and **where on it to dig**. The decision-maker is the incident commander or USAR team leader. They need to know where to look, how sure the evidence is, and what has not been checked.
 
-The decision-maker is the **incident commander or USAR team leader** at the site. They have few crews and few devices. They need to know three things: where to look, how sure the evidence is, and what has not been checked yet. A false "person found" alarm costs crew-hours. A false "nobody here" can cost a life.
+### 1.2 Why it matters, and why current tools fall short
 
-### 1.2 Why cameras and thermal imaging are not enough
+All figures in this section are sourced in `docs/IMPACT_EVIDENCE.md` and `data/impact_params.json`.
 
-- **RGB and thermal cameras see surfaces.** A person under 1–2 m of concrete has no line of sight to any camera. Rubble is also a good thermal insulator, and its surface temperature is driven by sun and weather, so it hides a buried body's heat signature.
-- **Sound travels through gaps,** so voices, knocks and tapping can reach the surface. But rotor noise from a hovering drone swamps it. This is why our drones **land and stop their rotors** before listening.
-- **Low-frequency radar** (roughly under 3 GHz) can partly penetrate rubble and pick up the millimetre chest motion of breathing. Higher bands (24 and 77 GHz mmWave) do not get through concrete (`docs/RESEARCH.md`). Penetration is limited to a few metres at best (§4.2.3).
-- **Terrain is hazardous.** Placing sensors by hand means people climbing unstable piles. Drones can place sensors without that exposure. But a flat landing spot says nothing about whether the pile below is structurally safe (§9).
+- **Time kills fast.** Of the people Kobe's fire brigade extricated in 1995, 80.5% were alive on day 1, 28.5% on day 2 and 21.8% on day 3. At Weiguan, 164, 7 and 4 people came out alive on days 1–3. Nobody was found alive after 62.3 h (Chiu & Tseng 2018). In the Weiguan victims, extrication time was the strongest predictor of death (Pan et al. 2019).
+- **Cameras and thermal imagers see surfaces.** A person under 1–2 m of concrete has no line of sight to any camera, and rubble insulates their heat.
+- **Listening devices only find people who can call or tap.** In Bam (2003), 28% of injured survivors were unconscious when rescued (via Rom & Kelman 2020).
+- **Radar life detectors are carried onto the pile one spot at a time.** Vendors claim 4.5–7 m (GSSI LifeLocator, trade press); this has not been independently verified.
+- **Higher radar bands do not go through concrete.** Penetration is a few metres even at low frequency (§4.2.3).
+
+Our claim is narrow. In simulation, the system:
+- puts a breathing radar and a microphone on many spots of a pile **without anyone standing on it**;
+- **prioritises** where to dig sooner;
+- can flag silent or unconscious breathing within about 2.9 m of rubble beneath the pod.
+
+It also misses victims, and it does not do the extrication. At Weiguan, getting the last live victims out took 12–29 h each, and that was the bottleneck, not finding them (IMPACT_EVIDENCE §4).
 
 ### 1.3 Triage
 
-Field triage (START, and SALT for mass casualties) sorts people by respiration, perfusion and mental status. A radar can observe only one of these: chest-wall motion. Our vital-sign features therefore produce at most a **respiratory triage hint** for ordering the dig (§4.2.6). They are an aid for rescuers, never a diagnosis.
+START and SALT triage sort people by respiration, perfusion and mental status. A radar sees only chest-wall motion. Our vital-sign output is therefore a **breathing condition** with a respiratory triage hint for ordering the dig (§4.2.6). It is an aid for rescuers, not a diagnosis. There is no age or child inference (user decision, 7 Nov).
 
-### 1.4 Case study: Weiguan Jinlong building, Tainan, 2016
+### 1.4 Case study: Weiguan Jinlong, Tainan, 2016
 
-The facts below are from the sources the dashboard cites (zh.wikipedia 維冠金龍大樓; Taipei Times, 22 Feb 2019), checked in commit `5429e92`:
+Facts are from IMPACT_EVIDENCE §4 (Tainan City Fire Bureau e-paper; Pan et al. 2019; Chiu & Tseng 2018; Taipei Times 2019; zh.wikipedia):
 
-- On 6 February 2016 at 03:57 local time, a magnitude 6.4 earthquake centred in Meinong District, Kaohsiung, struck southern Taiwan.
-- The Weiguan Jinlong building was a residential complex from the early 1990s: 16 storeys plus a basement, in nine blocks (A–I) in a U shape facing west.
-- The whole building toppled from west to east across Yongda Road Section 2. 115 people died there. The search was declared over on 13 February.
-- Anchor used for the site frame: 23.0051432 N, 120.2608904 E (`sim/scenario.py: SITE_GEO`).
+- **The event.** A magnitude 6.4 earthquake struck at 03:57 on 6 February 2016, centred in Meinong District, Kaohsiung.
+- **The building.** Weiguan Jinlong was 16 storeys plus a basement, nine blocks A–I in a U shape facing west. It toppled from west to east across Yongda Road Section 2.
+- **People.** **309** people were in the building (76 uninjured, 118 injured, 115 dead; Pan 2019a). **175** were rescued alive and **115** died.
+  - Rescuers extricated 290 people (175 alive and 115 dead). About 19 got out on their own, so "194 rescued" is wrong.
+- **Search effort.** About 2,000 rescuers and 23 dogs worked the site. Manual search reached its limit at 64 h, when heavy demolition began.
+- **Site frame anchor:** 23.0051432 N, 120.2608904 E (`sim/scenario.py: SITE_GEO`).
 
-We use the case study for **framing and geometry only**. The 3×3 demo grid is synthetic. The Weiguan site model (§3.4) is a procedural stand-in built from public descriptions, not a survey. Victim positions in our scenarios are invented and say nothing about the real event.
+The case study is for framing only. The public demo uses a synthetic 3×3 grid (§3.4). Victim positions in our scenarios are invented and say nothing about the real event.
 
 ---
 
 ## 2. System overview
 
-### 2.1 Architecture
+### 2.1 The concept of operations
+
+Three heavy-lift drones (FlyCart 30 / Agras T50 class, 3.1 m span) leave a command van at the staging area. For each pile:
+
+1. **Survey.** One orbit with a dense LiDAR, KISS-ICP SLAM into a pile map.
+2. **Pod placement.** Each drone **hovers** (or lands off the pile) and **lowers a 4.9 kg radar + microphone pod on a 20 m winch** onto the rubble surface, close to the current lead.
+   - Each placement takes about 8 s to lower, 45 s to scan and 8 s to raise.
+   - The pod is lifted and re-placed where the planner expects the most information.
+3. **Fuse.** Ranges from the pod scans are fused into a belief. Three agreeing strong ranges give a **ping**: a candidate search region. A firm ping gets one extra 60 s "vitals look", which yields a breathing condition.
+4. **Listen and call out.** The drones land **off the pile** with rotors off.
+   - They listen to the other piles, play a call-out (zh-TW, Taiwanese Hokkien, English) and listen for replies.
+   - They also run an open rescue Wi-Fi hotspot that phones can join by choice.
+5. **Rank and dispatch.** An acoustic agent ranks the piles. A dispatch gate chooses the next pile under battery and budget rules, with Gemini or a deterministic fallback, and code checks every pick.
+6. **Repeat** until the budget is spent. The commander gets a dig order and a handover brief listing pings, open leads and piles not cleared.
+
+### 2.2 Architecture
 
 ```mermaid
 flowchart LR
-  subgraph Drone["Each drone (x3) - onboard target, Jetson-class (not yet measured)"]
-    L[Spinning LiDAR] --> S[KISS-ICP SLAM<br/>pile heightmap]
-    S --> LC[Landing-cell scoring]
-    R[Radar front end<br/>SYNTHETIC IF cube] --> D[Breathing DSP<br/>range FFT ... CFAR]
-    M[6-mic array<br/>SYNTHETIC scene] --> MC[Capture, rotors off]
+  subgraph Drone["Each heavy drone (x3): Jetson AGX Orin, target; not measured"]
+    L[OS1-128 LiDAR] --> S[KISS-ICP SLAM<br/>pile map]
+    S --> PS[Pod-site + landing scoring]
+    M[8-mic 1.0 m ring<br/>sim: 6-mic 0.3 m] --> A1[Stage 1: denoise,<br/>VAD, YAMNet novelty]
+    SPK[Loudspeaker] -.call-out.-> V((victims))
+    AP[2.4 GHz rescue hotspot] -.portal.-> PH((phones))
+    W[20 m winch] --> POD
   end
-  subgraph Edge["Staging edge box (laptop / rugged PC)"]
-    BF[Grid Bayes filter<br/>ring likelihoods] --> PL[EIG planner<br/>relocation]
-    PL --> CO[Coordinator<br/>ping / insufficient_evidence]
-    AC[Acoustic pipeline<br/>novelty, SRP-PHAT, LCMV,<br/>VAD, YAMNet, Whisper] --> AG[Acoustic agent<br/>human, urgency, reliability]
-    AG --> GATE[Dispatch gate<br/>options + validator]
+  subgraph POD["Winch pod (4.9 kg)"]
+    R[0.4-2 GHz SFCW radar<br/>SYNTHETIC IF in sim] --> D[Breathing DSP + vitals<br/>+ non-human rejector]
+    PM[4 pod mics]
+  end
+  subgraph Van["Command van (edge)"]
+    BF[Grid Bayes filter] --> PL[EIG planner:<br/>pod placements]
+    PL --> CO[Coordinator: ping /<br/>insufficient_evidence]
+    AC[Association SRP-PHAT/LCMV,<br/>Whisper, rotor veto] --> AG[Acoustic agent]
+    AG --> GATE[Dispatch gate +<br/>validator]
     CO --> GATE
     GATE --> ST[(state.json)]
-    ST --> DB[Operator dashboard]
+    ST --> DB[Dashboard + speaker panel]
     ST --> BR[Handover brief]
+    SRV[scripts/serve.py<br/>tasking, portal, broadcast API]
   end
-  subgraph Cloud["Cloud, optional"]
-    GEM[Gemini: dispatch pick,<br/>clip triage, multilingual audio,<br/>notes intake, brief rewrite]
+  subgraph Cloud["Cloud, optional: OneWeb or LTE in Tainan"]
+    GEM[Gemini: audio analysis,<br/>dispatch pick, brief rewrite]
   end
-  LC --> CO
-  D -- radar observation --> BF
-  MC -- audio --> AC
-  AG -. summaries only .-> GEM
+  D -- radar obs, 5.2 GHz pod link --> BF
+  A1 -- clips over 5.8 GHz mesh --> AC
+  AG -. flagged clips .-> GEM
   GATE -. options only .-> GEM
   GEM -. validated choice .-> GATE
   GATE -- commands --> Drone
-  subgraph Gen["Generators and evaluators - the ONLY readers of ground truth"]
-    T[(scenario.truth)] --> RG[radar_model / radar_dsp scene]
+  subgraph Gen["Generators + evaluators: the ONLY readers of ground truth"]
+    T[(scenario.truth / live stage dummies)] --> RG[radar scene + physio waveform]
     T --> AS[acoustic scene synthesis]
+    T --> PHT[phone RadioSim, call-out replies]
     T --> EV[evaluators]
   end
   RG --> R
   AS --> M
 ```
 
-The loop for each pile: **survey → land → radar → (relocate → rescan)* → ping or insufficient evidence → listen → rank → dispatch**. The same seeded scenario (`sim/scenario.py`) drives the numpy simulator, Isaac Sim and the dashboard.
+### 2.3 Where each component runs
 
-### 2.2 Where each component runs
-
-This is the intended deployment split. **Today everything runs on one laptop CPU with no GPU, and Isaac runs on a cloud L40S.** No component has been timed on drone hardware.
+The intended split is below. **Today the mission runs on one laptop CPU and Isaac on a cloud L40S. Nothing has been timed on drone hardware.**
 
 | Component | Intended host | Measured today |
 |---|---|---|
-| LiDAR odometry (KISS-ICP), pile map, landing cells | drone | 0.38 s registration per 23k-point sweep on the laptop CPU (300 sweeps: 114 s), offline (`map_B2/metrics.json`) |
-| Radar breathing DSP | drone | not separately timed |
-| Mic capture | drone | n/a |
-| Bayes fusion, EIG planner, ping logic | staging edge | 0.71 s mean compute per single-pile mission (30 seeds, `eval/results.json`, older code) |
-| Acoustic pipeline and agent fallback | staging edge | ≈81 s wall per 26 s listen on the laptop CPU, cache miss (review pass 1); needs a GPU or smaller models for real time |
-| Dispatch gate, brief, dashboard | staging edge | n/a |
-| Gemini | cloud, optional | 25 s timeout (acoustic 60–90 s), one retry; latency «PENDING: GEMINI-LIVE» |
+| LiDAR odometry, pile map, pod-site and landing scoring | drone (Orin) | 0.38 s per 23k-point sweep, laptop CPU, offline |
+| Radar breathing DSP, vitals, rejector | pod / drone | not separately timed |
+| Stage-1 audio (denoise, VAD, novelty) | drone | not separately timed |
+| Fusion, planner, acoustic association and agent fallback, gate, dashboard | command van | about 50–62 s per real-pipeline listen on the laptop CPU (VIDEO_PLAN.md); unmeasured on the L40S |
+| Gemini audio analysis, dispatch pick, brief rewrite | cloud, optional | audio median 1.6–1.8 s per clip (ACOUSTIC_GEMINI.md); dispatch «PENDING: GEMINI-DISPATCH» |
 
-Without a network or key, every LLM step falls back to deterministic code, and recorded answers replay offline (§6).
+### 2.4 Communications (docs/COMMS_ARCHITECTURE.md, docs/HOTSPOT.md)
 
-### 2.3 Data flow and contracts
+- **Heavy data stays on the drone.** About 130 Mbps of raw LiDAR, 9 Mbps of raw audio and about 450 MB/s of raw radar samples never leave the drone or pod. The mesh carries map deltas, detections, short clips and thumbnails, about 2 Mbps per drone.
+- **Three radio layers, all clear of the radar's 0.4–2 GHz sweep:**
+  - a 5.8 GHz Doodle Labs mesh between the drones and the van, multi-hop;
+  - a 5.2 GHz Wi-Fi link from each drone to its pod (the winch line carries no conductors);
+  - an open 2.4 GHz rescue hotspot for phones.
+- **The van** has a 9–12 m pneumatic mast (10.5 m in the link budget). Its internet uplink in Tainan is **OneWeb via Chunghwa Telecom, or LTE**; Starlink was not commercially available in Taiwan and is the option elsewhere.
+- **Degraded comms.** Without the mesh, the drones finish their search, store data on 2 TB NVMe and forward it later. Without the cloud, the rules decider and vetted templates take over.
+- **Security.** The mesh is AES-256 encrypted, MAVLink is signed, and phones can reach only the portal.
 
-Frames and schemas are fixed in `contracts/INTERFACES.md`: site frame in metres, x east, y north, z up, origin at the rubble centre; bearings in degrees counter-clockwise from +x; time in sim seconds. Drones receive commands (`goto_land_scan`, …) and return **radar observations** (`range_candidates`, `confidence`, `quality`, `breathing_hz`, `doppler_moving`, `max_reliable_depth_m`) and **acoustic clips** (bearing, cone width, class, transcript, scores). The coordinator writes one `state.json` (schema `larpverse.state/v1` with grid extensions v1.1) that the dashboard polls every second.
+### 2.5 The ground-truth boundary
 
-### 2.4 The ground-truth boundary
+Hidden truth means victim positions, depths, breathing states, sound sources, phones, and in the live take the stage dummies. Only the following may read it:
 
-The scenario holds hidden truth: victim positions, depths, breathing patterns, sound sources. Only three kinds of code may read it:
+1. **Observation generators:**
+   - `sim/radar_model.py` and `sim/radar_dsp.py` (radar scene + `sim/physio.py` chest waveform);
+   - `acoustic/scene.py` (audio synthesis);
+   - `sim/comms.py` RadioSim (phones);
+   - `sim/callout.py` response generator (replies to call-outs).
+2. **Evaluators:** `sim/evaluate*.py`, `acoustic/eval_*.py`, `scripts/validate_*.py`.
+3. **Display-only ghosts** in Isaac (`--show-truth`).
 
-1. **Observation generators:** `sim/radar_model.py` and `sim/radar_dsp.py` (via the scene description it is given), and `acoustic/scene.py` (scene synthesis).
-2. **Evaluators:** `sim/evaluate.py`, `sim/evaluate_grid.py`, `acoustic/eval_assign.py`, `acoustic/eval_gemini.py`.
-3. **Display-only ghosts** in Isaac under `--show-truth`, for video.
+The localiser, planner, coordinator, mission, agents and dashboard never read it. `tests/test_grid_mission.py::test_brain_never_reads_truth` greps the brain modules, and `tests/test_agents.py` asserts that `truth`/`targets` keys never reach a prompt. In the live take, the mission never reads the Isaac stage: it re-plans only from generator outputs, operator tasking and the phone portal (ISAAC_BRIEF §1).
 
-The localiser, planner, coordinator, grid mission, agents and dashboard never read it. `tests/test_grid_mission.py::test_brain_never_reads_truth` greps the brain modules for `.truth`, `.targets` and `victims`, and `tests/test_agents.py` asserts that `truth`/`targets` keys never reach a prompt. One leak is documented: the `--acoustic stub` path fabricates clips from truth (fast, for tests and evaluation). It labels itself `acoustic_source: "stub-from-truth"`, logs a warning at every listen, and the dashboard shows a banner.
+The `--acoustic stub` path fabricates clips from truth for speed (tests, the grid evaluation). It labels itself `stub-from-truth` everywhere, and `--live` refuses to start with it.
 
 ---
 
@@ -137,323 +168,388 @@ The localiser, planner, coordinator, grid mission, agents and dashboard never re
 
 ### 3.1 Scenario generator (`sim/scenario.py`)
 
-One integer seed fixes the whole site. The demo uses seed 7.
+One seed fixes the whole site. The demo uses seed 7.
 
 | Parameter | Value |
 |---|---|
-| Layout | 3×3 piles, columns A/B/C west→east, rows 1/2/3 north→south, 22 m spacing, centres jittered ±1.5 m |
-| Pile mound | peak height 2.6–3.7 m, semi-axes 5.0–6.2 m × 4.4–5.6 m, random rotation and lump |
-| Pieces per pile | 40 slabs (1.2–3.4 × 0.8–2.2 × 0.14–0.3 m, tilted ±32°), 26 chunks (0.3–1.0 m), 0–2 columns, 50% chance of a 5-segment brick wall stub; concrete or brick. Seed 7: 621 pieces |
-| Site | bounds x −36…36, y −54…36 m; staging at (0, −47); three pads at y = −49 |
-| Heightmap | 0.5 m cells, mounds plus rasterised pieces |
-| Hidden truth | start pile always holds victim V1 (depth 1.2–1.9 m); the other eight piles are shuffled over {voice, weak voice, knock, dog, generator, settling debris, silent ×2}; voice, weak-voice and knock piles hold a victim (depth 0.8–1.8 m, within 2.8 m of the centre); breathing 0.2–0.33 Hz; a physiological state per victim (§4.2.6) |
+| Layout | 3×3 piles A1–C3, 22 m spacing, centres jittered ±1.5 m; staging and pads to the south |
+| Pile | mound 2.6–3.7 m high; 40 slabs, 26 chunks, 0–2 columns, sometimes a brick wall stub; seed 7: 621 pieces |
+| Heightmap | 0.5 m cells |
+| Hidden truth | the start pile always holds victim V1 (depth 1.2–1.9 m); the other piles are shuffled over voice, weak voice, knock, dog, generator, debris and silent; victims sit at the voice, weak-voice and knock piles (depth 0.8–1.8 m); each victim has a breathing state (§4.2.6) and, with some probability, a phone |
 
-Seed-7 roles (truth, for evaluation only): A2 start (V1, breathing only), A3 voice "Help! Can anyone hear me? My leg is trapped." (V2), B1 weak voice "hello… is anyone there… water…" (V3), B2 knocking (V4), C1 generator, C2 dog, B3 settling debris, A1 and C3 silent. Map: `docs/img/isaac_grid_map.png`.
+**Seed-7 truth** (for evaluation only):
 
-**Known bias (R1-007, open).** V1 is always placed at the start pile, so the first ping is guaranteed by construction. We state the assumption as "the start pile is the reported collapse point with a known missing person". `sim/evaluate_grid.py` also reports its metrics without that victim.
+| Pile | Role | Breathing state |
+|---|---|---|
+| A2 | start pile, silent victim | `unconscious_slow` |
+| A3 | voice ("Help! Can anyone hear me? My leg is trapped.") | `distressed_tachypnea` |
+| B1 | weak voice ("…water…") | `irregular_apneic` |
+| B2 | knocking | `calm` |
+| C1 | generator | – |
+| C2 | dog | – |
+| B3 | settling debris | – |
+| A1, C3 | silent | – |
 
-### 3.2 Flight and battery model
+**Known bias (R1-007).** The start pile always holds a victim, so the first ping is guaranteed by construction. We state it as "the start pile is the reported collapse with a known missing person". The grid evaluation also reports an independent-start set (§8.2).
 
-Flight is **kinematic**: no flight controller, aerodynamics or wind. Drones fly straight legs at an 8 m cruise altitude (staggered per drone, and at least 3 m above the terrain on the path), 4 m/s horizontal, 2 m/s climb, 1.2 m/s descent (`sim/coordinator.py: KinematicFlight`). The battery model is a rough budget, not a measured airframe: 0.16% per second of flight, 16% per pile (survey, landings, scans, listen), a 25% reserve, and a 60 s pack swap at the pads (`sim/grid_mission.py`).
+### 3.2 Platform model (`sim/platform.py`, docs/HARDWARE.md, docs/PLATFORM.md)
 
-### 3.3 Isaac Sim integration (`isaac/`)
-
-Isaac provides the 3D world, drone bodies, LiDAR geometry and footage. **The decisions come from the same numpy code** (`GridMission`), imported into Isaac's Python.
-
-- **Versions.** Isaac Sim `6.0.1-rc.7` with Isaac Lab `3.0.0` on the NVIDIA Brev launchable (1× L40S, 48 GB, driver 595), headless (`docs/FROM_ISAAC.md`, `docs/ISAAC_VERIFIED_APIS.md`). Earlier docs assumed the launchable ships 5.1; it does not.
-- **Launcher.** `--launcher lab` (default): Isaac Lab `AppLauncher` with cameras enabled, stepped through `isaaclab.sim.SimulationContext` with `enable_scene_query_support=True`. Without that flag, raycasts silently return no hit. `--launcher kit` (plain `SimulationApp`) is kept for 4.5/5.x but is unverified on 6.x. All version-specific calls are isolated in `isaac/compat.py`. The 5.x core API crashes under Isaac Lab 3 and is never imported.
-- **Stage** (`isaac/scene.py`). A USD stage from the scenario: a triangle-mesh terrain collider plus about 600 box colliders (`UsdPhysics.CollisionAPI`), and the staging area. Drones are visual quadrotors posed kinematically through pxr each frame, with no rigid bodies.
-- **LiDAR** (`isaac/lidar.py`). PhysX scene-query raycasts (`raycast_closest`) against the real colliders: 16 channels from −4° to −80°, 96 rays per frame by default, 40 m range, with the pattern rotated by a golden-ratio turn each frame so frames fill the circle. Hits accumulate per pile into a point cloud and rebuild the heightmap the landing scorer uses. RTX LiDAR is optional (`--rtx-lidar`) and falls back to PhysX.
-- **Overlays** (`isaac/overlay.py`). Red ping spheres, amber range rings, yellow acoustic cones, a green dispatch line.
-- **Photoreal pipeline** (`isaac/photoreal.py`, `--photoreal 1` or `--look pretty`, from the teammate). Each box is swapped for an irregular concrete piece of the same size and pose (slab with bent rebar, block or rock, triangle collider; the box is deactivated so LiDAR sees the same geometry). It adds visual-only debris, gravel, NVIDIA MDL materials, an HDRI dusk sky, haze, vegetation and an operator figure.
-- **Recording.** `--record DIR` writes PNG frames per camera on a virtual clock (`--rec-cams director,chase:d1,fpv:d2,top`, `--rec-res`, `--rec-fps`, `--rec-speed`, `--rec-stop-t`, `--rtx realtime|pathtracing --spp N`). A `timeline.csv` logs phases, pings and dispatches.
-
-GPU bring-up (18:25, seed 7, `--photoreal 1`, 40 steps):
-
-| Check | Result |
+| Item | `heavy_sar` (default) |
 |---|---|
-| Stage | 621 rubble pieces |
-| Photoreal | 621 irregular pieces (183 with rebar), 34,200 debris stones, 4,572-face ground |
-| LiDAR | 17,440 points at step 20, 30,048 at step 40; heightmap rebuilt from 10,359 points; 16 landing patches at A2 |
-| Drones | d1 62.9 m, d2 67.6 m, d3 63.0 m flown by t = 40 |
-| Cameras | PNGs from all 5 cameras |
+| Airframe | FlyCart 30 / Agras T50-class coaxial X8: 3.085 m span, 95 kg MTOW. The sim reference is the FlyCart 30; the recommended build is a Harris Aerial H6HL-class ArduPilot hexacopter (MAVLink native) |
+| Mission payload | **14.0 kg**: 6.0 kg on the airframe, 3.1 kg winch (20 m line, 5 kg minimum load), 4.9 kg pod. Electronics draw 82 W typical, 139 W peak |
+| Endurance | **23.9 min** to 0%, about **17.9 min** usable with the 25% reserve (estimate from the spec's hover curve) |
+| Pod | 0.4–2 GHz SFCW radar (USRP B210), 0.48 × 0.48 m antenna face (+7.6 dB receive aperture vs the small radar), 4 mics, Raspberry Pi 5, IMU, 99 Wh; 5.2 GHz link to the drone |
+| Drone sensors | Ouster OS1-128 LiDAR; 8-mic 1.0 m ring; 130 dB-class loudspeaker; optional thermal; Jetson AGX Orin 64 GB; RTK GNSS |
+| Cost (estimates, Nov 2026 list or reseller prices, no supplier quotes) | about $61k per drone on a FlyCart 30, about $87k on an H6HL; the command van adds about $51k |
 
-**Limitation found in review (R2-002, R2-005).** In the first full recording (`lv2`), A2 never pinged. One "trusted" scan contradicted the consensus and vetoed the fix for 170 s. The recording stopped at t = 250 before any dispatch. The coordinator now flags such a scan as an outlier once at least two later strong scans agree (§5.4), and the teammate is to re-record with a gate on `timeline.csv` «PENDING: ISAAC-CLIP». Because Isaac rebuilds landing sites from its own LiDAR, an Isaac run can tell a different story from the CPU run on the same seed (R2-012).
+**Caveat.** Every sensor except the radar pod is off the shelf. The pod is a custom design that has been **designed, not built or tested**.
 
-### 3.4 Weiguan site model (`sim/site_weiguan.py`, uncommitted at writing)
+### 3.3 Flight model (`sim/flight_motion.py`, docs/MOTION.md)
 
-`make_scenario(seed, site="weiguan")` returns a scenario with the same structure as the grid, so the mission, Isaac and the exporter run on it unchanged.
+`SmoothFlight` is the default (`--flight smooth`):
+- jerk-limited C2 multirotor trajectories (quintic S-curve legs, corner blending, a brake term on re-plans);
+- 10 m/s cruise, 3 / 2 m/s climb / descent, 2.5 m/s² horizontal acceleration, 2 m/s³ jerk;
+- tilt from acceleration (25° limit), 45°/s yaw, a flare at landing, 7 cm RMS hover drift;
+- 8 s winch lower and 8 s raise.
 
-- **Facts used** (zh.wikipedia): the anchor coordinate; 16 storeys plus basement; nine blocks A–I in a U opening west; toppled west to east across Yongda Road Section 2; roughly a third of the structure above ground afterwards.
-- **Assumptions** (stated in the module): an original footprint of about 40 × 60 m; a 2.9 m storey pitch; a spine of five blocks lying on its side across a 21 m road, with near-vertical slabs and about 2.6 m room voids; wings pancaked in place in 5–7 layers with 0.6–1.2 m voids; nine search sectors mapped onto where each block's debris now lies; staging on the closed road to the south. The block lettering mapping is a modelling choice.
-- Geometry uses a fixed RNG (one real site). Only the hidden truth depends on the seed.
-- The NCKU Museum photogrammetry model of the wreck has no stated licence or download, so we did not use it (BL-19).
+On a 1500 s seed-7 mission, velocity jumps went from 471 to 0. Isaac samples the trajectory at render time (`isaac/motion.py`).
 
-Figures `docs/img/weiguan_site.png` and `docs/img/weiguan_sectors.png` exist. «PENDING: SITE-WEIGUAN» for the full assumption list and validation. The dashboard can draw the synthetic grid on a georeferenced OpenStreetMap or Esri basemap of the real site. Review R2-016 notes this can imply real victim positions, so the chip should read "Case study (layout synthetic)".
+This is a **trajectory model**: there is no flight controller, aerodynamics or wind load. `--flight kinematic` (straight legs at constant speed) remains for comparison. The grid evaluation (§8.2) was generated before SmoothFlight became the default, so it uses kinematic flight.
 
-### 3.5 Simulated vs real
+### 3.4 Sites
+
+| Site | What it is | Public? |
+|---|---|---|
+| `grid` (default) | synthetic 3×3 piles (§3.1) | **yes: the video take runs here** |
+| `weiguan` (`sim/site_weiguan.py`) | procedural stand-in for the toppled U-shaped block, from public descriptions (docs/SITE_WEIGUAN.md) | yes, labelled "layout synthetic" |
+| `collapse` (`sim/site_collapse.py`, the teammate's 320 m USD) | reconstruction whose core geometry and textures derive from screenshots of the NCKU Museum photogrammetry model | **no**: private only, until NCKU permission or a procedural core exists (PLAN 8 Nov) |
+
+The dashboard can draw the synthetic layout on an OpenStreetMap or Esri basemap of the real site. It must read "layout synthetic" whenever it does: this was a fatal disaster.
+
+### 3.5 Isaac Sim (`isaac/`)
+
+- **Versions.** Isaac Sim **6.0.1** (build 6.0.1-rc.7) with Isaac Lab 3.0, on an NVIDIA Brev L40S (`docs/ISAAC_VERIFIED_APIS.md`). The launcher is Isaac Lab `AppLauncher` with scene queries enabled; version-specific calls are isolated in `isaac/compat.py`.
+- **Stage.** A USD stage built from the scenario: a terrain collider and about 600 rubble colliders. The photoreal pass (`--photoreal 1`) adds irregular concrete with rebar, MDL materials, an HDRI and haze. Drones are posed per frame from the motion model.
+- **LiDAR.** PhysX scene-query raycasts against the real colliders: 16 channels from −4° to −80°, 96 rays per frame by default, 40 m. The hits rebuild the heightmap the mission uses.
+- **Take assets:** the command van (`--van`), training-manikin dummies with spatial audio (`--dummies`), the winch pod hanging plumb with sway, rotor blur discs, and an omni.ui perception HUD (`isaac/hud.py`), which also writes `hud.json`/`live.json` for the dashboard.
+- **Live mode** (`--live`). The stage dummies **are** the generators' victims. A teammate can switch on a hidden dummy (hotkeys Y/U, a HUD button, or a dashboard zone). The mission perceives the change only through its generators and re-plans. Its listens run on the **real acoustic pipeline** (a persistent `.venv-audio` worker fed the live dummy WAVs). A loud pre-flight refuses to fall back to stub acoustics.
+- **Status.** The first GPU bring-up (7 Nov) passed every checklist step. The single-take plan (§11) is dry-run tested on the CPU; **nothing in it has been rendered on a GPU yet** «PENDING: ISAAC-CLIP».
+
+### 3.6 Simulated vs real
 
 | Part | Real | Simulated |
 |---|---|---|
-| Site, rubble, victims | case-study facts (§1.4) | layout, pieces, victims, sounds (procedural, seeded) |
-| 3D world, LiDAR geometry | Isaac Sim 6.0.1 PhysX raycasts on GPU; numpy ray-caster on CPU | both cast against our procedural geometry |
-| SLAM | KISS-ICP 1.3 (real library) | its input sweeps and odometry |
-| Flight | n/a | kinematic, no wind |
-| Radar | breathing DSP chain, validated on real 24 GHz recordings | every radar return through rubble (labelled synthetic generator) |
-| Vital signs | feature extractor, run on real CW recordings «PENDING: VITALS» | breathing patterns of buried victims |
-| Acoustics | Silero VAD, YAMNet, faster-whisper, SRP-PHAT/LCMV; real-audio validation «PENDING: ACOUSTIC-REAL» | demo scenes: Piper TTS voices, numpy knocks and generator, one ESC-50 dog clip, free-field propagation |
-| LLM agent | real REST client, validator, fallback | live Gemini runs so far rate-limited «PENDING: GEMINI-LIVE» |
-| Dashboard | real; polls the mission state | n/a |
+| Site, rubble, victims | case-study facts (§1.4) | layout, pieces, victims, sounds, phones |
+| LiDAR geometry, SLAM | Isaac PhysX raycasts; KISS-ICP 1.3 | the scene they see |
+| Flight | – | smooth trajectory model, no flight controller |
+| Radar | breathing DSP and vitals features, checked on real 24 GHz line-of-sight recordings | every through-rubble radar return (synthetic IF + physio waveform) |
+| Acoustics | recognisers (Silero VAD, YAMNet, Whisper, SRP-PHAT/LCMV), checked on real recordings with rotors off | demo and take audio: recorded and TTS clips, synthesised through a rubble model, free field |
+| Gemini | live audio analysis (251 clips) | the dispatch decider has not run live |
+| Hotspot | link budget from published sources | every phone, message and RSSI reading |
+| Hardware | parts and prices from datasheets (estimates) | pod not built; nothing flown |
 
 ---
 
 ## 4. Perception
 
-### 4.1 LiDAR, SLAM and landing cells
+### 4.1 LiDAR, SLAM and placement scoring
 
-#### 4.1.1 Sensor and trajectory (`mapping/raycast_lidar.py`, synthetic)
+#### 4.1.1 Sensor and SLAM (`mapping/`)
 
-A spinning 32-channel unit tilted to look down: elevations −18° to −80°, 0.5° azimuth step, 10 Hz, 0.5–40 m range, Gaussian range noise σ = 2 cm, and Livox-style beam jitter. That gives about 23k beams per sweep. Each sweep is taken at one pose, so KISS-ICP deskewing is off. The trajectory is one orbit around the pile at 9.5 m radius and 11 m altitude, with altitude bob and roll/pitch wobble. A drifting VIO-like odometry prior integrates perturbed increments (3% scale error, 0.5°/s yaw bias, random walk).
+**Simulated sensor.** A synthetic spinning 32-channel ray-caster: −18° to −80°, 0.5° azimuth step, 10 Hz, 40 m, σ = 2 cm, about 23k beams per sweep. The drone flies one orbit at 9.5 m radius and 11 m altitude, with a drifting odometry prior (3% scale error, 0.5°/s yaw bias).
 
-#### 4.1.2 SLAM (`mapping/slam.py`)
+**SLAM.**
+1. KISS-ICP 1.x registers each sweep (0.2 m voxels, 20 iterations), seeded with `last_pose · odom_delta`.
+2. If the estimate diverges more than 5 m from odometry, the code falls back to ground-truth poses and says so.
+3. The registered cloud is downsampled at 0.1 m and rasterised to a 0.5 m heightmap.
 
-1. Each sweep is registered by **KISS-ICP 1.x** (MIT) against its local voxel map (0.2 m voxels, at most 5 points per voxel, 20 ICP iterations). The initial guess is `last_pose · odom_delta`, so the odometry increment replaces KISS-ICP's constant-velocity model.
-2. If KISS-ICP is missing, or the estimate drifts more than 5 m from odometry, the code falls back to ground-truth poses plus noise and says so in the metrics.
-3. Registered sweeps are voxel-downsampled at 0.1 m (Open3D 0.20, or numpy hashing), then rasterised to a 0.5 m heightmap on a 32 m window around the pile.
-4. Landing cells are scored on the SLAM heightmap. Ground-truth poses and terrain are used only afterwards, for the metrics.
-
-Results (seed 7, pile B2, 300 sweeps; `python -m mapping.run --seed 7 --pile B2`, commit `110fdd2`; `dashboard/data/map_B2/metrics.json`; figure `docs/slam.png`):
+Results (seed 7, pile B2, 300 sweeps; `python -m mapping.run --seed 7 --pile B2`, `110fdd2`; figure `docs/slam.png`):
 
 | Metric | KISS-ICP + odometry prior | Odometry only |
 |---|---|---|
 | ATE RMSE | **3.6 cm** (max 7.1 cm) | 1.51 m |
-| Final drift | 3.3 cm | 1.97 m |
-| Mean rotation error | 0.17° | 7.57° |
-| Heightmap MAE vs true terrain | 4.7 cm (91.3% of cells within 10 cm) | 13.0 cm (65.6%) |
-| Landing-cell IoU vs truth | **0.983** (precision 0.997, recall 0.985) | 0.937 |
-| SLAM landing sites valid on true terrain | **16 / 16** | 11 / 16 |
-| Runtime (laptop CPU) | 150 s total: ray-cast 27 s, registration 114 s, mapping 9 s | |
+| Heightmap MAE vs truth | 4.7 cm (91% of cells within 10 cm) | 13.0 cm |
+| Landing-cell IoU vs truth | **0.983** | 0.937 |
+| SLAM landing sites valid on true terrain | 16/16 | 11/16 |
 
-Caveats: one pile, one seed, our own ray-caster on our own geometry, run offline. Part of the 4.7 cm height error is rasterisation: ground-truth-pose LiDAR has the same 5.1 cm MAE against the true terrain. In the mission, `--slam` uses 120 sweeps per pile (about 50 s of flight). `scripts/demo.sh` does not turn it on by default (R1-043), so the demo uses the scenario heightmap.
+Caveat: one pile, one seed, our own ray-caster, run offline (150 s on the laptop CPU). In the mission, `--slam` uses 120 sweeps per pile but is not on by default.
 
-#### 4.1.3 Landing-cell scoring (`sim/landing.py`)
+#### 4.1.2 Plane fit and landing cells (`sim/landing.py`)
 
-For every 0.5 m cell, fit a plane by least squares to its 3×3 neighbourhood (a 1.5 m footprint; the docs' "every 1 m cell" is a simplification):
+For each 0.5 m cell, fit a plane by least squares over its 3×3 neighbourhood (a 1.5 m footprint):
 
-$$z(\Delta x,\Delta y) \approx \bar z + a\,\Delta x + b\,\Delta y,\qquad a=\frac{\sum \Delta x\, z}{6\,r^2},\; b=\frac{\sum \Delta y\, z}{6\,r^2}$$
+$$z(\Delta x,\Delta y)\approx\bar z+a\Delta x+b\Delta y,\quad a=\frac{\sum\Delta x\,z}{6r^2},\ b=\frac{\sum\Delta y\,z}{6r^2},\quad \theta=\arctan\sqrt{a^2+b^2}.$$
 
-with r = 0.5 m. Then the slope is $\theta=\arctan\sqrt{a^2+b^2}$ and the roughness is the RMS residual of the nine samples about the plane. For plausible cells, the code also computes:
+Roughness is the RMS residual about the plane.
 
-- **clearance:** distance to the nearest cell more than 0.30 m above the fitted plane, within 3 m;
-- **step:** the largest |height − plane| inside the 0.9 m rotor radius;
-- **approach:** whether any terrain pokes into a 15° half-angle descent cone over 6 m.
+**Landing cells** are now used only for the **off-pile listening landings**. Their limits:
+- slope ≤ 12°;
+- roughness ≤ 0.07 m;
+- step ≤ 0.35 m within the 0.9 m rotor radius;
+- clearance ≥ 0.9 m from anything more than 0.30 m above the plane;
+- a clear 15° descent cone.
 
-| Limit | Value |
-|---|---|
-| Slope | ≤ 12° on flat ground; ≤ 20° on a **perch** on the rubble (adaptive legs plus a self-levelling radar mount) |
-| Roughness | ≤ 0.07 m |
-| Step | ≤ 0.35 m |
-| Clearance | ≥ 0.9 m |
-| Score | 0.35·max(0, 1 − θ/10°) + 0.35·max(0, 1 − rough/0.06) + 0.20·min(1, clear/3) + 0.10·[approach ok] |
-| Selection | ≤ 16 sites within 14 m: up to 8 perches first (2.5 m spacing), then flat ground (4 m spacing), ranked by score − 0.012·distance; up to 6 rejected sites kept, with their reason, for display |
+Score = 0.35·slope term + 0.35·roughness term + 0.20·clearance term + 0.10·approach. On the heavy platform, the landing patch must also fit the 3.1 m rotor disc.
 
-Perches exist because of the radar's penetration limit: the closer the antenna is to the void, the more rubble it can see through (§4.2.3).
+**Pod placements** (`detect_pod_sites`). A cell qualifies when all of these hold:
+- it is on the pile (more than 0.4 m above local ground);
+- it is within (lead radius + 3 m) of the lead's posterior centre;
+- its slope is ≤ 30° and its plane-fit roughness ≤ 0.12 m;
+- nothing within about 0.75 m stands more than 1.0 m above it (a clear winch corridor);
+- the hover point (5 m above the tallest cell under the rotor disc) is within the 20 m winch.
 
-The **expected scan quality** of a site (`sim/sensor_model.py`) is
+Placements are picked greedily by distance to the lead, then flatness, at least 1 m apart. The **seating model** takes roughness at the pod footprint as about 0.35 × the plane-fit value. Slopes up to 30° do not matter to the pod. If the pod rocks, it is re-seated once.
 
-$$q = \exp\!\big(-(\rho/0.045)^2\big)\,\exp\!\big(-(\max(0,\theta-12°)/9°)^2\big)\,\big(1-e^{-T/8}\big),\quad q\in[0.02,0.97],$$
-
-where ρ is the roughness (×0.6 on a perch), θ − 12° is the tilt the levelling mount cannot remove, and T is the 20 s dwell. The generator draws the actual touchdown quality around this value. It has an 8–25% chance of a much rougher touchdown than mapped (loose debris below the 0.5 m map resolution) and a 6% chance of a gust or interference.
+None of this is a structural assessment. Flat geometry does not mean the pile is safe.
 
 ### 4.2 Radar
 
-#### 4.2.1 Signal model (`sim/radar_dsp.py`, PART 1: **labelled synthetic generator**)
+#### 4.2.1 Signal model (`sim/radar_dsp.py` PART 1: **labelled synthetic generator**)
 
-Isaac does not model RF breathing through rubble, so the raw radar signal is generated. The generator is told where its reflectors are by `sim/radar_model.py`, the only non-evaluation module that reads truth. It produces the complex IF cube that a stepped-frequency or FMCW radar delivers after dechirping:
+Isaac does not model RF breathing through rubble, so the IF cube is generated:
 
-$$x[m,n]=\sum_k A_k\, e^{\,j\left(\phi_k+\frac{4\pi}{\lambda_c} r_k(t_m)\right)}\, e^{\,j2\pi \frac{r_k(t_m)}{\Delta r}\frac{n}{N}}+w[m,n],\qquad w\sim\mathcal{CN}(0,1)$$
+$$x[m,n]=\sum_k A_k\,e^{j(\phi_k+\frac{4\pi}{\lambda_c}r_k(t_m))}\,e^{j2\pi\frac{r_k(t_m)}{\Delta r}\frac{n}{N}}+w,\qquad A=70\cdot10^{(\sigma_{dB}+G_{rx}-L_{rubble})/20}/R^2.$$
 
 | Parameter | Value |
 |---|---|
 | Sweep | 0.4–2.0 GHz (B = 1.6 GHz, f_c = 1.2 GHz, λ_c = 0.25 m) |
-| Range resolution | Δr = c/2B = 9.4 cm |
-| Fast-time samples | N = 512 complex, unambiguous range 48 m |
-| Slow time | 20 Hz frames, 20 s dwell (400 frames) |
-| Reflector amplitude | $A = 70\cdot 10^{(\sigma_{dB}-L_{rubble})/20}/R^2$ (chest 0 dB, standing person 8 dB, clutter 12–28 dB) |
-| Clutter | antenna leakage at 0.3 m, ground bounce at about 0.6 m, 3–6 rubble reflectors at 1–22 m |
-| Breathing | chest displacement 4–8 mm at 0.2–0.33 Hz, with rate and amplitude wander and a 10% second harmonic; in the physiological model, depth is relative to 5 mm (§4.2.6) |
-| Platform motion | scaled by (1 − q): drift of two 4 mm sinusoids at 0.01–0.04 Hz plus a 3 mm ramp, and 5 mm band-limited jitter at 0.08–2.5 Hz; 50% of it not common-mode (tilt), plus 4 mm per-reflector wobble |
-| Distractors | optional walking person (range migration) and a vibrating non-human source (e.g. 1.2 Hz, 3 mm) |
+| Range bins | Δr = 9.4 cm, N = 512, 48 m unambiguous |
+| Slow time | 20 Hz; **45 s pod scan**, plus a 60 s vitals look after a firm ping |
+| Chest motion | `sim/physio.py` breath-by-breath waveform: about 5 mm peak-to-peak for a calm adult, 2–3 mm when rapid and shallow, with pauses and sighs per state. The older 4–8 mm sinusoid overstated the signal by about 14 dB and is available only with `LARPVERSE_PHYSIO=0` |
+| Clutter, platform | antenna leakage, ground bounce, 3–6 rubble reflectors; pod seating jitter scaled by (1 − quality) |
+| Confounders (`sim/radar_signatures.py`) | empty rubble, settling debris, small animal, machinery vibration, drone-rotor reflection, a moving or knocking person |
 
-The module docstring still says "1–3 GHz, 2 GHz bandwidth, 7.5 cm resolution". The code above is authoritative (Requests).
+The module docstring still says "1–3 GHz / 7.5 cm"; the parameters above are what the code runs (Requests).
 
-#### 4.2.2 DSP chain (`sim/radar_dsp.py`, PART 2: the real processing, planner side)
+#### 4.2.2 DSP chain (PART 2: the real processing; planner side)
 
-The chain sees only the IF cube and the radar parameters.
+1. **Range FFT** with a Hann window.
+2. **Platform-motion estimate** from the strongest static bin beyond 1 m. This gives the measured scan quality $q=1-\mathrm{rms}_{0.05-3\,Hz}/7\,\mathrm{mm}$.
+3. **Motion compensation:** a common-mode phase rotation, then a per-bin complex least-squares regression on [d_ref, trend].
+4. **Bulk-motion detection.** 32-frame range-Doppler segments, energy at ≥ 2 Hz, OS-CFAR ×8. A track that migrates in range at ≥ 0.15 m/s is reported separately as `doppler_moving`.
+5. **Static clutter removal:** subtract the slow-time mean.
+6. **Band power** per bin: 0.1–0.5 Hz (respiration) and 0.7–3 Hz (periodic, but not breathing).
+7. **OS-CFAR** across range: 16 training and 3 guard cells, 75th percentile. Threshold ×4, local maximum within ±3 bins, parabolic sub-bin range.
+8. **Phase demodulation:** PCA linear, or a Kasa circle fit plus `unwrap(angle)` (the arctangent mode, used on real data).
+9. **Band-pass:** 4th-order Butterworth, 0.1–0.5 Hz, zero phase.
+10. **Rate:** spectral peak (parabolic), peakiness and band ratio.
+11. **Confidence:**
+$$c=\sigma\!\left(\tfrac{\mathrm{SNR_{dB}}-9}{3}\right)(0.25+0.75c_{pk})(0.15+0.85c_{rt}),$$
+halved at a band edge and penalised for one-sided Doppler. Candidates under 0.2 are dropped.
+12. **Output:** the radar observation, plus `max_reliable_depth_m` from the measured quality.
 
-1. **Range FFT.** Hann window along fast time gives X[m, k] (slow time × range bin).
-2. **Platform-motion estimate.** Take the strongest static bin beyond 1 m (`min_range`), unwrap its phase and convert to displacement $d_{ref}=\angle X\cdot\lambda_c/4\pi$. The 0.05–3 Hz RMS of $d_{ref}$ gives the **measured scan quality** $q=1-\mathrm{rms}/7\,\mathrm{mm}$, scaled for dwell.
-3. **Motion compensation.** Common-mode phase rotation $X\cdot e^{-j4\pi d_{ref}/\lambda_c}$. Then, per bin, a complex least-squares regression on [$d_{ref}$, linear trend] removes the residual (tilt) part.
-4. **Bulk-motion detection.** 32-frame segments (hop 16): energy at Doppler ≥ 2 Hz per bin, OS-CFAR with threshold ×8. Detections at a fixed range in at least 40% of segments are platform jitter or vibration and are dropped. The longest range-continuous chain must migrate at ≥ 0.15 m/s with ≤ 0.5 m residual to count as a moving person, which becomes a separate `doppler_moving` observation.
-5. **Static clutter removal.** Subtract the slow-time mean per bin.
-6. **Respiration-band power.** Hann-windowed slow-time FFT (2048 points). Power in 0.1–0.5 Hz (respiration) and in 0.7–3 Hz (periodic, but not breathing) per bin.
-7. **CFAR.** Ordered-statistic CFAR across range: 16 training and 3 guard cells, 75th percentile, floored at the median. A candidate needs SNR > 4 (6 dB) and must be a local maximum within ±3 bins. Range is refined with a parabolic sub-bin fit.
-8. **Phase extraction.** For the candidate bin, the slow-time phasor becomes a displacement waveform, using either PCA linear demodulation (the default in simulation) or a Kasa circle fit to remove the static vector followed by `unwrap(angle(·))` (arctangent demodulation, used on real CW data).
-9. **Band-pass.** 4th-order Butterworth, 0.1–0.5 Hz, zero-phase (`sosfiltfilt`).
-10. **Rate.** Zero-padded periodogram (Welch for records ≥ 90 s), with a parabolic peak in the band giving `breathing_hz`. Also computed: **peakiness** (share of in-band power within ±0.08 Hz of the peak) and **band ratio** (respiration power over 0.1–3 Hz power, before filtering).
-11. **Confidence.**
-$$c=\sigma\!\left(\tfrac{\mathrm{SNR_{dB}}-9}{3}\right)\,(0.25+0.75\,c_{pk})\,(0.15+0.85\,c_{rt}),$$
-with $c_{pk}=\mathrm{clip}((\text{peakiness}-0.35)/0.4)$ and $c_{rt}=\mathrm{clip}((\text{ratio}-0.25)/0.5)$. It is halved when the rate sits within 0.02 Hz of a band edge, and reduced when the ± Doppler sidebands are asymmetric (breathing is phase modulation and symmetric; a slow walker is one-sided). Candidates under 0.2 are dropped, and at most 4 are kept.
-12. **Output.** The radar observation schema, plus `max_reliable_depth_m`: the rubble this scan could see through directly below, from its measured quality.
+Figure: `docs/radar_dsp.png`.
 
-Figure: `docs/radar_dsp.png` (range profile, band power, CFAR and spectrum for one synthetic scan). The older `--radar model` path (a direct noise model with dropouts and multipath false returns) still exists. `--radar dsp` has been the default since BL-8 because the model radar never pinged A3 in seed 7 (R1-005).
+#### 4.2.3 Penetration through rubble (docs/RADAR_PENETRATION.md)
 
-#### 4.2.3 Penetration through rubble: physics and limits
+`literature` is the **default** propagation preset, with `--delivery pod`. `legacy` (a flat 0.7 dB/m) is kept only as a comparison row, because it would let the radar see through about 30 m of rubble, which is not credible.
 
-The generator attenuates each return by a two-way rubble loss computed over the true slant path below the LiDAR surface (`rubble_path`, 40-point line integral). The **"literature"** preset uses:
+- **Concrete loss.** One-way, solid concrete: $\alpha_c(f)$ = 10 dB/m below 1 GHz, rising to 20 dB/m at 2 GHz, the FHWA GPR rule of thumb «PENDING: FHWA-SOURCE».
+- **Solid fraction.** 0.65 of a slant path through collapse debris is solid; debris is roughly 30–50% voids.
+- **Two-way loss**, power-averaged over the sweep:
+  $$L(\ell)=-10\log_{10}\langle10^{-2\ell(0.65\alpha_c(f))/10}\rangle_f$$
+  That is 15, 29, 43 and 69 dB at 1, 2, 3 and 5 m of rubble.
+- **Detection threshold (A90).** The chest amplitude at which 90% of scans detect, measured through the DSP chain with the physio waveform:
 
-- one-way loss of solid concrete $\alpha_c(f)$ = 10 dB/m at or below 1 GHz, rising linearly to 20 dB/m at 2 GHz and above (cited in code as the FHWA ground-penetrating-radar rule of thumb);
-- a **solid fraction** of 0.65 for the slant path through a collapse pile (the rest is voids);
-- power averaged over the sweep, so deep returns ride on the sub-1 GHz part of the band:
-
-$$L_{2way}(\ell)=-10\log_{10}\Big\langle 10^{-2\ell\,(0.65\,\alpha_c(f))/10}\Big\rangle_f$$
-
-That gives 15.4 dB for 1 m of rubble and 42.5 dB for 3 m. The detection threshold (chest amplitude for 90% strong-candidate detection) was measured per quality level: −17, −15 and −11 dB at q = 0.95, 0.6 and 0.3 (12 scans per 3 dB step, seeds 0–11). Together these give the **reach**: the rubble path through which a breathing chest is still detected in 90% of scans.
-
-| Slant range | Reach, q = 0.9 | q = 0.6 | q = 0.3 |
+| Dwell | q 0.95 | q 0.6 | q 0.3 |
 |---|---|---|---|
-| 2 m (perched above the void) | **2.9 m** | 2.8 m | 2.5 m |
-| 5 m | 1.7 m | 1.6 m | 1.3 m |
-| 8 m | 1.2 m | 1.0 m | 0.75 m |
-| 11 m (flat ground beside the pile) | 0.76 m | 0.64 m | 0.38 m |
+| 20 s | −3 dB | 0 dB | +9 dB (cap) |
+| **45 s (pod scan)** | **−9 dB** | −6 dB | +3 dB (cap) |
+| 60 s (vitals look) | −11.5 dB | −8.5 dB | +0.5 dB (cap) |
 
-![Modelled radar reach](img/report_radar_reach.png)
+**Reach** is the rubble path at which the margin $20\log_{10}(70/R^2)+G_{rx}-A90$ equals the loss. For the heavy_sar pod at q 0.95:
 
-*Figure: modelled reach versus slant range (`docs/img/report_radar_reach.png`, made from `reach_path_m`). Synthetic model, not a measurement.*
+| Dwell | 2 m slant (pod on the surface) | 6 m | 11.5 m (old landing ring) |
+|---|---|---|---|
+| 20 s | 2.47 m | 1.07 m | 0.31 m |
+| **45 s** | **2.92 m** | 1.50 m | 0.70 m |
+| 60 s | 3.11 m | 1.68 m | 0.87 m |
 
-This matches the order of magnitude in the literature we cite: low-frequency UWB for rubble, projects such as RADIOTECT aiming at 1–2 m of rubble, and roughly 3 m as the useful limit (PLAN decision log). The planner, the coverage map and each scan's `max_reliable_depth_m` use the same `reach_prob` function, a logistic in (reach − path) that is 90% at the reach. So deep victims become **acoustic-only leads**, and a pile reports how much of its volume (and of its top 2 m) was within radar reach.
+- The legacy small radar at 45 s reaches 2.35 m beneath. The earlier 3.6 m figure is **withdrawn**: it came from the sinusoid and the old panel, and was optimistic by about 0.7 m.
+- A shallow, rapid breather needs about 7 dB more margin.
+- The figure `docs/img/report_radar_reach.png` plots reach against range for the pod at 20, 45 and 60 s dwell (q 0.95, synthetic model).
 
-**Honest status.** The default preset is still **`legacy`** (`PENETRATION_DEFAULT = "legacy"` in `sim/grid_mission.py`, and the process default in `radar_dsp.py`). Legacy is a flat 0.7 dB/m one-way loss for any rubble. It lets the radar "see" through about 30 m of rubble from 2 m away, which is physically unrealistic. It is kept so the pre-review seed-7 demo reproduces, "pending decision". The PLAN decision log records the realistic model (≈3 m) as decided. Until the default flips, **demo pings are produced under optimistic propagation** (`state.json: mission.radar_penetration`). «PENDING: RADAR-PEN» for the sources, calibration and the decision.
+![Modelled pod reach](img/report_radar_reach.png)
 
-Other limits, all unmodelled: multipath inside voids, rebar mesh (the parameter exists but is 0 dB/m), moisture, heartbeat (not claimed), and more than one breather in a range bin.
+**Why a pod.** Under realistic penetration, drones landed on a ring 9–12 m from the pile pinged **1 of 80** victims in 20 seeds; the landing-ring rows of EVAL_GRID give 0/60, 0/60 and 1/60. A heavy drone cannot perch on a pile, but a pod resting on the surface puts the victim at 1–2.5 m slant range.
 
-#### 4.2.4 Real-data validation of the DSP (`docs/RADAR_VALIDATION.md`)
+Every scan reports `max_reliable_depth_m`. Every pile reports `radar_coverage` and `radar_coverage_shallow` (top 2 m). A pile with less than 50% top-2 m coverage and no ping becomes "beyond radar reach → acoustic lead only".
 
-The extractor (steps 8–10, arctangent mode) ran on **real** recordings: Schellenberger et al. 2020 (Sci Data 7:291, CC BY 4.0). That is a 24 GHz six-port CW radar about 0.4 m from the chest of a supine, resting, healthy subject, recorded at 2 kHz and decimated to 20 Hz. The reference is thoracic impedance through the same band-pass and peak picker. Sliding windows with a 10 s hop.
+**Not modelled:** scattering, multipath inside voids, moisture, rebar (the parameter exists but is 0), layering. For scale: a commercial life detector's vendor claim is 4.5–7 m. Our model is conservative and literature-calibrated. Our gain is placements without people on the pile, not range.
 
-| Subject | Mean ref rate | MAE (30 s) | Within 2 bpm (30 s) | MAE (20 s) | Waveform \|r\| |
-|---|---|---|---|---|---|
-| GDN0001 | 7.7 bpm | 0.17 | 97% | 0.33 | 0.96 |
-| GDN0002 | 12.3 bpm | 0.07 | 100% | 0.46 | 0.94 |
-| GDN0003 | 7.5 bpm | 0.95 | 88% | 1.46 | 0.85 |
-| **Pooled (176 windows)** | | **0.39 bpm** (median 0.07) | **95%** (91% within 1 bpm) | 0.75 | |
+#### 4.2.4 Real-data check of the DSP (`docs/RADAR_VALIDATION.md`)
 
-PCA demodulation on the same data gives 0.90 bpm MAE, so arctangent is the right choice on real data. Figure: `docs/radar_real_validation.png`.
+The extractor in arctangent mode was run on Schellenberger et al. 2020 (Sci Data 7:291, CC BY 4.0): a 24 GHz CW radar about 0.4 m from a supine resting subject, 3 subjects, line of sight, **no rubble**.
 
-**What this does not show:** anything through rubble. It is line of sight at 40 cm, a different radar type (CW, 24 GHz), three cooperative still subjects in the resting scenario only, and a shared peak picker with the reference. Resting rates (7–12 bpm) sit close to the 6 bpm band edge, and isolated wrong peaks in GDN0003 were not investigated.
+- Pooled over 176 windows of 30 s: **0.39 breaths/min MAE** (median 0.07); 95% within 2 bpm.
+- Per subject: 0.17, 0.07 and 0.95.
+- Figure: `docs/radar_real_validation.png`.
 
-#### 4.2.5 From scans to pings
+This checks the signal processing only, not through-rubble sensing.
 
-Each scan yields at most a few **ranges**: rings around the sensor. Position comes only from fusing several scans (§5). Depth is not observable from a few ranges without a strong prior, because position and depth trade off. The localiser therefore assumes a nominal burial depth of 1.5 m ± 0.5 m. A depth estimator exists (`Localiser.estimate_depth`): grid posterior over 0.2–3.0 m from the supporting slant ranges, marginalised over the mode's xy covariance by sigma points. It reports `depth_source: "radar_estimate"` only with at least 3 supporting scans and posterior σ ≤ 0.45 m. Otherwise it reports `nominal`. In the seed-7 runs inspected (§8.6), every ping was `nominal`. The dashboard says "≈1.5 m (nominal) · assumed, not measured".
+#### 4.2.5 From scans to pings and depth
 
-#### 4.2.6 Vital-sign features and triage hint (`sim/vitals.py`, `sim/physio.py`, `dashboard/vitals.js`; uncommitted at writing)
+A scan gives ranges: rings around the pod. Position comes only from fusing scans (§5). The localiser assumes a nominal burial depth of 1.5 ± 0.5 m. `Localiser.estimate_depth` reports `radar_estimate` when at least 3 supporting scans give a posterior σ ≤ 0.45 m, and `nominal` otherwise.
 
-**Synthetic side** (`sim/physio.py`, generator only). Each victim has a hidden breathing state:
+- The grid evaluation reports 5 radar depth estimates in 20 seeds, median absolute error 0.09 m.
+- In the review's seed-7 run, A2-R1 came back `radar_estimate` and the others `nominal`.
 
-| State | Rate (bpm) | Depth (× calm adult, about 5 mm) | Interval CV | Apnoeas > 10 s per min |
-|---|---|---|---|---|
-| calm | 12–16 | 0.9–1.1 | 0.03–0.08 | 0 |
-| distressed_tachypnea | 26–36 | 0.3–0.5 | 0.12–0.25 | 0 |
-| unconscious_slow | 6–10 | 1.1–1.5 | 0.05–0.12 | 0–0.3 |
-| irregular_apneic | 8–14 | 0.6–1.2 | 0.25–0.45 | 0.5–1.5 |
-| child_calm | 20–28 | 0.35–0.55 | 0.04–0.10 | 0 |
+The dashboard always shows the source of the depth.
 
-Seed 7 sets one of each triage-relevant pattern: A2 distressed tachypnoea, A3 calm, B1 irregular apnoeic, B2 child.
+#### 4.2.6 Breathing condition and the non-human rejector (`sim/vitals.py`; docs/VITALS.md, docs/RADAR_SIGNATURES.md)
 
-**Planner side** (`sim/vitals.py`, never sees truth). It works on the complex slow-time samples of a candidate bin:
+**Synthetic side** (`sim/physio.py`, generator only):
 
-1. arctangent demodulation when the I/Q arc is wide enough (≥ 0.6 rad, with ring-residual and phase-step sanity checks); else linear demodulation scaled by the path-loss amplitude estimate;
-2. movement and artefact frames: 1 s frames whose 0.9–3.5 Hz RMS is more than 5× the scan median;
-3. rate from both the spectral peak in 0.1–0.75 Hz (6–45 bpm) and time-domain breath peaks (time domain wins with ≥ 3 clean intervals);
-4. robust breath-interval CV and an inspiration:expiration proxy;
-5. apnoea: a 3 s moving-RMS envelope below 25% of the breathing level for more than 10 s;
-6. a signal quality index (SQI) from band SNR, movement fraction, breath count and scan quality;
-7. a rule-based classifier with documented thresholds: > 30 bpm fast; < 11 slow; CV > 0.20 irregular, < 0.09 regular; patterns `regular_calm`, `rapid_shallow`, `slow_deep`, `irregular_with_pauses`, `fast_small`, `unclear` (SQI < 0.35).
+| State = expected condition | Breathing |
+|---|---|
+| calm | 12–16/min, CV 0.03–0.08 |
+| distressed_tachypnea | 26–36/min, shallow, CV 0.12–0.25 |
+| unconscious_slow | 6–10/min, deep, CV 0.05–0.12, 0–0.3 pauses/min |
+| irregular_apneic | 8–14/min, CV 0.25–0.45, 0.5–1.5 pauses/min |
 
-The **triage hint** follows only the respiratory arm of START/SALT: > 30/min → immediate; irregular or pauses → immediate (check); regular 10–20 → delayed. Age from amplitude ("possible child") is capped at 0.45 confidence, because amplitude is confounded by range, aspect and rubble loss. The dashboard turns the hint into a chip (immediate / urgent / assess / delayed) and a **dig-order score** = triage weight (shrunk towards "assess" by pattern confidence) × localisation certainty × accessibility (depth). It labels all of this as an aid, never a diagnosis.
+**Planner side** (`sim/vitals.py`):
+1. Demodulation: arctangent when the I/Q arc is wide enough, else linear.
+2. Movement frames are masked.
+3. Rate from the spectral peak and time-domain breaths.
+4. Breath-interval CV.
+5. Pauses > 10 s from a moving-RMS envelope.
+6. A signal quality index (SQI).
+7. A rule classifier: `calm | distressed_tachypnea | unconscious_slow | irregular_apneic | unknown`.
 
-Real-data check (`scripts/validate_vitals.py` on CW recordings, including apnoea scenarios where possible): «PENDING: VITALS». Figure `docs/vitals_validation.png` exists, uncommitted.
+The respiratory hint follows only the START/SALT respiratory arm.
+
+**Wording** (`dashboard/vitals.js`). For example, slow and regular reads: "slow, regular breathing: deep rest or reduced consciousness (the radar cannot tell which); call out and check responsiveness · aid for rescuers, not a diagnosis".
+
+**Rejector.** `vitals.identify` judges the whole dwell and `source_of` names likely non-human sources: debris, small animal, machinery, rotor reflection, moving person. A return the rejector calls non-human **never becomes a ping**. The scan notes "radar return rejected: … (not a person)". A moving or knocking person becomes "urgent · listen and call out".
+
+Results (synthetic unless marked):
+
+| Check | Result | Source |
+|---|---|---|
+| Condition recall on synthetic pod scans (45–60 s) | calm 95%, distressed 100%, unconscious_slow 84%, irregular_apneic 65% | VITALS.md |
+| Pause detection, synthetic | 78% of 27 scans, 3% false | VITALS.md |
+| **Real** rate (Schellenberger, line of sight) | MAE 0.51/min (60 s windows, n = 57); 0.25/min (30 s, n = 118) | VITALS.md |
+| **Real** voluntary breath holds | 6/6 detected, 0 false pause events | VITALS.md |
+| **Real** caveat | healthy relaxed volunteers read "slow, regular" in 38/57 windows | VITALS.md |
+| Signature library: 500 synthetic scans, 4 conditions + 6 confounders | exact class 59% overall; most confounder "errors" are `no_signal`, which is still a correct rejection with the wrong source named; machinery never becomes a breathing candidate | RADAR_SIGNATURES.md |
+
+No age, child or injury inference is made.
 
 ### 4.3 Acoustics
 
-#### 4.3.1 Scene synthesis (`acoustic/scene.py`, **synthetic**; the only acoustic reader of truth)
+#### 4.3.1 Arrays and scene synthesis
 
-- **Arrays.** Each landed drone carries a 6-mic uniform circular array (radius 0.15 m, 0.3 m aperture). 16 kHz, 26 s window, rotors off. In the standalone pipeline the drones sit 8.6 m from the pile centre at 120° spacing; in the mission they sit at the landing sites actually used.
-- **Propagation.** pyroomacoustics free field.
-- **Rubble.** A crude, labelled low-pass plus attenuation: cutoff $f_c=4000/(1+1.6d)$ Hz and −3 dB per metre of burial depth d (voice 0.4 m, weak voice 1.0 m, knock 0.8 m).
-- **Sources.** Piper TTS (`en_US-lessac-low`) for speech; synthesised knocks, a diesel generator (50 Hz harmonics with 25 Hz firing modulation) and debris settling; one ESC-50 dog clip (CC BY-NC).
-- **Ambient.** Gusty wind below 120 Hz per mic, plus white sensor noise.
+- **Hardware design:** an 8-mic MEMS ring of 1.0 m on each drone, plus 4 mics in each pod.
+- **Simulation:** bearings come from a **smaller 6-mic, 0.3 m ring**, which gives broader beams (about 65° vs about 20°). This is the conservative choice.
+- **Scene synthesis** (`acoustic/scene.py`, the only acoustic reader of truth): 16 kHz, a 26 s rotors-off window, pyroomacoustics free field, a rubble low-pass $f_c=4000/(1+1.6d)$ with −3 dB per metre of depth, and wind and sensor noise.
+- **Sources:**
+  - Piper TTS voices in English, Mandarin, Indonesian and Vietnamese;
+  - CC0 Freesound recordings;
+  - three ESC-50 clips (cough, cry, knock; CC BY-NC);
+  - synthesised knocks, generator and debris.
+- **In the live take,** the sources are the stage dummies' own WAV clips at their live positions (`build_scene(sources=…)`).
 
-#### 4.3.2 Localisation and association (`acoustic/dsp.py`, `assoc-v6` in commit `eb8cdba`; the working tree has bumped it to `assoc-v7`)
+#### 4.3.2 Localisation and association (`acoustic/dsp.py`, assoc-v12, `f1e3b44`)
 
-1. **Per drone, per 0.5 s block:** STFT (512-point, hop 256) and PHAT-weighted cross-spectra of every mic pair over 300–4000 Hz. One set is built from time-frequency cells more than 4× the bin median (transients) and one from the whole window (stationary sources).
-2. **SRP-PHAT map** on a 1° azimuth grid in coherence units, then **CLEAN**: take the peak, subtract the array's point-spread function for that direction (gain 0.8), and repeat (≤ 6 components, ≥ 0.05 absolute and ≥ 0.2× the strongest). This removes a loud source's sidelobes before they become fake peaks.
-3. **Multi-drone association.** A pile gets a block if at least 2 drones have a component within a gate of 2.5 × the combined σ (3.5° measurement noise plus the angular size of a 2 m source offset), or one drone has a strong (≥ 0.35) component that points at no other pile. Each component explains one pile only. **Visited and excluded piles take part as explainers**, so the loud source under the landed drones is not handed to a neighbour.
-4. **Per pile:** mean bearings, a bearing likelihood over all nine piles (**association confidence**), and the share of blocks where a rival pile fits almost as well. A clip is `ambiguous` if fewer than two drones agree, the pile is not the most likely one, confidence is under 0.6, or most of the clip overlaps a stronger source. Ambiguous clips have reliability capped at 0.45 and priority capped at 19, one below the dispatch threshold, so they are listed but never trigger dispatch alone.
-5. **Separation.** Beamform towards the pile: delay-and-sum, or min-norm **LCMV** with unit gain on the target and nulls towards the other associated sources (diagonal loading 0.1). Then estimate SNR. Clips under 2 dB SNR are dropped.
+1. **SRP-PHAT maps** per drone and per 0.5 s block, over 300–4000 Hz, built from masked transient cells plus the whole window.
+2. **CLEAN:** take the peak, subtract the array's point-spread function, and repeat (up to 6 components).
+3. **Multi-drone association.** A pile gets a block when at least 2 drones agree within the gate, or one strong component points at no other pile. Visited and excluded piles take part as explainers.
+4. **Rival test.** A likelihood-ratio test against rival piles gives `association_conf`. Ambiguous clips are capped at reliability 0.45 and priority 19, so they never trigger a dispatch on their own.
+5. **Separation.** Delay-and-sum or LCMV beamforming towards the pile, with nulls on other sources. Cross-talk suppression for knocks and speech.
+6. **Rotor handling** (assoc-v12). Bearings towards our own hovering drones are skipped or nulled. A **rotor veto** rejects voice or knock clips with steady loudness and a blade-pass harmonic comb.
 
-#### 4.3.3 Recognisers and the acoustic agent (`acoustic/models.py`, `acoustic/run.py`, `acoustic/agent.py`)
+The working tree has moved on (`assoc-v14`, uncommitted at writing). The numbers in this report are for the committed versions named.
 
-- **Silero VAD v5** (ONNX, MIT): speech ratio.
-- **YAMNet** (TFLite, Apache-2.0): 521 AudioSet classes grouped into voice, shout, knocking, dog, engine, debris and noise. Two documented heuristics only boost group scores: knock periodicity (onset autocorrelation) and mains/engine harmonicity.
-- **faster-whisper** `base.en` (CTranslate2 int8). Transcripts are kept as evidence only if VAD ≥ 0.3 (≥ 0.5 for non-speech classes), `no_speech_prob` < 0.6, `avg_logprob` > −1.0, the text is not a known hallucination ("thank you for watching"), and it does not repeat a talker already owned by another pile (cross-talk suppression).
-- **Agent.** For each clip, an LLM (Gemini, or Claude if only that key is set) or the deterministic fallback returns human, urgency and reliability in [0, 1] and a rationale. The fallback uses class scores, VAD and distress keywords ("help", "trapped", "hurt"…, each +0.35 urgency). Reliability is then multiplied by (0.5 + 0.5 × association confidence). Pile priority is deterministic code:
+#### 4.3.3 Recognisers and the acoustic agent
 
-$$\text{priority}=100\cdot h\cdot(0.35+0.65\,u)\cdot(0.45+0.55\,r)$$
+- **Recognisers:** Silero VAD v5, YAMNet (521 classes into 7 groups, plus knock-rhythm and hum heuristics), faster-whisper `base.en`.
+- **Transcript gate:** VAD, `no_speech_prob`, `avg_logprob`, the hallucination list and a cross-talk check.
+- **Class floor:** a human floor per class, taken from the real-audio validation.
+- **Agent:** an LLM or the deterministic fallback scores human, urgency and reliability. Reliability is scaled by the association confidence.
+- **Pile priority** (deterministic):
 
-- **Pile statuses.**
-  - `radar_ping` (top human lead) or `lead`: human ≥ 0.4;
-  - `dismissed_nonhuman`: heard, judged non-human, **still not cleared**;
-  - `no_signal_not_cleared`: nothing heard; priority stays at a baseline of 8.
+$$\text{priority}=100\cdot h\cdot(0.35+0.65u)\cdot(0.45+0.55r)$$
 
-  A later silent listen never lowers an earlier lead.
+Pile statuses: `lead` (human ≥ 0.4), `dismissed_nonhuman` (**not cleared**) and `no_signal_not_cleared` (baseline 8).
 
-#### 4.3.4 Two-stage multilingual pipeline (`acoustic/novelty.py`, `acoustic/gemini_audio.py`; user design, committed in `06013f5`, not yet wired into `acoustic/run.py` or the mission at writing)
+#### 4.3.4 Novelty filter and Gemini audio (`acoustic/novelty.py`, `acoustic/gemini_audio.py`; wired into `run.analyse` at `26de7e9`)
 
-**Stage 1: open models, local, always on** (novelty filter).
-1. **Background profile:** an explicit background segment with its loudest 30% dropped, or minimum statistics (the quietest 30% of frames).
-2. **Denoise:** `noisereduce` spectral gating, or a built-in Wiener-style subtraction.
-3. **Novelty per 16 ms frame** on a 40-band log-mel (60–7600 Hz), against the background:
-   - **band:** mean of the 5 largest robust z-scores;
-   - **Mahalanobis distance:** shrunk covariance, divided by √bands;
-   - **flux:** robust z of positive spectral flux;
+**Stage 1, local, always on.**
+1. A background profile.
+2. Spectral-gating denoise.
+3. Per-frame novelty: log-mel band z-scores, a Mahalanobis distance and spectral flux.
+4. Hysteresis segmentation into clips.
+5. Cheap triage with VAD and YAMNet. Likely-human and uncertain clips go on; dog, engine, siren and similar are dismissed (still not cleared).
 
-   novelty = max(median₅(½(band + maha)), ½ flux).
-4. **Segment:** hysteresis 4.0 on and 2.5 off, gaps under 1.6 s merged, minimum 0.08 s, padded 0.25 s, split at 15 s.
-5. **Cheap triage** with Silero VAD and YAMNet display names: `likely_human` (speech, shout, cry, moan, cough, breathing, knock, tap…), `likely_other` (dog, engine, siren, glass, debris…, dismissed), `background` (dismissed) or `uncertain`. Only `likely_human` and `uncertain` go to stage 2. Dismissed clips stay in the output as "dismissed: dog" and similar.
+**Stage 2, Gemini** (`gemini-3.5-flash-lite`, prompt v5). The denoised clip (≤ 15 s) goes to Gemini. It returns:
+- human vocal activity;
+- languages (BCP-47), a verbatim transcript and an English translation;
+- sound type and distress cues;
+- people count and location hints;
+- confidence and a rationale.
 
-**Stage 2: Gemini audio understanding.** The denoised mono 16 kHz WAV (≤ 15 s) is sent inline to Gemini (`gemini-audio-v2` prompt). It returns: human vocal activity; languages (BCP-47, prompted for Mandarin, Taiwanese Hokkien, English, Indonesian, Vietnamese, Tagalog, Thai); a verbatim transcript and English translation; sound type; distress indicators (trapped, injured, can't breathe, child, multiple people, water request, location hint, …); people count; location hints; confidence; and a rationale of at most 25 words. The prompt tells the model not to let the rescue context make it hear calls for help, and never to say a person is confirmed. On failure or without a key: local Whisper (multilingual if on disk) plus multilingual distress keywords, marked `by: "fallback"`.
+The prompt forbids inventing distress phrases and forbids confirmation language. The **offline fallback** is Whisper plus multilingual keywords. With `base.en` it identifies no language for Mandarin, Indonesian or Vietnamese clips.
 
-**Stage 3: per-sector priority.** The same formula as §4.3.3, with distress indicators raising urgency.
-
-**Evaluation design** (`acoustic/eval_gemini.py`):
-- **Stage 1:** real events (FLEURS speech in 4 languages, ESC-50 human and non-human classes, Piper distress phrases) mixed into 20 s beds at +10, 0 and −5 dB SNR. Beds are ambient wind, a **real DroneAudioSet rotor recording**, and a generator.
-- **Stage 2:** language ID, transcript CER, translation token-F1 against parallel FLEURS English, distress-tag recall, latency and cost.
-
-Results: «PENDING: ACOUSTIC-GEMINI». Interim files exist in `eval/acoustic_gemini/` but are not cited.
+**Stage 3.** Per-sector priority, using the same formula.
 
 #### 4.3.5 Validation
 
-**Pile assignment** (`acoustic.eval_assign report --algos v1-baseline,assoc-v6`, cached runs; real models with the fallback agent on **synthetic scenes**; 5 seeds {3, 7, 11, 19, 23}, 15 mission listens, start pile excluded):
+**Real recordings, rotors off** (`docs/ACOUSTIC_VALIDATION.md` §5–6, assoc-v11). Human vs non-human, agent output:
 
-| Algorithm | Detect P/R | Human-lead P/R | Confident P/R | False confident human leads | False human leads (any) | Voice pile dispatched first |
-|---|---|---|---|---|---|---|
-| v1-baseline | 1.00 / 0.84 | 0.62 / 0.79 | 0.62 / 0.79 | 16 | 16 | 4/5 |
-| **assoc-v6** | 0.99 / 1.00 | **0.92** / 0.73 | **1.00** / 0.67 | **0** | 2 | **5/5** |
+| Set | Precision / recall / F1 | AUC |
+|---|---|---|
+| ESC-50 | 0.69 / 0.71 / 0.70 | 0.88 |
+| Teammate CC0 clips | 0.79 / 0.85 / 0.81 | 0.97 |
+| DroneAudioSet, rotors off | 0.90 / 0.76 / 0.82 | – |
+| DroneAudioSet + real rotor noise at 0 dB | 0.90 / 0.43 / 0.58 | – |
 
-These numbers are for `assoc-v6`; `assoc-v7` (uncommitted at writing) has not been re-evaluated. The fix removed every confident false lead. **The cost is recall.** In seed 7 the faint voice at B1 is now found and dispatched to in listen 2, but the **knocking victim at B2 is scored "engine"/non-human** in listens 2 and 3 (human 0.24 and 0.10). B2 would be "dismissed, not cleared" if the radar never visited it. Knocks are now the weak class. Caveats: five seeds, synthetic scenes, fallback agent.
+- "help" was transcribed in 7 of 13 clips.
+- **Direction of arrival on real DREGON recordings:** 100% within 10° with rotors off (static, n = 192); 90% hand-carried; 17–24% with rotors on in real flight. This supports landing and switching off to listen.
+- **Caveats:** single channel (except DREGON), near field, nothing through rubble. The rotor veto (assoc-v12) has **not** been re-validated on real audio.
 
-**Real audio** (DroneAudioSet with rotor noise, ESC-50, teammate recordings: detection precision/recall and Whisper under drone noise versus SNR): «PENDING: ACOUSTIC-REAL».
+**Pile assignment on synthetic scenes** (`acoustic.eval_assign`, 5 seeds, 15 listens; BL-3 fix at `eb8cdba`): confident false human leads went from 16 to 0, and the voice pile was dispatched first in 5/5 seeds (from 4/5). At that version, knocks were the weak class.
+
+**Gemini audio, live** (`docs/ACOUSTIC_GEMINI.md`, 7 Nov, `gemini-3.5-flash-lite`):
+- 251 clips, 0 fallbacks.
+- Language ID: 89/90 clean and 78/90 noisy (FLEURS, 9 languages).
+- Distress-cue recall 0.76, precision 1.00 (24 TTS phrases). Invented cues in 4 of 180 news clips.
+- Median latency 1.6–1.8 s per clip.
+- Knocks were rarely called human (0/5), so stage 1's knock heuristic and YAMNet carry them.
+
+**Stage 1 on synthetic mixes** (real event clips in synthetic beds):
+- human-event recall 97–100% at ≥ 0 dB rotors off, but **56%** at −5 dB with a hovering drone;
+- non-human false-forward 14–64% (Gemini sorts those).
+
+### 4.4 Rescue Wi-Fi hotspot and phones (docs/HOTSPOT.md, `sim/comms.py`)
+
+Each drone serves an open 2.4 GHz AP, `RESCUE-WEIGUAN`. A phone that joins sees a 6-language captive portal with three buttons: *I'm trapped*, *I'm safe*, *Send a message*. Several drones measure the RSSI of each joined phone, and a grid-Bayes fit gives a **candidate region**, drawn in blue.
+
+**What it does not do.** There is no passive MAC or probe sniffing and no cellular interception. It finds only phones whose owners **choose** to join. Unconscious people and phones under more than about 2 m of rubble are invisible to it.
+
+**Propagation through rubble** is the largest uncertainty. We use a lognormal effective loss, median 20 dB/m, clipped to 6–60 dB/m (estimate; no published per-metre figure).
+
+**Results on synthetic phones:**
+
+| Fleet geometry | Phones located | Median error |
+|---|---|---|
+| Landed around the pile | 34/40 | **0.6 m** |
+| Survey only | 25/40 | 7.1 m |
+
+In seed 7, B2's phone was **first fitted in the wrong sector** (B3) from 22 m away. It was corrected once the fleet reached B2.
+
+**Effect on the mission.** A located "trapped" phone raises a pile to `lead` (priority 85). It is never a ping and never a clearance.
+
+### 4.5 Loudspeaker call-out (docs/SPEAKER.md, `sim/callout.py`, `sim/guidance.py`)
+
+The drones follow standard USAR practice: get silence, call out, listen.
+
+- **Templates.** After each listen, they play fixed templates in zh-TW, Taiwanese Hokkien and English (Indonesian and Vietnamese are opt-in).
+- **Responses.** Replies (knocks, shouts) are analysed from measurements only and fused into a responsiveness field. That field raises the dig order (`triage_fused`).
+- **No response** reads "no response — does not rule out unconscious".
+- **Reassurance and route guidance.** After a ping, the speaker reassures; people who can walk get A* route guidance to the tent.
+- **Operator text** and every machine translation wait for operator approval (`/api/broadcast/approve`). An LLM never writes audio that plays unreviewed.
+- **The Hokkien line** uses machine TTS that no native speaker has checked.
 
 ---
 
@@ -461,204 +557,197 @@ These numbers are for `assoc-v6`; `assoc-v7` (uncommitted at writing) has not be
 
 ### 5.1 Grid Bayes filter (`sim/localise.py`)
 
-The filter works on the 2D search layer of the active pile: a 30 m window at 0.5 m cells. It never sees truth.
+The filter runs on the active pile's 2D layer: a 30 m window, 0.5 m cells. It never sees truth.
 
-**Prior from LiDAR only.** Let M be the smoothed mask of cells more than 0.4 m above the local ground and within 13 m of the height-weighted mound centroid. Then
+**Prior from LiDAR only:**
 
-$$p_0(c)\propto f+(1-f)\,M(c),\qquad f=0.08.$$
+$$p_0(c)\propto f+(1-f)M(c),\quad f=0.08,$$
 
-**Predicted range** to cell c, from sensor s, at nominal depth $d_0=1.5$ m below the surface $z_c$:
+where M is the smoothed mask of cells more than 0.4 m above local ground and within 13 m of the mound centroid.
 
-$$r_c=\sqrt{\lVert \mathbf{x}_c-\mathbf{s}_{xy}\rVert^2+\big(s_z-(z_c-d_0)\big)^2}$$
+**Predicted range** from the sensor s (for a pod, the antenna face 5 cm above the surface) at nominal depth $d_0$ = 1.5 m:
 
-**Range uncertainty**, combining scan quality and depth uncertainty projected onto the line of sight:
+$$r_c=\sqrt{\lVert\mathbf x_c-\mathbf s_{xy}\rVert^2+(s_z-(z_c-d_0))^2},\qquad \sigma_c=\sqrt{\sigma_r(q)^2+(\sigma_d|\Delta z|/r_c)^2},$$
 
-$$\sigma_c=\sqrt{\sigma_r(q)^2+\big(\sigma_d\,|\Delta z|/r_c\big)^2},\qquad \sigma_r(q)=0.25+0.4(1-q)\ \text{m},\ \sigma_d=0.5\ \text{m}$$
+with $\sigma_r(q)=0.25+0.4(1-q)$ and $\sigma_d$ = 0.5 m.
 
-**Ring-likelihood mixture with an outlier floor.** One scan with ranges $\rho_k$ and confidences $c_k$:
+**Ring-likelihood mixture with an outlier floor:**
 
-$$L(c)=\varepsilon+\min\!\Big(1,\ \sum_k w_k\, e^{-\frac12\left(\frac{\rho_k-r_c}{\sigma_c}\right)^2}\Big),\qquad w_k=c_k\,q,\ \varepsilon=0.015$$
+$$L(c)=\varepsilon+\min\!\Big(1,\sum_kc_kq\,e^{-\frac12((\rho_k-r_c)/\sigma_c)^2}\Big),\quad\varepsilon=0.015;\qquad \log b\leftarrow\log b+\log L.$$
 
-The floor ε means a scan that contradicts the others (multipath, clutter, a bad landing) cannot zero the belief. It is down-weighted, not trusted absolutely. The update is additive in log space: $\log b\leftarrow\log b+\log L$.
+- The floor ε stops one contradicting scan from zeroing the belief.
+- **An empty scan updates nothing.** No detection is not evidence of absence.
+- `doppler_moving` returns feed a separate random-walk track.
 
-- **No detection is not evidence.** A scan with no candidates updates nothing. It is logged as "no detection", never treated as absence.
-- **Moving returns** (`doppler_moving`) go to a separate random-walk track (Gaussian blur with σ = 0.7 √Δt m) and never touch the stationary belief.
+### 5.2 Modes, pings and insufficient evidence
 
-### 5.2 Mode extraction and the insufficient-evidence logic
-
-The belief is smoothed. Local maxima in a 5×5 window above 30% of the global peak become modes (merged within 2 m, at most 6). Each cell is assigned to its nearest mode within 4 m, giving per mode a mass $p_{mass}$, a mean and a covariance. The **95% region** is the smallest set of cells that holds 95% of the belief. The result is `candidate` only if all of the following hold:
+Modes are smoothed local maxima, merged within 2 m. Each cell is assigned to its nearest mode within 4 m, giving the mode's mass, mean and covariance. The result is `candidate` only if all of these hold:
 
 - the dominant mode holds ≥ 0.70 of the belief;
-- no second mode holds ≥ 0.15 (otherwise "ambiguity: two modes x m apart");
-- the dominant mode's semi-major σ is ≤ 2.0 m.
+- no second mode holds ≥ 0.15;
+- σ_major ≤ 2 m;
+- **3 independent strong ranges** pass through the mode (agreement > 0.5, c·q ≥ 0.35).
 
-The coordinator then requires **3 independent strong ranges** through the mode (agreement > 0.5 and conf × q ≥ 0.35). Three noisy ranges cannot identify one faulty range, so a contradicting "trusted" scan (q ≥ 0.5, conf × q ≥ 0.4, agreement < 0.25) blocks the fix until **at least two later strong scans** agree with the consensus. Then it is flagged as an **outlier** in the ping's evidence, not deleted. This was the R2-002 fix. Otherwise the pile ends `insufficient_evidence`: the region stays open and the pile is **not cleared**.
+A trusted scan that contradicts the consensus blocks the fix until **two later strong scans** agree. Then it is flagged as an outlier rather than deleted (R2-002). Otherwise the result is `insufficient_evidence`: the region stays open and the pile is not cleared.
 
-`p_mass` is a **share of this pile's belief**, not the probability that a person is there (`p_kind: "share_of_pile_belief"`, R1-008). The dashboard says "belief share" and, for weak candidates, shows support (n of 3) instead.
+`p_mass` is a **share of the pile's belief**, not the probability that a person is there. The dashboard calls it "belief share".
 
-### 5.3 Expected-information-gain scan selection (`sim/planner.py`)
+### 5.3 Expected-information-gain pod placement (`sim/planner.py`)
 
-**Initial three sites: trilateration geometry.** Draw 48 hypotheses $x_i$ from the prior. For each candidate site s, the range-information contribution of a hypothesis is
+Pod placements are candidate sites for the same planner, flagged `pod`. Their sensor height is 0.05 m, the dwell is 45 s, and their quality is the seated quality.
 
-$$J_s(x_i)=\frac{p_{det}(x_i,s)}{\sigma_{range}^2}\,\mathbf{u}_{si}\mathbf{u}_{si}^\top,$$
+**Initial three placements.** Choose the triple that maximises
 
-where u is the unit horizontal direction from the site to the hypothesis. Over all triples of sites, choose
+$$\mathbb E_i\big[\log\det(\textstyle\sum_jJ_{s_j}(x_i)+0.05I)\big],\qquad J_s(x)=\frac{p_{det}}{\sigma^2}\mathbf u\mathbf u^\top,$$
 
-$$\arg\max_{\{s_1,s_2,s_3\}}\ \mathbb{E}_i\Big[\log\det\Big(\textstyle\sum_{j} J_{s_j}(x_i)+0.05\,I\Big)\Big].$$
+over 48 prior samples.
 
-This rewards angular spread, short ranges and good landing quality. Drones are then assigned to the three sites by the permutation with the least total travel time.
+**Adaptive re-placement:**
 
-**Adaptive relocation.** With belief b over its support (cells above $10^{-4}$ of the peak), the expected information gain of one scan from site s is estimated by Monte Carlo with K = 96 samples:
+$$\mathrm{EIG}(s)=\mathbb E_{x\sim b}\big[p_{det}(x,s)(H(b)-H(b|y))\big],$$
 
-$$\mathrm{EIG}(s)=\mathbb{E}_{x\sim b}\Big[p_{det}(x,s)\,\big(H(b)-H(b\mid y)\big)\Big],\qquad y=r_s(x)+\nu\,\sigma_{range}(q_s,\ell),\ \nu\sim\mathcal N(0,1).$$
+with $y=r_s(x)+\nu\sigma$ and K = 96 Monte Carlo samples. The detection term
 
-The posterior $b\mid y$ uses the same ring likelihood with weight 0.75q. The detection term
+$$p_{det}=\sqrt q\,e^{-(r/25)^2}\cdot\mathrm{reach\_prob}(r,\ell,q,\text{dwell})$$
 
-$$p_{det}=\sqrt{q}\,e^{-(r/25)^2}\cdot \mathrm{reach\_prob}(r,\ell,q)$$
+carries the penetration limit, so the planner prefers placements directly above the void.
 
-includes the penetration limit (§4.2.3), with ℓ the rubble path to the hypothesis. That is why the planner prefers perches above a void. The planner picks the (drone, site) pair maximising $\mathrm{EIG}-\lambda t_{travel}$ with λ = 0.004 nats/s, and reports a score $\mathrm{clip}(\text{net}/\ln 2,0,1)$ and a plain-words reason, such as "separates two modes 3.1 m apart: predicted ranges 7.2 vs 9.8 m (EIG 0.56 nats, 14 s flight)".
+- **Pick:** the best (drone, site) by EIG − 0.004 nats/s × travel time.
+- **Stop:** a ping; the per-visit budget (8 scans); no site left; or best EIG < 0.2 nats after ≥ 3 scans.
 
-**Baseline** (`fixed_next`): ignore the belief and take the site most angularly separated from those already used.
+Every relocation is logged with a plain-words reason, such as "separates two modes 3.1 m apart …".
 
-### 5.4 Stopping, relocation and the per-pile loop
-
-At each decision the coordinator does one of the following:
-- **stops** with a ping (the conditions in §5.2);
-- **stops** with `insufficient_evidence` when the per-pile budget (8 scans in the grid mission, 6 in the single-pile evaluation) is used, no reachable site is left, or the best next scan is worth **< 0.2 nats** after at least 3 scans;
-- otherwise **relocates** the best drone and rescans.
-
-Every decision is written to the log with its evidence, in plain words.
-
-### 5.5 Autonomy loop across piles (`sim/grid_mission.py`)
+### 5.4 Mission loop, tasking and recon (`sim/grid_mission.py`, `sim/tasking.py`, `sim/recon.py`)
 
 | Parameter | Value |
 |---|---|
-| Mission radar-scan budget | 24 scans (all piles, all drones) |
-| Per-pile time cap | 600 s |
-| Listening window | 26 s, rotors off, after each pile |
+| Mission radar scans | 36 with the pod (24 with the old landing ring) |
+| Listen | 26 s rotors off, off the pile, then the call-out |
 | Dispatch threshold | acoustic priority ≥ 20 |
-| Revisits | an open lead may be revisited (max 2 visits) only if the radar can reach ≥ 50% of its top 2 m from the sites used; ranked at half its priority |
-| Battery | 25% reserve; an option that breaks it becomes a `battery_swap` option (return, 60 s swap, fly out) |
-| Coverage | share of pile volume (1 m cells within 9 m, > 0.4 m above ground, sampled every 0.5 m in depth) within reach of some scan, overall and for the top 2 m |
+| Revisits | max 2 visits; only if radar reaches ≥ 50% of the top 2 m; ranked at half priority |
+| Battery | 25% reserve; otherwise a `battery_swap` option (return, 60 s swap) |
+| Phone evidence | a "trapped" phone → `lead` 85; never a ping |
 
-After each listen, the **dispatch gate** builds scored options: dispatch to each candidate pile (priority, travel time, battery after, evidence, flags `below_threshold | nonhuman | silent | unreachable | battery_swap`), a revisit or rescan of an open lead, and stop (`pile_budget_used`, `scan_budget_used`). The argmax is the highest-priority reachable option at or above the threshold, else stop. Baselines for evaluation: `--dispatch nearest` (nearest unvisited, no listening) and `--dispatch raster` (fixed order A1 B1 C1 C2 B2 A2 A3 B3 C3).
+**Dispatch gate.** It scores the options (dispatch, revisit, stop) with priority, travel, battery-after, evidence and flags. The argmax is the highest-priority reachable option at or above the threshold. Baselines: `--dispatch nearest` and `--dispatch raster`.
 
-### 5.6 Planned: operator tasking zones and reconnaissance mode (contract v1.2, not yet implemented or evaluated)
+**Operator tasking** (contract v1.2, integrated in `ec0c696`):
+- The operator draws search zones on the dashboard; `scripts/serve.py` (`/api/tasking`) saves them.
+- The mission searches only inside the zones and reports per-zone status and coverage.
+- A zone searched without a ping is "searched — not cleared". It is reopened only by new evidence or a re-task.
+- Acoustic leads outside every zone become `zone_suggestions`.
 
-Two extensions are specified in `contracts/INTERFACES.md` (v1.2) and are being built at writing (BL-25). Nothing in §8 covers them.
+**Recon mode** (no zones tasked):
+1. A coverage flight builds a fresh LiDAR map (satellite imagery is stale after a collapse).
+2. The drones perch and listen with rotors off.
+3. Rubble mounds are segmented into `zone_proposals` for the operator.
 
-- **Tasking zones.** Before launch, the operator draws search polygons on the dashboard. A local ops server (`scripts/serve.py`, `POST /api/tasking`) validates them and writes `tasking.json`. The mission searches only inside tasked zones and re-reads the file each step. It reports per-zone status (`unsearched … searched_no_ping | ping | lead | beyond_radar_reach`) and coverage (LiDAR-mapped, radar-reached, listened). A searched zone without a ping is shown as "searched, not cleared". Acoustic leads outside every zone become `zone_suggestions` for the operator to accept.
-- **Reconnaissance mode.** With no zones tasked, the drones run three steps:
-  1. a coverage flight (boustrophedon or spiral, about 12–15 m above the highest mapped point) builds a fresh LiDAR map, because post-collapse satellite imagery is stale;
-  2. they perch on flat cells and listen with rotors off for about 15–20 s;
-  3. they segment rubble mounds into `zone_proposals` ranked with acoustic leads, which the operator accepts or edits.
-
-  In-flight audio is used only for very loud events, because of rotor ego-noise.
+In sim the default is `--tasking default`: the scenario's rubble outlines.
 
 ---
 
 ## 6. Decision-making agents
 
-### 6.1 "Numbers propose, the agent decides, code verifies"
+### 6.1 Numbers propose, the agent decides, code verifies
 
-The LLM is bounded by design (`docs/AGENTS.md`, `docs/agent-decisions.html`):
+1. **Numbers propose.** The planner and gate compute every option and its evidence.
+2. **The agent decides.** It picks one option id and writes at most two sentences.
+3. **Code verifies.** A validator accepts or rejects the pick. On any failure the deterministic choice runs, labelled `by: "fallback"`; without a decider, it is labelled `argmax`.
 
-1. **Numbers propose.** The planner and gate compute every option and its evidence deterministically.
-2. **The agent decides.** It picks one option id and writes a rationale of at most two sentences.
-3. **Code verifies.** A validator accepts or rejects the pick. On any failure, the deterministic choice runs and the decision is labelled `by: "fallback"`. Without a decider it is labelled `argmax`.
+`agents/` is stdlib-only REST.
 
-`agents/` is stdlib only (urllib REST, no SDK), so it imports in every environment, including Isaac's Python. The provider is Gemini (`gemini-3.5-flash`) when `GEMINI_API_KEY` is set, else Anthropic, else none.
+| Entry point | LLM output | Validator / fallback |
+|---|---|---|
+| Dispatch gate (`agents/gemini_decider.py`) | option id + rationale | the id must be listed; no option leaving a drone under the 25% reserve, `no_go` or `unreachable`; banned-claim regex ("confirmed", "survivor(s) found", "person found", …); else highest-priority valid option, else stop |
+| Gemini audio (stage 2) | structured analysis | schema validation; else Whisper + keywords |
+| Per-clip acoustic triage | human, urgency, reliability | values in [0, 1]; else keyword/score fallback |
+| Operator notes intake | priors, no-go piles | clamped to [0.3, 3]; unknown piles dropped |
+| Handover brief | rewrite of template facts | no banned claims, no unknown ids, every ping kept; else the template |
+| Speaker | never generates audio text | only vetted templates play autonomously; translations need operator approval |
 
-### 6.2 Where an LLM can act
+**What the LLM never does:**
+- see ground truth;
+- touch the DSP, Bayes, EIG or flight;
+- invent options;
+- claim confirmation;
+- break the mission (every failure falls back).
 
-| Entry point | Module | LLM output | Validator and fallback |
-|---|---|---|---|
-| Dispatch gate | `agents/gemini_decider.py` | option id + rationale | id must be listed; no option leaving any drone under the 25% reserve, `no_go` or `unreachable`; banned-claim regex ("confirmed", "survivor(s) found", "person found", …, with negation guards); else the highest-priority valid option, else stop |
-| Per-clip acoustic triage | `acoustic/agent.py` | human, urgency, reliability, rationale | values in [0, 1]; else the keyword/score fallback |
-| Multilingual audio (stage 2) | `acoustic/gemini_audio.py` | structured audio analysis | schema validation; else Whisper + keywords |
-| Operator notes intake | `agents/intake.py` | pile priors, ignored-sound piles, no-go piles | multipliers clamped to [0.3, 3]; unknown piles dropped; keyword fallback |
-| Handover brief | `agents/brief.py` | rewrite of template facts | no banned claims, no unknown pile ids, every ping id kept; else the template; visited open leads read "searched, no ping" |
+### 6.2 Models, quota and replay
 
-### 6.3 What the LLM never sees or does
-
-- **Ground truth.** Prompts are built from observable state; `truth`/`targets` keys are stripped; a test asserts it.
-- **The numeric loop.** It never touches the radar DSP, the Bayes filter, EIG or flight.
-- **Invented options.** It can only choose among listed options.
-- **Claims of confirmation.** Banned by regex in the decider and the brief.
-- **Breaking the mission.** Every failure returns `None` and the deterministic path runs. Timeout is 25 s (60–90 s for audio), with one retry on 429/5xx. A token-bucket throttle, backoff on 429s and replay landed with the audio path in `06013f5`.
-
-### 6.4 Record and replay
-
-Every successful call is cached in `agents/cache/llm.jsonl` (gitignored), keyed by provider + model + prompt. The acoustic judge has a per-feature cache. `LLM_REPLAY=1` forces cache-or-fallback, never the network, so a live demo is reproducible offline. The acoustic analysis cache is keyed by seed, start pile, snapped drone positions, exclusions and (after R2-003) the algorithm version (`assoc-v6`), so a code change cannot be masked by stale clips.
-
-**Status.** Expected cost is about 5 calls and ~10k input tokens per mission. The first live calls (19:55) hit HTTP 429 and were logged as `fallback`. Every decision in the runs inspected for this report is `argmax` or `fallback`. «PENDING: GEMINI-LIVE»
+- **Models:** `gemini-3.5-flash-lite` for audio and `gemini-3.7-flash` for the decider. Both were verified present via `models.list` on 8 Nov (PLAN decision, 8 Nov). Some docs and `agents/llm.py` defaults still say `gemini-3.5-flash` (Requests).
+- **Quota:** the key is **free tier**. On 7 Nov `gemini-3.5-flash` hit its daily quota after 18 calls (about 20/day), while flash-lite answered 251+ calls. Calls are throttled by a token bucket with backoff on 429.
+- **Replay:** every answer is cached in `agents/cache/llm.jsonl`, keyed by provider, model and prompt. `LLM_REPLAY=1` replays without the network.
+- **Labelling:** every on-screen decision shows `by: gemini | fallback | argmax`.
+- **Status:** Gemini audio ran live (§4.3.5). The dispatch decider has **0** recorded live decisions «PENDING: GEMINI-DISPATCH». In the take, the box runs without `.env` by default, so the dispatch badge will read the fallback unless the key is set.
 
 ---
 
-## 7. Operator interface (`dashboard/`)
+## 7. Operator interface (`dashboard/`, `scripts/serve.py`)
 
-A static web app (three.js 0.160.0 vendored for offline use). It polls `state.json` every second. `?state=<path>&poll=<ms>` selects a replay. Layout is checked at 400 px and 1440 px.
+A static web app with three.js vendored for offline use. It polls `state.json` every second. `scripts/serve.py` serves it and the APIs for tasking, the portal and broadcasts. `?layout=take` is the video layout, verified at 640×1080, 960×1080 and 1920 wide.
 
 | Feature | How the claim is kept honest |
 |---|---|
-| Site map: piles, drones, landing sites, range rings, belief, acoustic cones, dispatch arrow | Red dots are labelled **"candidate search region · not a confirmed person"**; the map key ("How to read this map") explains every mark |
-| Basemap: OSM / Esri of the Weiguan site via `site.geo`, LiDAR relief fallback offline | Case-study chip and a facts popover with sources; layout is synthetic (R2-016 asks for that to be said on the chip) |
-| Pile priority list | statuses `ping`, `lead`, `dismissed_nonhuman`, `no_signal_not_cleared`; silent and non-human piles read **"not cleared"** |
-| Radar candidates | **belief share** (not "probability"); support n/3 for weak candidates; **depth "≈1.5 m (nominal) · assumed, not measured"** unless `depth_source` is `radar_estimate`; outlier scans listed |
-| Ping detail (3D) | the ping inside the pile's LiDAR point cloud, labelled "candidate search point", omitted for weak candidates |
-| Dispatch decisions | every option with priority, travel, battery after, evidence and flags; the choice and a badge: GEMINI / ARGMAX / FALLBACK |
-| Acoustic agent | per-listen selector; clips with id, beam drone, bearing ±, SNR, VAD, association (confident/ambiguous), transcript, scores, `by` (llm / fallback); "Recorded audio · cached analysis" when replayed |
-| Source banners | `stub-from-truth` acoustic runs and demo data are bannered |
-| Vitals and dig order (in progress, `dashboard/vitals.js`) | triage chips with tooltips citing the START respiratory criterion only; "aid, not diagnosis"; low-confidence child flag |
-| Summary and brief | "Open leads for ground teams"; piles not cleared listed explicitly |
-
-Screenshots: `docs/screenshots/grid-final.png`, `grid-dispatch-t384.png`, `ping-detail-A2-R1.png`.
+| Site map: piles, drones, pods, range rings, belief, cones, dispatch, zones, phone regions (blue) | Red = "candidate search region · not a confirmed person"; a map key explains every mark; layout labelled synthetic over a real basemap |
+| Pile list | statuses `ping`, `lead`, `dismissed_nonhuman`, `no_signal_not_cleared`, "searched — not cleared"; never "cleared" or "empty" |
+| Radar candidates | belief share; support n/3; depth with its source ("nominal · assumed" or "radar estimate"); outliers listed |
+| Condition and dig order (`dashboard/vitals.js`) | condition chip, with the hint and "aid, not a diagnosis"; dig order = triage weight × localisation certainty × accessibility; rejected returns collapsed under "Not a person, says the radar" |
+| Ping detail (3D) | the ping inside the LiDAR model; source signature thumbnail labelled synthetic reference |
+| Dispatch decisions | every option, flags, the choice, and a GEMINI / ARGMAX / FALLBACK badge |
+| Acoustic panel | per listen: clips with bearing, SNR, VAD, association, transcript, `by`; "Recorded audio · cached analysis" when replayed |
+| Speaker panel | vetted templates; operator text and translations need approval; broadcast log; responsiveness chips ("no response — does not rule out unconscious") |
+| Comms / portal | phone regions and messages marked synthetic in simulation |
+| Take layout | LIVE event line, live breathing waveform ("analysing breathing… n s" until the 45 s verdict), top clip, top-3 dig order |
 
 ---
 
 ## 8. Evaluation
 
-Everything is **simulation** unless marked **real data**. n = sample size.
+Everything is **simulation** unless marked **real data**. Always quote a number with its row and caveat.
 
-### 8.1 Summary table
+### 8.1 Summary
 
 | What | Result | n / spread | Source | Caveat |
 |---|---|---|---|---|
-| Breathing DSP, **real data** | MAE **0.39 bpm**; 95% of windows within 2 bpm | 176 windows of 30 s, 3 subjects; per-subject MAE 0.07–0.95 | `docs/RADAR_VALIDATION.md` | line of sight, 24 GHz CW, 0.4 m, resting, no rubble |
-| SLAM pose error | ATE **3.6 cm** vs 1.51 m odometry only | 1 pile, 1 seed, 300 sweeps; max 7.1 cm | `map_B2/metrics.json` | own ray-caster and geometry |
-| Landing map | IoU **0.983**; 16/16 sites valid (odometry only 11/16) | same run | same | geometry, not structural safety |
-| Planning vs fixed sites, single pile | resolved **43% vs 10%**; 95% area **100 vs 285 m²**; median error 0.52 vs 0.77 m; truth in 95% region 93% vs 93%; 0 false alerts each | 30 seeds, 6-scan budget | `eval/results.json` (16:33) | older code and model radar; «PENDING: B5-RERUN» |
-| Acoustic pile assignment | false confident human leads 16 → **0**; human-lead precision 0.62 → 0.92, recall 0.79 → 0.73; voice pile first 5/5 | 5 seeds, 15 listens | `acoustic.eval_assign` (`eb8cdba`) | synthetic scenes; knocks now missed (§4.3.5) |
-| Multi-pile dispatch: acoustic vs nearest vs raster | «PENDING: EVAL-GRID» | | `docs/EVAL_GRID.md` | defaults to the truth-fed acoustic **stub**, cleaner than the real pipeline; the doc must say which was used |
-| Acoustic front end, **real audio** | «PENDING: ACOUSTIC-REAL» | | `docs/ACOUSTIC_VALIDATION.md` | |
-| Novelty filter + Gemini audio | «PENDING: ACOUSTIC-GEMINI» | | `docs/ACOUSTIC_GEMINI.md` | |
-| Vital-sign patterns, **real data** | «PENDING: VITALS» | | `docs/VITALS.md` | |
-| Gemini live dispatch | «PENDING: GEMINI-LIVE» | | | first calls rate-limited |
+| Multi-pile dispatch (pod, `literature`, reported start) | non-start victims pinged: **acoustic 17/60 vs nearest 6/60 vs raster 5/60**; per seed 28% [15, 42] vs 10% [3, 17] vs 8% [3, 15]; 0 false pings | 20 seeds, bootstrap 95% CI | `docs/EVAL_GRID.md` (`07f7ffb`) | acoustic clips **generated from truth (stub) = upper bound**; **kinematic flight** (before SmoothFlight); not faster overall |
+| Same, independent start | 19/74 vs 10/74 vs 9/74 | 20 seeds | EVAL_GRID | time to first non-start ping is **worse** for acoustic (1413 s vs 1042 s) |
+| Landing ring instead of pod | 0/60, 0/60, 1/60 | 20 seeds | EVAL_GRID | why the pod exists |
+| Breathing DSP, **real data** | 0.39 bpm MAE | 176 windows, 3 subjects | RADAR_VALIDATION.md | line of sight, 24 GHz CW, no rubble |
+| Vitals rate and pauses, **real data** | MAE 0.51/min (60 s), 0.25/min (30 s); 6/6 breath holds | 57 / 118 windows; 6 holds | VITALS.md | healthy relaxed subjects read "slow, regular" in 38/57 |
+| Condition recall, synthetic | 95 / 100 / 84 / 65% | 45–60 s pod scans | VITALS.md | synthetic generator |
+| Non-human rejector | exact class 59%; confounders mostly rejected as no_signal | 500 synthetic scans | RADAR_SIGNATURES.md | synthetic only |
+| Acoustic recognisers, **real data** | F1 0.70 (ESC-50), 0.81 (CC0), 0.82 (DroneAudioSet rotors off), 0.58 (+rotor 0 dB) | sets as listed | ACOUSTIC_VALIDATION.md | single mic, rotors off, no rubble; rotor veto not re-validated |
+| DoA, **real data** (DREGON) | 100% within 10° rotors off; 17–24% rotors on in flight | n = 192 static | ACOUSTIC_VALIDATION.md | academic-use data, not redistributed |
+| Gemini audio, live | language ID 89/90 clean, 78/90 noisy; cue recall 0.76 / precision 1.00; 0 fallbacks over 251 clips | FLEURS + TTS | ACOUSTIC_GEMINI.md | knocks rarely called human |
+| SLAM | ATE 3.6 cm; landing IoU 0.98 | 1 pile, 1 seed | `map_B2/metrics.json` | own ray-caster |
+| Phone localisation | median 0.6 m landed-around vs 7.1 m survey-only | 40 synthetic phones | HOTSPOT.md | first fit on seed 7 in the wrong sector |
+| Flight smoothness | velocity jumps 471 → 0 (1500 s mission) | seed 7 | MOTION.md | trajectory model only |
+| Single-pile planning vs fixed sites | 43% vs 10% resolved | 30 seeds | `eval/results.json` | **older code (7 Nov 16:33), model radar, landed scans; not re-run** «PENDING: B5-RERUN» |
 
-### 8.2 Single-pile planning (`sim/evaluate.py`)
+### 8.2 Grid evaluation in words
 
-Same seeds, same 6-scan budget, same per-scan noise streams (the generator's RNG is keyed by seed and scan index, so policies see identical noise per scan), model radar, single-target mock world. Adaptive: 5.5 scans on average, 156 s of mission time, 0.71 s compute. Fixed: 5.8 scans, 169 s, 0.24 s. "Resolved" means the result ended `candidate`. Mean error (1.35 vs 1.26 m) is similar because unresolved runs dominate it. The gain is in resolving and in shrinking the region, not in point accuracy. No confidence intervals were computed. With n = 30, a binomial 95% interval on 43% is roughly ±18 points, and on 10% roughly ±11, so the difference is larger than the noise but the exact ratio is not.
+In 20 simulated seeds, acoustic-led dispatch put a radar ping on 17 of 60 non-start victims, against 6 and 5 for the radar-only baselines.
+- The acoustic clips in that evaluation were generated from ground truth, so this is an **upper bound**. There were 0 false pings.
+- Acoustic dispatch visited fewer empty or non-human piles: 0.7 vs 2.8 and 2.5 per mission.
+- No seed had every victim pinged (0/20 for all policies).
+- Paired per seed against nearest: 8 seeds better, 11 the same, 1 worse.
+- With an independent start, acoustic reaches its first non-start ping **later**. **We do not claim the system is faster.**
 
-### 8.3 Adaptive vs fixed vs grid policies
+### 8.3 Seed-7 demo story
 
-The planned grid comparison (acoustic priority vs nearest-first vs fixed raster; victims pinged within the budget, time to first ping, false leads, scans spent on empty piles; reported with and without the start-pile victim) is «PENDING: EVAL-GRID».
+**A2 pings (radar-only, silent); further pings vary by pod seating.**
 
-### 8.4 Radar on real data
+One verified run: review pass 3, `tests/test_demo_story.py` configuration (committed real-pipeline acoustic fixture, default tasking, pod, `literature`, `dsp`, physio, SmoothFlight):
 
-See §4.2.4. No through-rubble data was used.
-
-### 8.5 Acoustics on real data
-
-«PENDING: ACOUSTIC-REAL». The synthetic-scene assignment results are in §4.3.5.
-
-### 8.6 Seed-7 demo missions (single runs, synthetic radar and scenes)
-
-| Run | Path | Pings (t) | Notes |
+| Pile | Result | Sim t | Condition |
 |---|---|---|---|
-| 19:20, known good (`docs/DEMO.md`, cached acoustics before BL-3, argmax, `legacy` penetration) | A2 → A3 → B2 → C3 → C3 | A2-R1 (95), A3-R1 (180), B2-R1 (336) | 24/24 scans, 745 s; the B1 faint voice was attributed to empty C3, which cost 12 scans; B1 ended "non-human" |
-| 19:55 (`dashboard/data/state.json`, cache miss, Gemini 429 → fallback, `--piles 3`) | A2 → A3 → C3 | A2-R1 (126), A3-R1 (383) | 21 scans, 680 s; ping errors vs truth 0.04 m (A2) and 0.28 m (A3), horizontal; both depths `nominal`; B1 still "dismissed_nonhuman" |
+| A2 | ping A2-R1 | 364 s | unconscious_slow (`radar_estimate` depth) |
+| B1 | ping B1-R1 | 1712 s | irregular_apneic |
+| B2 | ping B2-R1 | 2312 s | calm |
+| A3 | insufficient_evidence (open lead) | 2938 s | – |
 
-The BL-3 fix (`eb8cdba`) changes the seed-7 acoustic story: B1 found, B2 knock dismissed (§4.3.5). «PENDING: SEED7-RERUN» for the mission result.
+That run made 34 scans in 3109 s of mission time.
+
+**Why A3 stays open.** A3's victim breathes rapidly and shallowly (33/min, about 2.2 mm). The pods rocked on its seats, so the returns were weak. The test asserts only the A2 ping, because B1 and B2 sit at marginal SNR and depend on how the pods seat. The canonical run will be quoted from «PENDING: SEED7-CANON». The live take uses real acoustics on live dummies, so its story can differ again.
 
 ---
 
@@ -666,154 +755,206 @@ The BL-3 fix (`eb8cdba`) changes the seed-7 acoustic story: B1 found, B2 knock d
 
 ### 9.1 Failure modes
 
-| Failure | Consequence | Mitigation in the design | Residual risk |
-|---|---|---|---|
-| **Missed person (critical)** | a living person not prioritised | silent and non-human piles end **not cleared**, never "cleared"; the brief lists them; coverage reports what the radar could not reach | it happened in our own runs: B1 before BL-3, B2's knocks after it (§4.3.5, §8.6) |
-| No detection read as absence | crews leave a pile | empty scans never update the belief; UI wording "no detection is not proof of absence" | a commander may still infer it; training issue |
-| False lead | crew-hours on an empty pile | a ping needs 3 agreeing strong ranges; ambiguous acoustic leads are capped below the dispatch threshold | an acoustic lead can still spend scans (C3, 12 scans) |
-| Over-trusting a ping | dig in the wrong place or depth | belief share, 95% region, support, assumed depth all shown; "stationary ≠ trapped, periodic ≠ human" | position error is small in simulation; real-world error unknown |
-| Penetration overestimated | deep victims "covered" by radar | literature preset limits reach to about 3 m and reports coverage | **the default is still the optimistic legacy preset** (§4.2.3) |
-| Structural safety | drone lands, people follow onto an unstable pile | landing scoring is geometry only, and stated as such | no structural assessment at all |
-| LLM error | wrong dispatch or misleading text | listed options only; validator; banned claims; fallback; every decision labelled | rationale text can still be wrong while the pick is valid |
-| Triage hint misread as diagnosis | wrong dig order or a medical decision | respiratory criterion only; "aid, not diagnosis"; child flag capped at 0.45 | amplitude and rate from radar through rubble are unvalidated |
-| Ground-truth leak | inflated results | boundary tests; stub labelled `stub-from-truth` | evaluators default to the stub for speed (EVAL-GRID must say so) |
+| Failure | Mitigation | Residual risk |
+|---|---|---|
+| **Missed person (critical)** | no pile is ever "cleared"; coverage and "beyond radar reach" are reported; the brief lists open leads | it happens in our runs (A3, seed 7; 0/20 seeds with every victim pinged) |
+| No detection read as absence | empty scans never update the belief; "searched — not cleared" | a commander may still infer it |
+| False lead | 3 strong ranges for a ping; ambiguous audio capped below dispatch; non-human radar returns rejected | acoustic leads can still cost placements |
+| Over-trusting a ping | belief share, 95% region, support, depth source shown | real-world error unknown |
+| Penetration overestimated | `literature` default; reach reported per scan and per pile | the loss model is a rule of thumb (source pending); voids are straight-line averages |
+| Condition misread as diagnosis | condition only, hint wording, "aid, not a diagnosis", no age | healthy relaxed people read "slow, regular"; nothing validated through rubble |
+| Speaker misuse | vetted templates; translations need approval | the Hokkien TTS has not been checked by a native speaker |
+| Phone localisation error | blue candidate region, lead only | wrong-sector first fits; unconscious people invisible |
+| LLM error | listed options only, validator, banned claims, fallback, `by` badge | a valid pick can carry a wrong rationale |
+| Pod on unstable rubble | 5 kg pod; re-seat once; winch hot-cut on snag (FlyCart 30 spec) | no structural assessment |
+| Ground-truth leak | boundary tests; stub labelled; `--live` refuses the stub | evaluation uses the stub (upper bound) |
 
-Not handled in this build: drone loss mid-mission, aftershocks, radio loss, dust, rain, GNSS loss, more than three drones, and moving people beyond the Doppler track.
+**Not handled:** drone loss, aftershocks, dust, rain, GNSS loss, a pod lost under debris, more than three drones.
 
-### 9.2 Privacy and ethics
+### 9.2 Privacy, consent and data
 
-- Audio is used only to score human presence and urgency. Transcripts are stored in mission state for the commander. There is no speaker identification.
-- Real audio sent to a cloud LLM leaves the site. The design keeps stage 1 local and forwards only flagged clips, and `LLM_PROVIDER=none` keeps everything on the edge box.
-- Data licences: ESC-50 and the one dog clip are CC BY-NC (non-commercial). The Piper voice terms are still to be checked. DroneAudioSet is MIT. Schellenberger is CC BY 4.0.
-- The case study is a fatal disaster (115 deaths). We use public facts only, label the layout synthetic, and place no invented victims on the real map without that label (R2-016).
+- **Audio** is used to score human presence and urgency. There is no speaker identification. Stage 1 runs locally; only flagged clips go to the cloud, and `LLM_PROVIDER=none` keeps everything local.
+- **Phones** are located only after they **choose** to join the portal. There is no sniffing and no cellular interception. Simulated phone data is marked `synthetic: true`.
+- **The case study** is a fatal disaster. We use public facts only and label every layout synthetic.
 
-### 9.3 Honest gaps
+### 9.3 Licence obligations (PASS3 §3)
 
-1. Radar returns through rubble are synthetic, and the default propagation is optimistic.
-2. The acoustic demo scenes are synthetic (TTS, free field). Real-audio results are pending.
-3. Depth is assumed in every ping inspected.
-4. Flight is kinematic; there is no flight controller.
+- **ESC-50** (CC BY-NC 3.0): credit Piczak and the Freesound authors; non-commercial only.
+- **DREGON:** academic use only, never redistributed or shown in the video.
+- **Piper voices:** each follows its dataset licence; to verify. vivos is CC BY-NC-SA.
+- **NCKU photogrammetry:** no licence, so the collapse site is not shown publicly.
+- **Map tiles:** OSM and Esri attribution stays visible.
+- **NVIDIA:** say "Rendered in NVIDIA Isaac Sim", with no implied endorsement.
+- **Credits block:** README "Credits & honesty".
+
+### 9.4 Honest gaps
+
+1. Through-rubble radar returns are synthetic.
+2. The pod is designed, not built.
+3. Acoustic demo audio is synthesised.
+4. There is no flight controller.
 5. Nothing has been timed on drone hardware.
-6. Gemini has not completed a live mission run.
-7. Results come from one demo seed plus small seed sets (3–30).
-8. A victim is always placed at the start pile.
+6. The take has not been rendered on a GPU.
+7. The grid evaluation uses stub acoustics and kinematic flight.
+8. The Gemini dispatch decider has not run live.
+9. A victim always sits at the start pile.
 
 ---
 
 ## 10. Engineering process and reproducibility
 
-### 10.1 Multi-agent build loop
+- **The build loop.** An orchestrator Claude Code session dispatched up to 10 concurrent builder agents, alongside a human Isaac teammate on a GPU box. The rules are in `docs/agents/RULES.md`:
+  - path-scoped commits through `scripts/commit.sh`;
+  - heavy jobs queued through `scripts/heavy.sh` on a 14 GB laptop;
+  - the ground-truth rule.
+- **Plan and contract.** `docs/PLAN.md` holds the backlog (to BL-27) and a dated decisions log. `contracts/INTERFACES.md` (v1.4) is the integration contract.
+- **Reviews.** Three independent reviewer passes:
+  - pass 1: 46 findings;
+  - pass 2: 23 findings;
+  - pass 3 (claims and consistency): 44 stale claims, 16 overclaims, and the licence obligations.
 
-The repo was built in about 24 hours by an **orchestrator** Claude Code session dispatching up to 8–9 parallel **builder** agents, plus a human Isaac teammate with their own Claude session on a GPU box.
-
-- **Rules** (`docs/agents/RULES.md`):
-  - each builder edits only its assigned files and checks `git status` first;
-  - shared files belong to the orchestrator, and requests go to it;
-  - commits go through `scripts/commit.sh` (path-scoped, under a lock, never pushed by builders);
-  - heavy jobs go through `scripts/heavy.sh` (FIFO queue, 3 slots, memory cap, low priority) on a 14 GB laptop;
-  - the ground-truth rule holds throughout.
-- **Plan and decisions.** `docs/PLAN.md` holds the backlog (BL-1 … BL-20) and a dated decisions log. `contracts/INTERFACES.md` is the integration contract.
-- **Reviews.** Two independent reviewer passes ran the product as a judge would:
-  - pass 1: 46 findings (5 P0);
-  - pass 2: 23 new findings (5 P0), re-verification of pass 1 (29 verified, 8 partly), and 10 items for the Isaac teammate.
-
-  They caught the acoustic misattribution, the depth overclaim, "p 0.98" on a failed localisation, the replay parameter bug, the unversioned acoustic cache and the Isaac outlier veto. Most honesty wording in this report traces to those findings.
-- **Coordination with the GPU teammate** went through `docs/FOR_ISAAC_CLAUDE.md` and `docs/FROM_ISAAC.md` on separate branches. Our code is mirrored to `rohansharmacode/skysearch`, branch `larpverse-sensing`, folder `larpverse/`.
-- **Tests.** 63 test functions in 7 files (`tests/`):
-  - localiser;
-  - radar DSP;
-  - mapping;
-  - grid mission, including the truth-boundary grep and seed-7 dsp story tests;
-  - agents (fake HTTP, no network);
+  Most of the honesty wording in this report traces to them.
+- **Tests.** 250 test functions in 23 files (`tests/`), including:
+  - the truth-boundary grep;
+  - the demo-story test;
+  - agents against fake HTTP;
   - acoustic, with a committed seed-7 fixture;
-  - Isaac dry run.
-
-  Pass 1 recorded 45 passed, 3 skipped.
-
-### 10.2 Reproduce
+  - flight motion, comms and call-out;
+  - the live take dry run.
 
 ```bash
-# environment (CPU)
 uv venv .venv && uv pip install --python .venv numpy scipy matplotlib pytest kiss-icp open3d
-bash acoustic/setup.sh                                    # optional real acoustic models (~900 MB, .venv-audio)
-
-# seed-7 autonomous mission -> dashboard/data/state.json
-.venv/bin/python -m sim.grid_mission --seed 7 --radar dsp --out dashboard/data
-#   options: --acoustic auto|real|stub  --decider none|gemini  --penetration legacy|literature
-#            --dispatch acoustic|nearest|raster  --slam  --piles N  --scans N  --frames
-python3 -m http.server 8765    # then http://localhost:8765/dashboard/
-scripts/demo.sh --direct       # one-command demo (x4, --piles 3), prints result + handover brief
-
-# evaluations
-.venv/bin/python -m sim.evaluate --n 30 --budget 6                    # single pile: adaptive vs fixed
-scripts/heavy.sh .venv/bin/python -m sim.evaluate_grid --seeds 1-5    # grid policies (then --report)
-scripts/heavy.sh .venv-audio/bin/python -m acoustic.eval_assign all   # acoustic pile assignment
-.venv/bin/python -m mapping.run --seed 7 --pile B2                    # SLAM + landing agreement
-nice -n 19 .venv/bin/python scripts/validate_real_breathing.py data/radar_real/GDN000*_1_Resting.mat \
-    --plot docs/radar_real_validation.png                             # real radar (data gitignored)
+bash acoustic/setup.sh                       # .venv-audio + about 210 MB of models (acoustic/models/ is 314 MB on disk)
+.venv/bin/python -m sim.grid_mission --seed 7 --out dashboard/data
+#   defaults: --radar dsp --delivery pod --penetration literature --flight smooth --tasking auto (comms on)
+#   options: --acoustic auto|real|stub  --decider none|gemini  --dispatch acoustic|nearest|raster  --slam  --no-comms
+.venv/bin/python scripts/serve.py --port 8765        # http://localhost:8765/dashboard/  (?layout=take for the video)
+scripts/demo.sh --direct                             # one-command live demo
+.venv/bin/python -m sim.evaluate_grid --report --seeds 1-20
 .venv/bin/python -m pytest -q tests
-
-# Isaac (GPU, Brev launchable)
-cd /workspace/isaaclab && ./isaaclab.sh -p .../larpverse/isaac/run_mission.py --selftest
-.../isaac/run_mission.py --seed 7 --headless --radar dsp --photoreal 1 --record out/run --rec-stop-t 380
+python3 isaac/live.py --preflight                    # on the GPU box, before the take (docs/VIDEO_PLAN.md)
 ```
 
-Real datasets are fetched by scripts into the gitignored `data/` (sources in `data/radar_real/SOURCE.md` and `data/audio_real/SOURCE.md`). LLM answers replay from `agents/cache/` with `LLM_REPLAY=1`.
+---
+
+## 11. The simulation-video deliverable (docs/VIDEO_PLAN.md, docs/ISAAC_BRIEF.md)
+
+**The rule.** A video of up to 1 minute, captured from the stream, with perception on screen next to the actions, and **one unscripted change in a single continuous take**.
+
+**How we meet it:**
+- **Capture.** One OBS capture: the Isaac livestream (left two-thirds) and the live dashboard in `?layout=take` (right third), both from the same run.
+- **Camera.** One spline camera (`--camera director-take`) that never cuts.
+- **Time-lapse.** Per phase, ×5 to ×30, shown on every frame.
+- **The story, seed 7, grid site:**
+  1. The van opens and the drones lift off.
+  2. The LiDAR map paints over A2.
+  3. Pods winch down and the breathing waveform appears ("analysing breathing… n s").
+  4. The A2 ping arrives with its condition.
+  5. The drones land off-pile, call out and listen.
+  6. The unscripted change.
+  7. The fleet re-plans and redirects.
+  8. Pods lower at the new pile.
+- **The unscripted change.** A teammate switches on a **pre-placed hidden dummy** (key Y at A1, or U at C3) at a moment they choose, or the operator draws a zone. The system perceives it through the real acoustic pipeline on synthesised audio and re-plans. Only the moment and the choice of trigger are live.
+- **Press window.** While A2's pods are down: about 17–29 s of video. A later press forces a full pipeline run (50–62 s on the laptop CPU, unmeasured on the L40S) while the mission clock holds.
+- **Captions.** They show the real decision badge, say "time-lapse ×N", and keep "NOT this scan" visible if the HUD falls back to a library signature. Whisper `base.en` gives no transcript for the Indonesian dummy; it appears only if Gemini runs.
+
+**Status:** dry-run tested on the CPU; not yet rendered on a GPU «PENDING: ISAAC-CLIP».
 
 ---
 
-## 11. Future work
+## 12. Impact, economics and deployment
 
-1. **Real radar through real rubble.** A sub-2 GHz UWB module on a drone, tested at a USAR training rubble site against known voids. Calibrate `A90_DB` and the solid fraction, then flip the default to the measured model.
-2. **Measured depth.** Use more slant ranges from perches at different heights, or a vertical aperture, so `radar_estimate` becomes the norm.
+These four docs were researched on 8 Nov. Tags: [S] sourced, [D] derived, [A] assumption. Every range is low / central / high, or median with a 90% interval. **Nothing here is a claim about what happened at Weiguan.**
+
+**Comparable collapses** (`docs/CASE_STUDIES.md`, 15 cases):
+- In Kobe (1995), 77.5% of the 35,000 people rescued from rubble were dug out by neighbours and family [S].
+- In all 14 earthquakes reviewed, international teams' live rescues were under 0.85% of the death toll, and the first team took 12–56 h to arrive [S] (Rom & Kelman 2020).
+- In Türkiye (2023), about 5,000 international rescuers saved about 300 people [S].
+- At Surfside (2021), nobody was found alive after the first hours, despite 304 drone missions [S].
+- The best published drone breathing-radar test is one person at ≤ 5 m with no rubble [S].
+
+**Counterfactual model** (`docs/IMPACT_MODEL.md`, `sim/impact.py`; 10 real mission runs per site with **stub acoustics**, then a Monte Carlo of today's search):
+
+| Headline | Result | Caveat |
+|---|---|---|
+| Lead on the sector of trapped people within 30 min of launch | 53% (median 8 min) | collapse-site runs, stub acoustics = upper bound |
+| Silent / unconscious people located within 24 h | 74% today (60–85) vs 80% (70–89) at the radar upper bound; **74% as simulated** | on the Weiguan-scale site the pod made **0 firm pings in 170 people** (344 scans) |
+| Extra survivors per 100 trapped | +0.2 (−0.1 to +0.7) as simulated, +0.75 (−1.8 to +2.7) at the upper bound; grid site +1.3 (+0.3 to +4.0) as simulated | model, not a record |
+| Weiguan late cohort (113 people brought out after day 1) | about +6 (0.6–14) **only if the pod works as designed**; **0 (0–1.6) with the code as it is** | optimistic: the late cohort is deeper and more injured |
+
+These numbers come from the model's v1.0 run. IMPACT_MODEL.md says they will be refreshed after the collapse-site pod-coverage fix, so re-check them before quoting. The model's own bottom line: **we do not claim lives saved at Weiguan scale.** The upper bound depends on the pod producing firm pings in the field, which is unproven.
+
+**Economics** (`docs/ECONOMICS.md`). A city kit is 3 drones with winch pods, spares, chargers and a command van.
+- It costs about **$0.67M up front** and **$2.8M over 10 years** ($1.1–6.3M) [D].
+- **Break-even:** 0.20 lives per decade at the US DOT value of a statistical life ($13.7M), 0.56 at Taiwan's ($5M, benefit transfer), and about 3 lives at the international-USAR cost of $0.93M per life [D].
+- **As simulated today**, the kit adds about 0.2 survivors per 100 trapped, so it needs about 300 trapped people per decade to break even at Taiwan's value [D].
+- **Per deployment:** about $1.7k per one-hour sortie, or about $20k for 72 h (IMPACT_MODEL).
+
+**Deployment in Taiwan** (`docs/DEPLOYMENT.md`):
+- **Timeline:** a truck-mounted kit gives a first acoustic lead at about T+40 min and a first radar candidate at about **T+50 min** (range 23–94 min) [D]. At Weiguan, the national special teams took up to 12 h to arrive [S].
+- **Fleet size:** about 47 kits nationally (12–133), about US$15.5M of capital [D].
+- **72 h operation:** about 1.2 MWh and about 510 L of diesel (225–1,410 L), 3 battery sets per drone, and a crew of 7 [D/A].
+- **Regulatory path:**
+  - CAA consent for disaster flights (≥ 25 kg needs inspection and licensed pilots);
+  - NCC special approval for the 0.4–2 GHz pod, because UWB is allowed only at 4–9 GHz and is banned on aircraft;
+  - PDPA for phone data;
+  - DJI restricted for government use, which forces the non-DJI build.
+
+**Power** (IMPACT_EVIDENCE §6): a heavy-rescue truck's 25 kW PTO generator sustains about 3–4 drones.
+
+## 13. Future work
+
+1. **Build and test the pod.** Put a B210 SFCW pod on real USAR training rubble with known voids. Calibrate A90, the solid fraction and the seating model.
+2. **Flight.** Fly a real heavy-lift airframe with PX4/ArduPilot, a winch and pod, and measure seating, swing and endurance.
 3. **Acoustics.**
-   - Recover knock recall without bringing back false leads (a dedicated knock detector, pattern regularity across listens).
-   - Validate on real recordings with rotor noise.
-   - Wire the novelty → Gemini path into the mission.
-   - Re-tune association on field array geometry.
-4. **Flight.** PX4 in the loop instead of kinematics; wind; landing-gear contact on slabs.
-5. **On-drone timing.** KISS-ICP, landing scoring and the radar DSP on Jetson-class hardware.
-6. **Robustness.** Drone loss and reassignment, radio loss with on-drone fallbacks, aftershock pauses, dust.
-7. **Evaluation at scale.** 100+ seeds with confidence intervals, on the real acoustic pipeline (not the stub), on both the grid and the Weiguan site, with the start-pile victim decoupled.
-8. **Human factors.** Test the dashboard wording with USAR team leaders, and integrate with INSARAG marking and reporting conventions.
+   - Re-validate the rotor veto on real audio.
+   - Run a multilingual ASR in the take.
+   - Re-run the grid evaluation with the real acoustic pipeline (not the stub) and with SmoothFlight.
+4. **Measured depth.** Use more vertical aperture, so depth comes from the radar rather than the nominal value.
+5. **Robustness.** Handle drone or pod loss, aftershocks and dust; time everything on the Orin.
+6. **People.** Field tests with USAR team leaders; native review of the call-out languages.
 
 ---
 
-## 12. References
+## 14. References
 
-**Radar and penetration**
-- Schellenberger, S., Shi, K., Steigleder, T., et al. (2020). A dataset of clinically recorded radar vital signs with synchronised reference sensor signals. *Scientific Data* 7:291. doi:10.1038/s41597-020-00629-5. Data: figshare doi:10.6084/m9.figshare.12186516 (CC BY 4.0).
-- RADIOTECT project: through-rubble radar detection of trapped people (target 1–2 m of rubble), as cited in `docs/RESEARCH.md`.
-- U.S. Federal Highway Administration (FHWA), ground-penetrating radar guidance: concrete attenuation of roughly 10–20 dB/m at 0.4–2 GHz, as used in `sim/radar_dsp.py`. Exact document to be cited in «PENDING: RADAR-PEN».
-- Yang, et al. (2019). UWB through-wall life detection at low SNR. *Applied Sciences* 9(2):355.
-- Hang, et al. (2019). Review of radar-based life detection (cited in `docs/RESEARCH.md`).
+**Radar and vitals**
+- Schellenberger, S., et al. (2020). A dataset of clinically recorded radar vital signs with synchronised reference sensor signals. *Scientific Data* 7:291. doi:10.1038/s41597-020-00629-5 (CC BY 4.0).
+- RADIOTECT (EU) through-rubble detection, and the FHWA GPR concrete-loss rule of thumb, as cited in RADAR_PENETRATION.md. The exact documents are «PENDING: FHWA-SOURCE».
+- GSSI LifeLocator range claims (vendor and trade press; not independently verified).
+- START (Hoag Hospital / Newport Beach FD, 1983); SALT: Lerner, E. B., et al. (2008), *Disaster Med Public Health Prep* 2(S1).
 
-**Mapping**
-- Vizzo, I., Guadagnino, T., Mersch, B., Wiesmann, L., Behley, J., Stachniss, C. (2023). KISS-ICP: In Defense of Point-to-Point ICP. *IEEE Robotics and Automation Letters* 8(2). Software v1.3, MIT.
-- Zhou, Q.-Y., Park, J., Koltun, V. (2018). Open3D: A Modern Library for 3D Data Processing. arXiv:1801.09847. v0.20, MIT.
-- MIT RubbleSim: procedural drop-and-settle rubble recipe (design reference, `docs/RESEARCH.md`).
+**Mapping and motion**
+- Vizzo, I., et al. (2023). KISS-ICP. *IEEE RA-L* 8(2).
+- Open3D (Zhou, Park, Koltun 2018).
+- PX4 parameter defaults (MOTION.md).
 
 **Audio**
-- Silero Team. Silero VAD v5 (2024), MIT. github.com/snakers4/silero-vad.
-- Radford, A., Kim, J. W., Xu, T., Brockman, G., McLeavey, C., Sutskever, I. (2023). Robust Speech Recognition via Large-Scale Weak Supervision (Whisper). *ICML 2023*. Implementation: faster-whisper (SYSTRAN, CTranslate2), MIT.
-- YAMNet, TensorFlow Models (Apache-2.0), trained on AudioSet: Gemmeke, J. F., et al. (2017). Audio Set: An ontology and human-labeled dataset for audio events. *ICASSP 2017*.
-- Scheibler, R., Bezzam, E., Dokmanić, I. (2018). Pyroomacoustics: A Python package for audio room simulations and array processing algorithms. *ICASSP 2018*. MIT.
-- Conneau, A., et al. (2023). FLEURS: Few-shot Learning Evaluation of Universal Representations of Speech. *IEEE SLT 2022/2023*.
-- DroneAudioSet. ahlab-drone-project, Hugging Face dataset (2025), MIT. huggingface.co/datasets/ahlab-drone-project/DroneAudioSet.
-- Piczak, K. J. (2015). ESC: Dataset for Environmental Sound Classification. *ACM Multimedia 2015*. CC BY-NC 3.0.
-- Piper TTS (rhasspy), voice `en_US-lessac-low`; noisereduce (MIT).
+- Silero VAD v5.
+- Radford, A., et al. (2023). Whisper. *ICML* (faster-whisper, CTranslate2).
+- YAMNet / AudioSet (Gemmeke, J. F., et al., ICASSP 2017).
+- pyroomacoustics (Scheibler, R., et al., ICASSP 2018).
+- noisereduce.
+- FLEURS (Conneau, A., et al., 2022; CC BY 4.0).
+- DroneAudioSet (ahlab-drone-project, HF 2025; MIT).
+- ESC-50 (Piczak, K. J., ACM MM 2015; CC BY-NC 3.0).
+- DREGON (Strauss, M., et al., IROS 2018; academic use).
+- Piper TTS (rhasspy).
 
-**Simulation and LLM**
-- NVIDIA Isaac Sim 6.0.1 and Isaac Lab 3.0 documentation; Brev Isaac launchable.
-- Google Gemini API (`gemini-3.5-flash`), REST `generateContent` with JSON schema and inline audio.
+**Comms and hardware** (sources in HARDWARE.md, COMMS_ARCHITECTURE.md, HOTSPOT.md)
+- DJI FlyCart 30 specs and winch sheet; Harris Aerial H6HL brochure.
+- Ouster OS1-128; Doodle Labs Mesh Rider.
+- NIST collapse-propagation measurements (2014); UCLouvain partially destroyed buildings.
+- AT&T Flying COW; CENTUM Lifeseeker (vendor-reported).
 
-**Triage**
-- START (Simple Triage and Rapid Treatment), Hoag Hospital and Newport Beach Fire Department, 1983.
-- Lerner, E. B., et al. (2008). Mass casualty triage: an evaluation of the data and development of a proposed national guideline (SALT). *Disaster Medicine and Public Health Preparedness* 2(S1).
-
-**Case study**
-- zh.wikipedia, 維冠金龍大樓 (Weiguan Jinlong building): location, structure, collapse, casualties.
-- Taipei Times, 22 February 2019 (Weiguan collapse follow-up).
+**Impact and case study** (IMPACT_EVIDENCE.md)
+- Tainan City Fire Bureau e-paper (2016).
+- Pan, et al. (2019). *J Formos Med Assoc*.
+- Chiu & Tseng (2018).
+- Rom, A. & Kelman, I. (2020). *BMJ Global Health*.
+- Kobe FD data via Miyagi Prefecture.
+- FEMA canine guidance.
+- Taipei Times (2019); zh.wikipedia 維冠金龍大樓.
 - Map tiles © OpenStreetMap contributors; Esri World Imagery.
 
-**Project documents.** `docs/PLAN.md`, `contracts/INTERFACES.md`, `docs/RESEARCH.md`, `docs/RADAR_VALIDATION.md`, `docs/AGENTS.md`, `docs/ISAAC_HANDOFF.md`, `docs/ISAAC_VERIFIED_APIS.md`, `docs/FROM_ISAAC.md`, `docs/DEMO.md`, `docs/review/2026-11-07-pass-1.md`, `docs/review/2026-11-07-pass-2.md`.
+**Software:** NVIDIA Isaac Sim 6.0.1 / Isaac Lab 3.0; Google Gemini API; three.js.

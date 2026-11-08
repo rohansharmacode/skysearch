@@ -28,7 +28,7 @@ Put the key in `.env` at the repo root (gitignored; never commit it):
 ```
 GEMINI_API_KEY=...
 # optional
-GEMINI_MODEL=gemini-3.5-flash
+GEMINI_MODEL=gemini-3.7-flash      # decider + brief; audio uses GEMINI_AUDIO_MODEL=gemini-3.5-flash-lite (free tier: ~20 requests/day per model)
 LLM_PROVIDER=gemini          # gemini | anthropic | none (default: gemini if its key is set, else anthropic, else none)
 ```
 

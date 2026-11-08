@@ -24,12 +24,12 @@ Weak sources are flagged *(weak)*.
    Dogs work 20–45 min and then rest for the same time [S] ([FEMA](https://webarchive.library.unt.edu/web/20090505222451/http://www.fema.gov/emergency/usr/canine.shtm)),
    and nobody has published an accuracy figure for dogs on rubble. Radar life detectors sense breathing to about 4.5–7 m [S]
    ([GSSI](https://www.fireengineering.com/technical-rescue/gssi-lifelocator-teex/)), but a rescuer has to carry them onto the pile one spot at a time.
-   Our winch pod brings breathing radar and a microphone to many points per hour, and nobody has to stand on the pile.
+   Our drones land on the rubble and their belly-mounted radar and microphones scan many points per hour, and nobody has to stand on the pile.
 4. **What happened at Weiguan:** 309 residents [S], 175 rescued alive [S] and 115 dead [S]. About 84 people were still unaccounted for at the end of day 2 [S].
    About 2,000 rescuers [D] and 23 dogs [S] worked the site. Manual search reached its limit at 64 h, when demolition with heavy machinery began [S],
    and the demolition took 192 h [S].
    **Honest caveat:** for the last live victims at Weiguan, the bottleneck was getting them out (12–29 h per deep victim [S]), not finding them.
-   Our claim is narrower: in simulation the system **prioritises** where to dig sooner (sectors are only ever "searched, not cleared"), it **can detect breathing in silent or unconscious victims within about 2.9 m of the pod** (synthetic radar generator; validated only on line-of-sight real data), and it can re-check for life signs layer by layer while machines dig. It also misses some victims (seed 7: A3 stays an open lead).
+   Our claim is narrower: in simulation the system **prioritises** where to dig sooner (sectors are only ever "searched, not cleared"), it **can detect breathing in silent or unconscious victims within about 2.9 m of the landed drone's belly radar** (synthetic radar generator; validated only on line-of-sight real data), and it can re-check for life signs layer by layer while machines dig. It also misses some victims (seed 7: A3 stays an open lead).
    We do not claim it does the extrication.
 5. **Power is feasible on rescue trucks, not on cars.** Half a tank in an average car (25 L) gives one heavy drone about
    **74 min of flight through the alternator** (range 29–186 min) [D], but converting that fuel takes about 14 h of idling [D].
@@ -244,7 +244,7 @@ Inverter generator path (1.3–2.0 kWh DC per L; 2.0 = DJI D12000iE reference):
 
 ### Hub or truck retrofit? [D]
 
-- One drone running continuously needs about **6.9 kW of charging power on average** (4.6–10.7). That assumes rotors are on for 50–80% of the time: hover and winch work need the rotors, landed listening does not.
+- One drone running continuously needs about **6.9 kW of charging power on average** (4.6–10.7). That assumes rotors are on for 50–80% of the time: flight and landing need the rotors, landed scanning and listening do not.
   - **Car:** a car alternator supports about **0.13 drones** (0.05–0.33). It is an emergency top-up, not a power plant.
   - **Heavy rescue truck with a 25 kW PTO generator:** about **3.6 drones** (2.3–5.4), so 3 drones per truck, with one C8000 per drone.
     A truck with only an 8 kW hydraulic generator supports about 1 drone.
@@ -261,7 +261,7 @@ Inverter generator path (1.3–2.0 kWh DC per L; 2.0 = DJI D12000iE reference):
 3. **Time split.** No clean percentage split exists. Ours comes from components: Haiti extrication times plus the Weiguan calibration.
 4. **Unconscious share** rests on a single survivor survey (Bam, n=211), which undercounts people who were unconscious and died.
 5. **Weiguan "found too late":** there is no time-of-death data, so it is unknowable from public sources.
-6. **Energy:** the car's net alternator output at idle and the drone's real flight power (wind, winch hover) dominate the half-tank range.
+6. **Energy:** the car's net alternator output at idle and the drone's real flight power (wind, hover) dominate the half-tank range.
    The DJI hover figures are vendor numbers measured in calm conditions at sea level.
 
 ## 7. Follow-up: values for the impact model's top-sensitivity inputs

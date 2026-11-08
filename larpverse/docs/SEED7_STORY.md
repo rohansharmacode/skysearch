@@ -4,7 +4,7 @@ This is the run every demo, report and video should quote. It is deterministic: 
 
 - **Code:** git HEAD `ad27b12` (plus this doc).
 - **Acoustics:** the committed real-pipeline fixture `tests/fixtures/acoustic_seed7.json` (assoc-v11), replayed the same way as `tests/test_demo_story.py`.
-- **Radar and flight defaults:** `--radar dsp --penetration literature --delivery pod --platform heavy_sar --flight smooth`, physio chest waveform, 45 s pod scans, 60 s vitals look, comms on, speaker on.
+- **Radar and flight defaults:** `--radar dsp --penetration literature --delivery pod --platform heavy_sar --flight smooth` (`--delivery pod` is the radar-on-the-rubble-surface scan model), physio chest waveform, 45 s landed radar scans, 60 s vitals look, comms on, speaker on.
 
 ```python
 # reproduce (same as tests/test_demo_story.py)
@@ -36,7 +36,7 @@ scripts/heavy.sh .venv/bin/python -m sim.grid_mission --seed 7 --tasking default
 
 ## Sensitivity (honest note)
 
-Detection is marginal under realistic penetration with real chest motion. Reach is about 2.9 m of rubble beneath a 45 s pod scan (docs/RADAR_PENETRATION.md), so pod seating decides some outcomes:
+Detection is marginal under realistic penetration with real chest motion. Reach is about 2.9 m of rubble beneath a 45 s landed radar scan (docs/RADAR_PENETRATION.md), so radar seating on the rubble decides some outcomes:
 
 - **A2 is robust.** It pinged in every run variant: kinematic and smooth flight, with and without comms. It has 5 supporting scans.
 - **B1 and B2 depend on seating.** Each rests on exactly 3 supporting scans, the minimum for a fix. A different scan schedule changes which seat draws a rough touchdown, and so whether the third strong range arrives within the budget.

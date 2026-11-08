@@ -8,7 +8,7 @@ Tags: **[S]** sourced (the linked source states it), **[D]** derived (our arithm
 **[A]** assumption (team judgement, no direct source). **(weak)** marks news, vendor or secondary sources.
 **[sim]** marks a number measured in our own simulator, not in the field.
 
-A **kit** is 3 heavy drones (FlyCart 30 class, 95 kg MTOW) with 3 winch pods, chargers, the mesh mast, the ops laptop
+A **kit** is 3 heavy drones (FlyCart 30 class, 95 kg MTOW) with belly-mounted radars, chargers, the mesh mast, the ops laptop
 and spare batteries. It rides on an existing fire/rescue truck and is charged from that truck's generator or a towed genset.
 
 ## Judge summary
@@ -27,7 +27,7 @@ and spare batteries. It rides on an existing fire/rescue truck and is charged fr
 5. **Regulation is the slowest part, so do it before the quake.**
    - **Aviation:** a Taiwanese government agency can get CAA consent to fly disaster missions at night, beyond line of sight and over people (Civil Aviation Act Arts. 99-14(2) and 99-16; drone rules Art. 34) [S].
      A ≥ 25 kg drone still needs a physical inspection, an operations manual and professionally licensed pilots [S]. PRC-made drones such as DJI's are restricted for government use [S] *(weak)*.
-   - **Spectrum:** NCC low-power rules allow UWB only at 4–9 GHz and ban it on aircraft [S]. The 0.4–2 GHz pod therefore needs NCC special approval and a frequency assignment.
+   - **Spectrum:** NCC low-power rules allow UWB only at 4–9 GHz and ban it on aircraft [S]. The 0.4–2 GHz belly radar therefore needs NCC special approval and a frequency assignment.
    - **Timeline:** plan **12–18 months** to the first operational kit [A]. After that, launching at a disaster needs only notification through the emergency operations centre (EOC), much as under Japan's Art. 132-92 exemption [S].
 
 ---
@@ -98,7 +98,7 @@ The sim numbers come from `sim/recon.py` (3 drones, cruise 4 m/s in recon, LiDAR
 | 04:37 | 0:40 | 0:16 – 1:22 | **First acoustic lead**: the first perch-and-listen round of recon, about 4 min into the flight | [D] from the sim's recon schedule |
 | 04:42 | 0:45 | 0:20 – 1:29 | Recon done: 320 m site mapped by LiDAR, 4–6 perch rounds, zone proposals out. **9 min central (7–12)** | [D] below |
 | 04:43 | 0:46 | 0:21 – 1:31 | Operator accepts proposals (the sim's unattended auto-accept waits 30 s) | [sim] `RECON_ACCEPT_S = 30` |
-| 04:45 | 0:48 | 0:22 – 1:33 | First pod placed on the top lead: transit < 1 min, winch down 8 s, IMU seating check | [sim] `PodSpec` lower 8 s |
+| 04:45 | 0:48 | 0:22 – 1:33 | First drone lands on a flat spot on the top lead: transit < 1 min, set down 8 s, IMU seating check | [sim] `PodSpec` lower 8 s (landing) |
 | 04:46 | **0:49** | **0:23 – 1:34** | **First radar ping**: whole-dwell breathing verdict after a 45 s dwell. A *candidate search region*, never a confirmed person | [sim] 45 s dwell (VIDEO_PLAN / vitals) |
 | 05:00 | ~1:03 | — | Tainan FB forward command post is in place (Weiguan: within 1 h) | [S] Tainan FB |
 | ~16:00 | ~12 | — | National special search teams arrive (Weiguan: all within 12 h) | [S] Tainan FB |
@@ -112,7 +112,7 @@ The sim numbers come from `sim/recon.py` (3 drones, cruise 4 m/s in recon, LiDAR
   - 6 rounds (the sim's collapse run logged 18 perches across 3 drones): 239 + 6 × 58 ≈ **590 s (9.8 min)**.
   - Central **9 min**, range 7–12 min. The high end allows for gusts or one 60 s battery swap.
   - The FlyCart 30 can cruise at 20 m/s [S] ([DJI](https://www.dji.com/flycart-30/specs)), but the sim maps at 4 m/s for LiDAR density, so we don't count on the extra speed.
-- **Sim caveat.** In the sim's grid evaluation (pod delivery, literature propagation), the median time to the first ping away from the reported start pile is **1,037 s (745–1,769)** after launch [sim] ([EVAL_GRID.md](EVAL_GRID.md)).
+- **Sim caveat.** In the sim's grid evaluation (`--delivery pod`, radar on the rubble surface; literature propagation), the median time to the first ping away from the reported start pile is **1,037 s (745–1,769)** after launch [sim] ([EVAL_GRID.md](EVAL_GRID.md)).
   That is slower than the timeline above, because the first leads are often empty or out of reach. Our timeline is the time to the first *ping attempt* on the top lead. **The time to a true positive can be 15–30 min later.**
 
 **What it buys [D].** Interpolating IMPACT_EVIDENCE §1b, P(alive at extrication) is about 85–90% at T+1 h, falling to about 50% at T+24 h.
@@ -219,7 +219,7 @@ Availability is the share of the 72 h that the kit is actually working. The rest
 | Cycles per pack | 31 | **39** | 55 | ÷ sets per drone |
 | Share of DB2000 rated life (1,500 cycles) | 2% | **2.6%** | 3.7% | [S] rated cycles *(weak: [reseller](https://dronefly.com/dji-db2000-intelligent-flight-battery.html))* |
 | Rotor-hours per kit | 65 h | **105 h** | 156 h | 3 × 72 × availability × rotor duty (0.5 / 0.65 / 0.8) |
-| Pods' 99 Wh packs | swapped at every battery-swap visit; ~5 h at 16 W (HARDWARE §11) → 6 per pod, charged on the van's 1.8 kW inverter set | | | [D] |
+| Radar modules' 99 Wh packs | swapped at every battery-swap visit; ~5 h at 16 W (HARDWARE §11) → 6 per radar module, charged on the van's 1.8 kW inverter set | | | [D] |
 
 ### Crew shifts (72 h)
 
@@ -227,7 +227,7 @@ Availability is the share of the 72 h that the kit is actually working. The rest
 |---|---|---|
 | **Mission operator** (in the van) | 1 | tasking, accepting proposals, the dashboard, approving broadcasts, liaison with the USAR worksite leader |
 | **Remote pilot / safety pilot** | 1 | holds the professional licence (§5); keeps visual line of sight of the active drones; can take manual control; enforces stand-offs from rescuers |
-| **Technician** | 1 | battery rotation, chargers, genset, pod swaps, airframe checks between sorties |
+| **Technician** | 1 | battery rotation, chargers, genset, radar-module battery swaps, airframe checks between sorties |
 | **Kit leader** | 1 per kit, day shift | safety officer link, logs, CAA/NCC notifications, fuel and parts requests |
 
 Two 12-h shifts of 3, plus the kit leader, plus 1 relief makes **7 people per kit for 72 h** [A].
@@ -250,7 +250,7 @@ Some articles were read through a summariser. Check the exact wording before fil
 |---|---|---|---|
 | Registration | Government-owned drones must be registered **at any weight** (Act Art. 99-10); private drones from 250 g (Rules Art. 6) | register all 3 airframes per kit | [S] |
 | Operator licence | Licences are 學習 / 普通 / 專業 (learner / ordinary / professional). Operators of government drones need one at any weight; private drones need a professional licence from 15 kg (Rules Arts. 19–20) | every pilot holds a **專業** licence | [S] |
-| Heavy class | **≥ 25 kg needs a physical inspection (實體檢驗), valid 3 years** (Rules Art. 15); modified drones need an inspection certificate (Act Art. 99-11) | a 95 kg airframe with a winch and pod is inspected as a configuration, once, and re-inspected every 3 years. We found no 150 kg cap in the current rules | [S] |
+| Heavy class | **≥ 25 kg needs a physical inspection (實體檢驗), valid 3 years** (Rules Art. 15); modified drones need an inspection certificate (Act Art. 99-11) | a 95 kg airframe with its belly radar is inspected as a configuration, once, and re-inspected every 3 years. We found no 150 kg cap in the current rules | [S] |
 | Government operator approval | A government agency files registration proof, a pilot roster and an **operations manual (作業手冊)** with the CAA before flying (Rules Art. 30) | do this in peacetime; it is the standing approval | [S] (validity 1 or 2 years: our two readings disagree) |
 | General limits | ≤ 400 ft; **no night flight**; **visual line of sight only**; **no flight over crowds** (Act Art. 99-14(1) items 1, 6, 7, 5). Extended visual line of sight is limited to a 900 m radius and 400 ft, with an observer within 300 m (Rules Art. 28) | our 320 m site fits inside extended visual line of sight even without an exemption | [S] |
 | Exemptions for government | Government agencies may be exempted from items 1–8, which covers altitude, night, BVLOS and crowds (Act Art. 99-14(2)). For statutory duties such as disaster response, CAA consent can also replace the zone and activity approvals (Act Art. 99-16; Rules Art. 34) | **the route for night, BVLOS and over-people flying**; get the consent in advance as a standing disaster SOP | [S] |
@@ -265,9 +265,8 @@ Some articles were read through a summariser. Check the exact wording before fil
 |---|---|---|---|
 | 2.4 GHz rescue hotspot | LP0002 4.10.1.2: ≤ **1 W** peak conducted; above 6 dBi of antenna gain, power must drop by the same amount | our AP runs at 20 dBm (0.1 W): **compliant** with a type-approved AP | [S] |
 | 5.8 GHz mesh | LP0002 5.7.3.3: 5.725–5.85 GHz, ≤ 1 W conducted, PSD ≤ 30 dBm / 500 kHz | **licence-free** if the radio holds NCC type approval (審驗) | [S], [D] |
-| 5.2 GHz pod link | 5 GHz Wi-Fi, low-power rules | type-approved Wi-Fi card: compliant | [D] |
-| **0.4–2 GHz radar pod** | LP0002 §5.12 allows UWB **only at 4.224–4.752, 6.336–7.920 and 7.392–8.976 GHz**, has no ground-penetrating or wall-imaging category, and **bans UWB on aircraft** (5.12.4.1). Each narrow step of a stepped-frequency sweep might instead fall under the general sections (not read) | **does not fit the low-power rules.** It needs NCC 專案核准 (special approval, TMA Art. 66) plus a frequency assignment for emergency or R&D use (TMA Arts. 52, 56, 57). Mitigation: firmware lets the pod transmit **only when it is seated on the rubble** (IMU still + winch slack), never while airborne, at a few dBm, and it skips GNSS, cellular and rescue-radio bands (HARDWARE §4) | [S] rules; [A] mitigation |
-| Type approval | Controlled RF equipment must pass 審驗 before sale or use, "unless specially approved" (TMA Art. 66; 審驗 Rules Art. 5 allows up to 5 self-built units for own use) | the pilot's 2 kits (6 pods) are just over that self-built limit, so file 專案核准 | [S] ([審驗 Rules](https://law.moj.gov.tw/LawClass/LawAll.aspx?pcode=K0060137)) |
+| **0.4–2 GHz belly radar** | LP0002 §5.12 allows UWB **only at 4.224–4.752, 6.336–7.920 and 7.392–8.976 GHz**, has no ground-penetrating or wall-imaging category, and **bans UWB on aircraft** (5.12.4.1). Each narrow step of a stepped-frequency sweep might instead fall under the general sections (not read) | **does not fit the low-power rules.** It needs NCC 專案核准 (special approval, TMA Art. 66) plus a frequency assignment for emergency or R&D use (TMA Arts. 52, 56, 57). Mitigation: firmware lets the radar transmit **only when the drone has landed on the rubble** (IMU still + landing detected), never while airborne, at a few dBm, and it skips GNSS, cellular and rescue-radio bands (HARDWARE §4) | [S] rules; [A] mitigation |
+| Type approval | Controlled RF equipment must pass 審驗 before sale or use, "unless specially approved" (TMA Art. 66; 審驗 Rules Art. 5 allows up to 5 self-built units for own use) | the pilot's 2 kits (6 radar modules) are just over that self-built limit, so file 專案核准 | [S] ([審驗 Rules](https://law.moj.gov.tw/LawClass/LawAll.aspx?pcode=K0060137)) |
 | Hotspot privacy | Public agencies may collect personal data within their statutory duties (PDPA Art. 15). They may use it beyond the original purpose to remove danger to the data subject's own life or body (Art. 16 item 3) or to prevent serious harm to others (item 4). Personal data includes indirectly identifying data (Art. 2) | survivors' portal messages are lawful for the fire bureau to collect. Treat MAC/RSSI as personal data (no ruling found) and keep HOTSPOT.md §7: no MAC stored, opt-in only, deleted after the operation. The new 個人資料保護委員會 (2025 amendment) is not yet in force | [S]; MAC status [A] |
 
 ### 5c. How others do it
@@ -280,7 +279,7 @@ Some articles were read through a summariser. Check the exact wording before fil
 | Radar (US) | 47 CFR 15.509: ground-penetrating and wall-imaging radar only for law enforcement, firefighting, emergency rescue, research, mining and construction, with coordination. Average limits −65.3 dBm/MHz (960–1,610 MHz) and −53.3 (1,610–1,990 MHz); below 960 MHz the §15.209 limits apply. 15.510 through-wall imaging is law enforcement only | | | [S] [15.509](https://www.law.cornell.edu/cfr/text/47/15.509), [15.510](https://www.law.cornell.edu/cfr/text/47/15.510) |
 | Radar (EU) | ECC/DEC/(06)08 + ETSI EN 302 066 (30 MHz–12.4 GHz): ground- and wall-probing radar for trained professionals, radiating into the ground or wall, non-interference basis. Airborne use is out of scope | | | [S] [CEPT](https://docdb.cept.org/document/402); [D] |
 
-The pod's design choice helps in every jurisdiction. It radiates downward into the rubble only while it is pressed onto it, which is exactly the ground-probing case the US and EU rules allow. It never radiates from the air.
+The belly radar's design choice helps in every jurisdiction. It radiates downward into the rubble only while the landed drone rests it on the surface, which is exactly the ground-probing case the US and EU rules allow. It never radiates from the air.
 
 ### 5d. Realistic certification timeline (Taiwan, before the first kit is on call) [A]
 
@@ -288,7 +287,7 @@ The pod's design choice helps in every jurisdiction. It radiates downward into t
 |---|---|---|
 | Procurement of non-PRC airframes (H6HL class) + integration | 4–8 months | HARDWARE §2 (quote-only airframe) [A] |
 | CAA: ≥ 25 kg physical inspection + Art. 30 operations manual + standing Art. 99-16 / Art. 34 disaster consent | 3–6 months | no CAA processing time is published; activity plans alone take 15–30 days [S] |
-| NCC: 專案核准 for the pod radar + emergency or R&D frequency assignment; type-approved mesh and Wi-Fi radios | 6–12 months, in parallel | no published days; type approval takes "2 weeks to 1 month" [S] *(weak: [iThome](https://www.ithome.com.tw/news/111270))*; the radar is novel |
+| NCC: 專案核准 for the belly radar + emergency or R&D frequency assignment; type-approved mesh and Wi-Fi radios | 6–12 months, in parallel | no published days; type approval takes "2 weeks to 1 month" [S] *(weak: [iThome](https://www.ithome.com.tw/news/111270))*; the radar is novel |
 | Pilot licences (專業) + type and system training (§6) | 3 months, in parallel | |
 | MODA cybersecurity test (needed from 1 Dec 2027) | 1–3 months | [A] |
 | **Total to the first operational kit** | **12–18 months** (24 if the NCC treats the radar as a new category) | |
@@ -302,7 +301,7 @@ Compare: a US 44807 exemption takes ~4–9 months *(weak)*, an EU SORA authorisa
 | Block | Hours | Anchor |
 |---|---|---|
 | CAA professional remote-pilot licence (heavy class), ground + flight test | ~40 | CAA licence classes (§5); Phoenix FD trains ~50 h to its basic FAA licence [S] *(weak: [CleanTechnica](https://cleantechnica.com/2022/08/08/phoenix-fire-department-launches-drone-program/))* |
-| Type rating: 95 kg airframe, winch, pod handling, emergency procedures | 24 | [A] |
+| Type rating: 95 kg airframe, landing on rubble, emergency procedures | 24 | [A] |
 | Larpverse system: tasking, recon, reading pings, vitals honesty, broadcast approvals, hotspot privacy rules | 16 | [A] |
 | Joint USAR exercise on a training rubble pile (ASR 2–3 with dogs and listening devices) | 2 × 8 | Japan's FDMA drone-advisor course is 4 days, including BVLOS, night and search training [S] ([FDMA 消防の動き 2022-02](https://www.fdma.go.jp/publication/ugoki/items/rei_0402_14.pdf)) |
 | **Initial total** | **~96 h per person** | one 100-h commercial public-safety course is in the same range [S] *(weak)* |
@@ -317,7 +316,7 @@ The table shows where the kit fits in each.
 |---|---|---|
 | 1 Wide area assessment | LEMA / UNDAC / the first USAR teams | Fresh LiDAR map of the block (satellite imagery is stale after a collapse); hotspot beacons for phones; collapse outlines for the sectorisation plan |
 | 2 Sector assessment | USAR teams in the sector | **Main role.** Recon + perch-and-listen + zone proposals = viable live-rescue sites in minutes |
-| 3 Primary search and rescue | USAR teams at the worksite | Pod placements on the top leads; the dig order goes to the worksite leader |
+| 3 Primary search and rescue | USAR teams at the worksite | Radar landings on the top leads; the dig order goes to the worksite leader |
 | 4 Secondary search and rescue | USAR teams | Re-check open leads and deep voids, layer by layer, as material comes off |
 | 5 Full coverage | LEMA, sometimes with USAR | Life-sign checks of each layer before machines take it (the Weiguan practice [S, IMPACT_EVIDENCE §3]) |
 
@@ -342,7 +341,7 @@ Our pings are candidate search regions, never confirmations (RULES.md rule 9). S
 3. **Drone data never applies an RCM "C" (clear).** A searched zone with no ping is reported as "searched, no ping" (the impact claim says sectors are never "cleared"). The USAR team decides whether to mark it clear.
 4. **Signals:** the kit obeys the INSARAG horn signals [S, Annex B26]:
    - **"cease operations / quiet"** (one 3-s blast): drones land and listen, which is also our listening window;
-   - **"evacuate"** (three 1-s blasts, repeated): drones climb to a holding altitude away from the pile and stop pod work;
+   - **"evacuate"** (three 1-s blasts, repeated): drones climb to a holding altitude away from the pile and stop radar scans;
    - **"resume"** (long + short): drones resume tasks.
 
 ### Maintenance and storage between disasters
@@ -352,7 +351,7 @@ Our pings are candidate search regions, never confirmations (RULES.md rule 9). S
 | Battery storage | store DB2000 packs at the vendor's storage charge (~40–60%) in a ventilated, fire-rated cabinet in the station; the kit truck keeps 1 set per drone at full charge on a trickle charger for instant dispatch | [A]; vendor storage guidance not found online |
 | Battery health | a monthly cycle on fly day; retire packs at 80% capacity or the vendor cycle limit (1,500 rated) | [S] rating *(weak)*, [A] retirement rule |
 | Airframe | inspect props and motors before each fly day and every ~8 rotor-hours in an operation; yearly vendor service | [A] |
-| Readiness checks | weekly power-on test of the drones, pods, mesh, hotspot and generator; monthly fly day; quarterly joint drill | [A] |
+| Readiness checks | weekly power-on test of the drones, radar modules, mesh, hotspot and generator; monthly fly day; quarterly joint drill | [A] |
 | Software | frozen, signed builds; updates only after a drill passes | [A] |
 
 ### Other uses between disasters
@@ -361,7 +360,7 @@ Using the kits keeps crews current and spreads the cost across more missions. Ja
 
 - **Structural inspection after smaller quakes:** LiDAR maps of tilting buildings (Hualien 2024: the Uranus building moved 5 cm in a day [S] *(weak)*). These are routine, CAA-permitted flights.
 - **Fires:** thermal overwatch, and the heavy airframe can lift hose or equipment to roofs (the FlyCart 30 is a 30 kg cargo drone [S]).
-- **Floods and typhoons:** the loudspeaker and hotspot reach stranded residents; the winch lowers 5–30 kg of supplies.
+- **Floods and typhoons:** the loudspeaker and hotspot reach stranded residents; the drones can carry 5–30 kg of supplies.
 - **Mountain search:** the Chamonix PGHM uses the FlyCart 30 for mountain rescue logistics [S] ([DJI](https://www.dji.com/media-center/announcements/pghm-chamonix-dji-flycart-30-mountain-rescue)) *(vendor)*. In Hualien 2024, drones searched Taroko gorge [S] *(weak)*.
 - **Not for:** routine surveillance of people. The hotspot privacy rules in HOTSPOT.md §7 apply to every use.
 
@@ -369,10 +368,10 @@ Using the kits keeps crews current and spreads the cost across more missions. Ja
 
 | Risk | Facts | Mitigation | Tag |
 |---|---|---|---|
-| **Wind** | FlyCart 30 max wind resistance **12 m/s**, measured with a 30 kg payload in calm test conditions "for reference only" | operating limit 10 m/s sustained, 12 m/s gusts [A]; winch work in ≤ 8 m/s [A] (a swinging pod can't seat); typhoon = no-fly | [S] [DJI](https://www.dji.com/flycart-30/specs) |
-| **Rain** | IP55 aircraft, winch and case; DJI publishes no rain limit; H6HL IP43 | fly in light rain only [A]; rain also raises the acoustic noise floor, so the pod's radar takes over | [S] DJI; HARDWARE §2 |
+| **Wind** | FlyCart 30 max wind resistance **12 m/s**, measured with a 30 kg payload in calm test conditions "for reference only" | operating limit 10 m/s sustained, 12 m/s gusts [A]; landing on rubble in ≤ 8 m/s [A]; typhoon = no-fly | [S] [DJI](https://www.dji.com/flycart-30/specs) |
+| **Rain** | IP55 aircraft and case; DJI publishes no rain limit; H6HL IP43 | fly in light rain only [A]; rain also raises the acoustic noise floor, so the belly radar takes over | [S] DJI; HARDWARE §2 |
 | **Heat** | operating range −20 to 45 °C; DB2000s charge slower when hot | shade and fan the battery rack; budget a 4th set in summer (§4) | [S] DJI |
-| **Aftershocks** | Hualien 2024: **707 aftershocks in the first ~4 days**, 27 of M≥5; two M6+ by day 5 | drones are the *safest* asset in an aftershock (no one on the pile); on the "evacuate" signal they climb and hold; the pod is raised; re-map after any M≥5 because the pile moves | [S] [Wikipedia / CWA counts](https://en.wikipedia.org/wiki/2024_Hualien_earthquake) *(weak)* |
+| **Aftershocks** | Hualien 2024: **707 aftershocks in the first ~4 days**, 27 of M≥5; two M6+ by day 5 | drones are the *safest* asset in an aftershock (no one on the pile); on the "evacuate" signal they climb and hold; landed drones lift off; re-map after any M≥5 because the pile moves | [S] [Wikipedia / CWA counts](https://en.wikipedia.org/wiki/2024_Hualien_earthquake) *(weak)* |
 | **Dust** | airborne dust is detected by LiDAR as obstacles and hides what is behind it | wait out the first dust plume; multi-echo filtering (94% F1 particle classification reported); radar and acoustics are dust-blind | [S] [FSR 2021](https://easychair.org/publications/preprint/TCpW) |
 | **GNSS denial among tall buildings** | urban-canyon multipath gives 10–50 m errors (95th percentile 47.8 m before mitigation in one study) | position against the LiDAR map (SLAM), which is our primary nav on site; RTK base on the van mast; geofence by map, not by GNSS | [S] [NASA PLANS 2025](https://ntrs.nasa.gov/api/citations/20250000809/downloads/PLANS-final.pdf), [PolyU 2019](https://research.polyu.edu.hk/en/publications/a-new-path-planning-algorithm-using-a-gnss-localization-error-map/) |
 | **Comms loss** | cell networks fail; mesh shadowed by rubble | 5.8 GHz mesh with a drop node; store-and-forward on 2 TB; OneWeb (Chunghwa) via satellite, since Starlink wasn't commercial in Taiwan | COMMS_ARCHITECTURE §1; HARDWARE §13 |

@@ -144,8 +144,8 @@ The fallback scorer's clip priority ranks human above non-human with AUC 0.92 on
 - **Ranking got slightly worse.** Priority AUC fell 0.92 -> 0.88 on ESC-50 and 0.84 -> 0.79 on DroneAudioSet. On ESC-50, 12 of the 15 false leads reach the dispatch threshold (`grid_mission.PRIORITY_MIN = 20`). Their median priority is 31, above the true leads' 24.
 
 **Is that acceptable for a triage aid that feeds radar?** Yes, with one condition.
-- **A false lead is cheap. A miss is not.** A false lead costs one radar-pod placement: minutes of drone time and a "no ping" that the radar step reports honestly. A missed person is never revisited, because a quiet pile is only "not cleared".
-- **The trade on ESC-50.** Going from 0.31 to 0.71 recall finds 19 more of the 48 human sounds, at the cost of 13 more false flags among the 120 non-human clips. In a typical listen that means about 1 extra pod placement for every 1.5 extra survivors heard.
+- **A false lead is cheap. A miss is not.** A false lead costs one landing for a radar scan: minutes of drone time and a "no ping" that the radar step reports honestly. A missed person is never revisited, because a quiet pile is only "not cleared".
+- **The trade on ESC-50.** Going from 0.31 to 0.71 recall finds 19 more of the 48 human sounds, at the cost of 13 more false flags among the 120 non-human clips. In a typical listen that means about 1 extra radar landing for every 1.5 extra survivors heard.
 - **The condition: rotor-like sources.** Helicopter clips are now flagged 42% of the time, and a real site has other drones and helicopters overhead.
   - With a fixed radar budget (`scan_budget`), a run of rotor false leads would push real leads out of the queue.
   - On ESC-50 those false leads also outrank true ones (median priority 31 vs 24).

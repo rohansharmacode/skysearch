@@ -55,12 +55,12 @@ const $ = id => document.getElementById(id);
 const GLOSS = { voice: 'Help! Can anyone hear me? My leg is trapped.', weak_voice: 'Anyone there… water…' };
 const STEPS = [
   ['Launch', 'Three rescue drones fly from the staging area to the collapsed building the operator marked.'],
-  ['Mapping the rubble', 'Each drone’s laser scanner (LiDAR, purple) builds a 3D map, to find safe spots for its sensors.'],
-  ['Feeling for breathing', 'The drones lower radar pods onto the rubble. The radar senses the tiny movement of breathing up to about 3 m down (orange).'],
+  ['Mapping the rubble', 'Each drone’s laser scanner (LiDAR, purple) builds a 3D map, to find safe spots to land.'],
+  ['Feeling for breathing', 'The drones land on flat spots on the rubble, and the radar on each drone\'s underside senses the tiny movement of breathing up to about 3 m down (orange).'],
   ['Listening', 'Rotors off, microphones on: the drones listen for voices and knocking (teal).'],
   ['Live change: a new search zone', 'The operator adds a search zone live. Nobody tells the drones what to do next.'],
   ['The swarm re-plans', 'The drones choose the new zone on their own and fly there to search it (green arc).'],
-  ['Searching the new zone', 'The same steps as before, now in the zone the operator added: map it, then lower the radar pods.'],
+  ['Searching the new zone', 'The same steps as before, now in the zone the operator added: map it, then land and scan with the radar.'],
   ['Breathing-like signal', 'The radar marks a place for rescuers to dig first. It is a lead, not a confirmed person.'],
 ];
 $('dots').innerHTML = STEPS.map(() => '<i></i>').join('');
@@ -118,10 +118,10 @@ function data(s, st, chip) {
     if (pods.length) {
       const w = (s.drones || []).filter(d => pods.some(p => p.drone_id === d.id)).map(d => f1(d.winch_len_m));
       const down = pods.filter(p => p.status === 'scanning').length;
-      return [`winch out ${w.join(' / ')} m`, down ? `${down} of ${pods.length} pods on the rubble` : 'pods descending',
+      return [`descent ${w.join(' / ')} m`, down ? `${down} of ${pods.length} drones landed on the rubble` : 'drones landing',
               last ? `last scan ${last.scan_id}: quality ${f2(last.quality)}` : null].filter(Boolean).join('  ·  ');
     }
-    if (String(s.phase) === 'landing') return `${(s.drones || []).length} drones flying to their pod drop points`;
+    if (String(s.phase) === 'landing') return `${(s.drones || []).length} drones flying to flat landing spots`;
     if (last) {
       const rc = (last.range_candidates || []).map((r, i) => `${f1(r)} m (conf ${f2((last.confidence || [])[i])})`);
       return [`scan ${last.scan_id} by ${last.drone_id}`, rc.length ? `return at ${rc.join(', ')}` : 'no breathing return',
@@ -185,8 +185,8 @@ function sense(s, st) {
     const pods = (s.pods || []).filter(p => p.status === 'scanning').length;
     const weak = (s.radar_candidates || []).some(c => c.status === 'insufficient_evidence');
     if (weak) return ['RADAR', 'var(--radar)', 'Possible breathing: checking again from another angle'];
-    if (pods) return ['RADAR', 'var(--radar)', `${pods} radar pod${pods > 1 ? 's' : ''} feeling for breathing`];
-    if (ph === 'landing') return ['RADAR', 'var(--radar)', 'Lowering radar pods onto the rubble'];
+    if (pods) return ['RADAR', 'var(--radar)', `${pods} landed radar${pods > 1 ? 's' : ''} feeling for breathing`];
+    if (ph === 'landing') return ['RADAR', 'var(--radar)', 'Drones landing on the rubble'];
     return ['RADAR', 'var(--radar)', 'No breathing found here yet (not cleared)'];
   }
   if (ph === 'acoustic') {

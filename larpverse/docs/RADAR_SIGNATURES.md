@@ -1,6 +1,6 @@
 # Radar breathing / micro-Doppler signature library
 
-**What this is:** a library of synthetic radar scans from the winch pod resting on the rubble. It has one class per survivor condition plus six non-human "confounders" the system must not dig for. Each scan goes through the **real** processing chain, which identifies it. The output is the assets for the video HUD and dashboard, a gallery figure, and an honest confusion matrix.
+**What this is:** a library of synthetic radar scans from the drone's belly radar resting on the rubble. It has one class per survivor condition plus six non-human "confounders" the system must not dig for. Each scan goes through the **real** processing chain, which identifies it. The output is the assets for the video HUD and dashboard, a gallery figure, and an honest confusion matrix.
 
 **What it is not:** measured through-rubble data. The generator is ours (`sim/radar_dsp.simulate_if` with motion models in `sim/radar_signatures.py`). The only real radar data we have (Schellenberger 2020, 24 GHz, 0.4 m line of sight) validates the breathing features and pause detection, not rubble propagation or any confounder (docs/VITALS.md).
 
@@ -27,9 +27,9 @@ scripts/heavy.sh .venv/bin/python scripts/build_radar_signatures.py assets --pic
 
 ## Geometry and radar
 
-- The pod rests on the rubble surface and looks down.
-- The reflector sits 1.2-3.0 m from the antenna, all through rubble (rubble path = range). The rotor is the exception: it hovers 4-9 m away, above the pod.
-- Pod scans are steady: landing quality 0.75-0.97. Default clutter comes from `radar_dsp.default_clutter`.
+- The radar rests on the rubble surface, under the landed drone, and looks down.
+- The reflector sits 1.2-3.0 m from the antenna, all through rubble (rubble path = range). The rotor is the exception: it hovers 4-9 m away, above the landed radar.
+- Landed-radar scans are steady: landing quality 0.75-0.97. Default clutter comes from `radar_dsp.default_clutter`.
 - Radar: 0.4-2.0 GHz FMCW (wavelength ~25 cm at 1.2 GHz), 512 range bins (9.4 cm), 20 Hz frame (slow-time) rate.
 - Dwell is 45-60 s. That is the "vitals look"; docs/VITALS.md explains why 20 s is rate-only.
 - Propagation: `radar_dsp` default `legacy` mode (0.7 dB/m).
@@ -50,7 +50,7 @@ Displacement is along the radar line of sight.
 | debris | settling / shifting rubble | 1-3 sigmoid steps of 2-15 mm over 0.3-3 s + creep 0-4 mm/min; RCS 5-15 dB | — (our model) |
 | small_animal | dog / cat at rest | 20-40/min, 0.5-1.5 mm, RCS 8-14 dB below an adult chest; 30% also pant at 3-6 Hz | sleeping dogs mostly < 30/min [5] |
 | machinery | generator / pump vibration coupled into the rubble | pure tone 0.8-6 Hz in slow time (aliased 25-30 Hz shaft), 1-3 harmonics, 0.1-1.5 mm, stable to < 0.5% | 4-pole generators turn at 1500 / 1800 rpm (25 / 30 Hz) |
-| rotor | a drone above the pod, via backlobe / multipath | body sway 2-10 mm at 0.2-1.5 Hz + blade flashes with a new random phase every frame, about as strong as the body | rotor micro-Doppler [6, 7] |
+| rotor | a drone above the landed radar, via backlobe / multipath | body sway 2-10 mm at 0.2-1.5 Hz + blade flashes with a new random phase every frame, about as strong as the body | rotor micro-Doppler [6, 7] |
 | moving_person | trapped person knocking or shifting | calm breathing + bursts of 3-5 knocks (2-4 Hz, 4-20 mm) every 4-12 s, 40% followed by a body shift | — (our model); knocking is what the call-out asks for |
 
 ## Identification (`vitals.identify` -> `vitals.source_of`)

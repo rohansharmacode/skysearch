@@ -14,7 +14,7 @@ The OBS canvas is 1920×1080. It has two layers:
 1. **Isaac Sim live stream** (WebRTC viewer, full frame). The real collapse map is shown with the facade matched to the 2016 photos, AI-refined scan textures, real-time path tracing with DLAA and the AI denoiser, and the drones.
    - Sensor effects are drawn in 3D (`isaac/sensor_fx.py`):
      - purple LiDAR beams and points;
-     - orange radar pulses around each winch pod;
+     - orange radar pulses around each landed drone's belly radar;
      - teal sound domes from the grey dummies (simulated people) while the drones listen;
      - the belief hotspot.
    - Overlay lines (`isaac/overlay.py`): zones, range rings, acoustic cones, dispatch arcs, red ping beacons.
@@ -33,15 +33,15 @@ The operator uses the team dashboard (`dashboard/`, "Add as zone") in a second b
 | sim t | video s | what happens |
 |---|---|---|
 | 0–46 | 0–12 | launch from the staging lot; LiDAR survey of zone T1a (the operator's pre-launch zone) |
-| 47–88 | 12–22 | 3 radar pods are winched onto the rubble and scan; no breathing signal (not cleared) |
+| 47–88 | 12–22 | 3 drones land on the rubble and their belly radars scan; no breathing signal (not cleared) |
 | 88–114 | 22–29 | rotors off and listening: voices are heard near T1b ("Help! … my leg is trapped") and near CN, and the drones suggest a new zone |
 | ~116 | ~29 | **the operator clicks "Add as zone" (live)** |
 | ~130–144 | 33–36 | the coordinator re-plans, and d1–d3 are dispatched to the new zone |
-| 150–200 | 38–50 | LiDAR survey of the new zone, then pods |
+| 150–200 | 38–50 | LiDAR survey of the new zone, then landed radar scans |
 
 ## Commands
 
-On the GPU box, set `L=<repo>/larpverse` and `D=$L/dashboard/data`:
+On the GPU box, set `L=<repo>/larpverse` and `D=$L/dashboard/data`. (`--delivery pod` below is the radar-on-the-rubble-surface scan model.)
 
 ```bash
 python3 $L/isaac/tools/add_zone.py --out $D --init T1a --site collapse --seed 7     # pre-launch zone (revision 1)

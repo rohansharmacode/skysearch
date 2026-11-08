@@ -1,4 +1,4 @@
-# Comms architecture: how the drones, pods, phones, van and cloud talk
+# Comms architecture: how the drones, phones, van and cloud talk
 
 Parts and their specs are in [docs/HARDWARE.md](HARDWARE.md) and [`data/hardware_bom.json`](../data/hardware_bom.json).
 The state contract is [contracts/INTERFACES.md](../contracts/INTERFACES.md) (v1.4). The rescue hotspot's link budget,
@@ -7,8 +7,8 @@ This document covers the plumbing between those pieces.
 
 ## One-slide summary
 
-- **The heavy data stays on the drone.** About 130 Mbps of raw LiDAR, 9 Mbps of raw audio and 450 MB/s of raw radar samples never leave the drone or pod. The mesh carries map deltas, detections, short audio clips and thumbnails, about 2 Mbps per drone.
-- **There are three radio layers.** A 5.8 GHz Doodle Labs mesh links the drones and the van, with multi-hop relaying. A 5.2 GHz Wi-Fi link runs from each drone down to its pod. An open 2.4 GHz rescue hotspot serves phones. All three stay clear of the radar's 0.4–2 GHz sweep.
+- **The heavy data stays on the drone.** About 130 Mbps of raw LiDAR, 9 Mbps of raw audio and 450 MB/s of raw radar samples never leave the drone. The mesh carries map deltas, detections, short audio clips and thumbnails, about 2 Mbps per drone.
+- **There are two radio layers.** A 5.8 GHz Doodle Labs mesh links the drones and the van, with multi-hop relaying. An open 2.4 GHz rescue hotspot serves phones. The radar module is cabled to its drone, so it needs no radio link. Both stay clear of the radar's 0.4–2 GHz sweep.
 - **Numbers propose, the agent decides, code verifies.** Gemini sits in the cloud behind Starlink or OneWeb. With no cloud, a rules decider takes over in about 0 ms and only vetted templates are broadcast.
 - **The drones keep working without the mesh.** They finish their search, store everything on 2 TB NVMe, call out with cached templates, and forward the data when the link returns, flying back toward the link if needed.
 - **Every sound sent to a person is gated.** Template call-outs can play autonomously. Operator text and every machine translation wait for `/api/broadcast/approve`. Phones can reach only the portal: the mesh is encrypted with AES-256 and MAVLink messages are signed.
@@ -26,7 +26,7 @@ flowchart LR
     M["8-mic ring<br/>9.2 Mbps USB"] --> A1["Stage 1: denoise, VAD,<br/>YAMNet novelty, bearings"]
     T["Thermal / visible<br/>USB"] --> TH["Thumbnails"]
     G["ZED-F9P PPS"] -.time.-> SLAM
-    POD["Pod range profiles<br/>~0.5 Mbps"] --> V["Vitals DSP"]
+    POD["Radar range profiles<br/>~0.5 Mbps"] --> V["Vitals DSP"]
     SLAM --> SF["Store-and-forward<br/>2 TB NVMe"]
     A1 --> SF
     V --> SF
@@ -37,26 +37,24 @@ flowchart LR
   MESH --> VAN["Van: coordinator, belief,<br/>state.json, dashboard"]
 ```
 
-### 1.2 Pod ↔ drone (winch cable carries no conductors)
+### 1.2 Radar module ↔ drone (cabled; the radar is on the drone's belly)
 
 ```mermaid
 sequenceDiagram
   participant C as Coordinator (van)
   participant D as Drone Orin
-  participant W as Winch
-  participant P as Pod (Pi 5)
-  C->>D: lower_pod at lead xy (proposed command)
-  D->>W: MAV_CMD_DO_WINCH / DJI winch (pay out, ~8 s)
-  W-->>D: line tension drops = touchdown
-  D->>P: 5.2 GHz WPA3: start sweep (0.4-2 GHz SFCW)
-  P-->>D: IMU seating ok / rocking: re-seat once
+  participant P as Radar module (Pi 5)
+  C->>D: goto_land_scan at lead xy (existing command)
+  D->>D: MAV_CMD_NAV_LAND on a flat spot (~8 s); landing detected = touchdown
+  D->>P: cable: start sweep (0.4-2 GHz SFCW)
+  P-->>D: IMU seating ok / rocking: lift off and re-land once
   loop every ~33 ms for 20-60 s
     P-->>D: range profile (2 RX x ~128 bins)
   end
   D->>D: vitals DSP: range candidates, breathing Hz
   D->>C: radar observation (contract) + pods[] status
-  D->>W: raise (~8 s), then the next placement
-  Note over P,D: link lost for more than 30 s: pod keeps logging to SD, drone raises it, data syncs when back in range
+  D->>D: lift off (~8 s), then the next landing spot
+  Note over P,D: data link lost for more than 30 s: radar module keeps logging to SD, data syncs when the link is back
 ```
 
 ### 1.3 Drone ↔ drone multi-hop
@@ -158,11 +156,11 @@ that.
 |---|---|---|---|---|
 | LiDAR | **~42–126 Mbps** (4–12 B/point by profile, est.) | 0.1 m voxel **map deltas**, quantised int16 xyz + zstd | **~0.5 Mbps** surveying, ~0.05 perched (est.) | ~20k new voxels/s at 10 m/s over a 20 m swath. Full-res tiles (`pc_tiles/`, contract v1.3.1) are assembled at the van, never streamed live |
 | SLAM pose | 10 Hz | pose + covariance | ~5 kbps | also feeds the autopilot as external nav |
-| Radar, pod → drone | B210 IQ ~450 MB/s (2 × 56 MS/s, stays in the pod) | range profiles over the 5.2 GHz pod link | (pod link ~0.5 Mbps) | 2 RX × ~128 bins × complex64 × 30 Hz |
+| Radar, module → drone | B210 IQ ~450 MB/s (2 × 56 MS/s, stays in the radar module) | range profiles over the cable to the drone | (module-to-drone data ~0.5 Mbps) | 2 RX × ~128 bins × complex64 × 30 Hz |
 | Radar, drone → van | — | slow-time of ≤ 16 candidate bins during a scan + the observation JSON | **~60 kbps** while scanning | the observation itself (contract "radar observation") is ~1 kB |
-| Audio | drone 8 ch × 48 kHz × 24 bit = **9.2 Mbps**; pod 4 ch at 16 kHz = 1 Mbps | **only clips that pass the stage-1 novelty filter**: 5 s beamformed Opus 32 kbps ≈ 20 kB; 8-ch FLAC on demand | **~16 kbps** avg (6 clips/min), bursts 20 kB | `clips[].forwarded`; dismissed clips stay on the drone |
+| Audio | drone 8 ch × 48 kHz × 24 bit = **9.2 Mbps**; radar-module 4 ch at 16 kHz = 1 Mbps | **only clips that pass the stage-1 novelty filter**: 5 s beamformed Opus 32 kbps ≈ 20 kB; 8-ch FLAC on demand | **~16 kbps** avg (6 clips/min), bursts 20 kB | `clips[].forwarded`; dismissed clips stay on the drone |
 | Thermal / visible | 60 Hz video | **640 × 512 JPEG thumbnail every 2 s** | ~160 kbps | live H.265 720p (~2 Mbps) on request, one drone at a time |
-| Telemetry | — | MAVLink 2 (attitude, position, battery, winch) | ~20 kbps | signed |
+| Telemetry | — | MAVLink 2 (attitude, position, battery) | ~20 kbps | signed |
 | RTK corrections | — | RTCM3 van → drones | ~5 kbps | |
 | Speaker | — | Opus file per operator broadcast (~30 kB), template keys | bursts | templates are pre-cached |
 | Rescue Wi-Fi users | phones at up to 72 Mbps PHY | portal page 24 kB once per phone, submissions < 1 kB, RSSI reports | **capped 1 Mbps per hotspot** (policy est.) | internet relay ≤ 64 kbps per client, text-first |
@@ -187,9 +185,9 @@ is lower (verify).
 | SLAM (KISS-ICP), external-nav pose to the autopilot | drone Orin | < 100 ms per sweep | no | no |
 | Landing / perch screening (`sim/landing.py` logic) | drone Orin | < 0.5 s | no | no |
 | Stage-1 acoustics: denoise, VAD, YAMNet novelty, bearings | drone Orin | < 1 s after the clip ends | no | no |
-| Radar sweep + range FFT | pod Pi 5 | 33 ms per frame | no | no |
+| Radar sweep + range FFT | radar-module Pi 5 | 33 ms per frame | no | no |
 | Radar vitals (breathing / heart rate, condition) | drone Orin | physics-bound: 20 s dwell (rate), ≥ 45–60 s (pattern) | no | no |
-| Pod sequencing, IMU seating check | drone Orin + winch | 8 s lower / 8 s raise | no | no |
+| Landing sequencing, IMU seating check | drone Orin | 8 s to land / 8 s to lift off | no | no |
 | Template call-out playback + listen window | drone Orin | seconds | no | no |
 | Captive portal page + local submission queue | drone Orin (AP) | < 1 s | for delivery | no |
 | Coordinator: dispatch scoring, belief / localisation, pile association | van | < 1 s per step | **yes** | no |
@@ -212,7 +210,7 @@ is lower (verify).
 **With no mesh:**
 
 - Each drone continues its last task (zone recon or the current lead) under onboard autonomy. It keeps perching,
-  listening and lowering the pod, plays template call-outs, and serves the portal locally.
+  listening and landing for radar scans, plays template call-outs, and serves the portal locally.
 - Everything is time-stamped (GNSS PPS) and queued on NVMe.
 - After a configurable outage (e.g. 120 s, est.) and at the end of each task, the drone flies toward its
   last-good-link waypoint as a data mule. If the outage persists, it lands at staging under the battery reserve rule.
@@ -223,11 +221,11 @@ is lower (verify).
 
 | Link | Protocol | Carries |
 |---|---|---|
-| Orin ↔ autopilot | **MAVLink 2** over UART (mavlink-router); DJI build: Payload SDK over E-Port Lite (verify whether it can fly the aircraft) | commands, position, battery, winch |
+| Orin ↔ autopilot | **MAVLink 2** over UART (mavlink-router); DJI build: Payload SDK over E-Port Lite (verify whether it can fly the aircraft) | commands, position, battery |
 | Drone ↔ van, flight | MAVLink 2 over UDP on the mesh, **signed** | same, mirrored to the van |
 | Inside the drone | **ROS 2** (DDS, shared memory) | sensor topics |
 | Drone ↔ van, perception | **Zenoh** (`zenoh-bridge-ros2dds` / `rmw_zenoh`) with a topic allow-list; MQTT over TLS is the simpler alternative | observations, map deltas, clips, status |
-| Pod ↔ drone | ZeroMQ or Zenoh over 5.2 GHz Wi-Fi (WPA3) | sweep control, range profiles, IMU, pod audio |
+| Radar module ↔ drone | ZeroMQ or Zenoh over the cable between them | sweep control, range profiles, IMU, radar-module audio |
 | Van ↔ dashboard | HTTP: static `state.json` polled at 1 s + JSON APIs | state, tasking, broadcasts, portal |
 | Van ↔ cloud | HTTPS (Gemini API) | audio, context, translations |
 | Phone ↔ drone | HTTP captive portal → `POST /api/portal` | answers, messages |
@@ -240,7 +238,7 @@ rate-limited set of keys across the mesh. That choice is architecture decision 2
 | Drone-side message (ROS 2 topic → Zenoh key) | Van action | `state.json` field |
 |---|---|---|
 | `/radar/obs` → `lv/<d>/radar/obs` (contract "radar observation") | localiser, belief | `scans[]`, `radar_candidates[]`, `belief` |
-| `/pod/status` → `lv/<d>/pod` | | `pods[]` (`status: stowed / lowering / scanning / raising`), `drones[].winch_len_m` |
+| `/pod/status` → `lv/<d>/pod` | | `pods[]` (`status: stowed / lowering / scanning / raising`, legacy field names for: on the drone / landing / scanning on the rubble / lifting off), `drones[].winch_len_m` (legacy field, unused) |
 | `/acoustic/obs`, `/audio/clip` → `lv/<d>/acoustic/*` | association, Gemini stage 2 | `acoustic[]`, `acoustic_clips[]`, `clips[].audio_analysis`, `piles[]` |
 | `/map/delta` → `lv/<d>/map/delta` | map fusion, tiles | `heightmap`, `pointcloud` (+ `tiles`), `landing_sites[]` |
 | MAVLink HEARTBEAT, GLOBAL_POSITION_INT, BATTERY_STATUS | | `drones[]` (`pose`, `state`, `battery`, `track`) |
@@ -258,7 +256,7 @@ rate-limited set of keys across the mesh. That choice is architecture decision 2
 | `goto_land_scan` | goto, then `MAV_CMD_NAV_LAND` at the landing site, then the scan request on Zenoh |
 | `hold` | `MAV_CMD_NAV_LOITER_UNLIM` / BRAKE |
 | `return` | `MAV_CMD_NAV_RETURN_TO_LAUNCH` |
-| *proposed* `lower_pod` / `raise_pod` | `MAV_CMD_DO_WINCH` (ArduPilot winch support) / DJI winch |
+| *proposed* `lower_pod` / `raise_pod` (legacy command names in the sim contract) | Not needed on the real build: `goto_land_scan` lands the drone and the radar scan follows |
 
 **Existing HTTP APIs** (`scripts/serve.py`, van only, bound to 127.0.0.1 by default):
 
@@ -269,7 +267,7 @@ rate-limited set of keys across the mesh. That choice is architecture decision 2
 
 **Proposed contract additions** (for the orchestrator; not in v1.4):
 
-- Commands: `lower_pod` and `raise_pod` (`{drone_id, type, xy, dwell_s}`), plus `relay_hold`, which hovers a drone
+- Commands: `lower_pod` and `raise_pod` (`{drone_id, type, xy, dwell_s}`; legacy names for land-and-scan and lift-off), plus `relay_hold`, which hovers a drone
   at an xy as a mesh relay.
 - `drones[].link`: `mesh | stored`, plus `last_link_t` and `queued_kb`, the store-and-forward backlog.
 - `comms.backhaul.links[].latency_ms`.
@@ -285,8 +283,8 @@ rate-limited set of keys across the mesh. That choice is architecture decision 2
 | Gemini error, timeout, bad JSON or unknown option id | exception / validation | code verifies: argmax fallback, logged with `by` |
 | Gemini over-claims distress | `audio_analysis.verify` similarity check | unverified items go to `distress_unverified`, and the pile priority is not raised by them |
 | GNSS degraded (urban canyon, multipath) | fix quality, HDOP | the LiDAR SLAM pose goes to the autopilot as external nav (MAVLink `ODOMETRY` / `VISION_POSITION_ESTIMATE`) |
-| Pod link lost | no frames for 30 s | the pod keeps logging to SD, the drone raises it, and the data syncs when back in range. The scan is marked low quality |
-| Pod snagged | winch tension above the limit | pay out slack and retry, then reposition and retry. Last resort: hot-cut (FC30 winch). The pod strobe and last position are logged as a hazard |
+| Radar-module data link lost | no frames for 30 s | the radar module keeps logging to SD, and the data syncs when the link is back. The scan is marked low quality |
+| Drone landed unstably | IMU shows rocking or tilt above the limit | lift off and re-land once, then pick another landing spot. The radar-module strobe and last position are logged as a hazard |
 | Radar RFI from rescuers' radios / cellular | narrowband spikes in the sweep | skip those sub-bands (SFCW). The scan's `quality` drops and is never treated as a negative |
 | Hotspot overload | client count | cap of about 32 clients per AP (est.), per-client rate limit, portal-only walled garden |
 | Clock drift | PTP / PPS offset > 5 ms | flag the affected scans, re-sync |
@@ -295,7 +293,7 @@ rate-limited set of keys across the mesh. That choice is architecture decision 2
 
 ## 6. Security
 
-- **Link encryption.** The mesh uses AES-256 (Doodle Labs: FIPS 140-3; Silvus: AES-256 / FIPS 140-3) with per-deployment keys loaded at the van. The pod link uses WPA3-SAE with a MAC allow-list. The DJI O3 link is AES-256 per DJI.
+- **Link encryption.** The mesh uses AES-256 (Doodle Labs: FIPS 140-3; Silvus: AES-256 / FIPS 140-3) with per-deployment keys loaded at the van. The DJI O3 link is AES-256 per DJI.
 - **MAVLink 2 signing** is on for every link that can command a drone.
 - **Zenoh / MQTT** run over TLS with mutual authentication. Each drone may publish only to its own `lv/<d>/…` keys.
 - **Network separation.** The hotspot is an untrusted network on its own VLAN or firewall zone. Phones reach only
@@ -319,16 +317,15 @@ rate-limited set of keys across the mesh. That choice is architecture decision 2
 2. **ROS 2 inside the drone, Zenoh across the mesh, MAVLink for flight.** This choice needs an open-autopilot
    airframe (ArduPilot H6HL class), because the DJI airframe has no MAVLink and only a Payload SDK port.
 3. **A separate band for each job, chosen around the radar.** The radar uses 0.4–2 GHz and notches GNSS and
-   cellular. The mesh uses 5.8 GHz, the pod link 5.2 GHz and the hotspot 2.4 GHz channel 1. The H6HL's 900 MHz RC
+   cellular. The mesh uses 5.8 GHz and the hotspot 2.4 GHz channel 1. The H6HL's 900 MHz RC
    link overlaps the sweep, so the radar skips those steps.
 
 ## Sources
 
-- Winch over MAVLink: [ArduPilot "Control a Winch"](https://ardupilot.org/dev/docs/mavlink-winch.html) (`MAV_CMD_DO_WINCH`, id 42600); [Daiwa winch setup](https://ardupilot.org/copter/docs/common-daiwa-winch.html). One forum user reports that `DO_WINCH` mission items only released the clutch, while PWM control worked ([thread](https://discuss.ardupilot.org/t/do-winch-mission-waypoints-not-working-with-daiwa-winch/98946)), so verify this on the chosen winch.
 - MAVLink 2 message signing: [mavlink.io](https://mavlink.io/en/guide/message_signing.html). GCS failsafe options: [ArduPilot](https://ardupilot.org/copter/docs/gcs-failsafe.html). Non-GPS navigation / external odometry: [ArduPilot](https://ardupilot.org/copter/docs/common-non-gps-navigation-landing-page.html).
 - Zenoh for ROS 2 across lossy links: [zenoh-plugin-ros2dds](https://github.com/eclipse-zenoh/zenoh-plugin-ros2dds), [rmw_zenoh](https://github.com/ros2/rmw_zenoh).
 - Mesh radios: [Doodle Labs Mini Mesh Rider](https://doodlelabs.com/product/mini-oem-smart-radio) (80 Mbps, 5 W avg, AES-256 / FIPS 140-3); [Silvus SL5200](https://prnewswire.com/news-releases/silvus-technologies-unveils-streamcaster-lite-5200-302283091.html).
-- DJI FlyCart 30 O3 link (2.4 / 5.8 GHz, AES-256) and winch: [DJI specs](https://www.dji.com/flycart-30/specs). E-Port Lite and Payload SDK: [DJI developer docs](https://developer.dji.com/doc/payload-sdk-tutorial/en/quick-start/drone-port.html).
+- DJI FlyCart 30 O3 link (2.4 / 5.8 GHz, AES-256): [DJI specs](https://www.dji.com/flycart-30/specs). E-Port Lite and Payload SDK: [DJI developer docs](https://developer.dji.com/doc/payload-sdk-tutorial/en/quick-start/drone-port.html).
 - Satellite backhaul: [Starlink Mini](https://www.techspot.com/news/103471-starlink-mini-299-dish-provides-100mbps-wifi-6.html). Taiwan: OneWeb via Chunghwa Telecom ([moda.gov.tw](https://moda.gov.tw/en/press/press-releases/13056)); Starlink's legal hurdles were removed in July 2026, but we found no confirmed service launch ([Citizen Digital / AFP](https://citizen.digital/article/taiwan-lawmakers-remove-legal-hurdles-for-starlink-to-operate-n386806)).
 - Narrowband interference to rubble bio-radars at Wenchuan and Yushu: [Frontiers in Earth Science 2023](https://www.frontiersin.org/journals/earth-science/articles/10.3389/feart.2023.1158764/full).
 - OS1 data and power: [Ouster Rev7 datasheet](https://cdn.shopify.com/s/files/1/0400/1752/6943/files/datasheet-rev7-v3p0-os1.pdf). LiDAR bytes per point are our estimate across Ouster data profiles (verify against the firmware user manual).

@@ -222,10 +222,10 @@ function caption(b, s, ev) {
   const here = pings(s).filter(p => !pile || p.pile_id === pile || String(p.id || '').startsWith(pile));
   if (b === 0) return ['Launch', 'Three rescue drones take off from the command van and fly to the collapsed building.'];
   if (b === 1) return ['Mapping the rubble', onDrone(s) ? 'A laser scanner on each drone (LiDAR) builds a 3D map, shown as white dots on the right, so the drones know where they can land safely.'
-                                                  : 'A laser scanner on each drone (LiDAR, the purple dots) builds a 3D map, so the drones know where they can safely put their sensors.'];
+                                                  : 'A laser scanner on each drone (LiDAR, the purple dots) builds a 3D map, so the drones know where they can land safely.'];
   if (b === 2 && here.length) return ['Breathing-like signal found', 'The radar picked up a steady breathing rhythm under the rubble. Rescuers get a place to check first. It is a lead, not a confirmed person.'];
   if (b === 2 && onDrone(s)) return ['Feeling for breathing', 'Each drone lands on a safe spot from the LiDAR map, with its radar on board. The radar can feel the tiny chest movement of breathing up to about 3 m down.'];
-  if (b === 2) return ['Feeling for breathing', 'Each drone lowers a radar pod onto the rubble on a cable. The radar can feel the tiny chest movement of breathing up to about 3 m down.'];
+  if (b === 2) return ['Feeling for breathing', 'Each drone lands on a safe spot from the LiDAR map, with its radar on board. The radar can feel the tiny chest movement of breathing up to about 3 m down.'];
   if (b === 3 && onDrone(s)) return ['Listening', 'The drones stay landed with their rotors off. One calls out over its loudspeaker; then they all listen for voices and knocking from under the rubble.'];
   if (b === 3) return ['Listening', 'The drones land and switch their rotors off. One calls out over its loudspeaker; then they all listen for voices and knocking from under the rubble.'];
   const rp = b === 4 ? replanAfter(ev) : null;
@@ -254,7 +254,7 @@ function caption(b, s, ev) {
     return ['The swarm decides', `The drones decided by themselves to search ${to} next${why}.`];
   }
   if (b === 6 && here.length) return ['Breathing-like signal found', `At ${esc(pile)} the radar picked up a breathing rhythm. Another place for rescuers to check. A lead, not a confirmed person.`];
-  return ['Searching the new area', `The same steps at ${esc(pile || 'the new area')}: map it, then ${onDrone(s) ? 'land and feel for breathing with the radar' : 'lower the radar pods to feel for breathing'}.`];
+  return ['Searching the new area', `The same steps at ${esc(pile || 'the new area')}: map it, then ${onDrone(s) ? 'land and feel for breathing with the radar' : 'land and feel for breathing with the radar'}.`];
 }
 
 function sense(b, s, ev) {
@@ -320,7 +320,7 @@ function sense(b, s, ev) {
         ['Pattern', v.pattern ? String(v.pattern).replace(/_/g, ' ') : 'measuring (60 s scan)…'],
         ['Scans that agree', p.support != null ? String(p.support) : '–']], null];
     }
-    const Pod = onDrone(s) ? 'Drone' : 'Pod';
+    const Pod = onDrone(s) ? 'Drone' : 'Drone';
     if (sc && sc.vitals && !scanHit(sc))     // the DSP found no return above its threshold: never a "rhythm" (reh6)
       return ['RADAR', `${Pod} ${esc(sc.drone_id)}: nothing strong enough to count in this scan`, [
         ['Last scan', `${esc(sc.scan_id)} · quality ${f2(sc.quality)}`],
@@ -333,11 +333,11 @@ function sense(b, s, ev) {
         ['Breaths counted', npk ? `${npk} in ${f0(v.duration_s)} s (white dots)` : (v.n_breaths != null ? `${v.n_breaths} in ${f0(v.duration_s)} s` : '–')],
         ['Breathing rate', v.rate_bpm != null ? `${f1(v.rate_bpm)} per minute` + (v.rate_ci ? ` (likely ${f1(v.rate_ci[0])}–${f1(v.rate_ci[1])})` : '') : '–'],
         ['Signal above noise', v.snr_db != null ? `${f1(v.snr_db)} dB` : '–'],
-        [onDrone(s) ? 'Distance from the radar' : 'Distance from the pod', sc.ranges && sc.ranges.length ? `${f1(sc.ranges[0])} m` : '–']], null];
+        [onDrone(s) ? 'Distance from the radar' : 'Distance from the radar', sc.ranges && sc.ranges.length ? `${f1(sc.ranges[0])} m` : '–']], null];
     }
-    if (pods.length) return ['RADAR', down ? `${down} radar pod${down > 1 ? 's' : ''} resting on the rubble, feeling for breathing` : 'Lowering radar pods on their cables', [
-        ['Pods on the rubble', `${down} of ${pods.length}`],
-        ['Cable out', drones.filter(d => pods.some(p => p.drone_id === d.id)).map(d => `${f1(d.winch_len_m)} m`).join(' · ') || '–'],
+    if (pods.length) return ['RADAR', down ? `${down} drone${down > 1 ? 's' : ''} landed on the rubble, radar feeling for breathing` : 'Drones landing on the rubble', [
+        ['Drones landed', `${down} of ${pods.length}`],
+        ['Descent', drones.filter(d => pods.some(p => p.drone_id === d.id)).map(d => `${f1(d.winch_len_m)} m`).join(' · ') || '–'],
         ['Last scan', st ? `${esc(st.scan_id)} · quality ${f2(st.quality)}` : 'none yet']], null];
     if (onDrone(s)) {
       const down = drones.filter(d => ['landed', 'scanning'].includes(d.state)).length;
@@ -346,7 +346,7 @@ function sense(b, s, ev) {
          ['Radar reach', st && st.max_reliable_depth_m ? `about ${f1(st.max_reliable_depth_m)} m down` : 'about 3 m down'],
          ['Last scan', st ? `${esc(st.scan_id)} · quality ${f2(st.quality)}` : 'none yet']], null];
     }
-    return ['RADAR', 'Moving the drones over the rubble to drop the radar pods', [['Drones', String(drones.length)],
+    return ['RADAR', 'Flying the drones to flat landing spots on the rubble', [['Drones', String(drones.length)],
         ['Radar reach', st && st.max_reliable_depth_m ? `about ${f1(st.max_reliable_depth_m)} m down` : 'about 3 m down']], null];
   }
   if (b === 3 || m.stage === 'listen' || ph === 'acoustic' || ph.startsWith('recon_listen')) {
@@ -441,8 +441,8 @@ function drawWave(sc) {
   const pk = dur && !none ? breathPeaks(w, dur / (w.length - 1), v.rate_bpm || (sc.breathing_hz ? 60 * sc.breathing_hz : null)) : [];
   g.fillStyle = '#ffffff';
   pk.filter(i => i < n).forEach(i => { g.beginPath(); g.arc(X(i), Y(w[i]) - 14, 6, 0, 2 * Math.PI); g.fill(); });
-  const rp = onDrone(window._last) ? 'the radar on drone' : 'radar pod';
-  const parts = none ? [`${rp === 'radar pod' ? 'Radar pod' : 'The radar on drone'} ${sc.drone_id} at ${sc.pile}: no breathing return above the detection threshold in this scan`]
+  const rp = onDrone(window._last) ? 'the radar on drone' : 'the radar on drone';
+  const parts = none ? [`${rp === 'radar pod' ? 'The radar on drone' : 'The radar on drone'} ${sc.drone_id} at ${sc.pile}: no breathing return above the detection threshold in this scan`]
     : [`Measured by ${rp} ${sc.drone_id} at ${sc.pile}: chest movement (relative scale)` + (dur ? ` over ${f0(dur)} s` : '')];
   if (pk.length) parts.push('white dots = breaths');
   else if (sc.breathing_hz && !v.rate_bpm) parts.push(`about ${f0(60 * sc.breathing_hz)}/min (first estimate)`);

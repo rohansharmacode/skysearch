@@ -41,9 +41,9 @@ The recon agent re-commands legs higher as it maps new structure. Those legs now
 |---|---|
 | Takeoff | Sequential launch, 1.5 s apart. Rotor spool-up on the pad (2.5 s). Lift-off at 0.8 m/s to a 2 m hover (2 s), during which the drone yaws toward its first leg. Then the climb, blended into the first leg. |
 | Cruise | S-curve at up to 10 m/s, with a steady nose-down attitude against drag (8° at 10 m/s). |
-| Arrival | Deceleration into a stabilised hover. Pod jobs hold 1.5 s before the winch starts. |
+| Arrival | Deceleration into a stabilised hover. Radar jobs hold 1.5 s before the landing starts. |
 | Perch landing | Stabilised hover over the patch (1.5 s), descent at 2 m/s, slow final at 0.5 m/s below 3 m, flare to 0.2 m/s below 0.5 m, touchdown (skids 5 cm up at 0.19 m/s), rotor spin-down (3 s). |
-| Winch | S-curve cable payout and reel-in (`PodSpec.lower_s` / `raise_s`). The pod sways like a pendulum (amplitude 0.18 m, frequency sqrt(g/L(t)), damping 0.12) and the sway is windowed to zero at contact, so the pod settles on the rubble. A command that arrives while the pod is out first reels it in. |
+| Radar landing | The drone lands on a flat spot with the same perch-landing profile, timed by `PodSpec.lower_s` / `raise_s` (8 s to land, 8 s to lift off). The belly radar is fixed under the drone, so it does not swing; it rests on the rubble from touchdown. A command that arrives while the drone is landed first lifts it off. |
 
 **Attitude from the dynamics.** Specific thrust is f = a + k·|v_air|·v_air + g·ẑ, with the tilt clamped to 25°. The drone therefore:
 - leans into acceleration;
@@ -68,7 +68,7 @@ The rotor order and spin signs match `drone_viz.ROTOR_ORDER`: arms 0 to 3 at 45 
 
 **Mission timing.** `SmoothFlight` is `KinematicFlight` with the same commands, events and states.
 - Arrival happens at the trajectory's exact end time. The mission sees it at the first step at or after that time.
-- The dwell and winch timers carry the sub-step remainder.
+- The dwell and landing timers carry the sub-step remainder.
 - `eta()` returns the `flight_time()` of the trajectory the command would build.
 
 So the times the mission schedules with equal the times the drones fly (tested).
@@ -88,7 +88,7 @@ So the times the mission schedules with equal the times the drones fly (tested).
 | Hover RPM | ~1000 rpm | Estimate from momentum theory, T = C_T·ρ·n²·D⁴, C_T 0.08, 54-in props, 77 kg / 8. `drone_viz.HOVER_RPM` uses 1700 as an order of magnitude; see Requests. |
 | Spool-up / spin-down | 2.5 / 3 s | Estimate. |
 | Hover drift | 7 cm RMS | Estimate, consistent with RTK position hold. |
-| Winch lower / raise | 8 / 8 s | `PodSpec` in sim/platform.py. |
+| Land / lift off (radar jobs) | 8 / 8 s | `PodSpec` in sim/platform.py. |
 
 PX4 defaults are from the parameter reference: https://docs.px4.io/main/en/advanced_config/parameter_reference.html. They are the generic-airframe defaults, used as an upper bound for a heavy airframe. The one-euro filter is from Casiez, Roussel and Vogel, CHI 2012.
 
@@ -146,11 +146,11 @@ scripts/heavy.sh --browser uv run --offline --no-project --with playwright --wit
 `.venv` has neither playwright nor imageio-ffmpeg. The `uv --offline` line uses the copies already in the uv cache, so nothing is downloaded.
 
 The showcase script on the seed-7 grid, with the three drones:
-- **d1:** takeoff, cruise, pod hover over B3, winch payout, 6 s on the rubble, reel-in.
+- **d1:** takeoff, cruise, hover over B3, landing, 6 s on the rubble with its belly radar resting on it, lift-off.
 - **d2:** perch landing at the A3 edge, spin-down, then a fresh takeoff.
 - **d3:** recon-style legs with a mid-flight re-plan to a higher waypoint.
 
-The director camera uses springs only and never cuts. Its timeline: wide shot at the pads (0 s), d1 (9 s), d3 re-plan (17.5 s), d1 winch (25.5 s), d2 landing (31 s), d1 reel-in (46 s), d2 takeoff (51 s).
+The director camera uses springs only and never cuts. Its timeline: wide shot at the pads (0 s), d1 (9 s), d3 re-plan (17.5 s), d1 landing on the rubble (25.5 s), d2 landing (31 s), d1 lift-off (46 s), d2 takeoff (51 s).
 
 ## Requests
 
@@ -237,7 +237,7 @@ Remaining:
 `set_state(pos, quat, rotor_rpm, winch_len, dt, sway_deg, ground_z)` matches what `isaac.motion` produces: the rotor order and spin signs are the same as `ROTOR_ORDER`, and the quaternion is (w, x, y, z).
 
 - **`HOVER_RPM`:** please set `HOVER_RPM = 1000.0` (the momentum-theory estimate above) or import `MotionSpec.from_platform("heavy_sar").hover_rpm`. Our RPMs sit around 950 to 1100 in flight, which is above your `BLUR_RPM` of 450, so the blur disc behaves either way.
-- **`sway_deg` sign:** (roll, pitch) with R = Rx(roll)·Ry(pitch), where +pitch swings the pod toward -x. Please confirm that `_apply_hang` uses the same convention.
+- **`sway_deg` (legacy argument):** (roll, pitch) with R = Rx(roll)·Ry(pitch), where +pitch would have swung the module toward -x. The belly radar is fixed under the drone and does not swing, so please pass zero or ignore it; if `_apply_hang` is kept, confirm it uses the same convention.
 
 ### R4, orchestrator
 

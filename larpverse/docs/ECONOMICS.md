@@ -10,15 +10,15 @@ number below). This file extends [HARDWARE.md](HARDWARE.md) (BOM prices) and [IM
 ## Judge summary
 
 1. **A city kit costs about $0.67M up front and $2.8M over 10 years, or about $280k a year** (range $1.1–6.3M) [D].
-   A kit is 3 heavy drones with winch pods, spares, chargers and a command van.
+   A kit is 3 heavy drones with belly-mounted radars, spares, chargers and a command van.
    That is roughly the yearly cost of one police drone-as-first-responder subscription ($140–435k) [S], or about 8.5 dog teams over the same 10 years [D].
    It is also about 14% of one FEMA task force's federal readiness money over 10 years ($1.99M a year) [D].
 2. **The kit pays for itself if it saves a fraction of a life per decade at standard values of life.**
    At the US DOT figure of $13.7M per life it needs 0.20 lives per decade (0.08–0.46) [D], and at Taiwan's $5M (benefit-transfer) figure it needs 0.56 lives [D].
    At the cost-effectiveness bar that international USAR teams set today, US$0.93M per life saved, it needs about 3 lives (1.1–6.8) [D].
-3. **Whether it actually saves those lives depends on the radar pod working in the field.** The impact model's upper bound assumes the pod pings every silent victim the radar can reach.
+3. **Whether it actually saves those lives depends on the belly radar working in the field.** The impact model's upper bound assumes the radar pings every silent victim the radar can reach.
    In that case it adds about 5.7 survivors in a Weiguan-sized collapse (p5–p95: 0.6–13.9), so one such event per decade pays the kit back about 10× at Taiwan's value of life [D].
-   The system as simulated today, with stub acoustics and no pod pings in the collapse run, adds about 0.2 survivors per 100 trapped. At that rate the kit needs about 300 trapped people per decade to break even at Taiwan's value of life [D].
+   The system as simulated today, with stub acoustics and no radar pings in the collapse run, adds about 0.2 survivors per 100 trapped. At that rate the kit needs about 300 trapped people per decade to break even at Taiwan's value of life [D].
 4. **Labour savings are real but secondary.** At the upper bound it saves about 120 rescuer-hours per trapped person, about $0.8M per 100 trapped [D].
    Fewer digs at empty voids save about 120 rescuer-hours and 10 machine-hours per major site, only about $10k [D].
    The value of those hours is that they go to live voids sooner, not the money they save.
@@ -73,8 +73,8 @@ International missions are paid by the 賑災基金會 (disaster relief foundati
 | SearchCam 3000 search camera | $17,869 – $44,193, depending on the kit | [S] [Allsafe](https://allsafeindustries.com/searchcam-3000-search-rescue-camera-kit.aspx), [Safeware](https://www.safewarecontracts.com/itemdetail/SAV%206000-11-001) |
 | LifeLocator-class UWB radar | no public price (quote only; TRx discontinued); $20–80k | [A]; [GSSI](https://www.geophysical.com/products/lifelocator-trx) |
 
-A typical set of listening device, camera and radar costs about $100–170k [D]. One Larpverse pod costs $5.6k in parts [S, BOM].
-The pod does not replace these tools. It carries radar and microphones to many points without a person on the pile.
+A typical set of listening device, camera and radar costs about $100–170k [D]. One Larpverse belly radar module costs $5.6k in parts [S, BOM].
+The radar module does not replace these tools. The drone carries radar and microphones to many points without a person on the pile.
 
 ## 2. What disasters cost and what a life is worth
 
@@ -97,20 +97,20 @@ Compensation is not a measure of what society would pay to avoid the death, so t
 
 ### Kit definition and capex
 
-A **city kit** has 3 drones, each with its payload, winch and pod. It also includes:
+A **city kit** has 3 drones, each with its payload and belly radar module. It also includes:
 - 3 battery sets per drone (IMPACT_EVIDENCE §6);
 - one C8000-class charger per drone;
-- spare pods, a spare winch and airframe spares;
+- spare radar modules, a spare-parts reserve and airframe spares;
 - the van fit-out from the BOM: mesh mast, satellite/5G link, laptop, server, UPS, two generators and a tent;
 - a vehicle, integration and initial training.
 
 | Line (US$) | Low: FC30, truck retrofit | **Central: H6HL** | High: H6HL + thermal | Tag |
 |---|---|---|---|---|
-| 3 drones incl. payload + winch + pod | 182,301 | **260,901** | 284,901 | [D] BOM totals: 60,767 / 86,967 / 94,967 each |
+| 3 drones incl. payload + reserve line + belly radar module | 182,301 | **260,901** | 284,901 | [D] BOM totals: 60,767 / 86,967 / 94,967 each |
 | 2 spare battery sets per drone | 33,600 | 38,400 | 48,000 | [S] DB2000 $2.8k / [A] H6HL set $6.4–8k |
 | Van fit-out (BOM $51k minus spare packs) | 34,200 | 34,200 | 45,000 | [D] BOM |
 | Chargers, 1 per drone | 12,000 | 15,000 | 21,000 | [A] |
-| Spare pods ($5,567 each) + spare winch | 8,067 | 19,201 | 21,001 | [A] count, [S] BOM price |
+| Spare radar modules ($5,567 each) + spare-parts reserve | 8,067 | 19,201 | 21,001 | [A] count, [S] BOM price |
 | Airframe spares (5 / 8 / 12% of drones) | 9,115 | 20,872 | 34,188 | [A] |
 | **Hardware at cost** | 279,283 | **388,574** | 454,090 | [D] |
 | × vendor markup (assembly, test, warranty, margin) | ×1.15 | ×1.35 | ×1.8 | [A] |
@@ -150,7 +150,7 @@ Retrofitting it onto an existing heavy-rescue truck with a PTO generator also re
 
 | Capability | 10-year cost | What you get | Tag |
 |---|---|---|---|
-| **Larpverse city kit** | **$2.8M** (1.1–6.3) | 3 drones that map, listen, call and drop a radar pod; nobody on the pile; works around the clock | [D] |
+| **Larpverse city kit** | **$2.8M** (1.1–6.3) | 3 drones that map, listen, call, and land to scan with a belly radar; nobody on the pile; works around the clock | [D] |
 | One canine team | $325k (222–424k) | 1 dog; 20–45 min on, then equal rest; no published rubble accuracy | [D] |
 | Kit ÷ canine team | **≈ 8.5 dog teams** | | [D] |
 | One FEMA Type 1 task force, federal readiness funding only | **$19.9M** (13–20M) + cache $1.4–7M | 70 people, 4+ dogs, about 27–45 t of kit, extrication capability | [D] / [S] |
@@ -179,8 +179,8 @@ Break-even lives = TCO₁₀ ÷ value per life [D]:
 
 Source: [`data/impact_results.json`](../data/impact_results.json), collapse site, snapshot of 8 Nov 2026 01:50.
 These figures come from `sim/impact.py`, which is still uncommitted, uses placeholder parameters and ran with stub acoustics. **Recompute when it changes.**
-The model has two arms. *Ideal* is the upper bound: the pod pings every silent victim the radar can reach in the sectors it is sent to.
-*Ours* is the system as simulated today; the collapse run produced 0 pod pings.
+The model has two arms. *Ideal* is the upper bound: the radar pings every silent victim the radar can reach in the sectors it is sent to.
+*Ours* is the system as simulated today; the collapse run produced 0 radar pings.
 
 | Arm | Extra survivors per 100 trapped [median, p5, p95] | Per Weiguan-scale collapse (290 trapped) |
 |---|---|---|
@@ -198,7 +198,7 @@ Trapped people a kit must reach per decade to break even at the central TCO [D]:
 
 We assume a regional kit reaches 100 trapped people per decade (20–400 [A]); Weiguan alone had 290 extricated.
 On that basis the *ideal* arm clears the VSL bar easily. The *ours* arm clears it only at the US VSL or above roughly 300 trapped people per decade.
-**The economic case is the radar pod's case.** If the field pod finds silent victims about as well as the ideal arm assumes, one Weiguan-sized collapse a decade pays for the kit about 10× at Taiwan's value of life.
+**The economic case is the belly radar's case.** If the field radar finds silent victims about as well as the ideal arm assumes, one Weiguan-sized collapse a decade pays for the kit about 10× at Taiwan's value of life.
 If it does not, the kit is a mapping, comms and labour-saving tool whose value per life is unproven.
 
 ### Rescuer-hours and machinery
@@ -270,7 +270,7 @@ At 4 kits, a Taiwan regional pool costs about **NT$36M a year** [D]. That is abo
 | Skydio X10 + Dock | $50,547 list (Dock $36k), up to $62k with support | DFR dock, small drone, US-made | [S] [DroneXL](https://dronexl.co/drone-companies/skydio/) *(weak)* |
 | BRINC Responder DFR program | **$140k–435k a year per city**; Victorville $832k over 3 years; Newport Beach $2.18M over 5 years for 7 drones; often first year free | subscription with hardware, software, batteries, training | [S] [DroneXL](https://dronexl.co/2026/04/27/brinc-drones-victorville-832k/), [Gov1](https://gov1.com/public-safety/calif-pd-to-deploy-911-response-drones-under-new-2-17m-contract), [Porterville](https://www.recorderonline.com/news/ppd-drone-program-approved/article_bdf9a228-2d98-41f9-9eb5-07f22985a56f.html) |
 | Flock Aerodome DFR 2.0 | about $114k a year per system (Everett: $457k a year for 4) | subscription | [S] [robotics.press](https://robotics.press/news/dfr-program-costs-2026/) *(weak)* |
-| **Larpverse kit** | **capex $673k / about $278k a year all-in** | 3 heavy drones, winch radar pods, listening and calling, hotspot, van | [D] |
+| **Larpverse kit** | **capex $673k / about $278k a year all-in** | 3 heavy drones, belly-mounted radars, listening and calling, hotspot, van | [D] |
 
 Our yearly cost sits inside the price band US cities already pay for DFR, but the kit does a different job: heavy-lift, sensing under rubble, and rare deployment.
 That has two consequences. It is a regional asset, not a precinct asset. And it needs dual use (§6) to keep crews current and the budget defensible.
@@ -288,14 +288,14 @@ That has two consequences. It is a regional asset, not a precinct asset. And it 
 
 ## 6. Dual use beyond earthquakes
 
-The kit's parts (LiDAR mapping, listening, loudspeaker calls, Wi-Fi hotspot, radar pod) also apply to other incidents. Dual use is what keeps a rarely used regional asset funded and its crews current.
+The kit's parts (LiDAR mapping, listening, loudspeaker calls, Wi-Fi hotspot, belly radar) also apply to other incidents. Dual use is what keeps a rarely used regional asset funded and its crews current.
 
 | Incident | What transfers | Evidence / frequency | Tag |
 |---|---|---|---|
 | Non-earthquake building collapse | everything | India alone: **1,435 structure collapses and 1,525 deaths in 2024**; 38,363 deaths 2001–15. No global count exists (EM-DAT keeps a "collapse" subgroup) | [S] [Dataful/NCRB](https://insights.dataful.in/articles/four-states-account-for-half-of-indias-building-collapse-deaths) |
 | Industrial collapse | everything | Rana Plaza 2013: 1,134 dead | [S] [Wikipedia](https://en.wikipedia.org/wiki/2013_Dhaka_garment_factory_collapse) |
-| Gas explosions | mapping, listening, pod | Kaohsiung 2014: 32 dead | [S] [Wikipedia](https://en.wikipedia.org/wiki/2014_Kaohsiung_gas_explosions) |
-| Landslides, typhoon damage | mapping, hotspot (phones), loudspeaker; the pod only on debris shallow enough for its 4.5–7 m radar reach | Taiwan typhoon season every year; mountain rescue teams at 12 new stations from 2026 | [A]; [S] [Taipei Times](https://www.taipeitimes.com/News/taiwan/archives/2026/01/24/2003851145) |
+| Gas explosions | mapping, listening, belly radar | Kaohsiung 2014: 32 dead | [S] [Wikipedia](https://en.wikipedia.org/wiki/2014_Kaohsiung_gas_explosions) |
+| Landslides, typhoon damage | mapping, hotspot (phones), loudspeaker; the belly radar only on debris shallow enough for its 4.5–7 m radar reach | Taiwan typhoon season every year; mountain rescue teams at 12 new stations from 2026 | [A]; [S] [Taipei Times](https://www.taipeitimes.com/News/taiwan/archives/2026/01/24/2003851145) |
 | Avalanche / wilderness | phone detection: the hotspot is a weaker cousin of Lifeseeker, which runs a fake cell tower | Lifeseeker: more than 35 operators in more than 10 countries, more than 200 missions, about 5 m accuracy, phone must be on; one buried victim found in under 10 min after 8 h of visual search | [S] [HeliHub](https://www.helihub.com/2024/06/03/lifeseeker-data-shows-how-sar-uses-phone-signals-to-find-missing-people/), [UST](https://www.unmannedsystemstechnology.com/2023/06/lifeseeker-completes-over-100-successful-sar-missions-in-one-year/) |
 | Context | | Disasters 2000–2019: 7,348 events, 1.23M deaths, $2.97T in losses; earthquakes and tsunamis were the deadliest. FEMA US&R in 2025: 7 disasters, more than 5,000 buildings searched | [S] [UNDRR](https://www.undrr.org/publication/human-cost-disasters-2000-2019), FEMA |
 
@@ -313,10 +313,10 @@ Adding a Lifeseeker-style cellular payload (a licensed emergency base station) w
    - A 100% US tariff on imported thermal drones and docks is reported but unconfirmed *(weak)* ([DroneBundle](https://dronebundle.com/blog/dji-dock-3)).
    - Taiwan agencies cannot buy Chinese ICT [S].
    - The cheap FC30 build ($61k per drone) is therefore a simulation reference only. The sellable build is the $87k H6HL class, about +$78k per kit before markup. That is already the central case.
-3. **Radar certification.** The pod is an SDR sweeping 0.4–2 GHz.
+3. **Radar certification.** The belly radar is an SDR sweeping 0.4–2 GHz.
    - US UWB imaging under 47 CFR 15.509 is limited to law enforcement, fire and rescue users and needs equipment authorisation [S] ([eCFR](https://www.ecfr.gov/current/title-47/chapter-I/subchapter-A/part-15/subpart-F/section-15.509)).
    - Taiwan needs NCC type approval [A].
-   - A software radio does not hold that approval by default, so it needs a certified fixed configuration or an experimental licence. This is the long pole for the whole economic case, because the ROI rests on the pod.
+   - A software radio does not hold that approval by default, so it needs a certified fixed configuration or an experimental licence. This is the long pole for the whole economic case, because the ROI rests on the radar.
 4. **Liability.**
    - A sector the system scores as low-priority, where a survivor later dies, is the nightmare case.
    - Mitigation: the system never says "clear" or "confirmed", only candidate search regions (RULES rule 9); humans decide; the system logs everything.

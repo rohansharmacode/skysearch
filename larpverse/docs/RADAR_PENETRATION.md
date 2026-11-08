@@ -17,18 +17,18 @@ Code: `sim/radar_dsp.py` (`two_way_loss_db`, `reach_path_m`, `reach_prob`, `use_
   | dwell | q 0.95 | q 0.6 | q 0.3 |
   |---|---|---|---|
   | 20 s | −3 dB | 0 dB | +9 dB (cap) |
-  | 45 s (pod scan) | −9 dB | −6 dB | +3 dB (cap) |
+  | 45 s (landed radar scan) | −9 dB | −6 dB | +3 dB (cap) |
   | 60 s (vitals look) | −11.5 dB | −8.5 dB | +0.5 dB (cap) |
 
   The old sinusoid needed −17 dB at 20 s. Low-quality scans level off below 90% detection, so their entries are caps, not measurements. A shallow, rapid breather (depth_rel ≈ 0.45) needs about 7 dB more than these figures.
 - **Reach.** `reach_path_m(range, quality, dwell)` is the rubble path at which the margin `20 log10(AMP_1M/R^2) + G_rx − A90(q, dwell)` equals `loss(L)`. Here `G_rx` is the platform's receive-aperture advantage.
 
-  heavy_sar pod, q 0.95 (pod face 0.48 × 0.48 m: +7.6 dB):
+  heavy_sar belly radar resting on the rubble surface, q 0.95 (face 0.48 × 0.48 m: +7.6 dB):
 
   | dwell | 2 m | 6 m | 11.5 m |
   |---|---|---|---|
   | 20 s | 2.47 m | 1.07 m | 0.31 m |
-  | 45 s (default pod scan) | **2.92 m** | 1.50 m | 0.70 m |
+  | 45 s (default landed radar scan) | **2.92 m** | 1.50 m | 0.70 m |
   | 60 s | 3.11 m | 1.68 m | 0.87 m |
 
   Legacy small radar, 45 s: 2.35 m beneath. The previous figure of 3.6 m beneath (sinusoid, 0.6 × 0.5 m panel) was optimistic by about 0.7 m.
@@ -50,7 +50,7 @@ Not modelled: scattering, multipath inside the pile, moisture, layering and the 
 
 | preset | loss | reach beneath | reach at 11 m | 10 m of rubble |
 |---|---|---|---|---|
-| `literature` (default) | as above | 2.9 m (heavy_sar pod, 45 s) | 0.7 m | ~130 dB, nothing |
+| `literature` (default) | as above | 2.9 m (heavy_sar belly radar on the rubble surface, 45 s) | 0.7 m | ~130 dB, nothing |
 | `legacy` | flat 0.7 dB/m one-way | ~30 m | ~8.5 m | 14 dB, still visible (**not credible**) |
 
 The grid demo lands the drones on flat cells in a ring 9–12 m from the pile centres. Seed 7's victims sit 0.9–1.9 m deep, but the slant path from the ring to them crosses 1–3 m of pile flank. A3's is 2.9 m from the best ring cell.
@@ -59,35 +59,35 @@ The grid demo lands the drones on flat cells in a ring 9–12 m from the pile ce
 - Perching on the pile (patches up to 20° with a self-levelling radar mount, a vertical final descent, and adaptive legs settling on slabs) is implemented. On the 0.5 m heightmap it finds only 2–4 perches per pile, and their scan quality is low. That is not enough for three independent strong ranges.
 - Under `legacy`, the demo pings A2, A3 and B2 as before. The mission log then states on its first line that the model is optimistic and not literature-backed.
 
-## Why a pod
+## Why land on the rubble
 
-The radar rides on a 4.9 kg sensor pod with a 0.48 m face. A heavy drone (heavy_sar, FlyCart 30 class) lowers it on a 20 m winch onto the rubble surface; this is the default, `--delivery pod`. The winch has a 5 kg minimum load, so there is no margin. The pod sits in contact with the rubble, so the scan starts at the surface and there is no air gap.
+The radar is mounted on the drone's underside, facing down: a 4.9 kg module with a 0.48 m face. A heavy drone (heavy_sar, FlyCart 30 class) uses its LiDAR map to find a flat spot on the rubble and lands there; this is the default, `--delivery pod` (the radar-on-the-rubble-surface scan model). The radar then sits in contact with the rubble, so the scan starts at the surface and there is no air gap.
 
-Placement:
+Landing spots:
 
-- The pod goes on the pile within 2 m (horizontal) of the lead's posterior mode first, then further out.
+- The drone lands on the pile within 2 m (horizontal) of the lead's posterior mode first, then further out.
 - On a revisit, the lead's posterior mode is the earlier radar mode. On a first visit it is the acoustic bearing crossing, if that falls on the pile, or else the pile centre.
-- A placement costs about 8 s to lower, 45 s to scan and 8 s to raise, instead of a re-land. A firm ping gets one extra 60 s vitals look.
-- The drones land off the pile, with rotors off, to listen.
+- A landing costs about 8 s to set down, 45 s to scan and 8 s to lift off. A firm ping gets one extra 60 s vitals look.
+- For the separate listening step, the drones land off the pile, with rotors off.
 
-Reach is about 2.9 m beneath the pod and 0.7 m from the old 11 m landing ring. The attenuation was **not** changed for the pod; only the geometry, the dwell and the seating model changed. The seating model:
+Reach is about 2.9 m beneath the landed drone's belly radar and 0.7 m from the old 11 m landing ring. The attenuation was **not** changed for this mode; only the geometry, the dwell and the seating model changed. The seating model:
 
-- roughness is taken at the pod's footprint, about 0.35 × the 1.5 m plane fit;
+- roughness is taken at the radar's footprint, about 0.35 × the 1.5 m plane fit;
 - slopes up to 30° do not matter;
-- the pod is re-seated once when it rocks.
+- if the drone sits unevenly, it lifts off and re-lands once.
 
-**Default:** `--penetration literature --radar dsp --delivery pod`, with the physio chest waveform, 45 s pod scans and the vitals hooks on. `legacy` and `--delivery land` are kept for comparison only.
+**Default:** `--penetration literature --radar dsp --delivery pod`, with the physio chest waveform, 45 s landed radar scans and the vitals hooks on. `legacy` and `--delivery land` are kept for comparison only.
 
 **Seed 7.** The canonical, deterministic run is in docs/SEED7_STORY.md. It uses smooth flight and the real-pipeline acoustic fixture.
 
 - **Pings:** A2 at 364 s, B1 at 1712 s and B2 at 2312 s. A3 stays an open acoustic lead.
 - **Totals:** 34 of 36 scans, mission time 3109 s.
 - **Vitals:** each ping's condition matches the hidden state. A2 is `unconscious_slow`, B1 `irregular_apneic`, B2 `calm`.
-- **Why A3 fails:** its victim breathes rapidly and shallowly (33/min, about 2.2 mm). The closest pod seats rock (scan quality 0.03–0.6), and after 16 placements the returns are weak (confidence ≤ 0.3) or empty.
+- **Why A3 fails:** its victim breathes rapidly and shallowly (33/min, about 2.2 mm). The closest landing spots are uneven, so the radar seats poorly (scan quality 0.03–0.6), and after 16 landings the returns are weak (confidence ≤ 0.3) or empty.
 
 **Depth.** The radar gives an estimate (`depth_source: "radar_estimate"`) only when at least 3 scans support the ping and the posterior sigma is ≤ 0.45 m. Otherwise the depth stays `nominal` (assumed 1.5 m).
 
-- In seed 7, A2 has 5 supporting pod scans: **1.62 ± 0.45 m** (the evaluator's hidden value is 1.64 m).
+- In seed 7, A2 has 5 supporting landed radar scans: **1.62 ± 0.45 m** (the evaluator's hidden value is 1.64 m).
 - B1 and B2 stay `nominal`: their sigma is 0.45–0.6 m with 3 supporting scans.
 
 ## Reproduce the calibration

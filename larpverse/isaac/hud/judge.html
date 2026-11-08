@@ -82,7 +82,7 @@ const GLOSS = { voice: 'Help! Can anyone hear me? My leg is trapped.', weak_voic
 const STEPS = [
   ['Launch', 'Three heavy-lift drones take off from the staging lot. Before launch the operator outlined one search zone (white).'],
   ['LiDAR mapping', 'Each drone’s spinning LiDAR maps the rubble in 3D (purple beams and points). The fresh map shows where sensors can be placed safely.'],
-  ['Radar pods', 'The drones lower radar pods onto the rubble by winch. Each radar looks about 3 m down for the tiny motion of breathing (orange pulses).'],
+  ['Radar', 'The drones land on flat spots on the rubble; the radar on each drone\'s underside looks about 3 m down for the tiny motion of breathing (orange pulses).'],
   ['Listening', 'Rotors off, microphones on. Teal waves are sounds from simulated trapped people (grey figures). An acoustic agent ranks voices, knocks and noise.'],
   ['Operator adds a zone (live)', 'Unscripted: an operator adds a new search zone on the dashboard, from what the drones just heard.'],
   ['Swarm adapts', 'The swarm re-plans on its own: it flies to the new zone and starts mapping and scanning there.'],
@@ -123,7 +123,7 @@ function rows(s) {
   const scans = s.scans || [];
   const last = scans[scans.length - 1];
   const pings = (s.radar_candidates || []).filter(c => c.status === 'candidate');
-  let rtxt = pods.length ? `${pods.length} pod${pods.length > 1 ? 's' : ''} scanning for breathing` : 'No radar dwell right now';
+  let rtxt = pods.length ? `${pods.length} landed radar${pods.length > 1 ? 's' : ''} scanning for breathing` : 'No radar dwell right now';
   let rsub = last ? `last scan ${esc(last.scan_id)} on ${esc(last.pile_id)}: ` + ((last.range_candidates || []).length
       ? `breathing-like return at ${(+last.range_candidates[0]).toFixed(1)} m` : 'no breathing signal (not cleared)') : '';
   if (pings.length) {

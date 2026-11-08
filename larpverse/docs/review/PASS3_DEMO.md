@@ -19,10 +19,10 @@ All outputs went to a scratch directory (`$S` = the session scratchpad `pass3/`)
 |---|---|---|
 | R1 | Dry rehearsal exactly as in brief §4, `--test-trigger "activate:hidden2@400"`, `--max-steps 560` | Exit 0. `pods_max_visible: 3`. Stage event at t 400 (video 34.0 s). **Dispatch to A1 at t 542** (video ≈48.1 s). Run ends at t 560, video ≈51 s |
 | R1b | The same with `python3`, as written | **Fails here:** `ModuleNotFoundError: No module named 'numpy'` (`isaac/live.py:42`). Re-run with `.venv/bin/python` |
-| R2 | Control: R1 without `--test-trigger` | Dispatch to **A3** (78) at t 496 (video ≈43.5 s). A3 pods at video ≈54 s |
-| R3 | Press in VIDEO_PLAN's recommended window, `activate:hidden2@251`, 620 steps | Pod-mic listens confirm A1 at t 306: "Re-prioritise: A1 (84) queued". Gate at t 542: **A1 79 vs A3 78**, so the fleet goes to A1 by **1 point**. Video: event 26.7 s, dispatch 48.1 s, A1 survey 52.2 s, A1 pods 58.6 s |
+| R2 | Control: R1 without `--test-trigger` | Dispatch to **A3** (78) at t 496 (video ≈43.5 s). A3 landed radars at video ≈54 s |
+| R3 | Press in VIDEO_PLAN's recommended window, `activate:hidden2@251`, 620 steps | Radar-mic listens confirm A1 at t 306: "Re-prioritise: A1 (84) queued". Gate at t 542: **A1 79 vs A3 78**, so the fleet goes to A1 by **1 point**. Video: event 26.7 s, dispatch 48.1 s, A1 survey 52.2 s, A1 landed radars 58.6 s |
 | R4 | `--dry-run --live --site collapse --max-steps 200` | Exit 0. `pods_max_visible: 3`, 145k LiDAR points. A portal "I'm trapped" phone forces a **re-plan to RW at t 174** with no key press. The run used a grid `tasking.json` (see P1-6) |
-| R5 | `--dry-run --platform heavy_sar --delivery pod --max-steps 300` | Exit 0. `pods_max_visible: 3`. Localisation converged at A2 by t 274 |
+| R5 | `--dry-run --platform heavy_sar --delivery pod --max-steps 300` (`pod` = the radar-on-the-rubble-surface scan model) | Exit 0. `pods_max_visible: 3`. Localisation converged at A2 by t 274 |
 | R6 | Headless Chrome (heavy.sh browser slot, `serve.py --port 8797` on a scratch copy holding R1's output), `?layout=take&state=data/state.json` at 640×1080 and 960×1080 | `docs/review/img/pass3-take-640.png`, `pass3-take-960.png`. The waveform, dig order and top clip are R1's real output, not fixtures. **The LIVE line is broken** (P0-1) |
 | R7 | `.venv` pytest (all files except the two audio ones) | 1 failed (`test_plan_dummies_grid_seed7_matches_manifest`: library was mid-rebuild, transient). On re-run, `test_isaac_assets`, `test_isaac_dryrun` and `test_live` all passed (30). `test_radar_dsp::test_penetration_physics_numbers` **fails** (see the test table at the end) |
 | R8 | `.venv-audio` pytest `test_acoustic.py test_dummy_audio.py` | 27 passed, 1 failed: `test_hidden_dummies_in_silent_sectors` (see the test table at the end) |
@@ -49,13 +49,13 @@ All outputs went to a scratch directory (`$S` = the session scratchpad `pass3/`)
 
 ### P0-2. With the real pipeline, the gate can wait 2–3 pipeline runs, and the latency rule makes it worse
 - **The worker runs jobs one at a time, first in first out, with no cancel.** `isaac/live.py` `_SERVER` (`for line in sys.stdin`, ~l.764) handles one job at a time.
-- **Pod-mic listens keep the worker busy.** `_quick_listen` (l.1236–1260) submits a new pod-mic listen every 20 sim s while pods rest. At the ×14 radar pace, one is in flight at almost all times once L (the latency of one pipeline run, in wall seconds) is more than ~1.5 s.
-- **The prefetch queues behind it.** `_prefetch_listen` (l.1202–1221) is submitted at the landing command (t ≈364) and waits behind that pod-mic job.
+- **Radar-mic listens keep the worker busy.** `_quick_listen` (l.1236–1260) submits a new radar-mic listen every 20 sim s while the radars rest on the rubble. At the ×14 radar pace, one is in flight at almost all times once L (the latency of one pipeline run, in wall seconds) is more than ~1.5 s.
+- **The prefetch queues behind it.** `_prefetch_listen` (l.1202–1221) is submitted at the landing command (t ≈364) and waits behind that radar-mic job.
 - **A press after the prefetch adds a third job.** A press after ≈31 s submits a new job (`find_prefetch` misses on the new signature). That job waits behind the **stale prefetch, which still runs to completion**.
 - **What the gate gets:** from the landing command it has ≈7 s (landing ×5) plus 14 s (141 sim s at ×10) ≈ **21 s wall**. It needs up to 2L (no press) or 3L (late press). At L = 10 s that is a 10–20 s hold with landed drones, which pushes the redirect from 48 s to 58–68 s.
 - **The latency rule uses a stale constant.** `LISTEN_AFTER_DOWN_S = 66` (l.59) no longer matches. Measured from "all drones down" to the gate is **141 sim s** (R1: t 401 → 542). From the landing command it is 176 sim s. The rule `run_mission.py:827-835` caps the listen pace at `66/(L+1)`. At L = 10 s that is ×6, so the listen takes ≈23.5 s of video instead of 14. At L = 15 s it is ×4.1, ≈34 s of video, and the take no longer fits. The rule slows the take exactly when the pipeline is slow, and by more than needed.
 - **Fix (live.py):**
-  1. Stop submitting pod-mic listens once `m.pm.stage == "done"` or the radar phase is ending.
+  1. Stop submitting radar-mic listens once `m.pm.stage == "done"` or the radar phase is ending.
   2. Give jobs a `kind` and let the worker drain stdin and skip superseded jobs (send `{"cancel": id}`, or have it check a `latest_gate_id` before starting).
   3. Compute the window from the mission instead of the constant: `listen_s + callout_s` from `m`, or measure "all drones down" to the gate at run time.
 - **Verify:** a dry run with `--acoustic real` and a fake service of fixed latency 10 s, logging gate hold seconds.
@@ -66,10 +66,10 @@ All outputs went to a scratch directory (`$S` = the session scratchpad `pass3/`)
   - Without a press the gate goes to **A3 (78)** (R2).
   - A press at t 251 (the VIDEO_PLAN window) wins A1 with **79 vs 78** (R3).
   - VIDEO_PLAN's own stub table (§2, row "Y during the rescans, t 251") recorded **A3** for the same press.
-  - The pod-mic listens heard A1 at 84 and logged `Re-prioritise: A1 (84) queued; A2 has a firm ping in progress`.
+  - The radar-mic listens heard A1 at 84 and logged `Re-prioritise: A1 (84) queued; A2 has a firm ping in progress`.
   - **But nothing is queued:** `isaac/live.py:1285-1286` only logs, and the gate re-ranks from its own listen. With the real pipeline, where Whisper `base.en` returned no transcript for A1 in VIDEO_PLAN's check, the ranking can easily flip back to A3. The fleet then does exactly what it does without a press.
 - **Fix:** in the `firm` branch of `_handle_quick`, make the promise true: set `m._order = pile` (GridMission `_gate` honours it first, `sim/grid_mission.py:1216`). Log it as a re-plan, `self.replans.append(...)`, so the dashboard LIVE line shows "new voice heard near A1 → redirecting d1–d3 to A1".
-  - **Honesty:** this is still decided from generator outputs only, confirmed by two consecutive pod-mic listens.
+  - **Honesty:** this is still decided from generator outputs only, confirmed by two consecutive radar-mic listens.
   - **Otherwise:** say plainly in VIDEO_PLAN that the redirect is not guaranteed, and keep the operator-zone fallback rehearsed.
 - **Owner:** `isaac/live.py`; the mission owner should agree the policy.
 
@@ -98,7 +98,7 @@ All outputs went to a scratch directory (`$S` = the session scratchpad `pass3/`)
   - Press to redirect: **14 s** (R1: video 34.0 → 48.1) and **21 s** (R3: 26.7 → 48.1).
   - The redirect is late because the call-out phase grows from +68 s to **+114 s landed** when A1 answers (R1 log, reassurance plus guidance).
   - Without a change the fleet goes to **A3**, not B2.
-  - A1 pods appear at 58.6 s, so the end shot only just makes 60 s.
+  - A1 landed radars appear at 58.6 s, so the end shot only just makes 60 s.
   - The rehearsal command's `--max-steps 560` stops at video ≈51 s, so it never shows the end of the take.
 - **Fix:**
   1. Use `--max-steps 620` in brief §4 and VIDEO_PLAN §6.2.
@@ -186,7 +186,7 @@ All outputs went to a scratch directory (`$S` = the session scratchpad `pass3/`)
 7. **Helper read of the asset modules (lower risk):**
    - `UsdPrimvarReader_float2.varname` is authored as Token, not String (`van.py:341`, `scene.py:70`).
    - `overlay.UsdBackend.flush_points` re-uploads the whole cloud every 1500 points (`overlay.py:552-568`, `--overlay usd`, which the take uses).
-   - `pods.py:141` `hasattr(d, "set_winch")` hides pods with `--drone-model small` (the fps fallback).
+   - `pods.py:141` `hasattr(d, "set_winch")` hides the radar visuals with `--drone-model small` (the fps fallback).
    - `UsdMedia.SpatialAudio` may be silent in Kit (`dummies.py:402`), so don't promise stream audio.
    - The recording rigs are centred on the grid (`photoreal.py:498`).
    - The van's monitor textures read "FIXTURE … not a real run" in a close-up (`assets/textures/dash_*.jpg`).
@@ -204,7 +204,7 @@ All outputs went to a scratch directory (`$S` = the session scratchpad `pass3/`)
 - **Labels in the dry run:** the HUD "Sources" line, the dashboard banner and `last_listen.source` all say SYNTHETIC (stub).
 - **Threading:** USD and PhysX stay on the main thread. `SyncedSource` queues writes; the probe is swapped to `probe_cached` in threaded mode (`run_mission.py:808-812`). No prims are created per frame in the reviewed paths. The HUD is throttled to 4 Hz.
 - **Isaac-side APIs:** carb hotkey API names (`acquire_input_interface`, `subscribe_to_keyboard_events`, `KeyboardEventType.KEY_PRESS`) and the omni.ui HUD calls (`get_frame`, `ui.Plot`, `set_data`, `dock_in`) match Kit 105+ as far as can be checked without a GPU. Everything is guarded and falls back to a NullHud with a log line.
-- **Pods** are visible in `--live`, and `heavy_sar --delivery pod` runs clean.
+- The landed radars are visible in `--live`, and `heavy_sar --delivery pod` (the radar-on-the-rubble-surface scan model) runs clean.
 
 ## Test status
 

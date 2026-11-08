@@ -20,14 +20,14 @@ safe.
 | Airframe class | FlyCart 30 / Agras T50 coaxial X8 | Matrice 400 quad-X | The sim's original abstract ~1 m quad (not a product) |
 | Span, props unfolded | **3.085 m** (2800 × 3085 mm) [FC30][T50] | 1.705 m *estimate* (1.07 m wheelbase + one 25-in prop) [M400] | 1.0 m *estimate* |
 | Wheelbase / props | 2.2 m, 8 × 54 in (1.375 m) [FC30] | 1.07 m, 4 × 25 in [M400] | 0.65 m, 0.33 m *estimate* |
-| Mass: airframe + batteries / SAR payload / MTOW | 65 kg *estimate* (95 kg MTOW − 30 kg rated cargo) / **14 kg** *estimate* in pod mode (6 kg airframe sensors, compute and mounts + 3.1 kg winch + 4.9 kg pod; no radar on the drone body; [HARDWARE](HARDWARE.md) §14) / 95 kg [FC30] | 9.74 kg [M400] / 4 kg *estimate* / 15.8 kg [M400] | 3 / 1.2 / 4.5 kg *estimate* |
+| Mass: airframe + batteries / SAR payload / MTOW | 65 kg *estimate* (95 kg MTOW − 30 kg rated cargo) / **14 kg** *estimate* in `pod` mode, i.e. radar resting on the rubble surface (6 kg airframe sensors, compute and mounts + 4.9 kg belly-mounted radar module + 3.1 kg unallocated reserve; [HARDWARE](HARDWARE.md) §14) / 95 kg [FC30] | 9.74 kg [M400] / 4 kg *estimate* / 15.8 kg [M400] | 3 / 1.2 / 4.5 kg *estimate* |
 | Battery | 2 × DB2000, 1984.4 Wh each [FC30] | TB100, 977 Wh [M400] | 160 Wh *estimate* |
 | Endurance with SAR payload (to 0%) | **23.9 min** *estimate*: linear between the spec's 29 min hover (empty) and 18 min (30 kg) [FC30], at 14 kg | **36 min** *estimate*: 53 min hover with H30T [M400] scaled by mass^1.5 to 13.7 kg | 10.4 min (sim: 0.16%/s) |
 | Usable with the 25% reserve | 17.9 min | 27 min | 7.8 min |
 | Cruise / climb / descend | 10 / 3 / 2 m/s *estimate* (spec max 20 m/s) | 10 / 3 / 2 m/s *estimate* (spec max 25 m/s) | 4 / 2 / 1.2 m/s (sim) |
 | Wind, ingress | 12 m/s, IP55 [FC30] | 12 m/s, IP55 [M400] | n/a |
 | LiDAR | **Ouster OS1-128**, 128 ch, 45° VFoV, 90 m @10% [OS1]; 1024 × 10 Hz mode = **1.31 M pts/s**; σ 3 cm *estimate*; mounted pitched 45° (§3) | **Hesai XT32**, 32 ch, 640k pts/s, 360° × 31°, 0.18° × 1°, ±1 cm / 0.5 cm (1σ), 0.8 kg [XT32] | Livox Mid-360 class [MID360], simulated as a 32-ch −18…−80° fan, 230k beams/s |
-| Radar | 0.4–2 GHz UWB in the **winch pod** (4.9 kg pod, 3.1 kg winch, 20 m line): **0.48 × 0.48 m** face set on the rubble *estimate*; no panel on the drone | 0.4–2 GHz, 0.35 × 0.35 m *estimate* | 0.4–2 GHz, 0.20 × 0.15 m *estimate* |
+| Radar | 0.4–2 GHz UWB in the **belly-mounted radar module** (4.9 kg) on the drone's underside: **0.48 × 0.48 m** downward face that rests on the rubble once the drone lands *estimate* | 0.4–2 GHz, 0.35 × 0.35 m *estimate* | 0.4–2 GHz, 0.20 × 0.15 m *estimate* |
 | Rx gain @0.6 / 1.2 GHz | 7.6 / 13.7 dBi | 4.9 / 10.9 dBi | 0 / 4.8 dBi |
 | Mic array | 8 MEMS, 1.0 m ring *estimate*: beam ≈ 20° at 1 kHz | 8, 0.8 m: ≈ 25° | 6, 0.3 m (`acoustic/scene.py`): ≈ 65° |
 | Loudspeaker | DJI Zenmuse V1, **129 dB SPL @1 m** (on M400), 800 Hz–8 kHz, 690 g [V1]; ≈ 103 dB at 20 m (spreading only) | same | none |
@@ -54,7 +54,7 @@ valid alternative for a high-altitude site survey before the drones go low.
 - **Radar.** UWB emission is EIRP-limited (47 CFR 15.509/15.510: through-wall imaging below 960 MHz is
   restricted to law enforcement, fire and rescue). A higher-gain transmit antenna must therefore back off its
   power. Only the **receive** gain is a platform advantage. At 0.6 GHz, the sub-1 GHz part of the sweep that
-  carries the deep returns, the pod's 0.48 × 0.48 m face gains **+7.6 dB** over the small antenna. In the
+  carries the deep returns, the belly radar's 0.48 × 0.48 m face gains **+7.6 dB** over the small antenna. In the
   literature-preset penetration model the deep end loses about 13 dB per metre of rubble (two-way,
   0.65 × 10 dB/m). So +7.6 dB is worth roughly **+0.6 m of reach** (*estimate*), not a different class of
   sensor. The narrower beam (≈ 30° vs ≈ 72° at 1.2 GHz) also rejects off-axis clutter and a walking rescuer
@@ -95,7 +95,7 @@ the LiDAR and thermal camera, and it can dislodge loose fragments around the pat
    specialist signs off on perching on the pile.
 
 What it costs in reach: from the pile edge (slant 8–11 m), the modelled radar reach is 0.6–1.2 m of rubble, or
-roughly 1.2–1.8 m with the +0.6 m from the bigger antenna. (The default delivery is now the winch pod, which scans from the surface: see [RADAR_PENETRATION](RADAR_PENETRATION.md).) Perching on the pile (slant about 2 m) gives about 2.9 m. The heavy drone
+roughly 1.2–1.8 m with the +0.6 m from the bigger antenna. (The default, `--delivery pod`, lands the drone on a flat spot on the pile so its belly radar scans from the surface: see [RADAR_PENETRATION](RADAR_PENETRATION.md).) Perching on the pile (slant about 2 m) gives about 2.9 m. The heavy drone
 therefore trades some perching opportunities for fewer, better-supported landings. The industrial preset (2.5 m
 patch, 135 N) is the natural complement for perching closer.
 
@@ -203,7 +203,7 @@ dust in the downwash, and the OS1's real beam spacing (uniform here).
     motor pair and two 1.375 m rotor discs per arm (counter-rotating, at a slower visual spin), and 0.6 m
     landing gear (two 1.6 m skids at a 1.4 m track);
   - payload: a nose gimbal with the LiDAR puck (drawn with its axis along +x; the sim mounts it pitched 45°) and the thermal camera, (at the time
-    of this note) a 0.6 × 0.5 m radar panel under the belly, since replaced by the winch and the 0.48 m pod
+    of this note) a 0.6 × 0.5 m radar panel under the belly, since replaced by the 0.48 m belly-mounted radar module
     (`isaac_mounts` in `data/hardware_bom.json`), the speaker horn under the tail, and the 8-mic ring
     (1.0 m).
 - Extent is 2.93 × 2.93 m with the X rotated 45°, against the spec's 2.80 × 3.085 m, and 1.3 m tall. Skid
@@ -616,7 +616,7 @@ The proposal keeps the current URL as the low level of detail (LOD), so nothing 
 
 Add a platform term to the reflector amplitude so the bigger antenna shows up in SNR:
 `A = 70 · 10^((σ_dB − L_rubble + G_rx)/20) / R²`, with `G_rx = sim.platform.radar_rx_advantage_db(spec)`. That is
-+7.6 dB for heavy_sar (pod face 0.48 × 0.48 m; +8.8 dB with the earlier 0.6 × 0.5 m panel), +4.9 dB for industrial_sar and 0 for legacy, so today's numbers are unchanged.
++7.6 dB for heavy_sar (belly radar face 0.48 × 0.48 m; +8.8 dB with the earlier 0.6 × 0.5 m panel), +4.9 dB for industrial_sar and 0 for legacy, so today's numbers are unchanged.
 
 - The term applies to every reflector, clutter included. It therefore improves SNR against the thermal-noise
   floor only, not signal-to-clutter, which is the honest effect of aperture gain under an EIRP limit.

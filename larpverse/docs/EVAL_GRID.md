@@ -11,9 +11,9 @@ Policies: **acoustic** (ours: listen after each pile, go to the highest acoustic
 - The acoustic policy stops when no lead at or above priority 20 is left; remaining piles stay "not cleared" for ground teams.
 - Everything is synthetic (terrain, radar returns, here the acoustic clips). The DSP extractor is validated on real breathing recordings; the through-rubble loss is a model (docs/RADAR_PENETRATION.md). Small N: differences inside the CIs are not evidence.
 
-## Pod, radar `literature` propagation, reported start
+## Landed radar (`pod` delivery), radar `literature` propagation, reported start
 
-Delivery: winch-lowered sensor pod on the pile surface (heavy_sar, hover + 20 m winch); 36 radar scans per mission. Start: the scenario's reported start pile (it always holds a victim, so that ping is by construction). Propagation: literature-grade (~3 m of rubble beneath a good scan, < 1 m from an 11 m stand-off).
+Delivery: the drone lands on a flat spot on the pile and its belly radar rests on the rubble surface (`pod` delivery, heavy_sar); 36 radar scans per mission. Start: the scenario's reported start pile (it always holds a victim, so that ping is by construction). Propagation: literature-grade (~3 m of rubble beneath a good scan, < 1 m from an 11 m stand-off).
 
 | metric | acoustic | nearest | raster |
 |---|---|---|---|
@@ -57,9 +57,9 @@ Paired per seed, victims pinged excluding the start pile (acoustic vs baseline):
 | 19 | A3 | 0/4 pinged, 6 visits, 2304 s | 0/4 pinged, 6 visits, 1638 s | 0/4 pinged, 5 visits, 1733 s |
 | 20 | C1 | 1/4 pinged, 5 visits, 2336 s | 1/4 pinged, 5 visits, 1787 s | 1/4 pinged, 6 visits, 1657 s |
 
-## Pod, radar `literature` propagation, independent start
+## Landed radar (`pod` delivery), radar `literature` propagation, independent start
 
-Delivery: winch-lowered sensor pod on the pile surface (heavy_sar, hover + 20 m winch); 36 radar scans per mission. Start: a start pile drawn from the seed alone, independent of the victims. Propagation: literature-grade (~3 m of rubble beneath a good scan, < 1 m from an 11 m stand-off).
+Delivery: the drone lands on a flat spot on the pile and its belly radar rests on the rubble surface (`pod` delivery, heavy_sar); 36 radar scans per mission. Start: a start pile drawn from the seed alone, independent of the victims. Propagation: literature-grade (~3 m of rubble beneath a good scan, < 1 m from an 11 m stand-off).
 
 | metric | acoustic | nearest | raster |
 |---|---|---|---|
@@ -82,7 +82,7 @@ Paired per seed, victims pinged excluding the start pile (acoustic vs baseline):
 
 ## Landing ring, radar `literature` propagation, reported start
 
-Delivery: drones land on flat patches around the pile (the old landing ring; rows from before the physio chest waveform and 45 s pod dwell, i.e. with the 4-8 mm sinusoid: an upper bound); 24 radar scans per mission. Start: the scenario's reported start pile (it always holds a victim, so that ping is by construction). Propagation: literature-grade (~3 m of rubble beneath a good scan, < 1 m from an 11 m stand-off).
+Delivery: drones land on flat patches around the pile (the old landing ring; rows from before the physio chest waveform and 45 s landed-radar dwell, i.e. with the 4-8 mm sinusoid: an upper bound); 24 radar scans per mission. Start: the scenario's reported start pile (it always holds a victim, so that ping is by construction). Propagation: literature-grade (~3 m of rubble beneath a good scan, < 1 m from an 11 m stand-off).
 
 | metric | acoustic | nearest | raster |
 |---|---|---|---|
@@ -105,7 +105,7 @@ Paired per seed, victims pinged excluding the start pile (acoustic vs baseline):
 
 ## Landing ring, radar `legacy` propagation, reported start
 
-Delivery: drones land on flat patches around the pile (the old landing ring; rows from before the physio chest waveform and 45 s pod dwell, i.e. with the 4-8 mm sinusoid: an upper bound); 24 radar scans per mission. Start: the scenario's reported start pile (it always holds a victim, so that ping is by construction). Propagation: optimistic flat 0.7 dB/m (NOT literature-backed; lets the radar see through 10+ m).
+Delivery: drones land on flat patches around the pile (the old landing ring; rows from before the physio chest waveform and 45 s landed-radar dwell, i.e. with the 4-8 mm sinusoid: an upper bound); 24 radar scans per mission. Start: the scenario's reported start pile (it always holds a victim, so that ping is by construction). Propagation: optimistic flat 0.7 dB/m (NOT literature-backed; lets the radar see through 10+ m).
 
 | metric | acoustic | nearest | raster |
 |---|---|---|---|

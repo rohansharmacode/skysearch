@@ -490,7 +490,7 @@ function draw(now = performance.now()) {
     const [x, y] = toPx(...pd.xy);
     ctx.save(); ctx.fillStyle = '#0b1016'; ctx.strokeStyle = '#f0f4f8'; ctx.lineWidth = 1.8; ctx.beginPath(); ctx.arc(x, y, 6.5, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
     ctx.fillStyle = '#f0f4f8'; ctx.beginPath(); ctx.moveTo(x - 3.5, y - 2); ctx.lineTo(x + 3.5, y - 2); ctx.lineTo(x, y + 3); ctx.closePath(); ctx.fill(); ctx.restore();
-    if (!LEAN()) qLabel(`pod ${pd.drone_id} · ${pd.status}`, x + 10, y + 16, '#e3eaef', undefined, 5);
+    if (!LEAN()) qLabel(`radar ${pd.drone_id} · ${pd.status}`, x + 10, y + 16, '#e3eaef', undefined, 5);
   }
   // drones; drones close together in the same state share one label ("d1–d3 · docked")
   const groups = [];

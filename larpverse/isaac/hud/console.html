@@ -355,9 +355,9 @@ function caption0(b, s) {
     return ['The drones decide', `Next: ${esc(pn(to))}`, `${who} chose ${esc(pn(to))} as the next pile to search. Nobody told them where to go.`, 'auto'];
   }
   if (b === 2) return ['Step 1 · LiDAR', `Mapping ${esc(pn(pile))}`, 'Each drone’s laser scanner measures the rubble. The white dots on the map are its hits; the drones use them to find safe spots to land.', ''];
-  if (b === 3) return ['Step 2 · Landing', `Landing on ${esc(pn(pile))}`, drone ? 'The drones land on safe spots the LiDAR map found, with the radar on board.' : 'The drones move over the safe spots the LiDAR map found.', ''];
+  if (b === 3) return ['Step 2 · Landing', `Landing on ${esc(pn(pile))}`, drone ? 'The drones land on safe spots the LiDAR map found, with the radar on board.' : 'The drones land on safe spots the LiDAR map found, with the radar on board.', ''];
   if (b === 4 && here.length) return ['Step 3 · Radar', 'Breathing-like signal found', `At ${esc(pn(pile))} the radar picked up a steady breathing rhythm. It is marked red on the map: a place for rescuers to check first, not a confirmed person.`, ''];
-  if (b === 4) return ['Step 3 · Radar', 'Feeling for breathing', drone ? 'The radar on each landed drone senses the tiny chest movement of breathing up to about 3 m down.' : 'Each drone lowers a radar pod onto the rubble. The radar senses the tiny chest movement of breathing up to about 3 m down.', ''];
+  if (b === 4) return ['Step 3 · Radar', 'Feeling for breathing', drone ? 'The radar on each landed drone senses the tiny chest movement of breathing up to about 3 m down.' : 'The radar on each landed drone senses the tiny chest movement of breathing up to about 3 m down.', ''];
   if (b === 5) {
     const gem = (s.acoustic_agent || {}).provider === 'gemini' || (s.acoustic_clips || []).some(c => c.by === 'gemini');
     return ['Step 4 · Listening', 'Listening for voices', `Rotors off. One drone calls out over its loudspeaker; then they all listen for voices and knocking. ${gem ? 'Gemini' : 'The on-box speech and sound models'} analyse the audio to choose the next pile.`, ''];
@@ -387,7 +387,7 @@ function sense(s) {
     const sc = LIVE && LIVE.last_scan && (!pile || LIVE.last_scan.pile === pile) ? LIVE.last_scan : null;
     const st = (s.scans || []).filter(x => !pile || x.pile_id === pile).slice(-1)[0];
     const here = pings(s).filter(p => !pile || p.pile_id === pile || String(p.id || '').startsWith(pile));
-    const who = onDrone(s) ? 'Drone' : 'Pod';
+    const who = onDrone(s) ? 'Drone' : 'Drone';
     if (here.length) {
       const p = here[here.length - 1], v = p.vitals || {};
       return ['FOUND', 'Breathing-like rhythm under the rubble', [
@@ -487,7 +487,7 @@ function drawWave(sc) {
   const pk = dur ? breathPeaks(w, dur / (w.length - 1), v.rate_bpm || (sc.breathing_hz ? 60 * sc.breathing_hz : null)) : [];
   g.fillStyle = '#ffffff';
   pk.filter(i => i < n).forEach(i => { g.beginPath(); g.arc(X(i), Y(w[i]) - 14, 6, 0, 2 * Math.PI); g.fill(); });
-  const who = onDrone(window._last) ? `the radar on drone ${sc.drone_id}` : `radar pod ${sc.drone_id}`;
+  const who = onDrone(window._last) ? `the radar on drone ${sc.drone_id}` : `the radar on drone ${sc.drone_id}`;
   const parts = [`Radar trace from ${who} at ${sc.pile}: chest movement` + (dur ? ` over ${f0(dur)} s` : '')];
   if (pk.length) parts.push('white dots = breaths');
   $('wcap').textContent = parts.join(' · ');

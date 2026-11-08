@@ -5,7 +5,7 @@ Built for the AgentVerse 2026 robotics track. Case study: the Weiguan Jinlong co
 Three heavy-lift drones (FlyCart 30 / Agras T50 class) search the piles as one system, and nobody has to stand on the rubble:
 
 1. **Map.** Each pile is mapped with a spinning LiDAR, registered by KISS-ICP SLAM.
-2. **Pod scans.** A drone hovers and **lowers a 4.9 kg radar + microphone pod on a 20 m winch** onto the rubble: about 8 s down, a 45 s scan, 8 s up. A Bayes grid fuses the ranges, and the pod is re-placed where expected information gain is highest.
+2. **Land and scan.** A drone uses its LiDAR map to find a flat spot on the rubble and **lands there; its downward-facing 4.9 kg radar + microphone module, mounted on the drone's underside,** scans through the rubble for breathing: about 8 s to set down, a 45 s scan, 8 s to lift off. A Bayes grid fuses the ranges, and the drone next lands where expected information gain is highest.
 3. **Ping and condition.** Three agreeing ranges give a **candidate search region** ("ping"). A 60 s vitals look reads the breathing **condition**: calm, rapid-shallow, slow-regular or irregular with pauses. This is an aid for ordering the dig, not a diagnosis, and there is no age inference. Radar returns that look like debris, animals, machinery or rotors are rejected.
 4. **Listen, call out, connect.** The drones land off the pile with rotors off. They listen to the other piles (Silero VAD, YAMNet, Whisper, SRP-PHAT with a rotor veto, and Gemini audio when the quota allows). They call out in zh-TW, Taiwanese Hokkien and English using vetted templates, and serve a consent-based rescue Wi-Fi portal.
 5. **Dispatch.** An agent (Gemini, or a rule-based fallback) ranks the piles and picks the next one from listed options. Code validates every pick. Piles without a ping end "searched, **not cleared**".
@@ -22,7 +22,7 @@ uv venv .venv && uv pip install --python .venv numpy scipy matplotlib pytest kis
 .venv/bin/python scripts/serve.py --port 8765                           # http://localhost:8765/dashboard/
 ```
 
-Mission defaults: `--radar dsp --delivery pod --penetration literature --flight smooth --tasking auto`, with comms on. With no `tasking.json`, the mission starts in recon mode. Add `--tasking default` to search the scenario's rubble outlines, as the demo-story test does. `serve.py` serves the dashboard plus the tasking, portal and broadcast APIs; `python -m http.server` can't save zones. One-command demo: `scripts/demo.sh --direct` (runbook: [docs/DEMO.md](docs/DEMO.md)).
+Mission defaults: `--radar dsp --delivery pod --penetration literature --flight smooth --tasking auto`, with comms on (`--delivery pod` is the radar-on-the-rubble-surface scan model). With no `tasking.json`, the mission starts in recon mode. Add `--tasking default` to search the scenario's rubble outlines, as the demo-story test does. `serve.py` serves the dashboard plus the tasking, portal and broadcast APIs; `python -m http.server` can't save zones. One-command demo: `scripts/demo.sh --direct` (runbook: [docs/DEMO.md](docs/DEMO.md)).
 
 Optional:
 - **Real acoustic models:** `bash acoustic/setup.sh` builds `.venv-audio` with about 210 MB of models (`acoustic/models/` is 314 MB on disk). Then add `--acoustic real`.
@@ -34,10 +34,10 @@ Optional:
 | Path | What |
 |---|---|
 | `sim/scenario.py`, `sim/site_*.py` | Seeded sites: the 3×3 grid (public demo), a procedural Weiguan stand-in, and the collapse site (private: NCKU-derived geometry) |
-| `sim/grid_mission.py` | The autonomous mission: tasking/recon → survey → pod scans → ping → listen + call-out → rank → dispatch |
-| `sim/localise.py`, `sim/planner.py`, `sim/landing.py` | Grid Bayes localisation, EIG pod placement, pod-site and landing scoring |
+| `sim/grid_mission.py` | The autonomous mission: tasking/recon → survey → land and radar scan → ping → listen + call-out → rank → dispatch |
+| `sim/localise.py`, `sim/planner.py`, `sim/landing.py` | Grid Bayes localisation, EIG choice of radar landing spots, landing-spot scoring |
 | `sim/radar_dsp.py`, `sim/physio.py`, `sim/vitals.py`, `sim/radar_signatures.py` | Labelled-synthetic radar generator, real breathing DSP, physio chest waveform, condition + non-human rejector |
-| `sim/platform.py`, `sim/flight_motion.py` | Heavy-lift platform and pod spec; smooth multirotor trajectories |
+| `sim/platform.py`, `sim/flight_motion.py` | Heavy-lift platform and belly radar spec; smooth multirotor trajectories |
 | `sim/callout.py`, `sim/guidance.py`, `sim/comms.py`, `sim/tasking.py`, `sim/recon.py` | Speaker call-out, rescue hotspot and mesh, operator zones, recon |
 | `mapping/` | Ray-cast LiDAR, KISS-ICP SLAM, landing agreement |
 | `acoustic/` | Scene synthesis, SRP-PHAT/LCMV association, rotor veto, VAD/YAMNet/Whisper, novelty filter, Gemini audio, agent |
@@ -49,12 +49,12 @@ Optional:
 
 ## Honest limits
 
-- **Radar returns are a labelled synthetic generator.** The breathing DSP was checked on real line-of-sight 24 GHz recordings with no rubble (Schellenberger et al. 2020: 0.39 breaths/min MAE). The modelled reach is about 2.9 m of rubble beneath the pod ([docs/RADAR_PENETRATION.md](docs/RADAR_PENETRATION.md)).
+- **Radar returns are a labelled synthetic generator.** The breathing DSP was checked on real line-of-sight 24 GHz recordings with no rubble (Schellenberger et al. 2020: 0.39 breaths/min MAE). The modelled reach is about 2.9 m of rubble beneath the landed drone's belly radar ([docs/RADAR_PENETRATION.md](docs/RADAR_PENETRATION.md)).
 - **Victim audio is synthesised** from recorded and TTS clips through a rubble model. The recognisers were checked on real recordings with rotors off: human vs non-human F1 0.70–0.82 ([docs/ACOUSTIC_VALIDATION.md](docs/ACOUSTIC_VALIDATION.md)). The rotor veto is not yet re-validated on real audio.
 - **The evaluation is an upper bound.** In 20 simulated seeds, acoustic-led dispatch pinged 17 of 60 non-start victims, against 6 and 5 for radar-only baselines. The acoustic clips were generated from ground truth, flight was kinematic, and it is not faster ([docs/EVAL_GRID.md](docs/EVAL_GRID.md)).
 - **A ping is a candidate search region, not a confirmed person.** No pile is ever "cleared", and the system misses some victims.
 - **Conditions are an aid, not a diagnosis.** Radar sees chest motion only.
-- **The pod is designed, not built.** Hardware prices are estimates.
+- **The belly radar module is designed, not built.** Hardware prices are estimates.
 - **Flight follows smooth trajectories** with no flight controller, aerodynamics or wind.
 - **Planning code never reads ground truth.** Only the generators and evaluators do, and tests enforce it.
 
@@ -62,12 +62,12 @@ Optional:
 
 **What is real and what is simulated.** Everything in the video is a simulation (NVIDIA Isaac Sim 6.0.1).
 - Rubble, victims (training-manikin dummies) and their positions are synthetic. The case-study framing is the Weiguan Jinlong collapse, Tainan, 6 Feb 2016 (115 dead); the site layout shown is synthetic.
-- Radar returns are a labelled synthetic generator. The breathing-detection DSP that processes them was checked on real line-of-sight radar recordings (Schellenberger et al. 2020: 0.39 breaths/min MAE; no rubble). Modelled reach through rubble: about 2.9 m beneath the winch-lowered pod (45 s scan).
+- Radar returns are a labelled synthetic generator. The breathing-detection DSP that processes them was checked on real line-of-sight radar recordings (Schellenberger et al. 2020: 0.39 breaths/min MAE; no rubble). Modelled reach through rubble: about 2.9 m beneath the drone's belly radar resting on the rubble surface (45 s scan).
 - Victim audio is synthesised from recorded and text-to-speech clips and passed through a rubble model. The recognisers (Silero VAD, YAMNet, Whisper, SRP-PHAT direction finding) are real models.
 - Breathing "condition" labels are an aid for rescuers, not a diagnosis. A ping is a candidate search region, not a confirmed person. Silent piles are never "cleared".
 - In 20 simulated seeds, acoustic-led dispatch put a radar ping on 17 of 60 non-start victims, against 6 and 5 for radar-only baselines. The acoustic clips in that evaluation were generated from ground truth, so this is an upper bound. 0 false pings.
 - The video is time-lapsed (×5–×30, shown on screen) in one continuous take. The single unscripted moment: a teammate switches on a pre-placed hidden dummy at a time of their choosing, and the system re-plans from what it hears.
-- Hardware and prices are a design study (estimates, no supplier quotes). The radar pod is designed, not built.
+- Hardware and prices are a design study (estimates, no supplier quotes). The belly radar module is designed, not built.
 - Decisions are made by [Gemini (gemini-3.7-flash) | a rule-based fallback]; each one is labelled on screen.
 
 **Data and audio credits.**

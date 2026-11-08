@@ -9,7 +9,7 @@
 > - alert → dig start of 0.75 h, which now also applies to radar pings;
 > - **extrication time drawn per person from their entrapment type** (section 2).
 >
-> **The numbers, charts and tornado in sections 0–3 and 7 are still from the v1.0 run.** They will be refreshed when the collapse-site pod-coverage fix is merged and both sites are re-run.
+> **The numbers, charts and tornado in sections 0–3 and 7 are still from the v1.0 run.** They will be refreshed when the collapse-site radar-coverage fix is merged and both sites are re-run.
 >
 > A preview of v1.1 on the same cached missions (150 draws, not committed):
 >
@@ -34,17 +34,17 @@ scripts/heavy.sh .venv/bin/python scripts/run_impact.py model --seeds 1-10 --n 1
 
 ## Judge summary: five numbers
 
-Ranges are the median and the 90% interval over 1,000 draws of the uncertain parameters, unless the line says "count". "Upper bound" is the same drones with the radar pod working as designed. It firmly pings every silent, radar-reachable person in a sector the drones were already sent to, by the end of the one-hour sortie. "As simulated" is what the current code actually did.
+Ranges are the median and the 90% interval over 1,000 draws of the uncertain parameters, unless the line says "count". "Upper bound" is the same drones with the belly radar working as designed. It firmly pings every silent, radar-reachable person in a sector the drones were already sent to, by the end of the one-hour sortie. "As simulated" is what the current code actually did.
 
 | # | Headline | Why believe it |
 |---|---|---|
 | 1 | **In the first hour, the drones put a lead on the sector of 53% of trapped people within 30 min of launch (median 8 min).** By the end of the sortie, 83% of the people in the collapse core were in a lead sector. | This is a count from 10 runs of the real mission code on the Weiguan site model. The acoustic leads come from the documented synthetic stub, so treat them as an upper bound. |
-| 2 | **Silent and unconscious people located within 24 h: 74% (60–85) today, 80% (70–89) at the upper bound.** As simulated it stays at 74%, because the pod pinged none of them on this site. | A call-out cannot find someone who cannot answer; that is true by design and sourced. Dogs carry today's search (61% of these people), and the radar is the only other route. |
-| 3 | **Extra survivors per 100 trapped: +0.2 (−0.1 to +0.7) as simulated, +0.75 (−1.8 to +2.7) at the upper bound.** On the small grid site, where the pod pinged 12 of 40 people, the gain is +1.3 (+0.3 to +4.0) as simulated and +3.0 (+1.1 to +6.6) at the upper bound. | The same victims and the same random numbers run through both arms. The survival table comes from Kobe and Weiguan outcome data, the result is reweighted to the sourced 28% unconscious share, and the extrication crews are a shared bottleneck in both arms. |
+| 2 | **Silent and unconscious people located within 24 h: 74% (60–85) today, 80% (70–89) at the upper bound.** As simulated it stays at 74%, because the radar pinged none of them on this site. | A call-out cannot find someone who cannot answer; that is true by design and sourced. Dogs carry today's search (61% of these people), and the radar is the only other route. |
+| 3 | **Extra survivors per 100 trapped: +0.2 (−0.1 to +0.7) as simulated, +0.75 (−1.8 to +2.7) at the upper bound.** On the small grid site, where the radar pinged 12 of 40 people, the gain is +1.3 (+0.3 to +4.0) as simulated and +3.0 (+1.1 to +6.6) at the upper bound. | The same victims and the same random numbers run through both arms. The survival table comes from Kobe and Weiguan outcome data, the result is reweighted to the sourced 28% unconscious share, and the extrication crews are a shared bottleneck in both arms. |
 | 4 | **Weiguan, counterfactual: about +6 survivors (0.6 to 14) among the 113 people brought out after day 1, if the radar works as designed. With the code as it is today: 0 (0 to 1.6).** | The result is anchored on Weiguan's own late cohort: 113 people, of whom 11 came out alive (9.7%). Our model shifts only the share it locates within day 1, 15% (5–26). It is optimistic, because the late cohort is deeper and more injured than the survival curve assumes. |
 | 5 | **The drones cost about $1.7k per one-hour sortie (1.3–2.6k), or about $20k for a 72-h deployment (12–31k), and a heavy-rescue truck's PTO generator keeps 3.9 drones working (1.0–7.3).** For comparison, international teams spend $0.8–0.94 M per life saved [S]. The rescuer-hours tied up before each person is found fall 15% at the upper bound (785 to 664). | Costs are built from HARDWARE.md prices, the simulated flight hours and battery swaps, and the operators. Charging uses the evidence file's fuel-to-battery paths. Rescuer time is an opportunity cost, not cash saved. |
 
-**Bottom line for judges.** Faster leads alone barely move survival. The baseline already works the collapse core first, and in the first hours the survival curve is still high. Lives are won or lost on the **silent people that today's search finds after day 1**, which only a through-rubble breathing sensor can find early. On the Weiguan-scale site the pod has not yet produced a firm ping in the first sortie (0 of 170 people, 344 scans; see Requests). Until it does, **we do not claim lives saved at Weiguan scale**. We claim the upper bound in rows 3 and 4, and on the grid site the radar half of that is demonstrated.
+**Bottom line for judges.** Faster leads alone barely move survival. The baseline already works the collapse core first, and in the first hours the survival curve is still high. Lives are won or lost on the **silent people that today's search finds after day 1**, which only a through-rubble breathing sensor can find early. On the Weiguan-scale site the radar has not yet produced a firm ping in the first sortie (0 of 170 people, 344 scans; see Requests). Until it does, **we do not claim lives saved at Weiguan scale**. We claim the upper bound in rows 3 and 4, and on the grid site the radar half of that is demonstrated.
 
 ![time to locate](img/impact_time_to_locate.png)
 ![survival](img/impact_survival.png)
@@ -60,7 +60,7 @@ Ranges are the median and the 90% interval over 1,000 draws of the uncertain par
 | Geometry | `site="collapse"`: the teammate's 320 m Weiguan model (two fallen 16-storey towers plus an extrapolated district), 157 sectors, 28,854 m² of rubble | 3×3 piles, about 60 m across |
 | Victims (hidden truth, evaluator only) | 13–22 per seed, 170 in total; 80 cannot answer a call-out (unconscious / apnoeic breathing state); 139 within 3 m of the surface | 4 per seed, 40 in total; 17 cannot answer |
 | Seeds | 1–10 | 1–10 |
-| Mission defaults | heavy_sar + winch pod, `--penetration literature`, DSP radar on a synthetic IF, physio breathing, 36 pod scans, 3,600 s limit, SmoothFlight, battery swaps | same |
+| Mission defaults | heavy_sar + `--delivery pod` (radar resting on the rubble surface), `--penetration literature`, DSP radar on a synthetic IF, physio breathing, 36 landed radar scans, 3,600 s limit, SmoothFlight, battery swaps | same |
 | Acoustic | **`stub-from-truth`**: synthetic clips built from the hidden truth, cleaner than the real pipeline. The real pipeline has no cache for these scenes, and running it uncached on 20 missions was not feasible under the memory cap. | same |
 | Sector leads | 99/170 people; 53% within 30 min of launch | 30/40 |
 | Firm radar pings within 3 m | **0/170**; 1 false ping (> 3 m from anyone) | **12/40** (4 of them silent / unconscious), median 23 min |
@@ -83,7 +83,7 @@ Every Monte Carlo draw samples all the uncertain parameters (triangular low/cent
   - Every sector lead from the run (keeping a share `acoustic_lead_keep`, 0.8) moves that sector to the front of the crews' and dogs' queue once the lead exists.
   - Every firm ping (keeping a share `ping_keep`, 0.8) locates that person at the ping time + `pinpoint_h`. A ping still needs confirmation and shoring before the dig, the same alert → dig start as any other alert (v1.1).
   - Each person is located by whichever comes first.
-- **Ours, upper bound.** The same as "as simulated", but the pod also pings every silent, radar-reachable person (≤ 3 m) in a sector the drones had a lead on, by the end of the sortie. There are 32 such people in the collapse runs.
+- **Ours, upper bound.** The same as "as simulated", but the radar also pings every silent, radar-reachable person (≤ 3 m) in a sector the drones had a lead on, by the end of the sortie. There are 32 such people in the collapse runs.
 - **Outcome.**
   - Dig worksites (`extrication_teams` = `parallel_dig_worksites_per_building`, 2/4/8) dig people out in the order they are located. The worksites are the same in every arm.
   - **Extrication time depends on each person's entrapment type** (v1.1, IMPACT_EVIDENCE.md 7e): lightly trapped 0.75 h (0.25–2), void space 6 h (2–9), entombed 20 h (12–32), with ±40% log-normal spread per person.
@@ -109,7 +109,7 @@ Every Monte Carlo draw samples all the uncertain parameters (triangular low/cent
 
 In plain words: **the value of finding people early is capped by how fast crews can dig them out**, and it is largest when dogs are late or scarce.
 
-The radar what-if, at central values: the extra survivors per 100 grow almost linearly with the share q of eligible silent people the pod pings. For q = 0, 25, 50, 75 and 100%, the gain is +0.1, +0.8, +1.2, +1.8 and +2.7.
+The radar what-if, at central values: the extra survivors per 100 grow almost linearly with the share q of eligible silent people the radar pings. For q = 0, 25, 50, 75 and 100%, the gain is +0.1, +0.8, +1.2, +1.8 and +2.7.
 
 ## 3. The Weiguan framing
 
@@ -206,9 +206,9 @@ These figures come from IMPACT_EVIDENCE.md section 6, with the rotors-on duty me
 - **Synthetic sensors.**
   - The terrain, the radar returns and (here) the acoustic clips are synthetic.
   - The acoustic leads come from a stub built from the hidden truth, which is cleaner than our real pipeline. We discount it with `acoustic_lead_keep`.
-  - The radar DSP is validated on real breathing data only **line-of-sight in air** (24 GHz, 0.4 m). Through-rubble loss is a literature-based model (RADAR_PENETRATION.md: about 3 m of reach beneath the pod).
+  - The radar DSP is validated on real breathing data only **line-of-sight in air** (24 GHz, 0.4 m). Through-rubble loss is a literature-based model (RADAR_PENETRATION.md: about 3 m of reach beneath the landed drone's belly radar).
   - People deeper than about 3 m cannot be pinged at all. In the upper bound only the 32 reachable, silent people in lead sectors count.
-- **The pod has not pinged anyone on the Weiguan-scale site yet.** That is 0 pings in 344 scans and 10 sorties, against 12 out of 40 people on the grid. The upper-bound arm shows what is at stake. It is **not** a demonstrated result.
+- **The radar has not pinged anyone on the Weiguan-scale site yet.** That is 0 pings in 344 scans and 10 sorties, against 12 out of 40 people on the grid. The upper-bound arm shows what is at stake. It is **not** a demonstrated result.
 - **Scale gap.**
   - Weiguan was one 16-storey U-shaped tower block, with 290 people trapped in pancaked floors. Our collapse site is a model of it, plus an extrapolated district with 13–22 victims per seed.
   - Our drones flew one sortie of about 50 minutes. We give them **no credit after the sortie**, even though a real deployment would keep scanning for 72 h. That makes the result conservative for us.
@@ -227,7 +227,7 @@ These figures come from IMPACT_EVIDENCE.md section 6, with the rotors-on duty me
 
 1. **"Your sensors are simulated. Why should we believe any of this?"**
    Believe only the parts that rest on the real pipeline or on real data. The mission logic is real code, and the radar DSP and vitals extractor are validated on real breathing recordings. The through-rubble physics is the literature's ~3 m. The sim's acoustic leads are discounted, and its pings are discounted too.
-   The honest result is in the numbers. As the code stands, the system adds about **+0.2 survivors per 100** on the Weiguan-scale site, because the pod has not pinged there yet. The **+0.75 (up to +2.7)** figure is the prize if it does. On the grid site it already delivers **+1.3**.
+   The honest result is in the numbers. As the code stands, the system adds about **+0.2 survivors per 100** on the Weiguan-scale site, because the radar has not pinged there yet. The **+0.75 (up to +2.7)** figure is the prize if it does. On the grid site it already delivers **+1.3**.
 2. **"Your baseline is a strawman."**
    It is not. Today's search here works the collapse core first and starts within 30 min. It has dogs from 3 h and cameras from 6 h, and it uses sourced detection rates, which are generous assumptions because no field data exist. Its search speed comes from Weiguan's own effort, which includes digging and so is slow, and slowness here favours us.
    It locates 79% of people within 24 h, which is faster than Weiguan managed: 177 of 290 people (61%) were out by the end of day 1. A faster baseline leaves less room for us, so this makes our result conservative. Both arms share the same victims, extrication crews and random numbers.
@@ -235,7 +235,7 @@ These figures come from IMPACT_EVIDENCE.md section 6, with the rotors-on duty me
    We don't know, and nobody does: there is no time-of-death data. We model only the 113 people brought out after day 1 (11 of them alive). If our radar worked as designed, it would locate about 15% of them within the first day. Under the survival curve that is about **6 more alive (0.6–14)**, and that figure is optimistic.
    We say "up to", and we say it is a model.
 4. **"Radar through 16 floors of concrete?"**
-   No. Ten metres of rubble costs about 130 dB of signal, so nothing comes back. We claim about 3 m beneath the pod. That is why the drones winch the sensor onto the pile at many points per hour, instead of a rescuer carrying a LifeLocator onto it one spot at a time.
+   No. Ten metres of rubble costs about 130 dB of signal, so nothing comes back. We claim about 3 m beneath the landed drone's belly radar. That is why the drones land on flat spots on the pile and scan at many points per hour, instead of a rescuer carrying a LifeLocator onto it one spot at a time.
    Deep people stay with today's methods. In our runs 139 of 170 people were within 3 m.
 5. **"Isn't extrication the bottleneck, not search?"**
    Yes, and the model says so. Dig-out capacity is the most sensitive input. In the v1.1 preview, with 2 worksites the upper-bound gain is about 0, and with 8 it is about 3.4 per 100. The people only our radar finds are mostly void or entombed, at 6–20 h each. Our value is in **which voids the crews open first**: silent people with a breathing signal, found in hours instead of days. We also give **negative information**, so empty sectors can be written off and the machines start sooner. We don't claim to dig faster.

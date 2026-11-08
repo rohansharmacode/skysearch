@@ -11,7 +11,7 @@ Status: 8 Nov 2026. Brought up to date against HEAD `8600905`, using review pass
 
 | Marker | Fills from | State at writing |
 |---|---|---|
-| «PENDING: SEED7-CANON» | the mission agent's canonical seed-7 doc (config + command + result) | not landed. Until it lands we say: **A2 pings (radar-only, silent); further pings vary by pod seating** |
+| «PENDING: SEED7-CANON» | the mission agent's canonical seed-7 doc (config + command + result) | not landed. Until it lands we say: **A2 pings (radar-only, silent); further pings vary by how the radar seats on the rubble** |
 | «PENDING: B5-RERUN» | `python -m sim.evaluate --n 30 --budget 6` on current code | only a 7 Nov 16:33 run on older code |
 | «PENDING: ISAAC-CLIP» | the teammate's GPU take (`docs/FROM_ISAAC.md`) | nothing in the take plan has been rendered on a GPU yet |
 | «PENDING: GEMINI-DISPATCH» | a live Gemini dispatch decision in `agents/cache/llm.jsonl` | Gemini **audio** ran live (§4.3.5); the dispatch decider has 0 recorded live decisions |
@@ -37,7 +37,7 @@ All figures in this section are sourced in `docs/IMPACT_EVIDENCE.md` and `data/i
 Our claim is narrow. In simulation, the system:
 - puts a breathing radar and a microphone on many spots of a pile **without anyone standing on it**;
 - **prioritises** where to dig sooner;
-- can flag silent or unconscious breathing within about 2.9 m of rubble beneath the pod.
+- can flag silent or unconscious breathing within about 2.9 m of rubble beneath a landed drone's belly radar.
 
 It also misses victims, and it does not do the extrication. At Weiguan, getting the last live victims out took 12–29 h each, and that was the bottleneck, not finding them (IMPACT_EVIDENCE §4).
 
@@ -67,11 +67,11 @@ The case study is for framing only. The public demo uses a synthetic 3×3 grid (
 Three heavy-lift drones (FlyCart 30 / Agras T50 class, 3.1 m span) leave a command van at the staging area. For each pile:
 
 1. **Survey.** One orbit with a dense LiDAR, KISS-ICP SLAM into a pile map.
-2. **Pod placement.** Each drone **hovers** (or lands off the pile) and **lowers a 4.9 kg radar + microphone pod on a 20 m winch** onto the rubble surface, close to the current lead.
-   - Each placement takes about 8 s to lower, 45 s to scan and 8 s to raise.
-   - The pod is lifted and re-placed where the planner expects the most information.
-3. **Fuse.** Ranges from the pod scans are fused into a belief. Three agreeing strong ranges give a **ping**: a candidate search region. A firm ping gets one extra 60 s "vitals look", which yields a breathing condition.
-4. **Listen and call out.** The drones land **off the pile** with rotors off.
+2. **Land and scan.** Each drone uses its LiDAR map to find a **flat spot on the rubble** close to the current lead and **lands there**. Its **downward-facing radar (4.9 kg radar + microphone module on the drone's underside)** then rests on the rubble surface and scans through it for breathing.
+   - Each landing takes about 8 s to set down, 45 s to scan and 8 s to lift off.
+   - The drone then lifts off and lands on the next spot where the planner expects the most information.
+3. **Fuse.** Ranges from the landed radar scans are fused into a belief. Three agreeing strong ranges give a **ping**: a candidate search region. A firm ping gets one extra 60 s "vitals look", which yields a breathing condition.
+4. **Listen and call out.** The drones land **off the pile** with rotors off (a separate step from the radar landings).
    - They listen to the other piles, play a call-out (zh-TW, Taiwanese Hokkien, English) and listen for replies.
    - They also run an open rescue Wi-Fi hotspot that phones can join by choice.
 5. **Rank and dispatch.** An acoustic agent ranks the piles. A dispatch gate chooses the next pile under battery and budget rules, with Gemini or a deterministic fallback, and code checks every pick.
@@ -83,18 +83,17 @@ Three heavy-lift drones (FlyCart 30 / Agras T50 class, 3.1 m span) leave a comma
 flowchart LR
   subgraph Drone["Each heavy drone (x3): Jetson AGX Orin, target; not measured"]
     L[OS1-128 LiDAR] --> S[KISS-ICP SLAM<br/>pile map]
-    S --> PS[Pod-site + landing scoring]
+    S --> PS[Landing-spot scoring<br/>flat rubble for radar]
     M[8-mic 1.0 m ring<br/>sim: 6-mic 0.3 m] --> A1[Stage 1: denoise,<br/>VAD, YAMNet novelty]
     SPK[Loudspeaker] -.call-out.-> V((victims))
     AP[2.4 GHz rescue hotspot] -.portal.-> PH((phones))
-    W[20 m winch] --> POD
   end
-  subgraph POD["Winch pod (4.9 kg)"]
+  subgraph POD["Belly radar module (4.9 kg, on the drone underside)"]
     R[0.4-2 GHz SFCW radar<br/>SYNTHETIC IF in sim] --> D[Breathing DSP + vitals<br/>+ non-human rejector]
-    PM[4 pod mics]
+    PM[4 radar-module mics]
   end
   subgraph Van["Command van (edge)"]
-    BF[Grid Bayes filter] --> PL[EIG planner:<br/>pod placements]
+    BF[Grid Bayes filter] --> PL[EIG planner:<br/>landing spots]
     PL --> CO[Coordinator: ping /<br/>insufficient_evidence]
     AC[Association SRP-PHAT/LCMV,<br/>Whisper, rotor veto] --> AG[Acoustic agent]
     AG --> GATE[Dispatch gate +<br/>validator]
@@ -107,7 +106,7 @@ flowchart LR
   subgraph Cloud["Cloud, optional: OneWeb or LTE in Tainan"]
     GEM[Gemini: audio analysis,<br/>dispatch pick, brief rewrite]
   end
-  D -- radar obs, 5.2 GHz pod link --> BF
+  D -- radar obs, via the drone's mesh radio --> BF
   A1 -- clips over 5.8 GHz mesh --> AC
   AG -. flagged clips .-> GEM
   GATE -. options only .-> GEM
@@ -129,18 +128,17 @@ The intended split is below. **Today the mission runs on one laptop CPU and Isaa
 
 | Component | Intended host | Measured today |
 |---|---|---|
-| LiDAR odometry, pile map, pod-site and landing scoring | drone (Orin) | 0.38 s per 23k-point sweep, laptop CPU, offline |
-| Radar breathing DSP, vitals, rejector | pod / drone | not separately timed |
+| LiDAR odometry, pile map, landing-spot scoring | drone (Orin) | 0.38 s per 23k-point sweep, laptop CPU, offline |
+| Radar breathing DSP, vitals, rejector | radar module / drone | not separately timed |
 | Stage-1 audio (denoise, VAD, novelty) | drone | not separately timed |
 | Fusion, planner, acoustic association and agent fallback, gate, dashboard | command van | about 50–62 s per real-pipeline listen on the laptop CPU (VIDEO_PLAN.md); unmeasured on the L40S |
 | Gemini audio analysis, dispatch pick, brief rewrite | cloud, optional | audio median 1.6–1.8 s per clip (ACOUSTIC_GEMINI.md); dispatch «PENDING: GEMINI-DISPATCH» |
 
 ### 2.4 Communications (docs/COMMS_ARCHITECTURE.md, docs/HOTSPOT.md)
 
-- **Heavy data stays on the drone.** About 130 Mbps of raw LiDAR, 9 Mbps of raw audio and about 450 MB/s of raw radar samples never leave the drone or pod. The mesh carries map deltas, detections, short clips and thumbnails, about 2 Mbps per drone.
-- **Three radio layers, all clear of the radar's 0.4–2 GHz sweep:**
+- **Heavy data stays on the drone.** About 130 Mbps of raw LiDAR, 9 Mbps of raw audio and about 450 MB/s of raw radar samples never leave the drone. The mesh carries map deltas, detections, short clips and thumbnails, about 2 Mbps per drone.
+- **Two radio layers, all clear of the radar's 0.4–2 GHz sweep:**
   - a 5.8 GHz Doodle Labs mesh between the drones and the van, multi-hop;
-  - a 5.2 GHz Wi-Fi link from each drone to its pod (the winch line carries no conductors);
   - an open 2.4 GHz rescue hotspot for phones.
 - **The van** has a 9–12 m pneumatic mast (10.5 m in the link budget). Its internet uplink in Tainan is **OneWeb via Chunghwa Telecom, or LTE**; Starlink was not commercially available in Taiwan and is the option elsewhere.
 - **Degraded comms.** Without the mesh, the drones finish their search, store data on 2 TB NVMe and forward it later. Without the cloud, the rules decider and vetted templates take over.
@@ -197,13 +195,13 @@ One seed fixes the whole site. The demo uses seed 7.
 | Item | `heavy_sar` (default) |
 |---|---|
 | Airframe | FlyCart 30 / Agras T50-class coaxial X8: 3.085 m span, 95 kg MTOW. The sim reference is the FlyCart 30; the recommended build is a Harris Aerial H6HL-class ArduPilot hexacopter (MAVLink native) |
-| Mission payload | **14.0 kg**: 6.0 kg on the airframe, 3.1 kg winch (20 m line, 5 kg minimum load), 4.9 kg pod. Electronics draw 82 W typical, 139 W peak |
+| Mission payload | **14.0 kg**: 6.0 kg on the airframe, 4.9 kg belly-mounted radar module, and a 3.1 kg unallocated reserve. Electronics draw 82 W typical, 139 W peak |
 | Endurance | **23.9 min** to 0%, about **17.9 min** usable with the 25% reserve (estimate from the spec's hover curve) |
-| Pod | 0.4–2 GHz SFCW radar (USRP B210), 0.48 × 0.48 m antenna face (+7.6 dB receive aperture vs the small radar), 4 mics, Raspberry Pi 5, IMU, 99 Wh; 5.2 GHz link to the drone |
+| Belly radar module | 0.4–2 GHz SFCW radar (USRP B210), 0.48 × 0.48 m downward-facing antenna face on the drone's underside (+7.6 dB receive aperture vs the small radar), 4 mics, Raspberry Pi 5, IMU, 99 Wh; cabled to the drone |
 | Drone sensors | Ouster OS1-128 LiDAR; 8-mic 1.0 m ring; 130 dB-class loudspeaker; optional thermal; Jetson AGX Orin 64 GB; RTK GNSS |
 | Cost (estimates, Nov 2026 list or reseller prices, no supplier quotes) | about $61k per drone on a FlyCart 30, about $87k on an H6HL; the command van adds about $51k |
 
-**Caveat.** Every sensor except the radar pod is off the shelf. The pod is a custom design that has been **designed, not built or tested**.
+**Caveat.** Every sensor except the belly radar module is off the shelf. The radar module is a custom design that has been **designed, not built or tested**.
 
 ### 3.3 Flight model (`sim/flight_motion.py`, docs/MOTION.md)
 
@@ -211,7 +209,7 @@ One seed fixes the whole site. The demo uses seed 7.
 - jerk-limited C2 multirotor trajectories (quintic S-curve legs, corner blending, a brake term on re-plans);
 - 10 m/s cruise, 3 / 2 m/s climb / descent, 2.5 m/s² horizontal acceleration, 2 m/s³ jerk;
 - tilt from acceleration (25° limit), 45°/s yaw, a flare at landing, 7 cm RMS hover drift;
-- 8 s winch lower and 8 s raise.
+- 8 s to set down on a landing spot and 8 s to lift off.
 
 On a 1500 s seed-7 mission, velocity jumps went from 471 to 0. Isaac samples the trajectory at render time (`isaac/motion.py`).
 
@@ -232,7 +230,7 @@ The dashboard can draw the synthetic layout on an OpenStreetMap or Esri basemap 
 - **Versions.** Isaac Sim **6.0.1** (build 6.0.1-rc.7) with Isaac Lab 3.0, on an NVIDIA Brev L40S (`docs/ISAAC_VERIFIED_APIS.md`). The launcher is Isaac Lab `AppLauncher` with scene queries enabled; version-specific calls are isolated in `isaac/compat.py`.
 - **Stage.** A USD stage built from the scenario: a terrain collider and about 600 rubble colliders. The photoreal pass (`--photoreal 1`) adds irregular concrete with rebar, MDL materials, an HDRI and haze. Drones are posed per frame from the motion model.
 - **LiDAR.** PhysX scene-query raycasts against the real colliders: 16 channels from −4° to −80°, 96 rays per frame by default, 40 m. The hits rebuild the heightmap the mission uses.
-- **Take assets:** the command van (`--van`), training-manikin dummies with spatial audio (`--dummies`), the winch pod hanging plumb with sway, rotor blur discs, and an omni.ui perception HUD (`isaac/hud.py`), which also writes `hud.json`/`live.json` for the dashboard.
+- **Take assets:** the command van (`--van`), training-manikin dummies with spatial audio (`--dummies`), the belly radar on each drone's underside (`PodViz`), rotor blur discs, and an omni.ui perception HUD (`isaac/hud.py`), which also writes `hud.json`/`live.json` for the dashboard.
 - **Live mode** (`--live`). The stage dummies **are** the generators' victims. A teammate can switch on a hidden dummy (hotkeys Y/U, a HUD button, or a dashboard zone). The mission perceives the change only through its generators and re-plans. Its listens run on the **real acoustic pipeline** (a persistent `.venv-audio` worker fed the live dummy WAVs). A loud pre-flight refuses to fall back to stub acoustics.
 - **Status.** The first GPU bring-up (7 Nov) passed every checklist step. The single-take plan (§11) is dry-run tested on the CPU; **nothing in it has been rendered on a GPU yet** «PENDING: ISAAC-CLIP».
 
@@ -247,7 +245,7 @@ The dashboard can draw the synthetic layout on an OpenStreetMap or Esri basemap 
 | Acoustics | recognisers (Silero VAD, YAMNet, Whisper, SRP-PHAT/LCMV), checked on real recordings with rotors off | demo and take audio: recorded and TTS clips, synthesised through a rubble model, free field |
 | Gemini | live audio analysis (251 clips) | the dispatch decider has not run live |
 | Hotspot | link budget from published sources | every phone, message and RSSI reading |
-| Hardware | parts and prices from datasheets (estimates) | pod not built; nothing flown |
+| Hardware | parts and prices from datasheets (estimates) | radar module not built; nothing flown |
 
 ---
 
@@ -292,14 +290,14 @@ Roughness is the RMS residual about the plane.
 
 Score = 0.35·slope term + 0.35·roughness term + 0.20·clearance term + 0.10·approach. On the heavy platform, the landing patch must also fit the 3.1 m rotor disc.
 
-**Pod placements** (`detect_pod_sites`). A cell qualifies when all of these hold:
+**Radar landing spots** (`detect_pod_sites`). A cell qualifies when all of these hold:
 - it is on the pile (more than 0.4 m above local ground);
 - it is within (lead radius + 3 m) of the lead's posterior centre;
 - its slope is ≤ 30° and its plane-fit roughness ≤ 0.12 m;
-- nothing within about 0.75 m stands more than 1.0 m above it (a clear winch corridor);
-- the hover point (5 m above the tallest cell under the rotor disc) is within the 20 m winch.
+- nothing within about 0.75 m stands more than 1.0 m above it (a clear descent corridor);
+- the approach point (5 m above the tallest cell under the rotor disc) is within the planner's 20 m approach-height limit.
 
-Placements are picked greedily by distance to the lead, then flatness, at least 1 m apart. The **seating model** takes roughness at the pod footprint as about 0.35 × the plane-fit value. Slopes up to 30° do not matter to the pod. If the pod rocks, it is re-seated once.
+Landing spots are picked greedily by distance to the lead, then flatness, at least 1 m apart. The **seating model** takes roughness at the radar footprint as about 0.35 × the plane-fit value. Slopes up to 30° are not penalised by the seating model. If the drone sits unevenly, it lifts off and re-lands once.
 
 None of this is a structural assessment. Flat geometry does not mean the pile is safe.
 
@@ -315,9 +313,9 @@ $$x[m,n]=\sum_k A_k\,e^{j(\phi_k+\frac{4\pi}{\lambda_c}r_k(t_m))}\,e^{j2\pi\frac
 |---|---|
 | Sweep | 0.4–2.0 GHz (B = 1.6 GHz, f_c = 1.2 GHz, λ_c = 0.25 m) |
 | Range bins | Δr = 9.4 cm, N = 512, 48 m unambiguous |
-| Slow time | 20 Hz; **45 s pod scan**, plus a 60 s vitals look after a firm ping |
+| Slow time | 20 Hz; **45 s landed radar scan**, plus a 60 s vitals look after a firm ping |
 | Chest motion | `sim/physio.py` breath-by-breath waveform: about 5 mm peak-to-peak for a calm adult, 2–3 mm when rapid and shallow, with pauses and sighs per state. The older 4–8 mm sinusoid overstated the signal by about 14 dB and is available only with `LARPVERSE_PHYSIO=0` |
-| Clutter, platform | antenna leakage, ground bounce, 3–6 rubble reflectors; pod seating jitter scaled by (1 − quality) |
+| Clutter, platform | antenna leakage, ground bounce, 3–6 rubble reflectors; radar seating jitter scaled by (1 − quality) |
 | Confounders (`sim/radar_signatures.py`) | empty rubble, settling debris, small animal, machinery vibration, drone-rotor reflection, a moving or knocking person |
 
 The module docstring still says "1–3 GHz / 7.5 cm"; the parameters above are what the code runs (Requests).
@@ -343,7 +341,7 @@ Figure: `docs/radar_dsp.png`.
 
 #### 4.2.3 Penetration through rubble (docs/RADAR_PENETRATION.md)
 
-`literature` is the **default** propagation preset, with `--delivery pod`. `legacy` (a flat 0.7 dB/m) is kept only as a comparison row, because it would let the radar see through about 30 m of rubble, which is not credible.
+`literature` is the **default** propagation preset, with `--delivery pod` (the radar-on-the-rubble-surface scan model). `legacy` (a flat 0.7 dB/m) is kept only as a comparison row, because it would let the radar see through about 30 m of rubble, which is not credible.
 
 - **Concrete loss.** One-way, solid concrete: $\alpha_c(f)$ = 10 dB/m below 1 GHz, rising to 20 dB/m at 2 GHz, the FHWA GPR rule of thumb «PENDING: FHWA-SOURCE».
 - **Solid fraction.** 0.65 of a slant path through collapse debris is solid; debris is roughly 30–50% voids.
@@ -355,12 +353,12 @@ Figure: `docs/radar_dsp.png`.
 | Dwell | q 0.95 | q 0.6 | q 0.3 |
 |---|---|---|---|
 | 20 s | −3 dB | 0 dB | +9 dB (cap) |
-| **45 s (pod scan)** | **−9 dB** | −6 dB | +3 dB (cap) |
+| **45 s (landed radar scan)** | **−9 dB** | −6 dB | +3 dB (cap) |
 | 60 s (vitals look) | −11.5 dB | −8.5 dB | +0.5 dB (cap) |
 
-**Reach** is the rubble path at which the margin $20\log_{10}(70/R^2)+G_{rx}-A90$ equals the loss. For the heavy_sar pod at q 0.95:
+**Reach** is the rubble path at which the margin $20\log_{10}(70/R^2)+G_{rx}-A90$ equals the loss. For the heavy_sar belly radar resting on the rubble surface at q 0.95:
 
-| Dwell | 2 m slant (pod on the surface) | 6 m | 11.5 m (old landing ring) |
+| Dwell | 2 m slant (radar on the surface) | 6 m | 11.5 m (old landing ring) |
 |---|---|---|---|
 | 20 s | 2.47 m | 1.07 m | 0.31 m |
 | **45 s** | **2.92 m** | 1.50 m | 0.70 m |
@@ -368,11 +366,11 @@ Figure: `docs/radar_dsp.png`.
 
 - The legacy small radar at 45 s reaches 2.35 m beneath. The earlier 3.6 m figure is **withdrawn**: it came from the sinusoid and the old panel, and was optimistic by about 0.7 m.
 - A shallow, rapid breather needs about 7 dB more margin.
-- The figure `docs/img/report_radar_reach.png` plots reach against range for the pod at 20, 45 and 60 s dwell (q 0.95, synthetic model).
+- The figure `docs/img/report_radar_reach.png` plots reach against range for the radar resting on the rubble surface at 20, 45 and 60 s dwell (q 0.95, synthetic model).
 
-![Modelled pod reach](img/report_radar_reach.png)
+![Modelled belly-radar reach](img/report_radar_reach.png)
 
-**Why a pod.** Under realistic penetration, drones landed on a ring 9–12 m from the pile pinged **1 of 80** victims in 20 seeds; the landing-ring rows of EVAL_GRID give 0/60, 0/60 and 1/60. A heavy drone cannot perch on a pile, but a pod resting on the surface puts the victim at 1–2.5 m slant range.
+**Why land on the rubble.** Under realistic penetration, drones landed on a ring 9–12 m from the pile pinged **1 of 80** victims in 20 seeds; the landing-ring rows of EVAL_GRID give 0/60, 0/60 and 1/60. Landing on a flat spot on the pile itself, with the belly radar resting on the surface, puts the victim at 1–2.5 m slant range.
 
 Every scan reports `max_reliable_depth_m`. Every pile reports `radar_coverage` and `radar_coverage_shallow` (top 2 m). A pile with less than 50% top-2 m coverage and no ping becomes "beyond radar reach → acoustic lead only".
 
@@ -390,7 +388,7 @@ This checks the signal processing only, not through-rubble sensing.
 
 #### 4.2.5 From scans to pings and depth
 
-A scan gives ranges: rings around the pod. Position comes only from fusing scans (§5). The localiser assumes a nominal burial depth of 1.5 ± 0.5 m. `Localiser.estimate_depth` reports `radar_estimate` when at least 3 supporting scans give a posterior σ ≤ 0.45 m, and `nominal` otherwise.
+A scan gives ranges: rings around the landed drone. Position comes only from fusing scans (§5). The localiser assumes a nominal burial depth of 1.5 ± 0.5 m. `Localiser.estimate_depth` reports `radar_estimate` when at least 3 supporting scans give a posterior σ ≤ 0.45 m, and `nominal` otherwise.
 
 - The grid evaluation reports 5 radar depth estimates in 20 seeds, median absolute error 0.09 m.
 - In the review's seed-7 run, A2-R1 came back `radar_estimate` and the others `nominal`.
@@ -427,7 +425,7 @@ Results (synthetic unless marked):
 
 | Check | Result | Source |
 |---|---|---|
-| Condition recall on synthetic pod scans (45–60 s) | calm 95%, distressed 100%, unconscious_slow 84%, irregular_apneic 65% | VITALS.md |
+| Condition recall on synthetic landed radar scans (45–60 s) | calm 95%, distressed 100%, unconscious_slow 84%, irregular_apneic 65% | VITALS.md |
 | Pause detection, synthetic | 78% of 27 scans, 3% false | VITALS.md |
 | **Real** rate (Schellenberger, line of sight) | MAE 0.51/min (60 s windows, n = 57); 0.25/min (30 s, n = 118) | VITALS.md |
 | **Real** voluntary breath holds | 6/6 detected, 0 false pause events | VITALS.md |
@@ -440,7 +438,7 @@ No age, child or injury inference is made.
 
 #### 4.3.1 Arrays and scene synthesis
 
-- **Hardware design:** an 8-mic MEMS ring of 1.0 m on each drone, plus 4 mics in each pod.
+- **Hardware design:** an 8-mic MEMS ring of 1.0 m on each drone, plus 4 mics in each belly radar module.
 - **Simulation:** bearings come from a **smaller 6-mic, 0.3 m ring**, which gives broader beams (about 65° vs about 20°). This is the conservative choice.
 - **Scene synthesis** (`acoustic/scene.py`, the only acoustic reader of truth): 16 kHz, a 26 s rotors-off window, pyroomacoustics free field, a rubble low-pass $f_c=4000/(1+1.6d)$ with −3 dB per metre of depth, and wind and sensor noise.
 - **Sources:**
@@ -565,7 +563,7 @@ $$p_0(c)\propto f+(1-f)M(c),\quad f=0.08,$$
 
 where M is the smoothed mask of cells more than 0.4 m above local ground and within 13 m of the mound centroid.
 
-**Predicted range** from the sensor s (for a pod, the antenna face 5 cm above the surface) at nominal depth $d_0$ = 1.5 m:
+**Predicted range** from the sensor s (for a landed drone, the belly antenna face 5 cm above the surface) at nominal depth $d_0$ = 1.5 m:
 
 $$r_c=\sqrt{\lVert\mathbf x_c-\mathbf s_{xy}\rVert^2+(s_z-(z_c-d_0))^2},\qquad \sigma_c=\sqrt{\sigma_r(q)^2+(\sigma_d|\Delta z|/r_c)^2},$$
 
@@ -592,9 +590,9 @@ A trusted scan that contradicts the consensus blocks the fix until **two later s
 
 `p_mass` is a **share of the pile's belief**, not the probability that a person is there. The dashboard calls it "belief share".
 
-### 5.3 Expected-information-gain pod placement (`sim/planner.py`)
+### 5.3 Expected-information-gain landing-spot choice (`sim/planner.py`)
 
-Pod placements are candidate sites for the same planner, flagged `pod`. Their sensor height is 0.05 m, the dwell is 45 s, and their quality is the seated quality.
+Radar landing spots are candidate sites for the same planner, flagged `pod`. Their sensor height is 0.05 m, the dwell is 45 s, and their quality is the seated quality of the belly radar on the rubble.
 
 **Initial three placements.** Choose the triple that maximises
 
@@ -621,7 +619,7 @@ Every relocation is logged with a plain-words reason, such as "separates two mod
 
 | Parameter | Value |
 |---|---|
-| Mission radar scans | 36 with the pod (24 with the old landing ring) |
+| Mission radar scans | 36 with the radar resting on the rubble surface (24 with the old landing ring) |
 | Listen | 26 s rotors off, off the pile, then the call-out |
 | Dispatch threshold | acoustic priority ≥ 20 |
 | Revisits | max 2 visits; only if radar reaches ≥ 50% of the top 2 m; ranked at half priority |
@@ -687,7 +685,7 @@ A static web app with three.js vendored for offline use. It polls `state.json` e
 
 | Feature | How the claim is kept honest |
 |---|---|
-| Site map: piles, drones, pods, range rings, belief, cones, dispatch, zones, phone regions (blue) | Red = "candidate search region · not a confirmed person"; a map key explains every mark; layout labelled synthetic over a real basemap |
+| Site map: piles, drones, radar landing spots, range rings, belief, cones, dispatch, zones, phone regions (blue) | Red = "candidate search region · not a confirmed person"; a map key explains every mark; layout labelled synthetic over a real basemap |
 | Pile list | statuses `ping`, `lead`, `dismissed_nonhuman`, `no_signal_not_cleared`, "searched — not cleared"; never "cleared" or "empty" |
 | Radar candidates | belief share; support n/3; depth with its source ("nominal · assumed" or "radar estimate"); outliers listed |
 | Condition and dig order (`dashboard/vitals.js`) | condition chip, with the hint and "aid, not a diagnosis"; dig order = triage weight × localisation certainty × accessibility; rejected returns collapsed under "Not a person, says the radar" |
@@ -708,12 +706,12 @@ Everything is **simulation** unless marked **real data**. Always quote a number 
 
 | What | Result | n / spread | Source | Caveat |
 |---|---|---|---|---|
-| Multi-pile dispatch (pod, `literature`, reported start) | non-start victims pinged: **acoustic 17/60 vs nearest 6/60 vs raster 5/60**; per seed 28% [15, 42] vs 10% [3, 17] vs 8% [3, 15]; 0 false pings | 20 seeds, bootstrap 95% CI | `docs/EVAL_GRID.md` (`07f7ffb`) | acoustic clips **generated from truth (stub) = upper bound**; **kinematic flight** (before SmoothFlight); not faster overall |
+| Multi-pile dispatch (radar on the rubble surface, `literature`, reported start) | non-start victims pinged: **acoustic 17/60 vs nearest 6/60 vs raster 5/60**; per seed 28% [15, 42] vs 10% [3, 17] vs 8% [3, 15]; 0 false pings | 20 seeds, bootstrap 95% CI | `docs/EVAL_GRID.md` (`07f7ffb`) | acoustic clips **generated from truth (stub) = upper bound**; **kinematic flight** (before SmoothFlight); not faster overall |
 | Same, independent start | 19/74 vs 10/74 vs 9/74 | 20 seeds | EVAL_GRID | time to first non-start ping is **worse** for acoustic (1413 s vs 1042 s) |
-| Landing ring instead of pod | 0/60, 0/60, 1/60 | 20 seeds | EVAL_GRID | why the pod exists |
+| Landing ring instead of landing on the rubble | 0/60, 0/60, 1/60 | 20 seeds | EVAL_GRID | why the drone lands on the rubble |
 | Breathing DSP, **real data** | 0.39 bpm MAE | 176 windows, 3 subjects | RADAR_VALIDATION.md | line of sight, 24 GHz CW, no rubble |
 | Vitals rate and pauses, **real data** | MAE 0.51/min (60 s), 0.25/min (30 s); 6/6 breath holds | 57 / 118 windows; 6 holds | VITALS.md | healthy relaxed subjects read "slow, regular" in 38/57 |
-| Condition recall, synthetic | 95 / 100 / 84 / 65% | 45–60 s pod scans | VITALS.md | synthetic generator |
+| Condition recall, synthetic | 95 / 100 / 84 / 65% | 45–60 s landed radar scans | VITALS.md | synthetic generator |
 | Non-human rejector | exact class 59%; confounders mostly rejected as no_signal | 500 synthetic scans | RADAR_SIGNATURES.md | synthetic only |
 | Acoustic recognisers, **real data** | F1 0.70 (ESC-50), 0.81 (CC0), 0.82 (DroneAudioSet rotors off), 0.58 (+rotor 0 dB) | sets as listed | ACOUSTIC_VALIDATION.md | single mic, rotors off, no rubble; rotor veto not re-validated |
 | DoA, **real data** (DREGON) | 100% within 10° rotors off; 17–24% rotors on in flight | n = 192 static | ACOUSTIC_VALIDATION.md | academic-use data, not redistributed |
@@ -734,9 +732,9 @@ In 20 simulated seeds, acoustic-led dispatch put a radar ping on 17 of 60 non-st
 
 ### 8.3 Seed-7 demo story
 
-**A2 pings (radar-only, silent); further pings vary by pod seating.**
+**A2 pings (radar-only, silent); further pings vary by how the radar seats on the rubble.**
 
-One verified run: review pass 3, `tests/test_demo_story.py` configuration (committed real-pipeline acoustic fixture, default tasking, pod, `literature`, `dsp`, physio, SmoothFlight):
+One verified run: review pass 3, `tests/test_demo_story.py` configuration (committed real-pipeline acoustic fixture, default tasking, `--delivery pod` (radar on the rubble surface), `literature`, `dsp`, physio, SmoothFlight):
 
 | Pile | Result | Sim t | Condition |
 |---|---|---|---|
@@ -747,7 +745,7 @@ One verified run: review pass 3, `tests/test_demo_story.py` configuration (commi
 
 That run made 34 scans in 3109 s of mission time.
 
-**Why A3 stays open.** A3's victim breathes rapidly and shallowly (33/min, about 2.2 mm). The pods rocked on its seats, so the returns were weak. The test asserts only the A2 ping, because B1 and B2 sit at marginal SNR and depend on how the pods seat. The canonical run will be quoted from «PENDING: SEED7-CANON». The live take uses real acoustics on live dummies, so its story can differ again.
+**Why A3 stays open.** A3's victim breathes rapidly and shallowly (33/min, about 2.2 mm). The drones' radars seated poorly on its rubble, so the returns were weak. The test asserts only the A2 ping, because B1 and B2 sit at marginal SNR and depend on how the radar seats on the rubble. The canonical run will be quoted from «PENDING: SEED7-CANON». The live take uses real acoustics on live dummies, so its story can differ again.
 
 ---
 
@@ -766,10 +764,10 @@ That run made 34 scans in 3109 s of mission time.
 | Speaker misuse | vetted templates; translations need approval | the Hokkien TTS has not been checked by a native speaker |
 | Phone localisation error | blue candidate region, lead only | wrong-sector first fits; unconscious people invisible |
 | LLM error | listed options only, validator, banned claims, fallback, `by` badge | a valid pick can carry a wrong rationale |
-| Pod on unstable rubble | 5 kg pod; re-seat once; winch hot-cut on snag (FlyCart 30 spec) | no structural assessment |
+| Landing on unstable rubble | flat-spot scoring from the LiDAR map; lift off and re-land once if seated unevenly | no structural assessment |
 | Ground-truth leak | boundary tests; stub labelled; `--live` refuses the stub | evaluation uses the stub (upper bound) |
 
-**Not handled:** drone loss, aftershocks, dust, rain, GNSS loss, a pod lost under debris, more than three drones.
+**Not handled:** drone loss, aftershocks, dust, rain, GNSS loss, a drone tipping on shifting debris, more than three drones.
 
 ### 9.2 Privacy, consent and data
 
@@ -790,7 +788,7 @@ That run made 34 scans in 3109 s of mission time.
 ### 9.4 Honest gaps
 
 1. Through-rubble radar returns are synthetic.
-2. The pod is designed, not built.
+2. The belly radar module is designed, not built.
 3. Acoustic demo audio is synthesised.
 4. There is no flight controller.
 5. Nothing has been timed on drone hardware.
@@ -848,14 +846,14 @@ python3 isaac/live.py --preflight                    # on the GPU box, before th
 - **The story, seed 7, grid site:**
   1. The van opens and the drones lift off.
   2. The LiDAR map paints over A2.
-  3. Pods winch down and the breathing waveform appears ("analysing breathing… n s").
+  3. The drones land on flat spots on the rubble and the breathing waveform appears ("analysing breathing… n s").
   4. The A2 ping arrives with its condition.
   5. The drones land off-pile, call out and listen.
   6. The unscripted change.
   7. The fleet re-plans and redirects.
-  8. Pods lower at the new pile.
+  8. The drones land and scan at the new pile.
 - **The unscripted change.** A teammate switches on a **pre-placed hidden dummy** (key Y at A1, or U at C3) at a moment they choose, or the operator draws a zone. The system perceives it through the real acoustic pipeline on synthesised audio and re-plans. Only the moment and the choice of trigger are live.
-- **Press window.** While A2's pods are down: about 17–29 s of video. A later press forces a full pipeline run (50–62 s on the laptop CPU, unmeasured on the L40S) while the mission clock holds.
+- **Press window.** While the drones are landed and scanning at A2: about 17–29 s of video. A later press forces a full pipeline run (50–62 s on the laptop CPU, unmeasured on the L40S) while the mission clock holds.
 - **Captions.** They show the real decision badge, say "time-lapse ×N", and keep "NOT this scan" visible if the HUD falls back to a library signature. Whisper `base.en` gives no transcript for the Indonesian dummy; it appears only if Gemini runs.
 
 **Status:** dry-run tested on the CPU; not yet rendered on a GPU «PENDING: ISAAC-CLIP».
@@ -878,13 +876,13 @@ These four docs were researched on 8 Nov. Tags: [S] sourced, [D] derived, [A] as
 | Headline | Result | Caveat |
 |---|---|---|
 | Lead on the sector of trapped people within 30 min of launch | 53% (median 8 min) | collapse-site runs, stub acoustics = upper bound |
-| Silent / unconscious people located within 24 h | 74% today (60–85) vs 80% (70–89) at the radar upper bound; **74% as simulated** | on the Weiguan-scale site the pod made **0 firm pings in 170 people** (344 scans) |
+| Silent / unconscious people located within 24 h | 74% today (60–85) vs 80% (70–89) at the radar upper bound; **74% as simulated** | on the Weiguan-scale site the radar resting on the rubble surface made **0 firm pings in 170 people** (344 scans) |
 | Extra survivors per 100 trapped | +0.2 (−0.1 to +0.7) as simulated, +0.75 (−1.8 to +2.7) at the upper bound; grid site +1.3 (+0.3 to +4.0) as simulated | model, not a record |
-| Weiguan late cohort (113 people brought out after day 1) | about +6 (0.6–14) **only if the pod works as designed**; **0 (0–1.6) with the code as it is** | optimistic: the late cohort is deeper and more injured |
+| Weiguan late cohort (113 people brought out after day 1) | about +6 (0.6–14) **only if the belly radar works as designed**; **0 (0–1.6) with the code as it is** | optimistic: the late cohort is deeper and more injured |
 
-These numbers come from the model's v1.0 run. IMPACT_MODEL.md says they will be refreshed after the collapse-site pod-coverage fix, so re-check them before quoting. The model's own bottom line: **we do not claim lives saved at Weiguan scale.** The upper bound depends on the pod producing firm pings in the field, which is unproven.
+These numbers come from the model's v1.0 run. IMPACT_MODEL.md says they will be refreshed after the collapse-site radar-coverage fix, so re-check them before quoting. The model's own bottom line: **we do not claim lives saved at Weiguan scale.** The upper bound depends on the belly radar producing firm pings in the field, which is unproven.
 
-**Economics** (`docs/ECONOMICS.md`). A city kit is 3 drones with winch pods, spares, chargers and a command van.
+**Economics** (`docs/ECONOMICS.md`). A city kit is 3 drones with belly-mounted radars, spares, chargers and a command van.
 - It costs about **$0.67M up front** and **$2.8M over 10 years** ($1.1–6.3M) [D].
 - **Break-even:** 0.20 lives per decade at the US DOT value of a statistical life ($13.7M), 0.56 at Taiwan's ($5M, benefit transfer), and about 3 lives at the international-USAR cost of $0.93M per life [D].
 - **As simulated today**, the kit adds about 0.2 survivors per 100 trapped, so it needs about 300 trapped people per decade to break even at Taiwan's value [D].
@@ -896,7 +894,7 @@ These numbers come from the model's v1.0 run. IMPACT_MODEL.md says they will be 
 - **72 h operation:** about 1.2 MWh and about 510 L of diesel (225–1,410 L), 3 battery sets per drone, and a crew of 7 [D/A].
 - **Regulatory path:**
   - CAA consent for disaster flights (≥ 25 kg needs inspection and licensed pilots);
-  - NCC special approval for the 0.4–2 GHz pod, because UWB is allowed only at 4–9 GHz and is banned on aircraft;
+  - NCC special approval for the 0.4–2 GHz belly radar, because UWB is allowed only at 4–9 GHz and is banned on aircraft;
   - PDPA for phone data;
   - DJI restricted for government use, which forces the non-DJI build.
 
@@ -904,14 +902,14 @@ These numbers come from the model's v1.0 run. IMPACT_MODEL.md says they will be 
 
 ## 13. Future work
 
-1. **Build and test the pod.** Put a B210 SFCW pod on real USAR training rubble with known voids. Calibrate A90, the solid fraction and the seating model.
-2. **Flight.** Fly a real heavy-lift airframe with PX4/ArduPilot, a winch and pod, and measure seating, swing and endurance.
+1. **Build and test the belly radar.** Land a drone carrying the B210 SFCW radar on real USAR training rubble with known voids. Calibrate A90, the solid fraction and the seating model.
+2. **Flight.** Fly a real heavy-lift airframe with PX4/ArduPilot, with the belly radar, and measure landing seating on rubble and endurance.
 3. **Acoustics.**
    - Re-validate the rotor veto on real audio.
    - Run a multilingual ASR in the take.
    - Re-run the grid evaluation with the real acoustic pipeline (not the stub) and with SmoothFlight.
 4. **Measured depth.** Use more vertical aperture, so depth comes from the radar rather than the nominal value.
-5. **Robustness.** Handle drone or pod loss, aftershocks and dust; time everything on the Orin.
+5. **Robustness.** Handle drone loss, a drone tipping on rubble, aftershocks and dust; time everything on the Orin.
 6. **People.** Field tests with USAR team leaders; native review of the call-out languages.
 
 ---
@@ -942,7 +940,7 @@ These numbers come from the model's v1.0 run. IMPACT_MODEL.md says they will be 
 - Piper TTS (rhasspy).
 
 **Comms and hardware** (sources in HARDWARE.md, COMMS_ARCHITECTURE.md, HOTSPOT.md)
-- DJI FlyCart 30 specs and winch sheet; Harris Aerial H6HL brochure.
+- DJI FlyCart 30 specs; Harris Aerial H6HL brochure.
 - Ouster OS1-128; Doodle Labs Mesh Rider.
 - NIST collapse-propagation measurements (2014); UCLouvain partially destroyed buildings.
 - AT&T Flying COW; CENTUM Lifeseeker (vendor-reported).

@@ -147,7 +147,7 @@ Timeline:
 - **Day 5 (~120 h [D]):** teenager Pemba Tamang pulled from a 7-storey building by a Nepalese team and the USAID USAR team [S] ([CBS](https://cbsnews.com/news/nepal-earthquake-survivor-teen-boy-pemba-tamang-rescued-rubble-kathmandu)).
 - **Day ~7 (~168 h [D]):** a 101-year-old man pulled from his house [S] ([Inquirer](https://newsinfo.inquirer.net/?p=689100)).
 - **FINDER radar:** the DHS/NASA-JPL microwave radar detected **two heartbeats under each of two collapsed buildings** in Chautara, and 4 men were dug out from under up to ~3 m of rubble [S] ([DHS](https://www.dhs.gov/archive/science-and-technology/news/2015/05/05/finder-helps-save-four-nepal), [JPL](https://www.jpl.nasa.gov/news/dhs-and-nasa-technology-helps-save-four-in-nepal-earthquake-disaster/)).
-  Lab spec: through 30 ft (9 m) of rubble or 20 ft (6 m) of solid concrete [S] (JPL). It was a hand-placed ground unit, and **the closest real-world precedent for our radar pod**.
+  Lab spec: through 30 ft (9 m) of rubble or 20 ft (6 m) of solid concrete [S] (JPL). It was a hand-placed ground unit, and **the closest real-world precedent for our belly radar**.
 - **Drones:** the Humanitarian UAV Network (UAViators), Kathmandu University and others mapped damage, for example in Panga, where 578 of 1,334 buildings were uninhabitable. The civil aviation authority refused some of their applications [S] ([Drones in Humanitarian Action case study](https://zoinet.org/wp-content/uploads/2018/01/3Case-Study-Nepal.14April2016.pdf)). This was mapping, not victim search.
 
 ### 2.7 Haiti — 12 Jan 2010, 16:53
@@ -302,7 +302,7 @@ Failures and technology:
 - **Patents** (e.g. US 11,754,696) claim UWB through 10 cm of concrete from a UAV [S] ([USPTO](https://image-ppubs.uspto.gov/dirsearch-public/print/downloadPdf/11754696)). These are claims, not results.
 
 **Our reading:** drones in collapses so far have been used for **overview, mapping and lighting**. Detecting life has been done by hand-placed ground devices (FINDER, LifeLocator) or by ears and dogs.
-Nobody has fielded a drone that **lowers a breathing radar into the pile**. The published flying-radar work is single-subject, hovering 0.4–5 m above open ground or a brick wall. That gap is where our winch pod sits. It is a gap, not proof that the pod works.
+Nobody has fielded a drone that **lands on a pile and scans for breathing through the rubble with a belly radar**. The published flying-radar work is single-subject, hovering 0.4–5 m above open ground or a brick wall. That gap is where our landed belly radar sits. It is a gap, not proof that it works.
 
 ---
 
@@ -346,7 +346,7 @@ Kobe let in only one foreign team and quarantined its dogs (§2.9). Rana Plaza a
 - Turkey: crews stopped every generator, shouted "Sesimi duyan var mı?" and asked trapped people to scratch with a fingernail, because the listening devices pick up "even the movement of a small stone" [S] (§2.5). AP: helicopters and digging made it hard to hear any sign of life [S].
 - Weiguan: listening devices and dogs checked each layer before the machines took it away (IMPACT §3).
 - Bam 2003: 28% of injured survivors were unconscious when rescued (IMPACT §1c). By design, a silent victim gets no tap and no call.
-- *Implication:* an unconscious person in a void who breathes but cannot call is invisible to the main method. That is the gap the radar pod targets.
+- *Implication:* an unconscious person in a void who breathes but cannot call is invisible to the main method. That is the gap the landed radar targets.
 
 **P5. Heard or located, but not reached in time.**
 - Surfside: a woman's voice was heard until ~11:00 on day 1, and nobody reached her [S].
@@ -375,7 +375,7 @@ Kobe let in only one foreign team and quarantined its dogs (§2.9). Rana Plaza a
 - Rana Plaza: machinery held back to day 5 for fear of crushing survivors [S].
 - Tunghsing 1999: the brothers were found by layer-by-layer machine removal (IMPACT §4).
 - Surfside: a 15 h pause for the unstable structure [S].
-- *Implication:* a pod that re-scans each newly exposed layer for breathing, with nobody standing on the pile, fits exactly the phase where people currently stand aside and wait.
+- *Implication:* a drone that lands and re-scans each newly exposed layer for breathing, with nobody standing on the pile, fits exactly the phase where people currently stand aside and wait.
 
 ---
 

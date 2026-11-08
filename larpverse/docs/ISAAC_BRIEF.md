@@ -21,7 +21,7 @@
 |---|---|---|
 | **Input:** the operator selects an area | Dashboard "Select area → Send drones" → `POST /api/tasking` → `dashboard/data/tasking.json` | scripts/serve.py, on the GPU box |
 | | `run_mission --live` polls tasking.json every 1 s. A new zone is an order: the drones leave the dock for it (`--start idle`: nothing launches before the first zone) | isaac/live.py, GridMission.order() |
-| **Output:** what the drones sense and decide | `run_mission --live` writes `dashboard/data/state.json` (map, drones, pods, pings, priority list, clips, suggestions), `live.json` (causal lines, PLAN CHANGED banner, badge), `hud.json` (radar waveform), `motion.json` | served by serve.py; read by the dashboard and animation/live-view.html |
+| **Output:** what the drones sense and decide | `run_mission --live` writes `dashboard/data/state.json` (map, drones, `pods`, pings, priority list, clips, suggestions), `live.json` (causal lines, PLAN CHANGED banner, badge), `hud.json` (radar waveform), `motion.json` | served by serve.py; read by the dashboard and animation/live-view.html |
 | Other operator inputs | `/api/broadcast` (speaker), `/api/comms/reply` (phones), `/api/portal` (phone reports) | serve.py |
 
 **One command on the GPU box:** `L=/workspace/skysearch/larpverse ISAACLAB=/workspace/isaaclab bash $L/scripts/isaac_demo.sh`. It writes an empty tasking file, starts serve.py, runs the acoustic preflight, then starts the live Isaac run. Add `STUB_ACOUSTIC=1` for rehearsals; `DRY=1` runs the same loop without a GPU.
@@ -36,7 +36,7 @@ How we meet it:
 - **One OBS capture, no cuts.** On the left, the Isaac livestream (`/viewer`). On the right, the live dashboard from the same run. Optionally, an in-Isaac HUD overlay too.
 - **One continuous camera** (`--camera director-take`): spline arcs and spring smoothing, never a cut. It's a per-phase time-lapse (×5–×30), and the HUD always shows "sped up ×N".
 - **The unscripted change:** a teammate presses **Y** in the Isaac window. That switches on a hidden manikin's Indonesian voice at A1. The system **hears it at its next listen**, re-plans and redirects the drones on camera.
-  - **Timing with the real acoustic pipeline:** press while A2's pods are down (about 17–29 s of video). A later press forces a full listen re-run while the mission waits (currently 50–62 s on a laptop CPU; being cut to ≤ 8 s and faster on the GPU box). The "~7 s reaction" was measured with stub acoustics.
+  - **Timing with the real acoustic pipeline:** press while the drones are landed on A2 (about 17–29 s of video). A later press forces a full listen re-run while the mission waits (currently 50–62 s on a laptop CPU; being cut to ≤ 8 s and faster on the GPU box). The "~7 s reaction" was measured with stub acoustics.
   - Fallback trigger: the operator draws a zone on the dashboard.
   - Nothing is scheduled: `--test-trigger` refuses to run outside `--dry-run`.
 - **Honesty boundary, enforced in code:**
@@ -50,11 +50,11 @@ How we meet it:
 
 1. **Van and lift-off:** the operator in the command van at three screens, then three heavy 8-rotor drones lift off. They move like real multirotors: spool-up, lean into acceleration, flare when braking, soft perch landings.
 2. **Survey:** a purple LiDAR map paints over pile A2.
-3. **Winch pods:** pods lower onto the rubble and run 45 s radar dwells. The HUD shows the breathing waveform.
+3. **Landed radars:** the drones land on flat spots, and their belly radars, resting on the rubble, run 45 s radar dwells. The HUD shows the breathing waveform.
 4. **Red ping at A2:** "slow, regular breathing — deep rest or reduced consciousness — check responsiveness", with "aid for rescuers, not a diagnosis".
 5. **Listen:** the drones land off the pile and the loudspeaker calls out (zh-TW, Hokkien, en). Knock and shout replies show as yellow cones with transcripts.
 6. **★ Unscripted change:** a teammate presses **Y**. A new voice at A1 is heard and becomes the top lead, and the fleet redirects to A1. The on-screen transcript of the Indonesian call needs Gemini (quota permitting); offline Whisper `base.en` gives none. Without Gemini, the clip shows as "voice-like, language not identified".
-7. **End:** the pods lower at A1, with the dig order on screen.
+7. **End:** the drones land at A1, with the dig order on screen.
 
 Colours, everywhere: red = radar ping, yellow = human-audio direction, teal = acoustic priority, purple = LiDAR, green = dispatch, **blue = rescue Wi-Fi / phones**, white dashed = operator zones.
 
@@ -66,11 +66,11 @@ Colours, everywhere: red = radar ping, yellow = human-audio direction, teal = ac
 | `--camera director-take` (no-cut spline + springs) | ✅ unit test: never jumps |
 | HUD (`--hud overlay\|window`): LiDAR, cones, top clip, breathing waveform, vitals, decision, dig order | ✅ no-op without omni; 🎯 does it appear **in the stream**? |
 | Command van (`--van`), manikin dummies with SpatialAudio (`--dummies`), ambient sound (`--ambient`) | ✅ USD-checked; 🎯 looks, emissive screens at dusk, audio in the stream |
-| Heavy drone with its real components (BOM positions), rotor blur discs, winch pod hanging plumb with sway | ✅ USD-checked; 🎯 blur discs under RTX real-time |
+| Heavy drone with its real components (BOM positions), rotor blur discs, belly radar fixed under the drone | ✅ USD-checked; 🎯 blur discs under RTX real-time |
 | Smooth multirotor motion (`isaac.motion`, rendered per frame) | ✅ in the renderer; 🟡 the mission switches to `SmoothFlight` (correct arrival timing) in the next push |
-| Pods visible in `--live` runs | 🟡 bug: our `--live` dry run showed 0 pods; being fixed |
+| Landed radars visible in `--live` runs | 🟡 bug: our `--live` dry run showed `pods_max_visible` 0; being fixed |
 | Real acoustic pipeline on live dummy sources (not the synthetic stub) | 🟡 landing; `VIDEO_PLAN.md` will state exactly what the box needs |
-| Collapse site (`--site collapse --site-usd …`) | ✅ dry run (60 steps, 98k LiDAR points, 11 pod placements on T1a); the take plan is timed on the grid site |
+| Collapse site (`--site collapse --site-usd …`) | ✅ dry run (60 steps, 98k LiDAR points, 11 radar placements on T1a); the take plan is timed on the grid site |
 | Frame-time settings (`--take-render`) | ✅ applied with try/except; 🎯 confirm in Render Settings |
 
 **Before the final take:** rehearse now, but wait for **READY TO RE-RECORD** in `FOR_ISAAC_CLAUDE.md`. That comes once the three 🟡 items land.
@@ -105,7 +105,7 @@ python3 $L/isaac/live.py --preflight
 # collapse site instead: --site collapse --site-usd /workspace/skysearch/collapse_site/collapse_site.usda
 #   (hidden dummies H1_RW_vi / H2_M39_id; re-time it with the dry rehearsal on --site collapse first)
 ```
-On screen with `--live`: a causal line for every action ("d1-d3 → A1 BECAUSE voice heard, 3/3 drones agree…"), a **PLAN CHANGED** banner after a live input, an **AUTONOMOUS · no operator input** badge, and "not a person: settling debris → no dig" when the radar rejects a return. Speaker audio is off by default (licences); the ring still shows. Defaults that `--live` sets for you: van on (with `--photoreal 1`), dummies on, heavy drones, winch pods, realistic radar, tasking polled every 1 s, mission thread on, take render settings, keys `U=hidden1, Y=hidden2`, 4 s pre-roll on the van.
+On screen with `--live`: a causal line for every action ("d1-d3 → A1 BECAUSE voice heard, 3/3 drones agree…"), a **PLAN CHANGED** banner after a live input, an **AUTONOMOUS · no operator input** badge, and "not a person: settling debris → no dig" when the radar rejects a return. Speaker audio is off by default (licences); the ring still shows. Defaults that `--live` sets for you: van on (with `--photoreal 1`), dummies on, heavy drones, belly radars (`--delivery pod`, the radar-on-the-rubble-surface scan model), realistic radar, tasking polled every 1 s, mission thread on, take render settings, keys `U=hidden1, Y=hidden2`, 4 s pre-roll on the van.
 
 **Client side** (Rohan's laptop):
 ```bash
@@ -124,8 +124,8 @@ OBS: one scene at 1920×1080 / 30 fps. Put the viewer at 0,0 sized 1280×1080 an
    - every glitch (pops, jitter, camera snaps, drones vs camera judder), with the video time;
    - whether pressing **Y** produced `STAGE EVENT … H2_A1_id activated (hotkey Y)` and a redirect, and how many video seconds it took.
 4. **The same on the collapse site** (`--site collapse --site-usd …`) with debris on and off, for frame time only.
-5. **Report** in `larpverse/docs/FROM_ISAAC.md` on `larpverse-isaac`: answers to 2–4, plus screenshots (van door shot, a drone close-up, pods on the rubble, the HUD).
-6. **Final take** only after **READY TO RE-RECORD**. The teammate pressing Y must not be the camera operator. They decide the moment themselves inside the trigger window, which VIDEO_PLAN.md will re-time with real acoustics (currently about 17–29 s of video, while the pods are down).
+5. **Report** in `larpverse/docs/FROM_ISAAC.md` on `larpverse-isaac`: answers to 2–4, plus screenshots (van door shot, a drone close-up, landed radars on the rubble, the HUD).
+6. **Final take** only after **READY TO RE-RECORD**. The teammate pressing Y must not be the camera operator. They decide the moment themselves inside the trigger window, which VIDEO_PLAN.md will re-time with real acoustics (currently about 17–29 s of video, while the drones are landed).
 
 ## 6. Assets you'll see (`docs/ISAAC_ASSETS.md`)
 
@@ -138,7 +138,7 @@ OBS: one scene at 1920×1080 / 30 fps. Put the viewer at 0,0 sized 1280×1080 an
   - Hidden ones: `H1_C3_vi` (key U) and `H2_A1_id` (key Y); on the collapse site, `H1_RW_vi` and `H2_M39_id`.
   - No colliders, so the LiDAR doesn't see buried people.
 - **Heavy drone** (`isaac/drone_viz.py`, about 10k triangles):
-  - parts at their real positions from `data/hardware_bom.json`: OS1-128 LiDAR on a 45° nose mount, thermal gimbal, 8-mic ring, speaker horn, Jetson + mesh radio with antennas, GNSS mast, blue Wi-Fi antenna, winch and pod;
+  - parts at their real positions from `data/hardware_bom.json`: OS1-128 LiDAR on a 45° nose mount, thermal gimbal, 8-mic ring, speaker horn, Jetson + mesh radio with antennas, GNSS mast, blue Wi-Fi antenna, belly radar module;
   - `component_anchors()` gives label points for a close pass.
 - **Audio** (`assets/audio/dummies/`): 126 clips. Real CC0 shouts, TTS voices (zh-TW wording / en / id / vi), knocks, weak voices, distractors, and through-rubble variants.
   - Credit ESC-50 (CC BY-NC) in the video description.

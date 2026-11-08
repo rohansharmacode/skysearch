@@ -52,7 +52,7 @@ or by hand; every hunk is anchored on short, stable context, so a later base nee
 | B `auto`, no tasking file | recon 176 s: 100% mapped, 3 perch rounds, 9 proposals (one per pile; B2 knock lead ranked first). Auto-accept after 30 s, then A2→B2→A3→A1→B1→C3; pings A2, B2, A3; zones 4 `ping` / 3 `searched_no_ping` / 2 `unsearched` |
 | C operator file + live revisions | rev1 Z1(A3), Z2(C3): Z1 `ping`, C3 started. rev2 at t=300 (cancel Z2, add Z3=B1): Z2 `cancelled` with its progress kept, Z3 searched → `searched_no_ping`. rev3 during the return (`retask` Z1): `retask_reason` "operator re-task (revision 3)", redeploy, A3 ping again. B2 knock outside every zone → suggestion S1 (evidence: 4 clips) |
 | `tests/test_grid_mission.py` on the patched copy | 18 passed, 1 skipped (legacy path unchanged) |
-| D `--site collapse` auto | recon 99.9% of 320 m mapped, 18 perches, 96 standing buildings cut (93 prior + 3 from roof cues), 94 proposals → 82 auto-accepted. T1a searched, then T1b dispatched on a voice lead (priority 85). It then crashed in `planner.initial_sites`: "0 pod placements" at T1b means `best` is None with fewer than 3 candidates. This is a pre-existing planner/pod issue that needs a guard, not this patch |
+| D `--site collapse` auto | recon 99.9% of 320 m mapped, 18 perches, 96 standing buildings cut (93 prior + 3 from roof cues), 94 proposals → 82 auto-accepted. T1a searched, then T1b dispatched on a voice lead (priority 85). It then crashed in `planner.initial_sites`: "0 pod placements" at T1b means `best` is None with fewer than 3 candidates. This is a pre-existing planner / landing-spot issue that needs a guard, not this patch |
 
 ## Notes for the mission builder
 
@@ -77,7 +77,7 @@ or by hand; every hunk is anchored on short, stable context, so a later base nee
  from .scenario import BASE_XY, DRONE_PADS, SITE_BOUNDS, make_scenario
  try:
 @@ -65,6 +67,14 @@
- DELIVERY_DEFAULT = "pod"             # winch-lowered sensor pod on the pile surface; "land" = the old landing ring
+ DELIVERY_DEFAULT = "pod"             # radar resting on the pile surface (drone lands on a flat spot); "land" = the old landing ring
  RASTER = ["A1", "B1", "C1", "C2", "B2", "A2", "A3", "B3", "C3"]   # fixed lawnmower baseline (row by row)
  V1_CLASS = {"voice": "voice", "shout": "shout", "knocking": "knocking", "tapping": "tapping"}
 +# operator tasking (contracts v1.2, sim/tasking.py) and recon (sim/recon.py)

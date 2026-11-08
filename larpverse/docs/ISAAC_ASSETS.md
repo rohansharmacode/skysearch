@@ -6,8 +6,8 @@ These assets are for the deliverable: a single take of at most 60 s from the Isa
 |---|---|
 | `isaac/van.py` | Command van and staging dressing. It also holds the mesh kit everything else uses: `Geo`, `Looks`, `Assembly`, `emit`, `count_tris`. CLI: test stages plus projection sheets. |
 | `isaac/dummies.py` | Manikin dummies with SpatialAudio and `larpverse:*` attributes. It reads `assets/audio/dummies/manifest.json`. |
-| `isaac/drone_viz.py` | Heavy X8 carrying the `data/hardware_bom.json` components. Also provides `set_state` (flight motion), rotor blur, the winch pod and label anchors. |
-| `isaac/pods.py` | The BOM pod geometry, plus `PodViz`, which drives each drone's own winch or draws separate pods. |
+| `isaac/drone_viz.py` | Heavy X8 carrying the `data/hardware_bom.json` components. Also provides `set_state` (flight motion), rotor blur, the belly radar and label anchors. |
+| `isaac/pods.py` | The BOM radar-module geometry, plus `PodViz`, which drives each drone's belly radar or draws separate radar markers. |
 | `assets/textures/` | Livery (`van_livery_full/panel/stripes.png`, `van_rear.png`) and the three monitor screens (`dash_recon/map/detail.jpg`), regenerated with `python -m isaac.van --textures`. |
 | `tests/test_isaac_assets.py` | 10 tests under `.venv` with pxr. |
 
@@ -21,8 +21,8 @@ Rebuild: `scripts/heavy.sh .venv/bin/python -m isaac.van --out /tmp/larpverse_as
 | Asset | Triangles | Notes |
 |---|---|---|
 | Van, everything | 12,482 | Includes the interior, the operator, the roof kit, tent, generator, cables and cones. The budget was 50k. |
-| Heavy drone (each) | 10,378 | Includes 8 rotors (blades + 2 blur discs each) and the stowed pod. Three drones: 31k. |
-| Separate pod (`PodViz` without drones) | 1,168 | Only used when `PodViz` is not given the drones. |
+| Heavy drone (each) | 10,378 | Includes 8 rotors (blades + 2 blur discs each) and the belly radar. Three drones: 31k. |
+| Separate radar marker (`PodViz` without drones) | 1,168 | Only used when `PodViz` is not given the drones. |
 | Dummies, grid seed 7 | 21,300 | 9 prims: 4 victims, dog, generator, settling (audio only), 2 hidden. |
 | Dummies, collapse seed 7 | 62,544 | 24 prims: 22 victims and 2 hidden. Dummies deeper than 1.4 m use a low-detail body. |
 
@@ -109,7 +109,7 @@ DM.set_active(stage, "H1_C3_vi", True)         # the unscripted change (or tick 
 
 `read_dummies` returns `{id, prim, xyz (live world position), active, clip, physio, kind, human, hidden, pile, victim, clips, reply_clips, schedule, depth, pose, spl_db_1m}`. Dragging a dummy's prim in the viewport moves its source, and the test checks this.
 
-## Heavy drone (`isaac/drone_viz.py`) and pod (`isaac/pods.py`)
+## Heavy drone (`isaac/drone_viz.py`) and belly radar (`isaac/pods.py`)
 
 **Geometry.** The airframe comes from `sim.platform` heavy_sar: coaxial X8, 2.2 m wheelbase, 1.375 m props, carbon arms with fold joints, chamfered fuselage and canopy, side DB2000 packs and splayed landing gear.
 
@@ -125,14 +125,14 @@ DM.set_active(stage, "H1_C3_vi", True)         # the unscripted change (or tick 
 | `MeshRadio` | mesh radio | stacked on the compute box, blue LED |
 | `MeshAntennaL/R` | mesh radio | under the rear arms |
 | `WifiApAntenna` | Wi-Fi AP | down, blue |
-| `PodLinkAntenna` | pod link | |
+| `PodLinkAntenna` | legacy prim name; the radar module is cabled to the drone | |
 | `GnssMast` | GNSS | on a pole |
-| `Winch` + drum | winch | |
+| `Winch` + drum | legacy prims, unused now that the radar is fixed under the belly | |
 | Arm LEDs | | front white, rear in the drone's accent colour |
 
-**Pod.** The pod parts follow the BOM pod frame: `PodRadarFace`, `PodMic0..3`, `PodLiftEye`, `PodStrobe`, `PodAntenna`, a 0.5 × 0.5 × 0.25 m case and a bridle. The pod is stowed between the skids with its base at 0.175 m.
+**Belly radar.** The radar-module parts follow the BOM radar-module frame: `PodRadarFace`, `PodMic0..3`, `PodLiftEye`, `PodStrobe`, `PodAntenna`, a 0.5 × 0.5 × 0.25 m case and a mounting bracket (`PodLiftEye` is a legacy prim name for the module's mounting eye). The radar module is fixed under the drone between the skids with its base at 0.175 m.
 
-**Pod mode has no radar panel on the body.** `delivery="land"` puts `RadarPanel` back under the belly.
+**The radar is the belly module, not a separate panel on the body.** `delivery="land"` puts the older `RadarPanel` back under the belly.
 
 **Flight-motion route** (for `sim/flight_motion.py` / `isaac/motion.py`):
 
@@ -147,17 +147,17 @@ drone_viz.set_state(drones, "d1", pos, quat, rotor_rpm, winch_len, dt)     # fle
   - below 120 rpm: still blades;
   - from 120 to 450 rpm: blades plus a faint disc (spin-up and spin-down);
   - from 450 rpm (`BLUR_RPM`): a translucent motion-blur disc with a darker tip rim, and the blades are hidden.
-- **Winch.** The pod hangs plumb from the winch exit and is counter-rotated against the body attitude, so it does not tilt with the drone. It sways by `sway_deg`. With `ground_z` it rests on the surface instead of sinking: the cable is shortened and the sway is zeroed.
+- **Belly radar.** The radar module is fixed under the drone and tilts with the body; it does not hang or sway, so `winch_len` and `sway_deg` are legacy arguments that should be zero or ignored. With `ground_z` the drone sets down so the radar module rests on the surface.
 - **Older route.** `set_pose` + `spin(dt)` still work. `spin` drives the hover rpm (1700), so the blur shows.
 
 **Labels:**
 - `component_anchors()` returns `[{key, part, label, bom_id, bom_name, parent, xyz}]` in the model frame.
-- `DroneViz.anchors_world()` returns `{part: world xyz}` from the live transforms, including the pod while it is lowered.
+- `DroneViz.anchors_world()` returns `{part: world xyz}` from the live transforms, including the belly radar.
 - Every part prim carries `larpverse:part`.
 
 **PodViz:**
-- `PodViz(stage, ids, drones=drones)` drives each drone's own winch pod from `state.pods` / `winch_len_m`. Resting pods sit at the state `z`, and hanging pods sway gently (±2° at 6 m).
-- Without `drones=`, it draws a separate pod and cable as before, and hides the drone's stowed pod while the separate one is visible.
+- `PodViz(stage, ids, drones=drones)` drives each drone's own belly radar from `state.pods` / `winch_len_m` (legacy field names). A radar resting on the rubble sits at the state `z`; the radar is fixed under the drone and does not hang or sway.
+- Without `drones=`, it draws a separate radar marker as before, and hides the drone's belly radar while the separate one is visible.
 
 ## Camera suggestions for the single take (collapse site)
 
@@ -166,10 +166,10 @@ The van is at (−46.0, −154.5) facing south, with its door facing the pads to
 1. **0–6 s, van foreground.** Eye at (−53.5, −161.0, 1.7), looking at the door (−47.7, −154.1, 2.0) with `van_anchors()["door"]` transformed. The open door frames the operator's back and the three glowing dashboards, while the tent floodlight and the green mast beacon read against the dusk sky. The drones sit on the pads at frame left.
 2. **6–12 s, lift-off.** Crane up to 9 m and pan left to the pads while the drones spin up: the blades turn into blur discs as rpm crosses 450. The van stays at frame right with the mast and Starlink panel in silhouette.
 3. **12–34 s, fly-along.** Hand over to a chase on d2: 6 m behind, 3 m up, tilted down 15–20°, eased in over 2 s by blending the spline target from the pads to d2. Keep the other two drones in frame: they tilt into the acceleration and level off at cruise. The purple LiDAR paints in as they reach the pile.
-4. **34–50 s, close pass with the pod lowering.** While d1 hovers over its pile and the winch pays out:
-   - orbit d1 at 3.5 m, from the nose quarter (LiDAR on its 45° bracket, the GNSS mast) round to the belly (winch, cable, pod);
-   - drop the camera with the pod until it rests on the rubble.
-   Burn labels from `anchors_world()`: LiDAR, mic ring, speaker, Jetson, mesh radio, Wi-Fi AP, winch, pod radar face.
+4. **34–50 s, close pass with the landing.** While d1 descends onto a flat spot on its pile:
+   - orbit d1 at 3.5 m, from the nose quarter (LiDAR on its 45° bracket, the GNSS mast) round to the belly (the radar module);
+   - drop the camera with the drone until the radar rests on the rubble.
+   Burn labels from `anchors_world()`: LiDAR, mic ring, speaker, Jetson, mesh radio, Wi-Fi AP, belly radar face.
 5. **50–60 s, the unscripted change and its reaction.** Pull back to about 25 m, 30° down. When someone flips `larpverse:active` on `H1_RW_vi` (collapse) or `H1_C3_vi` (grid), its voice starts. The perception panel shows the new acoustic direction (yellow), and the coordinator's green dispatch line swings to the new sector. End on the red ping beacon.
 
 ## Requests (run_mission.py and the live loop, owned by other agents)
@@ -186,10 +186,10 @@ The van is at (−46.0, −154.5) facing south, with its door facing the pads to
 2. **`--dummies 0|1` (default 1)**: after the scene build, call `DM.build_dummies(stage, sc, DM.load_manifest())` and optionally `DM.build_ambient(stage, sc, man)`.
    - In the live loop, call `DM.read_dummies(stage)` at every listen and feed the radar and acoustic generators only `active` rows, using `xyz`, `physio` and `clip`. Isaac is the source of truth for the take.
    - When the dummies are on, drop `--show-truth` ghosts: the dummies replace them.
-3. **Pods hang from the real winch.** Replace `PodViz(stage, ids)` with `PodViz(stage, ids, drones=drones)`, and pass `dt` in the update (`pods.update(cur, poses, dt=frame_dt)`) so the sway animates.
+3. **Belly radars ride on the drone.** Replace `PodViz(stage, ids)` with `PodViz(stage, ids, drones=drones)`, and pass `dt` in the update (`pods.update(cur, poses, dt=frame_dt)`).
 4. **Flight motion.** Where poses come from `isaac/motion.py`, call `drones[did].set_state(pos, quat_wxyz, rotor_rpm, winch_len, dt, ground_z=pod_surface_z)` instead of `set_pose` + `spin`. Keep `pods.update` only for the resting `z` when the motion module does not supply `ground_z`.
 5. **Labels.** The overlay or HUD can project `drones["d1"].anchors_world()` and use the `component_anchors()` labels for the close pass.
-6. **Test update (orchestrator).** In `tests/test_platform.py::test_heavy_drone_parts_from_spec`, change the required name `"RadarPanel"` to `"PodRadarFace"`. In pod mode the body has no radar panel any more, per the BOM and the coordinator's instruction. `heavy_parts(spec, did, delivery="land")` still has `RadarPanel`.
+6. **Test update (orchestrator).** In `tests/test_platform.py::test_heavy_drone_parts_from_spec`, change the required name `"RadarPanel"` to `"PodRadarFace"`. With the belly radar module the body has no separate radar panel any more, per the BOM and the coordinator's instruction. `heavy_parts(spec, did, delivery="land")` still has `RadarPanel`.
 7. **Unverified on GPU, please report in FROM_ISAAC.md:**
    - SpatialAudio playback in the stream: does Kit's audio player pick up `UsdMedia.SpatialAudio` prims with `gain` toggled at runtime, and does the WebRTC client carry the audio?
    - how bright the PreviewSurface emissive screens read at dusk (try `--van-mdl 1` if dim);

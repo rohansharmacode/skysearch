@@ -1,4 +1,4 @@
-# Hardware: real components for a Larpverse drone, pod and command van
+# Hardware: real components for a Larpverse drone, its belly radar and the command van
 
 Machine-readable twin: [`data/hardware_bom.json`](../data/hardware_bom.json) (BOM, budget, frequency plan, Isaac
 mount positions). How the parts talk to each other: [docs/COMMS_ARCHITECTURE.md](COMMS_ARCHITECTURE.md). Rescue
@@ -7,9 +7,9 @@ hotspot link budget, portal and privacy: docs/HOTSPOT.md (comms agent). Sim numb
 
 ## One-slide summary
 
-- **Every sensor is a part you can buy today.** The drones use an Ouster OS1-128 LiDAR, MEMS mic arrays, a 130 dB-class loudspeaker, a Jetson AGX Orin, a Doodle Labs mesh radio and a 2.4 GHz OpenWrt hotspot. The only custom parts are the radar pod and the mounts.
-- **The radar sits on a 5 kg pod on a winch, not on the drone.** The pod has a USRP B210 software radio that sweeps 0.4–2 GHz, wideband antennas pressed onto the rubble, 4 mics, a Raspberry Pi 5 and a 99 Wh battery, and it sends data to the drone over 5 GHz Wi-Fi.
-- **Each drone carries about 14 kg of mission payload:** 6.0 kg on the airframe, a 3.1 kg winch and a 4.9 kg pod. The payload electronics draw about 82 W in normal use, up to about 139 W. That's roughly 1% of hover power, so mass is what costs flight time, not electricity.
+- **Every sensor is a part you can buy today.** The drones use an Ouster OS1-128 LiDAR, MEMS mic arrays, a 130 dB-class loudspeaker, a Jetson AGX Orin, a Doodle Labs mesh radio and a 2.4 GHz OpenWrt hotspot. The only custom parts are the belly-mounted radar module and the mounts.
+- **The radar is mounted on the drone's underside, facing down.** The drone uses its LiDAR map to find a flat spot on the rubble and lands there, so the radar's antennas rest on the rubble surface and scan down through it. The 5 kg belly-mounted radar module has a USRP B210 software radio that sweeps 0.4–2 GHz, wideband antennas, 4 mics, a Raspberry Pi 5 and a 99 Wh battery, and it is cabled to the drone's Orin.
+- **Each drone carries about 14 kg of mission payload:** 6.0 kg on the airframe, a 4.9 kg belly-mounted radar module and a 3.1 kg unallocated reserve. The payload electronics draw about 82 W in normal use, up to about 139 W. That's roughly 1% of hover power, so mass is what costs flight time, not electricity.
 - **Price:** about $61k per drone on a DJI FlyCart 30 airframe, or about $87k on a US-built Harris Aerial H6HL. The command van adds about $51k: mesh mast, satellite/5G link, ops laptop, generators, spare batteries and a tent. All prices are estimates.
 - **The DJI airframe is a reference, not the build.** It matches the sim's geometry, but it has no MAVLink and no open payload port, and new DJI models are on the US FCC Covered List. The recommended build is an ArduPilot hexacopter with the same 95 kg MTOW (Harris H6HL).
 
@@ -20,7 +20,7 @@ reseller prices in USD as of Nov 2026 and are always approximate.
 
 | Subsystem | Selected part | Mass | Power typ / peak | Approx. price | Status |
 |---|---|---|---|---|---|
-| Airframe (sim reference) | DJI FlyCart 30 + 2 × DB2000 | 65.1 kg | (flight ~9.7 kW est.) | ~$22k + winch | COTS, closed |
+| Airframe (sim reference) | DJI FlyCart 30 + 2 × DB2000 | 65.1 kg | (flight ~9.7 kW est.) | ~$22k | COTS, closed |
 | Airframe (recommended) | Harris Aerial Carrier H6HL | 55 kg | (flight) | quote; $50k est. | COTS, ArduPilot |
 | LiDAR | Ouster OS1-128 Rev7 + 45° bracket | 0.45 + 0.25 kg | 18 / 22 W | ~$18k est. (quote) | COTS |
 | Mic array (drone) | 8 × Infineon IM69D130 on a 1.0 m ring + PDM→USB | 1.0 kg est. | 1 W | ~$600 est. | custom from COTS |
@@ -30,10 +30,10 @@ reseller prices in USD as of Nov 2026 and are always approximate.
 | Mesh radio | Doodle Labs Mesh Rider, 5.8 GHz SKU + antennas | 0.20 kg | 5 / 8 W | ~$3k est. | COTS + integration |
 | Rescue hotspot | GL.iNet GL-MT300N-V2 (OpenWrt) + omni | 0.10 kg | 2 / 2.75 W | ~$60 | COTS |
 | GNSS / time | Holybro H-RTK F9P Ultralight (u-blox ZED-F9P) | 0.02 kg | 0.5 W | ~$300 est. | COTS |
-| Pod link | Intel AX210 (5 GHz AP) in the Orin carrier | 0.04 kg | 2 / 3 W | ~$40 | COTS |
-| Winch | DJI FlyCart 30 winch kit (H6HL: third-party) | 3.1 kg (verify) | 0 / ~80 W est. | ~$3.5–5k | COTS |
+| Radar module link | wired link from the belly radar module to the Orin carrier (budget line kept) | 0.04 kg | 2 / 3 W | ~$40 | COTS |
+| Reserve | unallocated mass, power and cost reserve (keeps the 14.0 kg budget and endurance estimate) | 3.1 kg | 0 / ~80 W est. | ~$3.5–5k | — |
 | Power + structure | DC-DC, harness, payload plate, booms | 1.8 kg est. | 8 / 12 W losses | ~$1k est. | custom |
-| **Pod** | B210 SFCW radar, antennas, 4 mics, Pi 5, IMU, 99 Wh | **4.9 kg** | 16 / ~23 W (own battery) | **~$5.6k est.** | **custom** |
+| **Belly-mounted radar module** | B210 SFCW radar, downward-facing antennas, 4 mics, Pi 5, IMU, 99 Wh | **4.9 kg** | 16 / ~23 W (own battery) | **~$5.6k est.** | **custom** |
 | **Per drone, mission payload** | | **14.0 kg** | **82 / 139 W** | **~$35k** (no thermal) | |
 
 ## 2. Airframe
@@ -46,13 +46,12 @@ reseller prices in USD as of Nov 2026 and are always approximate.
 | Hover endurance | 29 min empty, 18 min at 30 kg | not listed | 48 min empty, about 30 min at 20 kg, about 15 min at 40 kg (chart, with a 2-min reserve) | 50 min empty, 22 min at 10 kg |
 | Battery | 2 × DB2000, 1984.4 Wh, about 11.3 kg each | DB1560, about 1.57 kWh | 8 × 6S 30 Ah at 12S, about 5.3 kWh | 12S packs |
 | IP / wind | IP55 / 12 m/s | IP55 on the relay only | IP43 | n/a |
-| Winch | **yes**: optional kit, 20 m, 0.8 m/s, 5–30 kg, weighs the load, hot-cuts when snagged | no | not listed (ArduPilot drives winches) | no |
 | Autopilot / API | DJI, no MAVLink; Payload SDK on E-Port Lite + payload power port | DJI | **Cube Orange, ArduPilot, MAVLink native** | PX4 on Blue Cube |
 | Payload bus | power port, voltage unpublished (verify) | n/a | **5 / 12 / 24 / 48 V regulated, UART / Ethernet / CAN / USB** | 3 × 10 A at 50 V |
-| Price | about $16.6k base, about $20–26k usable, winch $3.5–5k (resellers) | n/a | quote only | $32,225 (Freefly store) |
-| Sources | [specs](https://www.dji.com/flycart-30/specs), [winch sheet](https://share.finqu.com/779fa710515b4ff69b103f43cf5226b745860d438b6e793de3a2a54c9754d051/dji_flycart_30_winch_system_product_information.pdf), [price](https://dronesgator.com/drone/dji-flycart-30) | [specs](https://ag.dji.com/t50/specs) | [brochure](https://frontierprecision.com/wp-content/uploads/2026/07/Frontier-Precision-Harris-Aerial-H6HL-Quad-Brochure.pdf) | [product](https://freeflysystems.com/alta-x), [store](https://store.freeflysystems.com/collections/alta-x/products/alta-x-blue) |
+| Price | about $16.6k base, about $20–26k usable (resellers) | n/a | quote only | $32,225 (Freefly store) |
+| Sources | [specs](https://www.dji.com/flycart-30/specs), [price](https://dronesgator.com/drone/dji-flycart-30) | [specs](https://ag.dji.com/t50/specs) | [brochure](https://frontierprecision.com/wp-content/uploads/2026/07/Frontier-Precision-Harris-Aerial-H6HL-Quad-Brochure.pdf) | [product](https://freeflysystems.com/alta-x), [store](https://store.freeflysystems.com/collections/alta-x/products/alta-x-blue) |
 
-**Choice.** The **FlyCart 30 stays the sim reference** (`heavy_sar`): it has the right size and a real 20 m winch,
+**Choice.** The **FlyCart 30 stays the sim reference** (`heavy_sar`): it has the right size,
 and the sim geometry comes from it. The **build we'd buy is the Harris H6HL** class:
 
 1. It is **MAVLink native**. The van's coordinator can command it directly (COMMS_ARCHITECTURE.md §4). The FlyCart
@@ -69,9 +68,9 @@ and the sim geometry comes from it. The **build we'd buy is the Harris H6HL** cl
    case study is set, also restricts Chinese-made drones for government use (verify the current rule). The H6HL
    brochure carries the Blue UAS and NDAA marks.
 
-What the H6HL costs us: IP43 instead of IP55, so it is a poorer match for rain and dust at a collapse site, and a
-third-party winch has to be integrated (ArduPilot `MAV_CMD_DO_WINCH`; verify the vendor). The Agras T50 is rejected
-because it is a spray drone with no winch and no payload API. The Alta X is rejected for the pod build because 15.9 kg
+What the H6HL costs us: IP43 instead of IP55, so it is a poorer match for rain and dust at a collapse site, and the
+belly radar mount and skid clearance for rubble landings have to be integrated (verify). The Agras T50 is rejected
+because it is a spray drone with no payload API. The Alta X is rejected for the radar build because 15.9 kg
 leaves no margin, but it suits a light mapping-only scout.
 
 ## 3. LiDAR
@@ -99,7 +98,7 @@ caveat applies (verify).
 |---|---|---|---|
 | GSSI **LifeLocator** (III+, TRx) | **~270 MHz** (low-band UWB) | hand-placed rubble life detector used at Sichuan 2008 and Haiti 2010; TRx detects breathing at 7 m in a vendor sample | right physics, but **TRx is listed "no longer available"**; no drone interface ([GSSI](https://geophysical.com/products/lifelocator-trx), [Frontiers 2023](https://www.frontiersin.org/journals/earth-science/articles/10.3389/feart.2023.1158764/full)) |
 | **SJ-3000** class (China) | 400 / 500 MHz | UWB bio-radar detectors used at Wenchuan and Yushu | same idea; no export datasheet found |
-| **DN-III+** | 400 MHz | UWB life detector, 430 × 430 × 180 mm, 6.5 kg, 10 h battery (vendor claims) | **closest COTS analogue to our pod**; unverified claims, no API ([vendor](https://hdx.ihongde.com/products/dn-iii-one-dimensional-radar-life-detector)) |
+| **DN-III+** | 400 MHz | UWB life detector, 430 × 430 × 180 mm, 6.5 kg, 10 h battery (vendor claims) | **closest COTS analogue to our belly radar module**; unverified claims, no API ([vendor](https://hdx.ihongde.com/products/dn-iii-one-dimensional-radar-life-detector)) |
 | Geotech **RD-400** | n/a | portable breathing/movement detector, 49 × 20 × 40 cm | hand-held only ([vendor](https://gpr.geotechru.com/product/radar-detector-rd-400/)) |
 | MIT LL **MURMUR** | n/a | robot-mounted radar that detects breathing under rubble (R&D 100, 2021) | research system, not for sale ([MIT LL](https://www.ll.mit.edu/partner-us/available-technologies/motion-under-rubble-measured-using-radar-murmur)) |
 | Novelda **X4** SoC | centre **7.29 or 8.748 GHz** | single-chip IR-UWB, used for respiration sensing | **rejected**: 7–9 GHz is attenuated many times more per metre in concrete than sub-1 GHz, so it suits through-wall or bedside use, not 1–3 m of rubble ([X4M06 sheet](https://intopion.com/sdesigner/product/creaca_RES/X4M06/datasheet.pdf)) |
@@ -121,7 +120,7 @@ caveat applies (verify).
   emission mask (US [47 CFR 15.509](https://www.ecfr.gov/current/title-47/chapter-I/subchapter-A/part-15/subpart-F/section-15.509),
   which also limits imaging below 960 MHz to law enforcement, fire and rescue). The SDR's few dBm is already enough.
   Taiwan NCC rules: **verify**.
-- **DSP:** the Pi 5 in the pod runs range FFTs and buffers slow-time. The drone's Orin runs the vitals chain already
+- **DSP:** the Pi 5 in the radar module runs range FFTs and buffers slow-time. The drone's Orin runs the vitals chain already
   modelled in `sim/radar_dsp.py` and `sim/vitals.py`.
 - **Off-the-shelf vs custom:** the radio, LNAs, Pi and battery are COTS. The **antenna cavity, sweep firmware,
   calibration and the ground-coupled housing are custom**, and that is where the engineering risk sits. No product
@@ -132,13 +131,13 @@ caveat applies (verify).
 | Use | Part | Key spec | Price | Source |
 |---|---|---|---|---|
 | Drone ring (8 ch, 1.0 m) | **Infineon IM69D130** MEMS, PDM | 69 dB(A) SNR, 130 dB SPL AOP, −36 dBFS | low, at chip level | [Infineon](https://www.infineon.com/cms/en/product/sensor/mems-microphones/mems-microphones-for-consumer/im69d130/) |
-| Pod (4 ch at 0.42 m) | **TDK ICS-43434** I2S MEMS | 65 dBA SNR, 120 dB AOP, 24-bit I2S, about $2.4 | [DigiKey](https://www.digikey.com.au/en/products/detail/tdk-invensense/ICS-43434/6140312) |
+| Radar module (4 ch at 0.42 m) | **TDK ICS-43434** I2S MEMS | 65 dBA SNR, 120 dB AOP, 24-bit I2S, about $2.4 | [DigiKey](https://www.digikey.com.au/en/products/detail/tdk-invensense/ICS-43434/6140312) |
 | Bench / prototype | **miniDSP UMA-16 v2** | 16 × Knowles SPH1668LM4H in a rectangular grid (about 42 mm pitch, verify), USB, about €370 | [miniDSP](https://www.minidsp.com/products/usb-audio-interface/uma-16-microphone-array), [review](https://audioreview.frieve.com/products/en/minidsp-uma-16/) |
-| COTS pod fallback | **Seeed ReSpeaker XVF3800** | 4 mics, USB, on-chip DoA / beamforming / AEC, **16 kHz max**, about $50 | [Hackster](https://www.hackster.io/news/seeed-studio-taps-xmos-xvf3800-for-a-new-ai-powered-respeaker-microphone-array-512d822b3962) |
+| COTS radar-module fallback | **Seeed ReSpeaker XVF3800** | 4 mics, USB, on-chip DoA / beamforming / AEC, **16 kHz max**, about $50 | [Hackster](https://www.hackster.io/news/seeed-studio-taps-xmos-xvf3800-for-a-new-ai-powered-respeaker-microphone-array-512d822b3962) |
 
 The UMA-16's 0.13 m aperture gives about 150° beams at 1 kHz, so it's a bench tool only. The 1.0 m ring gives
 about 20° (docs/PLATFORM.md). The IM69D130's 130 dB AOP leaves headroom while the rotors spin down, but we still
-**listen only with rotors off**. Optional: a **geophone** in the pod base (SM-24 class, verify) to pick up tapping
+**listen only with rotors off**. Optional: a **geophone** in the radar module base (SM-24 class, verify) to pick up tapping
 through the debris, the way hand-held seismic life detectors work.
 
 ## 6. Loudspeaker
@@ -162,13 +161,13 @@ work. Audio is played from cached files (vetted templates, `sim/guidance.py`), s
 |---|---|---|---|---|
 | **Jetson AGX Orin 64GB** (selected) | 275 TOPS, 15–60 W, 64 GB | module plus carrier about 1.2 kg est. | module $3.3–3.6k at resellers | [NVIDIA](https://www.nvidia.com/en-us/autonomous-machines/embedded-systems/jetson-orin/) |
 | Jetson Orin NX 16GB (fallback) | 157 TOPS (Super), 10–25 W, 16 GB | module about 26–29 g | about $890 | [Waveshare](https://www.waveshare.com/jetson-orin-nx.htm?sku=24456) |
-| Raspberry Pi 5 (pod) | CPU only, 5–12 W | about 50 g | about $100 | [raspberrypi.com](https://www.raspberrypi.com/products/raspberry-pi-5/) |
+| Raspberry Pi 5 (radar module) | CPU only, 5–12 W | about 50 g | about $100 | [raspberrypi.com](https://www.raspberrypi.com/products/raspberry-pi-5/) |
 
 - **Drone (Orin):** KISS-ICP SLAM at 10 Hz on the OS1 and map-delta encoding; landing-patch screening; stage-1
-  acoustics (denoise, VAD, YAMNet novelty, 8-ch delay-and-sum bearings); radar vitals DSP on the pod's range
-  profiles; winch and pod sequencing with the IMU seating check; speaker playback; the hotspot's portal page;
+  acoustics (denoise, VAD, YAMNet novelty, 8-ch delay-and-sum bearings); radar vitals DSP on the radar module's range
+  profiles; landing-spot sequencing with the IMU seating check; speaker playback; the hotspot's portal page;
   store-and-forward on a 2 TB NVMe; and a local fallback mission when the mesh is down.
-- **Pod (Pi 5):** SFCW sweep control, range FFT, IMU, 4-mic capture, Wi-Fi link to the drone.
+- **Radar module (Pi 5):** SFCW sweep control, range FFT, IMU, 4-mic capture, wired link to the drone.
 - **Van:** coordinator, belief fusion, dashboard, tasking and broadcast APIs, portal backend, rules decider.
 - **Cloud:** Gemini audio analysis and the Gemini decider.
 
@@ -198,8 +197,8 @@ better diffraction around rubble. Silvus is the stronger pick if MN-MIMO robustn
 Motorola-owned and in the Blue UAS framework. Microhard is a cheap point-to-point link, not a mesh.
 
 **Frequency plan** (also in the BOM JSON): radar 0.4–2.0 GHz with GNSS and cellular notches · RC link 2.4 GHz (or
-902–928 MHz on the H6HL, which overlaps the sweep, so skip those steps) · hotspot 2.4 GHz channel 1 · pod link
-5.2 GHz UNII-1 (channels 36–48) · mesh 5.8 GHz · GNSS receive only.
+902–928 MHz on the H6HL, which overlaps the sweep, so skip those steps) · hotspot 2.4 GHz channel 1 ·
+mesh 5.8 GHz · GNSS receive only.
 
 ## 9. Rescue hotspot access point
 
@@ -218,18 +217,19 @@ Mango 2 (100 g, under 5 W) is the upgrade if a 5 GHz hotspot is wanted.
   module) for PPS time-stamping of the LiDAR (PTP), audio and radar
   ([u-blox](https://www.u-blox.com/en/product/zed-f9p-module), [Holybro](https://shop.holybro.com/products/h-rtk-f9p-ultralight)).
   An RTK base sits on the van mast; corrections go over the mesh.
-- **IMU:** the autopilot has a triple-redundant IMU, and the OS1 has its own IMU for de-skewing. The pod has a TDK
-  ICM-42688-P for the seating and rocking check (the sim allows one IMU-checked re-seat).
+- **IMU:** the autopilot has a triple-redundant IMU, and the OS1 has its own IMU for de-skewing. The radar module has a TDK
+  ICM-42688-P to check the landed drone sits level on the rubble (the sim allows one IMU-checked lift-off and re-landing).
 - **Thermal (optional):** **Teledyne FLIR Hadron 640R+**: 640 × 512 radiometric LWIR plus a 64 MP visible camera,
   about 56 g, IP54, USB/MIPI at 60 Hz, about $8k (AUD 8.8k listing for the 640R) ([GeoWeek](https://www.geoweeknews.com/news/teledyne-flir-camera-uav-drone-hadron-640-thermal),
   [DroneDJ](https://dronedj.com/2025/03/12/teledyne-flir-thermal-camera-drone/)). The sim's DJI H30T needs a DJI gimbal
   port. Thermal can't see through rubble. It finds surface casualties and tracks rescuers at night, and it's the
   first thing to cut if mass is short.
 
-## 11. The pod
+## 11. The belly-mounted radar module
 
-**Concept:** a 0.50 × 0.50 × 0.25 m box lowered on the winch and set on the rubble surface over the acoustic lead
-(PodSpec in `sim/platform.py`: 5 kg, 20 m line, 8 s to lower, 8 s to raise, stays seated up to 30°).
+**Concept:** a 0.50 × 0.50 × 0.25 m module mounted on the drone's underside, antenna face down. The drone lands on a
+flat spot on the rubble over the acoustic lead (picked from its LiDAR map), so the face rests on the rubble surface
+(`PodSpec` in `sim/platform.py`: 5 kg, 8 s to set down, 8 s to lift off, stays seated on slopes up to 30°).
 
 | Item | Mass | Power | Price |
 |---|---|---|---|
@@ -241,22 +241,14 @@ Mango 2 (100 g, under 5 W) is the upgrade if a 5 GHz hotspot is wanted.
 | ICM-42688-P IMU | 0.005 kg | ~0 | ~$20 |
 | Geophone (optional) | 0.075 kg | 0 | ~$60 |
 | 6S Li-ion 99 Wh pack | 0.65 kg est. | — | ~$200 |
-| IP65 housing, RF-transparent base, rubber skid, lift eye + 4-leg bridle, strobe | 1.70 kg est. | 0.5 W | ~$600 est. |
+| IP65 housing, RF-transparent base, rubber skid, mounting frame, strobe | 1.70 kg est. | 0.5 W | ~$600 est. |
 | DC-DC, harness | 0.20 kg est. | ~2 W losses | ~$150 |
 | **Total** | **4.91 kg** | **~16 W typ, ~23 W peak** | **~$5.6k** |
 
-**Battery and Wi-Fi rather than a power-and-data tether.** The FlyCart 30 winch is a cargo winch. As far as we found,
-it carries no conductors, it auto-releases cargo on touchdown, and it can hot-cut the cable when snagged (verify
-whether auto-release can be disabled for a pod that must come back up). A 99 Wh pack runs the pod for about 5 h at
-16 W, which is many placements, and the pack stays under the 100 Wh airline limit for shipping. The pod sends range
-profiles, about 0.4 Mbps, to the drone over 5 GHz Wi-Fi with WPA3. At most 20 m of cable separates them. A
-**custom tether** (48 V + Ethernet through a slip-ring winch) would remove the battery and radio, but it adds about
-1–2 kg of conductor cable to the drone and needs a non-DJI winch. It's a v2 upgrade. A **leave-behind mode**, in
-which the pod is released and joins the mesh with its own Doodle radio (+34 g, +5 W), would let one drone seed
-several pods. That needs the auto-release this design otherwise disables.
-
-The 4.9 kg pod sits at the FlyCart 30 winch's **5 kg minimum load** (verify how strict that is). Ballast keeps it
-there.
+**Own battery, cabled data.** A 99 Wh pack runs the radar module for about 5 h at 16 W, which is many landings,
+and the pack stays under the 100 Wh airline limit for shipping. The module sends range profiles, about 0.4 Mbps, to
+the drone's Orin over a short cable. Powering it from the airframe's 48 V payload bus instead would remove the
+battery; that's a v2 option.
 
 ## 12. Batteries and charging
 
@@ -269,7 +261,7 @@ there.
   battery swaps (`mission.battery_swaps`).
 - **H6HL:** 8 × 6S 30 Ah LiPo, quick-release, about 250 cycles. Charge with generic 12S chargers of a similar
   multi-kW class (verify).
-- **Pod:** 6S Li-ion 99 Wh, swapped on each battery-swap visit.
+- **Belly radar module:** 6S Li-ion 99 Wh, swapped on each battery-swap visit.
 - **Payload electronics** run from the flight pack: about 82 W against about 9.7 kW hover (est.), which costs about
   0.2 min of endurance.
 
@@ -288,16 +280,16 @@ there.
 
 ## 14. Mass and power budget against `sim/platform.py`
 
-Since commit 6dc3a18, `heavy_sar` in `sim/platform.py` uses this build's numbers: radar in the pod, 14 kg payload,
+Since commit 6dc3a18, `heavy_sar` in `sim/platform.py` uses this build's numbers: belly-mounted radar module, 14 kg payload,
 23.9 min.
 
 | | sim `heavy_sar` (after 6dc3a18) | Build on FlyCart 30 | Build on H6HL |
 |---|---|---|---|
 | Empty incl. batteries | 65.0 kg | 65.1 kg | 55.0 kg |
-| SAR payload | **14.0 kg** in pod mode: 6 kg airframe sensors, compute and mounts + 3.1 kg winch + 4.9 kg pod; no radar on the drone body | **14.0 kg** (airframe-side 6.0 + winch 3.1 + pod 4.9) | 13.4 kg (2.5 kg winch, est.) |
-| Radar | in the pod: **0.48 × 0.48 m** face on the rubble, **+7.6 dB** receive gain at 0.6 GHz (13.7 dBi at 1.2 GHz) | same | same |
+| SAR payload | **14.0 kg** in `pod` mode (radar resting on the rubble surface): 6 kg airframe sensors, compute and mounts + 4.9 kg belly radar module + 3.1 kg unallocated reserve | **14.0 kg** (airframe-side 6.0 + radar module 4.9 + reserve 3.1) | 13.4 kg (2.5 kg reserve, est.) |
+| Radar | on the drone's underside: **0.48 × 0.48 m** face resting on the rubble once landed, **+7.6 dB** receive gain at 0.6 GHz (13.7 dBi at 1.2 GHz) | same | same |
 | Takeoff mass | 79.0 kg (775 N once landed) | 79.1 kg | 68.4 kg |
-| Endurance to 0% (est.) | **23.9 min** (17.9 min usable with the 25% reserve) | **23.9 min** (25.0 if DJI's winch-mode payload excludes the winch) | ~37 min (chart, includes a 2-min reserve) |
+| Endurance to 0% (est.) | **23.9 min** (17.9 min usable with the 25% reserve) | **23.9 min** (25.0 without the 3.1 kg reserve) | ~37 min (chart, includes a 2-min reserve) |
 | Payload power | `idle_power_w` 250 W (rotors off, everything on) | 82 W typ / 139 W peak + autopilot idle (verify) | same |
 | Span (prop tips) | 3.085 m | 3.085 m | 3.213 m |
 
@@ -307,9 +299,7 @@ Since commit 6dc3a18, `heavy_sar` in `sim/platform.py` uses this build's numbers
    has. The V1's 129 dB stays a fair acoustic proxy. The MP130's SPL needs checking.
 2. **Idle power.** `idle_power_w = 250` is about 2× our payload estimate (its comment still budgets about 40 W for a
    drone-body radar). It's conservative and harmless: 10 min perched is about 1% of the pack.
-3. **Winch minimum load.** The FlyCart 30 winch is rated 5–30 kg, and the 4.9 kg pod sits at that limit, so
-   ballast keeps it there.
-4. **H6HL geometry.** The clearance radius would be 2.01 m instead of 1.94 m, and the hexacopter's six 40-in disks
+3. **H6HL geometry.** The clearance radius would be 2.01 m instead of 1.94 m, and the hexacopter's six 40-in disks
    (about 4.9 m²) give about 7.7 m/s downwash at 68 kg, against 7.3 m/s for heavy_sar at 79 kg.
 
 Before 6dc3a18, the sim carried a 0.60 × 0.50 m, 4 kg radar panel on the drone (+8.8 dB), a 12 kg payload and
@@ -332,13 +322,14 @@ nose, +y left, +z up, origin at the skid bottom under the hub. The fuselage unde
 | **MeshAntennaL / R** (vertical, under the rear arms) | −0.39, ±0.39, 0.95 | r 0.01, h 0.20 | new, blue |
 | **GnssMast** (puck on a 0.2 m mast) | 0.15, 0, 1.25 | r 0.04 | new |
 | **WifiApAntenna** (pointing down) | −0.30, 0.20, 0.48 | r 0.012, h 0.18 | new, comms blue #3b82f6 |
-| **PodLinkAntenna** (pointing down) | 0.25, 0, 0.55 | r 0.01, h 0.08 | new, blue |
-| **Winch** (under the belly) | 0, 0, 0.52 | 0.30 × 0.20 × 0.15 | new: **replaces RadarPanel** |
-| **Pod, stowed** between the skids | 0, 0, 0.30 | 0.50 × 0.50 × 0.25 | new; deployed it hangs at `winch_len_m` |
-| Pod frame: RadarFace / Mic0–3 / LiftEye / Strobe / Antenna | 0, 0, 0.01 / (±0.21, ±0.21, 0.255) / 0, 0, 0.27 / 0.18, 0, 0.26 / −0.18, 0, 0.29 | 0.48² × 0.02 / r 0.02 / … | new |
+| **PodLinkAntenna** (pointing down) | 0.25, 0, 0.55 | r 0.01, h 0.08 | new, blue; not needed (the radar module is cabled) |
+| **Winch** prim (under the belly) | 0, 0, 0.52 | 0.30 × 0.20 × 0.15 | radar module mount housing; **replaces RadarPanel** |
+| **Pod** prim = belly radar module, between the skids, face down | 0, 0, 0.30 | 0.50 × 0.50 × 0.25 | new |
+| Radar module frame (`Pod*` prims): RadarFace / Mic0–3 / LiftEye / Strobe / Antenna | 0, 0, 0.01 / (±0.21, ±0.21, 0.255) / 0, 0, 0.27 / 0.18, 0, 0.26 / −0.18, 0, 0.29 | 0.48² × 0.02 / r 0.02 / … | new |
 
 ## Open items (for the orchestrator)
 
 - `sim/platform.py`: the `estimates` tuple still lists "radar panel 0.6 x 0.5 m, 4 kg", and the `idle_power_w`
   note still counts "radar ~40 W" on the drone. These are stale text only; the values are current.
-- Contract: the pod commands (`lower_pod`, `raise_pod`) and link-status fields are proposed in COMMS_ARCHITECTURE.md §4.
+- Contract: the radar-scan commands (identifiers `lower_pod`, `raise_pod`, meaning land-and-scan and lift-off) and link-status fields are proposed in COMMS_ARCHITECTURE.md §4.
+- Isaac visuals: `isaac/drone_viz.py`, `isaac/drone_mesh.py` and `isaac/pods.py` still draw a winch drum and a pod on a cable from an earlier draft. The design is a belly-mounted radar on a landed drone (§11); the render needs updating to match.

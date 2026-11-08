@@ -83,6 +83,8 @@ def _base_parser():
     ap.add_argument("--speed", type=float, default=4.0, help="sim-seconds per wall-second")
     ap.add_argument("--show-truth", action="store_true",
                     help="draw the scenario's hidden (invented) people as grey dummies, half sunk (display only)")
+    ap.add_argument("--overlay-style", choices=["full", "simple"], default="full",
+                    help="simple: only what matters now (current/new zone, latest dispatch, firm pings) for the judges")
     ap.add_argument("--viz-scale", type=float, default=1.0, help="multiply overlay line and sensor-effect widths "
                     "(zones, dispatch arcs, rings, LiDAR beams, sound domes) for wide shots; the take uses ~4")
     ap.add_argument("--smooth", type=int, default=1, help="C1-smooth drone motion through the 1 s mission states "
@@ -427,6 +429,12 @@ def main(argv=None):
     from isaac.pods import NullPods, PodViz
     pods = NullPods() if a.dry_run else PodViz(stage, ids)
     from isaac.sensor_fx import NullFX, SensorFX     # LiDAR beams, radar pulses, sound domes, hotspot, dummies
+    if a.overlay_style == "simple":                  # Rohan 2026-11-08: one idea at a time, nothing secondary
+        from isaac import overlay as _ov, sensor_fx as _sfx
+        _ov.SIMPLE = True
+        _sfx.SIMPLE = True
+        say("[overlay] simple style: active/new zone outlines, latest dispatch arc, firm pings; sensor effects "
+            "for human sounds only")
     if float(a.viz_scale) != 1.0:                    # wide single-take shots: thicker lines and effects
         from isaac import overlay as _ov, sensor_fx as _sfx
         _ov.LINE_W *= float(a.viz_scale)

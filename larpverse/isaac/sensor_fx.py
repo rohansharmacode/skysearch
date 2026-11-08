@@ -38,6 +38,7 @@ RADAR_W = 0.07                  # m: radar pulse ring width at the start of a wa
 SOUND_R = 8.0                   # m: dome radius at the end of a wave (take2: 14 m domes swamped the frame)
 SOUND_PERIOD = 2.2              # s (wall clock): one wave
 SOUND_WAVES = 2
+SIMPLE = False                  # --overlay-style simple: no grey non-human domes, fewer LiDAR beams
 BEAM_MAX = 28.0                 # m: LiDAR beams drawn at most this long (take2: far returns streaked to the frame edge)
 RADAR_R = 3.5                   # m: pulse ring radius at the end (the literature reach ~3 m)
 RADAR_PERIOD = 1.3
@@ -216,7 +217,11 @@ def analyse(state, poses):
         if d.get("id") not in have and str(d.get("state")) == "scanning":
             x, y, z = (poses.get(d["id"]) or d["pose"])[:3]
             radar.append((float(x), float(y), float(z) - 0.3))
-    return {"listening": listening, "radar": radar, "belief": state.get("belief")}
+    bel = state.get("belief")
+    if SIMPLE and not any(c.get("status") in ("insufficient_evidence", "candidate")
+                          for c in state.get("radar_candidates") or []):
+        bel = None                  # simple style: no belief heat until the radar actually has a lead
+    return {"listening": listening, "radar": radar, "belief": bel}
 
 
 class SensorFX(NullFX):
@@ -282,8 +287,9 @@ class SensorFX(NullFX):
         P0, P1 = [], []
         for did, (o, pts) in self._beams.items():
             pts = np.asarray(pts, float)[:, :3]
-            if len(pts) > BEAMS_PER_DRONE:
-                pts = pts[np.linspace(0, len(pts) - 1, BEAMS_PER_DRONE).astype(int)]
+            nb = BEAMS_PER_DRONE // 2 if SIMPLE else BEAMS_PER_DRONE
+            if len(pts) > nb:
+                pts = pts[np.linspace(0, len(pts) - 1, nb).astype(int)]
             o = np.asarray(o, float)
             d = pts - o[None]
             L = np.linalg.norm(d, axis=1, keepdims=True)
@@ -297,6 +303,8 @@ class SensorFX(NullFX):
         segs = {True: ([], []), False: ([], [])}
         if st["listening"] and self.sounds:
             for k, (x, y, z, human, db) in enumerate(self.sounds):
+                if SIMPLE and not human:
+                    continue
                 rmax = SOUND_R * (0.6 + 0.4 * float(np.clip(1 + db / 12.0, 0, 1)))
                 for w in range(SOUND_WAVES):
                     f = ((now / SOUND_PERIOD) + w / SOUND_WAVES + 0.37 * k) % 1.0
@@ -341,6 +349,9 @@ class SensorFX(NullFX):
         lvl = p / u
         x0, y0 = map(float, bel["origin"][:2])
         for k, h in enumerate(self.heat):
+            if SIMPLE and k < len(self.heat) - 1:
+                h.set([], [], [])       # simple style: only the strongest bins (the "dig here" patch)
+                continue
             lo = BELIEF_MIN * (3 ** k)
             hi = BELIEF_MIN * (3 ** (k + 1)) if k < len(self.heat) - 1 else np.inf
             jj, ii = np.nonzero((lvl >= lo) & (lvl < hi))

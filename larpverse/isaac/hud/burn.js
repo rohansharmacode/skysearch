@@ -1,12 +1,12 @@
 // Burn the judge HUD into a recorded take (backup for the live capture, or a preview of the OBS scene).
-//   NODE_PATH=$(npm root -g) node isaac/hud/burn.js STATES_DIR TIMELINE.csv VIDEO.mp4 OUT.mp4 [speed=4]
+//   NODE_PATH=$(npm root -g) node isaac/hud/burn.js STATES_DIR TIMELINE.csv VIDEO.mp4 OUT.mp4 [speed=4] [take.html|judge.html]
 // STATES_DIR: run_mission --frames states (state_XXXX.json, heavy keys may be stripped). The HUD is fed every
 // state in order (so its live-change memory works), one transparent 1920x1080 PNG per mission step; ffmpeg
 // then shows each PNG for exactly the recorded frames whose timeline t equals that step's t.
 const { chromium } = require('playwright');
 const fs = require('fs'), path = require('path'), { execFileSync } = require('child_process');
-const [STATES, TL, VIDEO, OUT, SPEED = '4'] = process.argv.slice(2);
-const HUD = path.join(__dirname, 'judge.html');
+const [STATES, TL, VIDEO, OUT, SPEED = '4', PAGE = 'take.html'] = process.argv.slice(2);
+const HUD = path.join(__dirname, PAGE);
 (async () => {
   const tmp = fs.mkdtempSync(path.join(path.dirname(OUT), 'hudburn-'));
   const files = fs.readdirSync(STATES).filter(f => /^state_\d+\.json$/.test(f)).sort();
@@ -14,6 +14,8 @@ const HUD = path.join(__dirname, 'judge.html');
   const p = await b.newPage({ viewport: { width: 1920, height: 1080 }, deviceScaleFactor: 1 });
   await p.route('**/state.json*', r => r.fulfill({ status: 404, body: '' }));
   await p.goto('file://' + HUD + '?speed=' + SPEED);
+  // one screenshot per mission step: CSS fades would catch cards mid-animation (blank for a whole step)
+  await p.addStyleTag({ content: '*, *::before, *::after { animation: none !important; transition: none !important; }' });
   const steps = [];
   for (const f of files) {
     const s = JSON.parse(fs.readFileSync(path.join(STATES, f)));

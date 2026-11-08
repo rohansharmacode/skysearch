@@ -795,7 +795,8 @@ cache = {}
 # are the team's, unchanged.
 import os, re
 ORIG_RECOGNISE, ORIG_CF = AR.recognise, AR.clip_features
-ASR = {"mode": "en", "last": None, "by_clip": {}}
+ASR = {"mode": "en", "last": None, "by_clip": {}, "cid": None}
+ASR_DEBUG = os.environ.get("LARPVERSE_ASR_DEBUG")   # a .jsonl path: every decode's raw segments (tuning only)
 RESCUE_LANGS = [x.strip() for x in os.environ.get("LARPVERSE_ASR_LANGS", "zh,en,id,vi").split(",") if x.strip()]
 # tuned on the separated seed-7 clips (GPU, 2026-11-08 04:05, Whisper small, beam 5): with these settings only 'id'
 # survives on the hidden Indonesian voice, 'en' on B1's English, and nothing on A3's unclear voice (every language
@@ -814,6 +815,16 @@ def _decode(wm, xn, lang, vad, task="transcribe"):
     segs = wm.transcribe(xn, language=lang, task=task, beam_size=5, temperature=[0.0, 0.2, 0.4],
                          compression_ratio_threshold=2.4, log_prob_threshold=-1.0,
                          no_repeat_ngram_size=3, condition_on_previous_text=False, vad_filter=False)[0]
+    segs = list(segs)
+    if ASR_DEBUG:
+        try:
+            with open(ASR_DEBUG, "a") as f:
+                f.write(json.dumps({"clip": ASR["cid"], "lang": lang, "task": task, "vad": round(float(vad), 2),
+                                    "segs": [[sg.text.strip()[:80], round(sg.avg_logprob, 2), round(sg.no_speech_prob, 2),
+                                              round(sg.compression_ratio, 2), round(sg.start, 1), round(sg.end, 1)]
+                                             for sg in segs]}, ensure_ascii=False) + "\n")
+        except OSError:
+            pass
     keep = []
     for sg in segs:
         txt = sg.text.strip()
@@ -872,7 +883,7 @@ def recognise_multi(clip, whisper="base.en"):
         ASR["last"] = None
     return {"vad": vad, "cls": cls, "scores": scores, "heur": heur, "top": top, "text": text, "why": why}
 def clip_features_multi(cid, *a, **k):
-    ASR["last"] = None
+    ASR["last"], ASR["cid"] = None, cid
     f = ORIG_CF(cid, *a, **k)
     if ASR["last"] and f.get("transcript"):
         ASR["by_clip"][cid] = ASR["last"]       # analyse() keeps a fixed key list per clip: merged after the listen

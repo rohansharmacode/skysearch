@@ -22,6 +22,9 @@ Isaac swap points (see contracts/INTERFACES.md, "v1.1 grid extensions"):
   * speaker  : ``speaker=True`` (default): loudspeaker call-out after each passive listen, reassurance after
                a ping / response, route guidance to people on open ground (sim/callout.py, contract v1.3);
                pass ``callout_fn=`` (scenario, plan, seed) -> {"detections": [...]} to replace the generator
+  * comms    : ``comms=True`` (default): drone Wi-Fi hotspots + mesh backhaul to the van, captive-portal events,
+               consent-based phone localisation (sim/comms.py, contract v1.4); a located phone inside a pile is
+               new evidence (lead / re-open), never a confirmed person. CLI ``--no-comms``, ``--uplink``
 """
 from __future__ import annotations
 
@@ -134,7 +137,7 @@ class GridMission:
                  autonomous=True, mission_scans=None, dispatch_policy="acoustic", reserve=RESERVE, swap_s=SWAP_S,
                  listen_s=None, revisit_max=2, penetration=None, launch_pile=None, site="grid", platform=None,
                  delivery=None, speaker=True, callout_fn=None,
-                 tasking=None, recon_accept_s=RECON_ACCEPT_S):
+                 tasking=None, recon_accept_s=RECON_ACCEPT_S, comms=True, uplink="oneweb", comms_llm=False):
         """``autonomous`` (default): keep searching until the mission scan budget (``mission_scans``, default
         24), the time limit or the open leads run out; battery swaps at the pads; open leads without a firm
         ping are revisited once. ``pile_budget`` caps pile visits (None = no cap; legacy mode uses 3).
@@ -221,6 +224,14 @@ class GridMission:
                              "radar_candidate_ids": [], "why": "Not visited, nothing heard yet. Not cleared."}
                       for name, (x, y) in self.world.pile_xy.items()}
         self._tracks = {}              # drone id -> last <= 200 [x, y, z, t] samples (drones[].track)
+        # rescue hotspot + comms relay (contract v1.4): the phone truth lives in the RadioSim generator inside
+        # sim.comms (like the call-out generator); the mission only sees joined devices, RSSI fits and portal taps
+        self.comms, self._comms_seen = None, set()
+        if comms:
+            from .comms import Comms
+            self.comms = Comms(self.scenario, self.grid, self.base_xy, seed=seed, site="WEIGUAN",
+                               sectors={n: {"xy": p["xy"], "polygon": p["polygon"]} for n, p in self.piles.items()},
+                               internet=uplink is not None, gcs_uplink=uplink, use_llm=comms_llm)
         self.visited = []
         self.done_scans, self.done_cands, self.done_sites = [], [], []
         self.clips, self.acoustic_obs, self.dispatch = [], [], []
@@ -595,6 +606,8 @@ class GridMission:
     # ------------------------------------------------------------------ main loop
     def step(self):
         self._poll_tasking()
+        if self.comms is not None:
+            self._comms_step()
         if self.speaker is not None and self.out_dir:     # operator broadcasts approved on the dashboard (v1.3)
             n = self.speaker.ingest_operator(os.path.join(self.out_dir, "broadcast_queue.json"), self.t, self._drone_xy())
             if n:
@@ -958,6 +971,51 @@ class GridMission:
         self._apply_callout()
         if gate:
             self._gate(res)
+
+    # ------------------------------------------------------------------ rescue hotspot / comms (v1.4)
+    COMMS_PRIORITY = {"trapped": 85, "unknown": 50}     # a located connected phone is a lead, never a confirmation
+
+    def _comms_step(self):
+        evs = self.comms.step(self.t, self.flight.poses())
+        if self.out_dir and self.k % 5 == 0:             # live captive-portal submissions + operator replies
+            evs += self.comms.ingest_portal(os.path.join(self.out_dir, "portal.json"), self.t)
+            self.comms.ingest_replies(os.path.join(self.out_dir, "comms_replies.json"), self.t)
+        for ev in evs:
+            dev, typ = ev.get("device"), ev["type"]
+            if typ == "joined" and dev not in self._comms_seen:
+                self._comms_seen.add(dev)
+                self._say(f"Phone {dev} joined the rescue Wi-Fi via {ev['drone_id']} (consent: it opened the portal)")
+            elif typ == "status":
+                self._say(f"Phone {dev}{' (live portal)' if ev.get('live') else ''}: '{ev['status']}'"
+                          + (f", battery {ev['battery_pct']}%" if ev.get("battery_pct") is not None else ""))
+            elif typ == "message":
+                tr = f" -> \"{ev['translation']}\" [{ev['by']}]" if ev.get("translation") and ev["lang"] != "en" else ""
+                self._say(f"Phone {dev} message ({ev['lang']}): \"{ev['text']}\"{tr}")
+            elif typ == "located":
+                self._say(f"Phone {dev}: RSSI fit {ev['est_xy']} +-{ev['sigma_m']:.1f} m"
+                          + (f" in {ev['pile']}" if ev.get("pile") else "") + " (candidate region from multi-drone RSSI)")
+            elif typ == "evidence":
+                self._comms_evidence(ev)
+            elif typ in ("link_lost", "link_restored"):
+                self._say(f"{ev['drone_id']} mesh link {'lost: storing data on board' if typ == 'link_lost' else 'restored'}"
+                          f" ({ev['queued_kb']:.0f} kB queued)")
+
+    def _comms_evidence(self, ev):
+        """A connected phone located inside a pile (sigma <= 6 m): new evidence. Raises the pile to a lead (or
+        re-opens it for a revisit if it was already searched); never changes a ping, never 'confirmed'."""
+        p = self.piles.get(ev["pile"])
+        if p is None:
+            return
+        pr = self.COMMS_PRIORITY.get(ev["status"], 50)
+        why = (f"Connected phone {ev['device']} ({ev['status']}) located at {ev['est_xy']} +-{ev['sigma_m']:.1f} m "
+               "by multi-drone Wi-Fi RSSI: candidate region, not a confirmed person.")
+        searched = ev["pile"] in self.visited
+        self._say(f"New evidence for {ev['pile']}: {why}" + (" Pile already searched: re-opened for a revisit."
+                                                             if searched and p["status"] != "ping" else ""))
+        if p["status"] != "ping" and (p["priority"] or 0) < pr:
+            p.update(priority=pr, status="lead", why=f"{why} {p['why']}".strip())
+        p["comms_evidence"] = {"device": ev["device"], "status": ev["status"], "t": ev["t"],
+                               "est_xy": ev["est_xy"], "sigma_m": ev["sigma_m"]}
 
     # ------------------------------------------------------------------ loudspeaker (v1.3)
     def _begin_callout(self, name, firm, pm):
@@ -1374,6 +1432,8 @@ class GridMission:
                 d["state"] = "listening"
             if self.speaker is not None and d["id"] in playing:
                 d["speaker"] = playing[d["id"]]
+            if self.comms is not None:                   # v1.4: mesh link, store-and-forward backlog
+                d.update(self.comms.drone_link(d["id"]))
             out.append(d)
         return out
 
@@ -1450,6 +1510,8 @@ class GridMission:
             "dispatch": self.dispatch,
             "decisions": self.decisions,
             "slam": list(self.slam_metrics.values()) if self.slam else None,
+            # ---- v1.4 rescue hotspot + comms relay
+            "comms": self.comms.state() if self.comms is not None else None,
             # ---- v1.3 speaker (broadcasts, callouts, responsiveness per sector)
             **(self.speaker.state(self.t) if self.speaker is not None else
                {"broadcasts": [], "callouts": [], "responsiveness": {}}),
@@ -1536,6 +1598,10 @@ def main(argv=None):
                     help="autonomous: auto-accept recon zone proposals after this many seconds without operator tasking")
     ap.add_argument("--no-speaker", dest="speaker", action="store_false",
                     help="disable the loudspeaker call-out / reassurance / guidance (contract v1.3)")
+    ap.add_argument("--no-comms", dest="comms", action="store_false",
+                    help="disable the rescue hotspot / comms relay (contract v1.4)")
+    ap.add_argument("--uplink", default="oneweb", choices=["oneweb", "lte", "starlink", "none"],
+                    help="van internet backhaul (Tainan: OneWeb via Chunghwa Telecom, or LTE); none = local only")
     ap.add_argument("--quiet", action="store_true")
     a = ap.parse_args(argv)
     t0 = time.time()
@@ -1552,7 +1618,8 @@ def main(argv=None):
                     dispatch_policy=a.dispatch, penetration=a.penetration, site=a.site,
                     platform=a.platform, delivery=a.delivery, speaker=a.speaker,
                     tasking=os.path.join(a.out, "tasking.json") if a.tasking == "auto" else a.tasking,
-                    recon_accept_s=a.recon_accept_s)
+                    recon_accept_s=a.recon_accept_s, comms=a.comms,
+                    uplink=None if a.uplink == "none" else a.uplink)
     m.run()
     s = m.summary()
     print(f"done in {time.time() - t0:.1f} s wall, {m.t:.0f} s sim; visited {' -> '.join(s['visited'])}; "

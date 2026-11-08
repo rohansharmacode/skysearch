@@ -104,6 +104,11 @@
   .big { font-size:22px; font-weight:700; margin-top:6px; }
   #sense { flex:0 1 auto; min-height:0; overflow:hidden; }
   .foot { margin-top:auto; font-size:12px; color:#8d98a1; line-height:1.35; }
+  #recov { position:absolute; inset:0; z-index:60; background:#000; }
+  #recov img { position:absolute; inset:0; width:1920px; height:1080px; object-fit:contain; }
+  #recov .rb { position:absolute; left:50%; bottom:22px; transform:translateX(-50%); padding:10px 22px; border-radius:999px;
+               background:rgba(10,12,14,0.9); border:1px solid #ff5252; color:#fff; font-size:22px; font-weight:600; white-space:nowrap; }
+  #recov .rb b { color:#ff5252; }
   #loading { position:absolute; inset:0; background:rgba(6,8,10,0.86); display:flex; align-items:center; justify-content:center; text-align:center; }
   #loading .lt { font-size:40px; font-weight:700; } #loading .lc { font-size:21px; color:#aab4bc; margin-top:12px; }
   #cur { position:fixed; left:-2px; top:-2px; z-index:99; pointer-events:none; filter:drop-shadow(0 2px 3px rgba(0,0,0,.6)); }
@@ -123,6 +128,7 @@
 </head>
 <body>
 <div id="stage">
+  <div id="recov" class="hide"><img id="recimg" alt=""><div class="rb"><b>● Recording in progress.</b> You are watching it live; your clicks come back when it ends.</div></div>
   <div id="view">
     <div id="nostream">Connecting to the live simulation…</div>
     <img id="isaac" alt="">
@@ -675,13 +681,26 @@ async function getJSON(u) {
   return r.json();
 }
 async function poll() { try { render(await getJSON(SRC)); } catch (e) { } }
+// While the box records a take, a remote viewer watches the recording itself (full screen, read-only) instead of a
+// console whose Isaac pane would show the recorder's console. The box writes dashboard/data/recording.json.
+const REMOTE = !Q.has('view') && !Q.has('still') && !window.__burn;
+const RECSTREAM = Q.get('recstream') || new URL('../../stream_full.mjpg', location.href).href;
+let REC = null;
+function recOverlay() {
+  const on = REMOTE && !!((REC && REC.recording) || (CONSOLE && CONSOLE.recording));
+  const el = $('recov'), img = $('recimg');
+  if (on && el.classList.contains('hide')) { img.src = RECSTREAM + (RECSTREAM.includes('?') ? '&' : '?') + 'ts=' + Date.now(); el.classList.remove('hide'); }
+  else if (!on && !el.classList.contains('hide')) { el.classList.add('hide'); img.removeAttribute('src'); }
+}
+$('recimg').onerror = () => setTimeout(() => { if (!$('recov').classList.contains('hide')) $('recimg').src = RECSTREAM + '?ts=' + Date.now(); }, 3000);
 async function pollSide() {
+  try { REC = await getJSON(DIR + 'recording.json'); } catch (e) { REC = null; }
   try { LIVE = await getJSON(DIR + 'live.json'); } catch (e) { }
   try { HUD = await getJSON(DIR + 'hud.json'); } catch (e) { }
   try { SITE = await getJSON(DIR + 'site.json'); } catch (e) { SITE = null; }
   try { GOTO = await getJSON(DIR + 'goto.json'); } catch (e) { GOTO = null; }
   try { CONSOLE = await getJSON(DIR + 'console.json'); } catch (e) { CONSOLE = null; }
-  siteOverlay();
+  siteOverlay(); recOverlay();
 }
 // site switch (POST /api/site on the box writes site.json {site, seed, look, status: loading|ready|running})
 // ?sites=grid:7:day:Rubble street|weiguan:7:day:Collapsed tower|grid:11:dusk:Street at dusk

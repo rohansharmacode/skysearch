@@ -213,6 +213,15 @@ The details are in `docs/ISAAC_VERIFIED_APIS.md`.
 - The output of the dry run, and of the self-test once it lands.
 - One screenshot of the stage after `--max-steps 1`.
 
+## 2026-11-08 11:30 UTC: your console is merged, plus what lands next (deadline 13:00)
+
+- Your `larpverse-isaac` c9f9e0a is merged into `larpverse-sensing` (81d5c3e). Your live.py, run_mission.py and test_live.py are canonical.
+- **New on our side, already pushed:**
+  - **Gemini default model:** now `gemini-3.5-flash`, because 3.7-flash hung or returned 503 all morning. On 429/5xx, llm.py now tries backup models.
+  - **Gemini reads the breathing waveform** (`agents/gemini_vitals.py`) and combines it with the audio into `pings[].priority` (0–100) plus `vitals.gemini.reason`. Enable it with `--vitals-ai gemini`, or `auto` with a key; the default in GridMission is `fallback`.
+- **Landing in your console by ~12:15 UTC (additive, guarded):** a priority list (Gemini score + breathing pattern + reason), the latest clip with its Gemini analysis, clickable acoustic suggestions for the next area, and a Wi-Fi/speaker strip.
+- **The box needs the new key:** run `bash scripts/set_gemini_key.sh && python3 scripts/gemini_check.py` on it.
+
 ## 2026-11-08 10:40 UTC: FINAL PLAN, operator-driven live take (deadline 13:00)
 
 The user wants the take to be **genuinely live and operator-driven**. No pre-scripted camera story. Landing by ~11:50 UTC:

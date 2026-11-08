@@ -288,6 +288,19 @@ def _gemini(model, system, prompt, schema, timeout, max_tokens, temperature, aud
             gen.pop("responseSchema", None)
             gen.pop("thinkingConfig", None)
             resp = _post_retry(url, headers, body, timeout, retries)
+        elif e.status in (429, 500, 502, 503, 504):     # overloaded / quota on this model: try backup models once
+            resp = None
+            for alt in [m.strip() for m in os.environ.get("GEMINI_FALLBACK_MODELS",
+                        "gemini-3.5-flash,gemini-3.6-flash,gemini-3.8-flash").split(",") if m.strip() and m.strip() != model]:
+                try:
+                    resp = _post_retry(GEMINI_URL.format(model=alt), headers, body, timeout, 0)
+                    if usage is not None:
+                        usage["fallback_model"] = alt
+                    break
+                except HTTPError:
+                    continue
+            if resp is None:
+                raise
         else:
             raise
     if usage is not None and isinstance(resp.get("usageMetadata"), dict):

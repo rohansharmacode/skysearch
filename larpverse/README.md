@@ -14,6 +14,26 @@ The operator dashboard shows zones, pings with conditions, the dig order, transc
 
 Full write-up: [docs/TECHNICAL_REPORT.md](docs/TECHNICAL_REPORT.md) (abstract: [docs/TECHNICAL_REPORT_ABSTRACT.md](docs/TECHNICAL_REPORT_ABSTRACT.md)).
 
+## The problem, the models, and how their output is checked
+
+**Problem.** After a building collapse, rescuers must decide which rubble pile to dig first, while people trapped inside are silent, weak or out of sight. Larpverse gives an incident commander a live operator console: click a pile, and three drones map it with LiDAR, land on spots flat enough to land on, feel for breathing with radar, listen for voices, and then pick the next pile themselves.
+
+**Models (exact IDs).**
+| Where | Model | Job |
+|---|---|---|
+| Each drone (audio) | `gemini-3.5-flash` (`GEMINI_AUDIO_MODEL`) | Per-clip audio analysis: human or not, transcript, distress cues, and whether the sound is muffled under rubble or out in the open air |
+| Police van (command) | `gemini-4-argon` (`GEMINI_MODEL`) | Picks the next pile from the listed options, with a one-line reason |
+| On-drone, offline option | Gemma 4 E2B (`google/gemma-4-E2B-it`, `LLM_PROVIDER=gemma`, `scripts/gemma_server.py`) | The same audio step with no network link (open weights, Apache 2.0) |
+| On-box, always | Silero VAD, YAMNet, faster-whisper, SRP-PHAT | Detection, transcription and direction finding that run without any LLM |
+
+**Verification loop.** No model output acts directly:
+1. The decider may only choose from options the mission lists (`agents/gemini_decider.py`). Code validates the choice, its wording, the pile budget and the 25 % battery-reserve rule. An invalid or missing answer falls back to a deterministic rule (highest acoustic priority), labelled `fallback`.
+2. Audio answers are schema-validated. Distress words must be reproduced by a second, independent transcription, or they are demoted. The sound priority list (`acoustic/priority.py`) ranks every sound as trapped > check > safe person on the surface > not a person. Only trapped/check sounds can pull the drones.
+3. Every decision and every heard sound is labelled on screen with who made it: you, `Gemini 4 Argon · police van`, `Gemini 3.5 Flash · on each drone`, or the on-box models.
+4. A radar ping is a candidate search region, never a confirmed person, and no pile is ever "cleared".
+
+**Live console.** `isaac/hud/console.html` with `isaac/hud/picker.js`: choose one of three sites, pick a pile on a 3D LiDAR dot map, and watch Isaac Sim run the search. Keys live only in a gitignored `.env`.
+
 ## Quickstart (CPU, no GPU needed)
 
 ```bash
@@ -68,7 +88,7 @@ Optional:
 - In 20 simulated seeds, acoustic-led dispatch put a radar ping on 17 of 60 non-start victims, against 6 and 5 for radar-only baselines. The acoustic clips in that evaluation were generated from ground truth, so this is an upper bound. 0 false pings.
 - The video is time-lapsed (×5–×30, shown on screen) in one continuous take. The single unscripted moment: a teammate switches on a pre-placed hidden dummy at a time of their choosing, and the system re-plans from what it hears.
 - Hardware and prices are a design study (estimates, no supplier quotes). The radar pod is designed, not built.
-- Decisions are made by [Gemini (gemini-3.7-flash) | a rule-based fallback]; each one is labelled on screen.
+- Next-pile decisions are made by `gemini-4-argon` (police van), or a rule-based fallback if it is unavailable or invalid. Audio is analysed by `gemini-3.5-flash` (per drone) or the on-box models. Each one is labelled on screen.
 
 **Data and audio credits.**
 - ESC-50 (K. J. Piczak, ACM MM 2015), CC BY-NC 3.0. Clips from freesound.org: [author of 101336], [author of 108017], [author of 151080]; modified (trimmed, resampled, rubble filtering). Non-commercial use.

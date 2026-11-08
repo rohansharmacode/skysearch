@@ -340,14 +340,22 @@ function step(s) {
   if (ph === 'return' || ph === 'battery_swap') return 1;
   return d ? 6 : 1;
 }
+// the pile being worked on. Before the first dispatch it is the operator's click: the held mission still carries the
+// scenario's default start pile for a second or two after the click, until the runner rebuilds it.
+function curPile(s) {
+  const g = lastGoto(), d = lastDispatch(s);
+  if (!d && sent) return sent.pile;
+  if (!d && g && g.kind === 'start') return g.pile;
+  return (s.mission || {}).active_pile || '';
+}
 function caption(b, s) {
-  const c = caption0(b, s), g = lastGoto(), d = lastDispatch(s), pile = (s.mission || {}).active_pile || '';
+  const c = caption0(b, s), g = lastGoto(), d = lastDispatch(s), pile = curPile(s);
   const pending = g && g.kind === 'retask' && g.pile !== pile && !(d && d.to_pile === g.pile && +d.t >= +g.t - 1);
   if (pending && b !== 0) { c[2] += `<br><b style="color:var(--amber)">Next: ${esc(pn(g.pile))}, your pick. The drones finish this step first.</b>`; c[3] = 'you'; }
   return c;
 }
 function caption0(b, s) {
-  const m = s.mission || {}, ph = String(s.phase || ''), pile = m.active_pile || '';
+  const m = s.mission || {}, ph = String(s.phase || ''), pile = curPile(s);
   const d = lastDispatch(s), g = lastGoto(), drone = onDrone(s);
   const here = pings(s).filter(p => !pile || p.pile_id === pile || String(p.id || '').startsWith(pile));
   if (b === 0) return ['Your turn', 'Click a rubble pile to start', 'The three drones are on their pads at the command van. Click any pile on the map to send them there.', 'you'];
@@ -366,13 +374,15 @@ function caption0(b, s) {
   if (b === 4) return ['Step 3 · Radar', 'Feeling for breathing', drone ? 'The radar on each landed drone senses the tiny chest movement of breathing up to about 3 m down.' : 'Each drone lowers a radar pod onto the rubble. The radar senses the tiny chest movement of breathing up to about 3 m down.', ''];
   if (b === 5) {
     const gem = (s.acoustic_agent || {}).provider === 'gemini' || (s.acoustic_clips || []).some(c => c.by === 'gemini');
-    return ['Step 4 · Listening', 'Listening for voices', `Rotors off. One drone calls out over its loudspeaker; then they all listen for voices and knocking. ${gem ? 'Gemini' : 'The on-box speech and sound models'} analyse the audio to choose the next pile.`, ''];
+    const scanned = (s.scans || []).some(x => x.pile_id === pile);
+    const pre = scanned && !here.length ? `The radar found no firm breathing signal at ${esc(pn(pile))}. ` : '';
+    return ['Step 4 · Listening', 'Listening for voices', `${pre}Rotors off. One drone calls out over its loudspeaker; then they all listen for voices and knocking. ${gem ? 'Gemini' : 'The on-box speech and sound models'} analyse the audio to choose the next pile.`, ''];
   }
   return ['Live simulation', 'Standing by', '', ''];
 }
 
 function sense(s) {
-  const m = s.mission || {}, ph = String(s.phase || ''), t = +s.t || 0, pile = m.active_pile || '';
+  const m = s.mission || {}, ph = String(s.phase || ''), t = +s.t || 0, pile = curPile(s);
   const drones = s.drones || [];
   if (held(s)) return ['WAITING', 'Drones on their pads, waiting for your click', [['Drones', `${drones.length}, batteries ${drones.map(q => `${Math.round(100 * (q.battery ?? 1))}%`).join(' · ')}`]]];
   if (['deploy', 'dispatch', 'return', 'battery_swap'].includes(ph)) {
@@ -403,8 +413,9 @@ function sense(s) {
     if (sc && sc.vitals && !scanHit(sc)) return ['RADAR', `${who} ${esc(sc.drone_id)}: nothing strong enough to count in this scan`, [
         ['Last scan', `${esc(sc.scan_id)} · quality ${f2(sc.quality)}`], ['Result', 'no breathing return above the detection threshold'], ['Reach', 'about 3 m down']]];
     if (sc && sc.vitals) { const v = sc.vitals;
-      return ['RADAR', v.rate_bpm ? `${who} ${esc(sc.drone_id)} feels a rhythm: ${f1(v.rate_bpm)} breaths per minute` : `${who} ${esc(sc.drone_id)}: no breathing rhythm in this scan`, [
-        ['Signal above noise', v.snr_db != null ? `${f1(v.snr_db)} dB` : '–'], ['Distance from the radar', sc.ranges && sc.ranges.length ? `${f1(sc.ranges[0])} m` : '–']]]; }
+      return ['RADAR', v.rate_bpm ? `${who} ${esc(sc.drone_id)}: possible rhythm, ${f1(v.rate_bpm)} per minute, in one scan` : `${who} ${esc(sc.drone_id)}: no breathing rhythm in this scan`, [
+        ['Signal above noise', v.snr_db != null ? `${f1(v.snr_db)} dB` : '–'], ['Distance from the radar', sc.ranges && sc.ranges.length ? `${f1(sc.ranges[0])} m` : '–'],
+        ['Status', v.rate_bpm ? 'not confirmed: more scans must agree' : '–']]]; }
     const down = drones.filter(d => ['landed', 'scanning'].includes(d.state)).length;
     return ['RADAR', down ? `${down} drone${down > 1 ? 's' : ''} landed, radar on, feeling for breathing` : 'Landing on safe spots from the LiDAR map',
       [['Drones landed', `${down} of ${drones.length}`], ['Last scan', st ? `${esc(st.scan_id)} · quality ${f2(st.quality)}` : 'none yet']]];
@@ -609,7 +620,7 @@ function lmUpdate(s, b) {
   if (site !== LM.site) { LM.site = site; LM.key = ''; lmBuild(s); }
   const v = LM.view;
   if (!v) return;
-  const m = s.mission || {}, act = m.active_pile || '';
+  const m = s.mission || {}, act = curPile(s);
   const d = lastDispatch(s);
   const go = ['dispatch', 'deploy'].includes(String(s.phase)) && d ? d.to_pile : '';
   for (const id in LM.labels) LM.labels[id].className = 'pl' + (id === go ? ' go' : (id === act && !go && !held(s) ? ' on' : ''));

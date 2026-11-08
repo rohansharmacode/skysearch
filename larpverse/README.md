@@ -23,7 +23,7 @@ Full write-up: [docs/TECHNICAL_REPORT.md](docs/TECHNICAL_REPORT.md) (abstract: [
 **Models (exact IDs).**
 | Where | Model | Job |
 |---|---|---|
-| Each drone (audio) | `gemini-3.5-flash` (`GEMINI_AUDIO_MODEL`) | Per-clip audio analysis: human or not, transcript, distress cues, and whether the sound is muffled under rubble or out in the open air |
+| Each drone (audio) | `gemini-3.5-flash` (`GEMINI_AUDIO_MODEL`; the demo video and live console use `gemini-3.5-flash-lite` for lower latency) | Per-clip audio analysis: human or not, transcript, distress cues, and whether the sound is muffled under rubble or out in the open air |
 | Police van (command) | `gemini-4-argon` (`GEMINI_MODEL`) | Picks the next pile from the listed options, with a one-line reason |
 | On-drone, offline option | Gemma 4 E2B (`google/gemma-4-E2B-it`, `LLM_PROVIDER=gemma`, `scripts/gemma_server.py`) | The same audio step with no network link (open weights, Apache 2.0) |
 | On-box, always | Silero VAD, YAMNet, faster-whisper, SRP-PHAT | Detection, transcription and direction finding that run without any LLM |
@@ -34,7 +34,7 @@ Full write-up: [docs/TECHNICAL_REPORT.md](docs/TECHNICAL_REPORT.md) (abstract: [
 3. Every decision and every heard sound is labelled on screen with who made it: you, `Gemini 4 Argon · police van`, `Gemini 3.5 Flash · on each drone`, or the on-box models.
 4. A radar ping is a candidate search region, never a confirmed person, and no pile is ever "cleared".
 
-**Live console.** `isaac/hud/console.html` with `isaac/hud/picker.js`: choose one of three sites, pick a pile on a 3D LiDAR dot map, and watch Isaac Sim run the search. Pop-ups show each sound with its priority, the LiDAR risk map, landings, radar results and the van's decision. Box scripts: `isaac/console_box/` (`console_run.sh` starts a site with `--interactive --delivery land --decider gemini`). Keys live only in a gitignored `.env`.
+**Live console.** `isaac/hud/console.html` with `isaac/hud/picker.js`: choose one of three sites, pick a pile on a 3D LiDAR dot map, and watch Isaac Sim run the search. Pop-ups show each sound with its priority, the LiDAR risk map, landings, radar results and the van's decision. Box scripts: `isaac/console_box/` (`console_run.sh` starts a site with `--interactive --delivery land --decider gemini`). On the live box, `isaac/console_box/warm/` keeps one preloaded, held Isaac Sim per site, so a site switch or Reset takes about 3 s instead of the ~80 s cold load; `watchdog.sh` restarts anything that stops. Keys live only in a gitignored `.env`.
 
 ## Quickstart (CPU, no GPU needed)
 

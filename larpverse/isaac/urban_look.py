@@ -46,7 +46,7 @@ GRADE = {
     "/rtx/post/colorcorr/contrast": [1.15, 1.15, 1.15], "/rtx/post/colorcorr/gamma": [1.0, 1.0, 1.0],
     "/rtx/post/colorcorr/gain": [1.0, 1.0, 1.0], "/rtx/post/colorcorr/offset": [0.0, 0.0, 0.0],
     "/rtx/post/tvNoise/enabled": True, "/rtx/post/tvNoise/enableVignetting": True,
-    "/rtx/post/tvNoise/vignettingSize": 107.0, "/rtx/post/tvNoise/vignettingStrength": 0.2,
+    "/rtx/post/tvNoise/vignettingSize": 107.0, "/rtx/post/tvNoise/vignettingStrength": 0.08,
     "/rtx/post/tvNoise/enableFilmGrain": True, "/rtx/post/tvNoise/grainAmount": 0.02,
     "/rtx/post/tvNoise/grainSize": 1.4, "/rtx/post/tvNoise/enableScanlines": False,
     "/rtx/post/tvNoise/enableScrollBug": False, "/rtx/post/tvNoise/enableVignettingFlickering": False,
@@ -63,8 +63,8 @@ RUBBLE_TINTS = ((0.27, 0.25, 0.22), (0.21, 0.20, 0.18), (0.32, 0.29, 0.25), (0.2
                 (0.18, 0.17, 0.16))
 FACADE_TINT = (0.80, 0.74, 0.66)           # scan facade photos on the standing blocks: kill the blue sky cast
 # fallen-tower pieces: weathered, dusty concrete and dirty beige tiles (not clean MDL white)
-SLAB_TINTS = ((0.30, 0.28, 0.25), (0.24, 0.23, 0.21), (0.35, 0.32, 0.28))
-TILE_TINTS = ((0.44, 0.40, 0.33), (0.37, 0.34, 0.29), (0.31, 0.29, 0.26))
+SLAB_TINTS = ((0.25, 0.24, 0.21), (0.20, 0.19, 0.17), (0.29, 0.27, 0.24))
+TILE_TINTS = ((0.34, 0.31, 0.26), (0.29, 0.27, 0.23), (0.25, 0.24, 0.21))   # take2: still near-white in sun
 EXTRA_MDL = {"stucco": "Masonry/Stucco.mdl", "soil": "Natural/Soil_Rocky.mdl",
              "concrete3": "Masonry/Concrete_Smooth.mdl"}
 
@@ -667,7 +667,7 @@ def dress(stage, sc, a, mats, nv, isa, log=print):
             except Exception as e:
                 log(f"[urban] material {k} failed: {type(e).__name__}: {e}")
     looks = {"glass": _pv(stage, f"{ROOT}/Looks/glass", (0.035, 0.045, 0.055), 0.06, 0.0, 1.0),
-             "void": _pv(stage, f"{ROOT}/Looks/void", (0.012, 0.011, 0.010), 0.95),
+             "void": _pv(stage, f"{ROOT}/Looks/void", (0.045, 0.042, 0.038), 0.95),   # take2: pure black read as a QR code
              "frame": _pv(stage, f"{ROOT}/Looks/frame", (0.62, 0.63, 0.64), 0.35, 0.8),
              "tile": _pv(stage, f"{ROOT}/Looks/tile", (0.62, 0.59, 0.53), 0.35, 0.0, 0.4),
              "facade_tile": _pv(stage, f"{ROOT}/Looks/facade_tile", (0.60, 0.54, 0.45), 0.55, 0.0, 0.2),  # beige tiles

@@ -23,7 +23,7 @@ import numpy as np
 
 ROOT = "/World/SensorFX"
 LIDAR = (0.61, 0.42, 1.0)
-RADAR = (1.0, 0.62, 0.26)
+RADAR = (1.0, 0.36, 0.04)        # deep orange: take2's (1, .62, .26) at glow 6 rendered gold, next to yellow cones
 ACOUSTIC = (0.13, 0.76, 0.84)
 NOISE = (0.55, 0.60, 0.65)
 HEAT = ((1.0, 0.68, 0.10), (1.0, 0.38, 0.08), (1.0, 0.10, 0.06))   # belief bins: amber, orange, red
@@ -35,9 +35,10 @@ BEAMS_PER_DRONE = 26
 BEAM_W = 0.022                  # m
 SOUND_W, NOISE_W = 0.05, 0.035  # m: dome wire widths (human-like, other sounds)
 RADAR_W = 0.07                  # m: radar pulse ring width at the start of a wave
-SOUND_R = 14.0                  # m: dome radius at the end of a wave
+SOUND_R = 8.0                   # m: dome radius at the end of a wave (take2: 14 m domes swamped the frame)
 SOUND_PERIOD = 2.2              # s (wall clock): one wave
-SOUND_WAVES = 3
+SOUND_WAVES = 2
+BEAM_MAX = 28.0                 # m: LiDAR beams drawn at most this long (take2: far returns streaked to the frame edge)
 RADAR_R = 3.5                   # m: pulse ring radius at the end (the literature reach ~3 m)
 RADAR_PERIOD = 1.3
 RADAR_WAVES = 3
@@ -83,7 +84,7 @@ def polyline_segs(poly):
     return poly[:-1], poly[1:]
 
 
-def dome_segments(c, r, rings=(0.0, 0.5, 0.95), meridians=8, n=36):
+def dome_segments(c, r, rings=(0.0, 0.55), meridians=4, n=36):
     """Wireframe hemisphere of radius r at c: latitude rings (elevation in rad) + meridian arcs."""
     c = np.asarray(c, float)
     P0, P1 = [], []
@@ -195,7 +196,8 @@ def set_scale(k, log=print):
     k = float(k)
     if abs(k - 1.0) < 1e-6:
         return
-    BEAM_W, SOUND_W, NOISE_W, RADAR_W = BEAM_W * k, SOUND_W * k, NOISE_W * k, RADAR_W * k
+    ks = k ** 0.5                                      # domes are big already: thicker wire only by sqrt(k)
+    BEAM_W, SOUND_W, NOISE_W, RADAR_W = BEAM_W * k, SOUND_W * ks, NOISE_W * ks, RADAR_W * k
     log(f"[fx] widths x{k:g}: LiDAR beam {BEAM_W * 100:.0f} cm, sound wire {SOUND_W * 100:.0f} cm, radar ring {RADAR_W * 100:.0f} cm")
 
 
@@ -282,7 +284,11 @@ class SensorFX(NullFX):
             pts = np.asarray(pts, float)[:, :3]
             if len(pts) > BEAMS_PER_DRONE:
                 pts = pts[np.linspace(0, len(pts) - 1, BEAMS_PER_DRONE).astype(int)]
-            P0.append(np.repeat(np.asarray(o, float)[None], len(pts), 0))
+            o = np.asarray(o, float)
+            d = pts - o[None]
+            L = np.linalg.norm(d, axis=1, keepdims=True)
+            pts = o[None] + d * np.minimum(1.0, BEAM_MAX / np.maximum(L, 1e-6))
+            P0.append(np.repeat(o[None], len(pts), 0))
             P1.append(pts)
         self.beam_mesh.set(*cross_ribbons(np.concatenate(P0), np.concatenate(P1), BEAM_W) if P0 else ([], [], []))
         self.counts["beams"] = max(self.counts["beams"], sum(len(p) for p in P1))

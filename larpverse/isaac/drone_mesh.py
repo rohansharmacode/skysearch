@@ -17,7 +17,7 @@ import numpy as np
 
 GEAR_H = 0.60
 POD_MODE = False        # --delivery pod: the radar rides in the winch pod, so no radar panel under the drone
-NAV_R = 0.035           # m: navigation light lens radius (red port, green starboard, white strobe on top)
+NAV_R = 0.05           # m: navigation light lens radius (red port, green starboard, white strobe on top)
 
 
 def _grid_faces(rows, cols, wrap=True):

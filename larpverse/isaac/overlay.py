@@ -62,6 +62,7 @@ ZONE_STYLE = {   # status -> (rgba, dashed)
 RECON_PATH = (*GREEN[:3], 0.35)     # recon coverage path in the air: dashed, low alpha
 PROPOSAL = (*GREY[:3], 0.75)        # dashboard-proposed rubble outlines (until the operator accepts them)
 ZONE_W = 2.0                        # width units (x LINE_W); thin enough not to read as a prop
+CONE_W = 1.6                        # width units: thinner than zones (take2: 4x-wide cones read as loops)
 CONE_HUMAN_MIN = 0.4                # dashboard/app.js: (c.scores?.human ?? 0) >= 0.4
 # Footage clarity (set by photoreal --clean-overlay; the dashboard and state.json are unchanged):
 HIDE_WEAK = False                   # skip "insufficient_evidence" candidates (no beacon, ring or tag)
@@ -303,7 +304,7 @@ class Overlay:
             arc = np.linspace(b - hw, b + hw, 13)
             edge = np.stack([ox + L * np.cos(arc), oy + L * np.sin(arc)], 1)
             cone = np.vstack([[ox, oy], edge, [[ox, oy]]])
-            self._segs(self._drape(cone, 0.35), YELLOW, 3.0, segs)
+            self._segs(self._drape(cone, 0.35), YELLOW, CONE_W, segs)
             mid = np.array([[ox, oy], [ox + L * np.cos(b), oy + L * np.sin(b)]])
             self._segs(self._drape(mid, 0.35), (*YELLOW[:3], 0.45), 1.5, segs)
 

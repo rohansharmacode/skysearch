@@ -51,7 +51,7 @@ PBR_LOOK = {           # key -> (rgb, roughness, metallic, clearcoat); rgb None 
     "nav_green": ((0.05, 0.6, 0.1), 0.3, 0.0, 0.5),
     "strobe": ((0.9, 0.9, 0.9), 0.3, 0.0, 0.5),
 }
-EMISSIVE = {"nav_red": (60.0, 3.0, 1.5), "nav_green": (3.0, 50.0, 6.0), "strobe": (90.0, 90.0, 95.0)}
+EMISSIVE = {"nav_red": (160.0, 8.0, 4.0), "nav_green": (8.0, 130.0, 16.0), "strobe": (260.0, 260.0, 270.0)}
 STROBE = (1.0, 0.09)   # s: anti-collision strobe period and flash length (render clock)
 PART_KEY = (("Fuselage", "body"), ("Canopy", "canopy"), ("Visor", "lens"), ("GpsMast", "gimbal"),
             ("GpsPuck", "radome"), ("Hinge", "gimbal"), ("Column", "gimbal"), ("Foot", "plastic"),

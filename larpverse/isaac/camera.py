@@ -118,7 +118,7 @@ def focus_from_state(state, pile_xy, active_pile, poses):
 # ------------------------------------------------------------------------------ story camera (single take)
 STORY_PITCH = 36.0          # deg below the horizon
 STORY_FOV_FIT = math.tan(math.radians(25.0))   # half-FOV used to fit the action (18 mm lens: hfov ~60 deg)
-STORY_R = (16.0, 95.0)      # m: framed radius limits (close enough to see drones, wide enough for the approach)
+STORY_R = (12.0, 95.0)      # m: framed radius limits (close enough to see drones, wide enough for the approach)
 STORY_NEAR = 55.0           # m: things this close to the active zone share its frame
 STORY_ORBIT = 2 * math.pi / 300.0   # rad per render second: a slow drift, ~70 deg over a one-minute take
 STORY_OMEGA = 1.1           # 1/s: critically damped spring on focus and distance (no snaps, no overshoot)
@@ -175,10 +175,10 @@ def story_focus(state, pile_xy, active_pile, poses, memo=None):
     K = np.asarray(keep)
     lo, hi = K.min(0), K.max(0)
     c = 0.5 * (lo + hi)
-    r = float(np.max(np.hypot(K[:, 0] - c[0], K[:, 1] - c[1]))) + 10.0
+    r = float(np.max(np.hypot(K[:, 0] - c[0], K[:, 1] - c[1]))) + 7.0
     m = state.get("mission") if isinstance(state.get("mission"), dict) else {}
     if m.get("stage") == "listen":
-        r = max(r, 26.0)                                # the sound domes around the active zone
+        r = max(r, 20.0)                                # the sound domes around the active zone
     return np.array([c[0], c[1], 3.0]), float(np.clip(r, *STORY_R))
 
 

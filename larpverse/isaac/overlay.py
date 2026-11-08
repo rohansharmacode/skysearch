@@ -41,6 +41,7 @@ LINE_MESH = False        # True: draw lines as flat ribbon meshes LINE_W * width
 # Ping beacon: column radius (m), emissive gain and pulse rate. ~0.3 m wide so it reads in wide shots.
 BEACON_R = 0.15
 BEACON_GLOW = 4.0
+BEACON_H = 14.0                     # beacon height above the surface (m)
 PULSE_HZ = 0.8                      # same period as the animation/dashboard ping ring
 # LiDAR display: only while surveying, then fade out over LIDAR_FADE_S (render-clock seconds) and start a
 # fresh map at the next survey. LIDAR_SURVEY_ONLY = False keeps the old behaviour (points stay forever).
@@ -224,7 +225,7 @@ class Overlay:
             if weak and (HIDE_WEAK or SIMPLE):
                 continue
             col = RED_DIM if weak else RED
-            pings.append({"id": str(c.get("id", f"R{len(pings)}")), "pos": (x, y, ze), "top": zs + 14.0,
+            pings.append({"id": str(c.get("id", f"R{len(pings)}")), "pos": (x, y, ze), "top": zs + BEACON_H,
                           "rgba": col, "radius": 0.35})
             cov = np.asarray(c.get("cov") or [[1, 0], [0, 1]], float)
             try:

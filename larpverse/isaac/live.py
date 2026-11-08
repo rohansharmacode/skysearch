@@ -850,9 +850,13 @@ for line in sys.stdin:
 """
 
 
-def _sources_payload(truth):
+def _sources_payload(truth, window=None):
     """Live sounds -> acoustic.scene.source_track dicts (dummy WAVs already carry their rubble loss). None if any
-    sound has no clip (then the pipeline synthesises from the truth dicts instead)."""
+    sound has no clip (then the pipeline synthesises from the truth dicts instead). ``window``: a listening window
+    shorter than the pipeline's 26 s squeezes the sources' start stagger into it (a caller loops regardless of when
+    the listen starts; the profile of 2026-11-08 heard nothing from A1 in 10 s windows because its stagger started
+    it at 9 s)."""
+    k_t = min(1.0, float(window) / 26.0) if window else 1.0
     out = []
     for k, snd in enumerate(truth.get("sounds", [])):
         wav = snd.get("wav")
@@ -860,7 +864,7 @@ def _sources_payload(truth):
             return None
         out.append({"xy": [float(v) for v in snd["xy"]], "clip": wav, "kind": snd["kind"],
                     "level_db": 0.0, "depth_m": 0.0, "loop": True, "gap_s": 4.0 + (k % 3),
-                    "t0_s": 0.5 + 1.7 * k, "id": snd.get("dummy_id") or snd.get("victim_id")})
+                    "t0_s": 0.5 + 1.7 * k * k_t, "id": snd.get("dummy_id") or snd.get("victim_id")})
     return out
 
 
@@ -936,7 +940,7 @@ class AcousticService:
         with self._lock:
             self.n += 1
             jid = self.n
-        src = _sources_payload(truth)
+        src = _sources_payload(truth, duration)
         req = {"id": jid, "scenario_seed": self.sc.seed, "start_pile": self.sc.public_dict()["start_pile"],
                "site": getattr(self.sc, "site", "grid"), "truth": truth, "sources": src,
                "drones": {k: [float(v[0]), float(v[1])] for k, v in drones.items()}, "exclude": list(exclude),

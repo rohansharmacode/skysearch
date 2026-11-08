@@ -701,6 +701,9 @@ def main(argv=None):
         from isaac import overlay as _ov, sensor_fx as _sfx
         _ov.SIMPLE = True
         _sfx.SIMPLE = True
+        # rehearsal 4b: the 14 m, 0.3-0.5 m glowing column dominated every close listen shot. A slim marker light
+        # that still reads from the 28-34 m take cameras (and in the dashboard's ping list) is enough.
+        _ov.BEACON_R, _ov.BEACON_GLOW, _ov.BEACON_H = 0.06, 2.0, 7.0
         say("[overlay] simple style: active/new zone outlines, latest dispatch arc, firm pings; sensor effects "
             "for human sounds only")
     if float(a.line_scale) != 1.0:                    # wide single-take shots: thicker lines and effects
@@ -917,7 +920,8 @@ def main(argv=None):
         CLEAR = ("deploy=6,survey=7,recon_mapping=6,recon_listening=10,landing=6,radar=12,relocate=24,rescan=24,"
                  "acoustic=17,dispatch=5,return=12,battery_swap=40,done=8")
         pace = L.parse_pace(L.DEFAULT_PACE if a.live_pace is None else CLEAR if a.live_pace == "clear" else a.live_pace)
-        preroll = 4.0 if a.live_preroll is None else float(a.live_preroll)
+        # clear pace: 2.5 s on the van before the clock starts (rehearsal 4b: 4 s + start-up hitches = 8 s of a still van)
+        preroll = (2.5 if a.live_pace == "clear" else 4.0) if a.live_preroll is None else float(a.live_preroll)
         info = getattr(a, "acoustic_info", None)
         if ctrl is not None and info and info.get("latency_s"):
             ctrl.preflight_latency = float(info["latency_s"])

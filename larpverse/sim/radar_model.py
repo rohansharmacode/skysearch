@@ -27,9 +27,9 @@ from . import acoustic_model, radar_dsp
 from .sensor_model import SCAN_DWELL_S, detection_prob, range_sigma, rubble_path, scan_quality
 
 
-# The physio chest waveform (5 mm peak-to-peak for a calm adult, ~3 mm when rapid and shallow) is ~3x
-# smaller than the legacy sinusoid (4-8 mm amplitude): with it on, seed 7 loses its pings. Kept switchable.
-PHYSIO_WAVEFORM = os.environ.get("LARPVERSE_PHYSIO", "0") == "1"
+# Breath-by-breath chest waveform (sim/physio.py: ~5 mm peak-to-peak calm adult, ~3 mm rapid/shallow) is the
+# default; LARPVERSE_PHYSIO=0 restores the old 4-8 mm-amplitude sinusoid (optimistic, comparison only).
+PHYSIO_WAVEFORM = os.environ.get("LARPVERSE_PHYSIO", "1") != "0"   # default on (real few-mm chest motion)
 
 
 class ObservationGenerator:
@@ -85,7 +85,8 @@ class ObservationGenerator:
             true_range = float(np.linalg.norm(pt - ps))
             path = rubble_path(grid, ps, pt)
         if true_range is not None and rng.uniform() < float(detection_prob(true_range, quality, 0.0)
-                                                             * radar_dsp.reach_prob(true_range, path, quality)):
+                                                             * radar_dsp.reach_prob(true_range, path, quality,
+                                                                                    dwell=dwell)):
             sig = float(range_sigma(quality, path))
             conf = float(np.clip(0.45 + 0.5 * quality + rng.normal(0, 0.07), 0.2, 0.98))
             cands.append((max(0.5, true_range + rng.normal(0, sig)), conf))
@@ -105,7 +106,7 @@ class ObservationGenerator:
             "range_candidates": [round(c[0], 2) for c in cands],
             "confidence": [round(c[1], 2) for c in cands], "quality": round(quality, 2),
             "breathing_hz": hz, "doppler_moving": False,
-            "max_reliable_depth_m": round(radar_dsp.reach_path_m(radar_dsp.REACH_REF_RANGE_M, quality), 2),
+            "max_reliable_depth_m": round(radar_dsp.reach_path_m(radar_dsp.REACH_REF_RANGE_M, quality, dwell=dwell), 2),
         }
         out = [stat]
 
@@ -202,6 +203,9 @@ class DspObservationGenerator(ObservationGenerator):
         iq = radar_dsp.simulate_if(scene, params, rng_sig)
         obs, self.last_result = radar_dsp.radar_observations(iq, f"s{scan_idx}", drone_id, sensor_pose, t,
                                                              params, self.cfg, debug=True)
+        for o in obs:                  # per-scan reach for this dwell (the DSP output assumes 20 s)
+            o["max_reliable_depth_m"] = round(radar_dsp.reach_path_m(radar_dsp.REACH_REF_RANGE_M, o["quality"],
+                                                                     dwell=dwell), 2)
         return obs
 
 

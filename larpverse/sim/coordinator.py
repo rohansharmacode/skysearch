@@ -27,6 +27,7 @@ from .radar_model import make_generator
 from .sensor_model import SCAN_DWELL_S
 from .world import World
 
+POD_DWELL_S = 45.0          # pod scan dwell (vs 20 s landed): +3.5 dB integration, enough for breathing patterns
 DEFAULT_SEED = 75   # first 3 scans ambiguous: low-quality rough touchdown on the rubble -> planner relocates
 LAND_HEIGHT = 0.15          # skid height above the patch plane
 STARTS = {"d1": (-22.5, -22.5), "d2": (-20.5, -22.5), "d3": (-22.5, -20.5)}
@@ -364,10 +365,10 @@ class Mission:
     def _issue_scan(self, did, sid, reason, score):
         s = self._site(sid)
         s["status"] = "used"
-        if s.get("pod"):
+        if s.get("pod"):                   # 45 s: slow-time integration for the few-mm chest motion of real breathing
             self.flight.command({"drone_id": did, "type": "goto_pod_scan", "hover_z": s["hover_z"],
                                  "destination": [s["xy"][0], s["xy"][1], s["z"]],
-                                 "landing_site_id": sid, "scan_duration": SCAN_DWELL_S})
+                                 "landing_site_id": sid, "scan_duration": POD_DWELL_S})
         else:
             self.flight.command({"drone_id": did, "type": "goto_land_scan",
                                  "destination": [s["xy"][0], s["xy"][1], s["z"]],
@@ -498,7 +499,8 @@ class Mission:
         if ch is None:
             self._say("No reachable landing site left; stopping with insufficient_evidence")
             return self._start_listen()
-        if self.policy != "fixed" and self.scans_cmd >= 3 and ch.eig < self.min_eig:
+        # diminishing returns only once something was heard: with no return yet, keep searching the placements
+        if self.policy != "fixed" and self.scans_cmd >= 3 and self.loc.n_informative > 0 and ch.eig < self.min_eig:
             self._say(f"Stop relocating: the best next scan ({ch.drone_id} -> {ch.site_id}) is worth only {ch.eig:.2f} "
                       f"nats (< {self.min_eig}). Evidence: {self.explain_evidence()}. Reporting insufficient_evidence; "
                       "the region stays open, not cleared")
@@ -513,23 +515,40 @@ class Mission:
         """One long in-place dwell from the drone best placed on R1: breathing patterns need 45-60 s."""
         m = res["modes"][0]["xy"]
         best = None
+        idle = {d["id"] for d in self._idle()}
         for o in self.loc.obs:
-            did, sid = o["drone_id"], self._drone_site.get(o["drone_id"])
-            if sid is None or not o["range_candidates"] or self.flight.drone_state(did)[0] != "landed":
+            sid = o.get("site_id")
+            if sid is None or not o["range_candidates"]:
                 continue
+            site = self._site(sid)
+            if site.get("pod"):                # any free drone can lower a pod at the best placement again
+                if not idle:
+                    continue
+                pos = {p["id"]: p["pose"] for p in self.flight.poses()}
+                did = min(idle, key=lambda d: np.hypot(pos[d][0] - site["xy"][0], pos[d][1] - site["xy"][1]))
+            else:                              # landed drone scans again in place
+                did = o["drone_id"]
+                if self._drone_site.get(did) != sid or self.flight.drone_state(did)[0] != "landed":
+                    continue
             score = self.loc.agreement(o, m) * max(o["confidence"]) * o["quality"]
             if best is None or score > best[0]:
                 best = (score, did, sid)
         self.vitals_look = "none"
-        if best is None or not self.flight.command({"drone_id": best[1], "type": "scan", "landing_site_id": best[2],
-                                                    "scan_duration": self.vitals_look_s}):
+        ok = False
+        if best is not None:
+            site = self._site(best[2])
+            cmd = ({"drone_id": best[1], "type": "goto_pod_scan", "hover_z": site["hover_z"],
+                    "destination": [site["xy"][0], site["xy"][1], site["z"]]} if site.get("pod") else
+                   {"drone_id": best[1], "type": "scan"})
+            ok = self.flight.command(dict(cmd, landing_site_id=best[2], scan_duration=self.vitals_look_s))
+        if not ok:
             self._say("Localisation converged; no landed drone can hold a vitals look, stopping radar scans")
             return self._start_listen()
         self.vitals_look = "pending"
         self.pending[best[1]] = {"drone_id": best[1], "site_id": best[2], "score": 0.0,
                                  "reason": f"{self.vitals_look_s:.0f} s vitals look at R1 (breathing pattern)"}
-        self._say(f"Localisation converged: {self._summ(res)}. {best[1]} stays at {best[2]} for a "
-                  f"{self.vitals_look_s:.0f} s vitals look (breathing pattern to help order the dig; rescuers check on site)")
+        self._say(f"Localisation converged: {self._summ(res)}. {best[1]} {'lowers the pod again' if site.get('pod') else 'stays'} "
+                  f"at {best[2]} for a {self.vitals_look_s:.0f} s vitals look (breathing pattern to help order the dig; rescuers check on site)")
 
     def _rescan_reason(self, res):
         self.outliers = []
@@ -599,12 +618,14 @@ class Mission:
         self._drone_site[did] = sid
         dwell = float(ev.get("dwell", SCAN_DWELL_S))
         obs_list = self.sensors.radar_scan(self.scan_idx, did, pose, site, self.t, dwell=dwell)
-        if self.vitals_look == "pending" and dwell > SCAN_DWELL_S:
+        if self.vitals_look == "pending" and dwell >= self.vitals_look_s - 1e-6:
             self.vitals_look = obs_list[0]["scan_id"]
             for o in obs_list:
                 o["vitals_look"] = True
         for o in obs_list:
             o["delivery"] = "pod" if site.get("pod") else "land"
+            o["site_id"] = sid
+            o["dwell_s"] = dwell
             kind = self.loc.update_radar(o)
             o["used_weight"] = 0.0
             self.scans.append(o)

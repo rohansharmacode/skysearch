@@ -180,7 +180,7 @@ Written by `acoustic/run.py` (`ALGO_VERSION` in `acoustic/dsp.py`); every v1 fie
 
 ```jsonc
 {
-  "algo": "assoc-v11",                          // localisation/association version (cache keys should include it)
+  "algo": "assoc-v12",                          // localisation/association version (cache keys should include it)
   "clips": [ {
     "association": "confident",                // confident | ambiguous
     "association_conf": 0.97,                  // 0-1: bearing likelihood of this pile over all nine piles
@@ -189,7 +189,8 @@ Written by `acoustic/run.py` (`ALGO_VERSION` in `acoustic/dsp.py`); every v1 fie
     "reliability": 0.81,                       // agent reliability x (0.5 + 0.5 x association_conf); <= 0.45 if ambiguous
     "reliability_agent": 0.84,                 // the agent's own value before the association factor
     "doa_agree": "2/3",                        // drones whose bearing is within min(15 deg, gate) of the pile centre
-    "heuristics": { "knock_periodicity": 0.62, "hum_harmonicity": 0.2, "human_minus_animal": 0.31 },
+    "heuristics": { "knock_periodicity": 0.62, "hum_harmonicity": 0.2, "human_minus_animal": 0.31,
+                    "steadiness": 0.04, "blade_pass": 0.0 },             // rotor veto inputs
     "bearings": [ { "drone_id": "d1", "bearing_deg": 288.4, "sigma_deg": 1.6,   // per landed drone; sigma = bearing
                     "snr_db": 21.3, "measured": true } ],                         //  noise (gate width if not measured)
     "notes": [ "suppressed cross-talk from A3 (2 blocks)", "transcript dropped: dog clip with VAD 0.26" ]
@@ -464,3 +465,24 @@ when that value is higher and the task is a `lead`, then re-picks `radar_ping` a
 - **No `tasking.json`, or no active zones: the mission runs recon** (the user's decision). The scenario's default sector zones are opt-in with `--tasking default`.
 - `tasking.json` may carry `aoi` (one polygon, site metres), which restricts the recon coverage flight. `scripts/serve.py` validates it and passes it through.
 - Mission `stage` adds `recon`. `phase` uses `recon_mapping` and `recon_listening` (above) while it's active.
+
+### Link status and pod commands (v1.4.2, from docs/COMMS_ARCHITECTURE.md)
+
+- `drones[]`: `link` (`ok|degraded|lost`), `last_link_t`, `queued_kb` (data held on board while the mesh is down; forwarded later).
+- `comms.backhaul.links[]`: `latency_ms`.
+- Commands from the van to the drones (MAVLink winch commands on the flight side; JSON on the ops API): `lower_pod {drone_id, xy}`, `raise_pod {drone_id}`, `relay_hold {drone_id, xy, alt}` (park a drone as a mesh relay).
+- Backhaul for Tainan: OneWeb via Chunghwa Telecom, or LTE. Starlink is the generic option where it's licensed.
+
+### Comms additions (v1.4.3, from docs/HOTSPOT.md §9)
+
+- `comms.backhaul.uplink`: `oneweb|lte|starlink|null`. Optional `backhaul.relay_xy` (a dropped relay node).
+- `devices[].live` is true for real portal phones (the live demo), which carry no RSSI position. `messages[].synthetic` is true for simulated messages, and the UI tags them "synthetic". `devices[].replies[].text` holds the template text that was sent.
+- `piles[].comms_evidence`: `{device, status, t, est_xy, sigma_m}`. Phone evidence only ever raises a **lead**, never a ping, because a phone near-but-buried and one far-but-in-the-open can look alike in RSSI.
+- Event names: `joined`, `left`, `status`, `message`, `located`, `evidence`, `link_lost`, `link_restored`.
+- Language codes use `nan-TW`, matching the speaker templates, for Taiwanese Hokkien.
+- Ops API (scripts/serve.py):
+  - POST `/api/portal`: from phones; validated, rate-limited, no IP stored.
+  - GET `/api/portal` → `{"submissions": [...]}`: localhost only.
+  - POST `/api/comms/reply`: localhost only; templates, or free text with `confirmed_by`.
+  - Captive-portal check URLs redirect to `/dashboard/portal/`.
+  - `--lan` binds 0.0.0.0. It's off by default and prints a warning.

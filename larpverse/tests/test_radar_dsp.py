@@ -6,7 +6,7 @@ from sim import radar_dsp as R
 
 P = R.RadarParams()
 SCHEMA = {"scan_id", "drone_id", "sensor_pose", "timestamp", "range_candidates", "confidence", "quality",
-          "breathing_hz", "doppler_moving", "max_reliable_depth_m"}
+          "breathing_hz", "doppler_moving", "max_reliable_depth_m", "vitals"}
 
 
 def make(seed, range_m=8.0, path=0.5, q=0.95, hz=0.27, breather=True, fan=False, mover=False):

@@ -1,9 +1,19 @@
 # Isaac Sim brief for the teammate's Claude session
 
-**Read this first, every time you pull.** It's the single, current, Isaac-only brief. Older docs (`ISAAC_HANDOFF.md`, `FOR_ISAAC_CLAUDE.md`) carry history; when they disagree, this file wins. Status labels:
+**Interim fast version: `docs/ISAAC_QUICK.md` (7 Nov 23:20); start there.** **Read this first, every time you pull.** It's the single, current, Isaac-only brief. Older docs (`ISAAC_HANDOFF.md`, `FOR_ISAAC_CLAUDE.md`) carry history; when they disagree, this file wins. Status labels:
 - ✅ means committed and tested here: dry-run, tests, and USD checks without a GPU.
 - 🟡 means it lands in the next push.
 - 🎯 means you need to do it.
+
+## ★ The deliverable (read this first)
+
+**Simulation video, up to 1 minute, captured from the stream.** Perception must be shown on screen next to the actions, plus **one unscripted change**, all in a **single continuous take**. This replaces the multi-shot cut plan in §5 step 4: no edits, no camera cuts in post.
+
+What that means for us (details in `docs/VIDEO_PLAN.md`, landing next):
+- **One continuous screen capture** of the Isaac livestream client, next to a perception panel. That's either the live dashboard fed by the same run, or an in-Isaac HUD showing LiDAR, radar breathing signatures, acoustic cones and the vitals label. Use one smooth director camera path, never a cut.
+- **The unscripted change happens live** during the take, and the system must perceive it and react. For example, someone switches on a hidden dummy's voice in the stage, or drags a dummy or a debris slab, or the operator circles a new zone on the dashboard. To make it work, Isaac becomes the source of truth: radar and acoustics read the **dummy prims' live positions and active sounds** from the stage.
+- **New assets we're building for you:** dummy victims with audio clips, a heavy drone showing its real components, and an **operator command van** at staging, with monitors showing the dashboard, a mesh mast and a Starlink dish.
+- **Please check now:** does your box support the Isaac **livestream** client (WebRTC), and can we capture its audio? What's the screen-capture route (OBS on the client)? Write the answers in `FROM_ISAAC.md`.
 
 ## 0. Coordination rules
 

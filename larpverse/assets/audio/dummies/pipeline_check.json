@@ -1,0 +1,638 @@
+{
+ "schema": "larpverse.dummy_audio_check/v1",
+ "updated": "2026-11-07T23:52:38",
+ "how": "scripts/build_dummy_audio.py check: library clips placed at seed-7 truth positions, pyroomacoustics free field like acoustic/scene.build_scene, then acoustic.run.analyse (mode=fallback, gemini_audio off). Unchanged acoustic code.",
+ "results": {
+  "baseline": {
+   "drones": {
+    "d1": [
+     -1.32,
+     8.26
+    ],
+    "d2": [
+     -8.77,
+     -4.64
+    ],
+    "d3": [
+     6.13,
+     -4.64
+    ]
+   },
+   "clips": [
+    {
+     "pile": "B1",
+     "truth": "weak_voice",
+     "sound_class": "voice",
+     "human": 0.99,
+     "urgency": 0.35,
+     "reliability": 0.67,
+     "vad": 0.613,
+     "transcript": "Even one there.",
+     "association": "confident",
+     "knock_periodicity": 0.0,
+     "hum_harmonicity": 0.107,
+     "class_scores": {
+      "voice": 0.992,
+      "shout": 0.0,
+      "knocking": 0.0,
+      "dog": 0.003,
+      "engine": 0.0,
+      "debris": 0.0,
+      "noise": 0.005
+     }
+    },
+    {
+     "pile": "C1",
+     "truth": "generator",
+     "sound_class": "engine",
+     "human": 0.01,
+     "urgency": 0.02,
+     "reliability": 0.38,
+     "vad": 0.0,
+     "transcript": "",
+     "association": "confident",
+     "knock_periodicity": 0.0,
+     "hum_harmonicity": 0.308,
+     "class_scores": {
+      "voice": 0.036,
+      "shout": 0.0,
+      "knocking": 0.009,
+      "dog": 0.0,
+      "engine": 0.397,
+      "debris": 0.009,
+      "noise": 0.549
+     }
+    },
+    {
+     "pile": "B2",
+     "truth": "knock",
+     "sound_class": "knocking",
+     "human": 0.78,
+     "urgency": 0.48,
+     "reliability": 0.85,
+     "vad": 0.0,
+     "transcript": "",
+     "association": "confident",
+     "knock_periodicity": 0.7,
+     "hum_harmonicity": 0.095,
+     "class_scores": {
+      "voice": 0.083,
+      "shout": 0.0,
+      "knocking": 0.717,
+      "dog": 0.003,
+      "engine": 0.013,
+      "debris": 0.028,
+      "noise": 0.157
+     }
+    },
+    {
+     "pile": "C2",
+     "truth": "dog",
+     "sound_class": "dog",
+     "human": 0.02,
+     "urgency": 0.02,
+     "reliability": 0.84,
+     "vad": 0.0,
+     "transcript": "",
+     "association": "confident",
+     "knock_periodicity": 0.0,
+     "hum_harmonicity": 0.087,
+     "class_scores": {
+      "voice": 0.069,
+      "shout": 0.0,
+      "knocking": 0.0,
+      "dog": 0.928,
+      "engine": 0.0,
+      "debris": 0.0,
+      "noise": 0.003
+     }
+    },
+    {
+     "pile": "A3",
+     "truth": "voice",
+     "sound_class": "voice",
+     "human": 0.99,
+     "urgency": 0.7,
+     "reliability": 0.94,
+     "vad": 0.769,
+     "transcript": "Chompinga, your mayor and the japei are true, Can anyone hear me? My leg is trapped.",
+     "association": "confident",
+     "knock_periodicity": 0.0,
+     "hum_harmonicity": 0.1,
+     "class_scores": {
+      "voice": 0.994,
+      "shout": 0.0,
+      "knocking": 0.0,
+      "dog": 0.0,
+      "engine": 0.0,
+      "debris": 0.0,
+      "noise": 0.006
+     }
+    },
+    {
+     "pile": "B3",
+     "truth": "settling",
+     "sound_class": "debris",
+     "human": 0.08,
+     "urgency": 0.02,
+     "reliability": 0.99,
+     "vad": 0.0,
+     "transcript": "",
+     "association": "confident",
+     "knock_periodicity": 0.0,
+     "hum_harmonicity": 0.098,
+     "class_scores": {
+      "voice": 0.22,
+      "shout": 0.023,
+      "knocking": 0.105,
+      "dog": 0.01,
+      "engine": 0.052,
+      "debris": 0.459,
+      "noise": 0.131
+     }
+    }
+   ],
+   "piles": [
+    {
+     "pile": "A3",
+     "priority": 77,
+     "status": "radar_ping"
+    },
+    {
+     "pile": "B1",
+     "priority": 47,
+     "status": "lead"
+    },
+    {
+     "pile": "B2",
+     "priority": 47,
+     "status": "lead"
+    },
+    {
+     "pile": "A1",
+     "priority": 8,
+     "status": "no_signal_not_cleared"
+    },
+    {
+     "pile": "A2",
+     "priority": 8,
+     "status": "no_signal_not_cleared"
+    },
+    {
+     "pile": "C3",
+     "priority": 8,
+     "status": "no_signal_not_cleared"
+    },
+    {
+     "pile": "B3",
+     "priority": 3,
+     "status": "dismissed_nonhuman"
+    },
+    {
+     "pile": "C2",
+     "priority": 1,
+     "status": "dismissed_nonhuman"
+    },
+    {
+     "pile": "C1",
+     "priority": 0,
+     "status": "dismissed_nonhuman"
+    }
+   ],
+   "dispatch": {
+    "pile_id": "A3",
+    "reason": "Send the radar drone to A3: highest priority (77) from \"Chompinga, your mayor and the japei are true,…\", 3/3 drones agreeing on the bearing at 26 dB SNR."
+   },
+   "verdict": {
+    "A3": "voice: PASS human 0.99 (voice)",
+    "B1": "weak_voice: PASS human 0.99 (voice)",
+    "B2": "knock: PASS class knocking, human 0.78",
+    "C2": "dog: PASS dismissed (human 0.02, dog)",
+    "C1": "generator: PASS dismissed (human 0.01, engine)",
+    "B3": "settling: PASS dismissed (human 0.08, debris)"
+   },
+   "analyse_s": 27.8
+  },
+  "hidden_C3_vi": {
+   "drones": {
+    "d1": [
+     -1.32,
+     8.26
+    ],
+    "d2": [
+     -8.77,
+     -4.64
+    ],
+    "d3": [
+     6.13,
+     -4.64
+    ]
+   },
+   "clips": [
+    {
+     "pile": "C1",
+     "truth": "generator",
+     "sound_class": "engine",
+     "human": 0.01,
+     "urgency": 0.02,
+     "reliability": 0.65,
+     "vad": 0.0,
+     "transcript": "",
+     "association": "confident",
+     "knock_periodicity": 0.0,
+     "hum_harmonicity": 0.352,
+     "class_scores": {
+      "voice": 0.036,
+      "shout": 0.0,
+      "knocking": 0.0,
+      "dog": 0.0,
+      "engine": 0.498,
+      "debris": 0.002,
+      "noise": 0.463
+     }
+    },
+    {
+     "pile": "B2",
+     "truth": "knock",
+     "sound_class": "voice",
+     "human": 0.47,
+     "urgency": 0.24,
+     "reliability": 0.43,
+     "vad": 0.261,
+     "transcript": "",
+     "association": "ambiguous",
+     "knock_periodicity": 0.29,
+     "hum_harmonicity": 0.101,
+     "class_scores": {
+      "voice": 0.511,
+      "shout": 0.0,
+      "knocking": 0.429,
+      "dog": 0.007,
+      "engine": 0.005,
+      "debris": 0.023,
+      "noise": 0.023
+     }
+    },
+    {
+     "pile": "C2",
+     "truth": "dog",
+     "sound_class": "dog",
+     "human": 0.01,
+     "urgency": 0.02,
+     "reliability": 0.84,
+     "vad": 0.0,
+     "transcript": "",
+     "association": "confident",
+     "knock_periodicity": 0.0,
+     "hum_harmonicity": 0.079,
+     "class_scores": {
+      "voice": 0.053,
+      "shout": 0.0,
+      "knocking": 0.0,
+      "dog": 0.934,
+      "engine": 0.003,
+      "debris": 0.0,
+      "noise": 0.01
+     }
+    },
+    {
+     "pile": "A3",
+     "truth": "voice",
+     "sound_class": "voice",
+     "human": 1.0,
+     "urgency": 0.7,
+     "reliability": 0.94,
+     "vad": 0.769,
+     "transcript": "Chompinga, your manorian is a biotruda. Can anyone hear me? My leg is trapped.",
+     "association": "confident",
+     "knock_periodicity": 0.0,
+     "hum_harmonicity": 0.1,
+     "class_scores": {
+      "voice": 0.997,
+      "shout": 0.0,
+      "knocking": 0.0,
+      "dog": 0.0,
+      "engine": 0.0,
+      "debris": 0.0,
+      "noise": 0.003
+     }
+    },
+    {
+     "pile": "B3",
+     "truth": "settling",
+     "sound_class": "voice",
+     "human": 0.45,
+     "urgency": 0.18,
+     "reliability": 0.41,
+     "vad": 0.0,
+     "transcript": "Oh",
+     "association": "ambiguous",
+     "knock_periodicity": 0.015,
+     "hum_harmonicity": 0.089,
+     "class_scores": {
+      "voice": 0.416,
+      "shout": 0.003,
+      "knocking": 0.079,
+      "dog": 0.003,
+      "engine": 0.031,
+      "debris": 0.208,
+      "noise": 0.26
+     }
+    },
+    {
+     "pile": "C3",
+     "truth": "voice",
+     "sound_class": "voice",
+     "human": 0.99,
+     "urgency": 0.35,
+     "reliability": 0.97,
+     "vad": 0.711,
+     "transcript": "",
+     "association": "confident",
+     "knock_periodicity": 0.0,
+     "hum_harmonicity": 0.079,
+     "class_scores": {
+      "voice": 0.99,
+      "shout": 0.0,
+      "knocking": 0.0,
+      "dog": 0.0,
+      "engine": 0.0,
+      "debris": 0.0,
+      "noise": 0.01
+     }
+    }
+   ],
+   "piles": [
+    {
+     "pile": "A3",
+     "priority": 78,
+     "status": "radar_ping"
+    },
+    {
+     "pile": "C3",
+     "priority": 56,
+     "status": "lead"
+    },
+    {
+     "pile": "B2",
+     "priority": 16,
+     "status": "lead"
+    },
+    {
+     "pile": "B3",
+     "priority": 14,
+     "status": "lead"
+    },
+    {
+     "pile": "A1",
+     "priority": 8,
+     "status": "no_signal_not_cleared"
+    },
+    {
+     "pile": "A2",
+     "priority": 8,
+     "status": "no_signal_not_cleared"
+    },
+    {
+     "pile": "B1",
+     "priority": 8,
+     "status": "no_signal_not_cleared"
+    },
+    {
+     "pile": "C1",
+     "priority": 0,
+     "status": "dismissed_nonhuman"
+    },
+    {
+     "pile": "C2",
+     "priority": 0,
+     "status": "dismissed_nonhuman"
+    }
+   ],
+   "dispatch": {
+    "pile_id": "A3",
+    "reason": "Send the radar drone to A3: highest priority (78) from \"Chompinga, your manorian is a biotruda. Can…\", 3/3 drones agreeing on the bearing at 25 dB SNR."
+   },
+   "verdict": {
+    "A3": "voice: PASS human 1.00 (voice)",
+    "B1": "weak_voice: no clip (not detected)",
+    "B2": "knock: FAIL class voice, human 0.47",
+    "C2": "dog: PASS dismissed (human 0.01, dog)",
+    "C1": "generator: PASS dismissed (human 0.01, engine)",
+    "B3": "settling: FAIL dismissed (human 0.45, voice)",
+    "C3": "voice: PASS human 0.99 (voice)"
+   },
+   "analyse_s": 44.9
+  },
+  "stress_dog_over_knock": {
+   "drones": {
+    "d1": [
+     -1.32,
+     8.26
+    ],
+    "d2": [
+     -8.77,
+     -4.64
+    ],
+    "d3": [
+     6.13,
+     -4.64
+    ]
+   },
+   "clips": [
+    {
+     "pile": "B1",
+     "truth": "weak_voice",
+     "sound_class": "voice",
+     "human": 0.9,
+     "urgency": 0.33,
+     "reliability": 0.7,
+     "vad": 0.398,
+     "transcript": "Hello! You're the only one?",
+     "association": "confident",
+     "knock_periodicity": 0.02,
+     "hum_harmonicity": 0.096,
+     "class_scores": {
+      "voice": 0.649,
+      "shout": 0.0,
+      "knocking": 0.014,
+      "dog": 0.0,
+      "engine": 0.002,
+      "debris": 0.004,
+      "noise": 0.33
+     }
+    },
+    {
+     "pile": "C1",
+     "truth": "generator",
+     "sound_class": "voice",
+     "human": 0.45,
+     "urgency": 0.18,
+     "reliability": 0.28,
+     "vad": 0.009,
+     "transcript": "Oh, oh, oh, oh.",
+     "association": "ambiguous",
+     "knock_periodicity": 0.0,
+     "hum_harmonicity": 0.131,
+     "class_scores": {
+      "voice": 0.403,
+      "shout": 0.0,
+      "knocking": 0.0,
+      "dog": 0.006,
+      "engine": 0.031,
+      "debris": 0.0,
+      "noise": 0.559
+     }
+    },
+    {
+     "pile": "B2",
+     "truth": "knock",
+     "sound_class": "knocking",
+     "human": 0.6,
+     "urgency": 0.42,
+     "reliability": 0.88,
+     "vad": 0.0,
+     "transcript": "",
+     "association": "confident",
+     "knock_periodicity": 0.445,
+     "hum_harmonicity": 0.089,
+     "class_scores": {
+      "voice": 0.4,
+      "shout": 0.009,
+      "knocking": 0.54,
+      "dog": 0.004,
+      "engine": 0.004,
+      "debris": 0.019,
+      "noise": 0.022
+     }
+    },
+    {
+     "pile": "C2",
+     "truth": "dog",
+     "sound_class": "dog",
+     "human": 0.0,
+     "urgency": 0.02,
+     "reliability": 0.85,
+     "vad": 0.0,
+     "transcript": "",
+     "association": "confident",
+     "knock_periodicity": 0.0,
+     "hum_harmonicity": 0.113,
+     "class_scores": {
+      "voice": 0.014,
+      "shout": 0.002,
+      "knocking": 0.0,
+      "dog": 0.675,
+      "engine": 0.007,
+      "debris": 0.002,
+      "noise": 0.3
+     }
+    },
+    {
+     "pile": "A3",
+     "truth": "voice",
+     "sound_class": "voice",
+     "human": 0.97,
+     "urgency": 0.34,
+     "reliability": 0.94,
+     "vad": 0.711,
+     "transcript": "",
+     "association": "confident",
+     "knock_periodicity": 0.0,
+     "hum_harmonicity": 0.092,
+     "class_scores": {
+      "voice": 0.974,
+      "shout": 0.0,
+      "knocking": 0.0,
+      "dog": 0.0,
+      "engine": 0.0,
+      "debris": 0.0,
+      "noise": 0.026
+     }
+    },
+    {
+     "pile": "B3",
+     "truth": "settling",
+     "sound_class": "debris",
+     "human": 0.07,
+     "urgency": 0.02,
+     "reliability": 0.99,
+     "vad": 0.0,
+     "transcript": "",
+     "association": "confident",
+     "knock_periodicity": 0.0,
+     "hum_harmonicity": 0.095,
+     "class_scores": {
+      "voice": 0.114,
+      "shout": 0.012,
+      "knocking": 0.114,
+      "dog": 0.022,
+      "engine": 0.093,
+      "debris": 0.322,
+      "noise": 0.323
+     }
+    }
+   ],
+   "piles": [
+    {
+     "pile": "A3",
+     "priority": 54,
+     "status": "radar_ping"
+    },
+    {
+     "pile": "B1",
+     "priority": 42,
+     "status": "lead"
+    },
+    {
+     "pile": "B2",
+     "priority": 35,
+     "status": "lead"
+    },
+    {
+     "pile": "C1",
+     "priority": 13,
+     "status": "lead"
+    },
+    {
+     "pile": "A1",
+     "priority": 8,
+     "status": "no_signal_not_cleared"
+    },
+    {
+     "pile": "A2",
+     "priority": 8,
+     "status": "no_signal_not_cleared"
+    },
+    {
+     "pile": "C3",
+     "priority": 8,
+     "status": "no_signal_not_cleared"
+    },
+    {
+     "pile": "B3",
+     "priority": 3,
+     "status": "dismissed_nonhuman"
+    },
+    {
+     "pile": "C2",
+     "priority": 0,
+     "status": "dismissed_nonhuman"
+    }
+   ],
+   "dispatch": {
+    "pile_id": "A3",
+    "reason": "Send the radar drone to A3: highest priority (54) from voice, 3/3 drones agreeing on the bearing at 27 dB SNR."
+   },
+   "verdict": {
+    "A3": "voice: PASS human 0.97 (voice)",
+    "B1": "weak_voice: PASS human 0.90 (voice)",
+    "B2": "knock: PASS class knocking, human 0.60",
+    "C2": "dog: PASS dismissed (human 0.00, dog)",
+    "C1": "generator: FAIL dismissed (human 0.45, voice)",
+    "B3": "settling: PASS dismissed (human 0.07, debris)"
+   },
+   "analyse_s": 35.9
+  }
+ }
+}

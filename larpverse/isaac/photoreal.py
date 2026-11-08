@@ -66,7 +66,7 @@ def add_args(ap):
     g.add_argument("--clean-overlay", type=int, default=-1,
                    help="footage clarity: hide weak candidates, one radar ring per scan, lines ride over the rubble "
                         "(1 on, 0 off, -1 auto = on for the collapse map)")
-    g.add_argument("--drone-style", choices=["mesh", "blocks"], default="mesh",
+    g.add_argument("--drone-style", choices=["mesh", "heavy", "blocks"], default="mesh",
                    help="mesh = smooth heavy-lift model (isaac/drone_mesh.py: rounded fuselage, carbon arms, coaxial "
                         "motor pods, tapered props, gimbal, gear); blocks = the old primitive model")
     g.add_argument("--prop-disc", type=float, default=0.06, help="opacity of the spinning-prop blur disc (0 = blades only)")

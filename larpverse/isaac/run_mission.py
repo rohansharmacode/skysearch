@@ -424,10 +424,12 @@ def main(argv=None):
         from isaac import drone_mesh as _dm
         _dm.POD_MODE = str(getattr(a, "delivery", "") or "") == "pod"      # radar rides in the winch pod
         drones = {i: DroneViz(stage, f"/World/Drones/{i}", did=i, scale=a.drone_scale, asset=a.drone_asset,
-                              model=a.drone_model)
+                              model=a.drone_model, delivery=str(getattr(a, "delivery", "") or "pod"))
                   for i in ids}
     from isaac.pods import NullPods, PodViz
-    pods = NullPods() if a.dry_run else PodViz(stage, ids)
+    # the team's heavy model carries its own winch pod (cable, sway, rests on the rubble); the mesh style does not
+    own_pod = (not a.dry_run) and all(getattr(d, "hang", None) is not None for d in drones.values())
+    pods = NullPods() if a.dry_run else PodViz(stage, ids, drones=drones if own_pod else None)
     from isaac.sensor_fx import NullFX, SensorFX     # LiDAR beams, radar pulses, sound domes, hotspot, dummies
     if a.overlay_style == "simple":                  # Rohan 2026-11-08: one idea at a time, nothing secondary
         from isaac import overlay as _ov, sensor_fx as _sfx

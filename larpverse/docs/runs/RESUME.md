@@ -65,7 +65,12 @@ Paused by the user at about 23:15 and resumed at about 23:20. All 11 agents were
 | a793a6498850fe65e | **Tasking + recon** (sim/tasking.py, sim/recon.py, tests, docs/TASKING_INTEGRATION.md integration diff) | DONE (7f7d904, 646a8ff, 2c1dced, 41231c4): diff in TASKING_INTEGRATION.md → mission. Idle. If the mission agent is the bottleneck, it can take grid_mission integrations once the pod work is committed |
 | ac3d7a7f1dc704099 | **Platform** (sim/platform.py, mapping/raycast_lidar.py, isaac/lidar.py, isaac/drone_viz.py, docs/PLATFORM.md) | DONE (84b9dd9, 337db98). R-PLAT-1/2/5 → mission, R-PLAT-3 → site, R-PLAT-4 → dashboard (producer of 16 m tiles still unassigned) |
 | ad524ba6da89b83ed | **Decider** — DONE (9730a11, 0958562); requests 1-3 → mission. Idle |
-| a02bd98e325a265bc | **Comms / rescue hotspot** (sim/comms.py, tests/test_comms.py, docs/HOTSPOT.md, dashboard/portal/) | NEW 00:05: Wi-Fi AP + captive portal + mesh backhaul + RSSI phone localisation; serve.py /api/portal patch → orchestrator applies |
+| a02bd98e325a265bc | **Comms / rescue hotspot** (sim/comms.py, tests/test_comms.py, docs/HOTSPOT.md, dashboard/portal/) | DONE (65b16dc..2e14593). serve.py + scenario + contract v1.4.3 applied cbe715f; grid_mission diff §9.2 → mission (queued); dashboard wiring → dashboard |
+| a46e0ecedd0867d45 | **Dummy audio** (assets/audio/dummies/, scripts/build_dummy_audio.py, docs/DUMMY_AUDIO.md) | DONE 2b95209: 126 clips (57 MB), profiles + hidden C3 (vi) / A1 (id). Leakage + sources= hook → acoustic. USER: Hokkien native recordings, CC0 groan |
+| ae7b1717c7d0c4b66 | **Hardware + comms architecture** (docs/HARDWARE.md, docs/COMMS_ARCHITECTURE.md, data/hardware_bom.json) | DONE (41a42bf, 3627d19): ~$61k/drone, 14 kg payload, raw data stays on drone, ArduPilot build airframe (Harris H6HL), custom USRP pod radar. Requests routed (assets, comms, mission) |
+| a74b2c46c151e5b6f | **Flight motion** (sim/flight_motion.py, isaac/motion.py, scripts/motion_preview.py, animation/motion-preview.html, docs/MOTION.md) | DONE 2cac1d7: 0 velocity jumps (was 471), jerk 55k→6 m/s³, touchdown 0.19 m/s. R1 SmoothFlight → mission, R2 → live, R3 applied. Mission ~25-30% longer → re-derive the take gates |
+| aaa8c6e412c69ccaf | **Isaac scene assets** (isaac/van.py, dummies.py, drone_viz.py, pods.py; docs/ISAAC_ASSETS.md) | DONE 51634ef: van 12k tris, drone 10k with BOM parts, pod, dummies + hidden; hooks 1-5 → live agent |
+| a5aae449f969b5952 | **Isaac live single take** (isaac/run_mission.py, live.py, hud.py; docs/VIDEO_PLAN.md) | NEW: stage = source of truth, live unscripted triggers, perception HUD, 60 s one-take plan |
 | a5e7bdb232aa15f7b | **Speaker** (sim/callout.py, sim/guidance.py, acoustic/speaker_assets.py, docs/SPEAKER.md, tests/test_callout) | DONE (4d46fb4, a8eff22, c8cf446). serve.py /api/broadcast applied b90217d; mission patch §6 → mission (3 langs default); panel → dashboard. Hokkien voice needs native recording |
 
 Paused: a946c57cc57fd5b2b (video cut, `scripts/cut_video.py`). Resume it when the Isaac re-record exists.
@@ -73,6 +78,11 @@ Paused: a946c57cc57fd5b2b (video cut, `scripts/cut_video.py`). Resume it when th
 Done: tech report a56b6a6dcfe7aacab (`docs/TECHNICAL_REPORT.md`, about 11k words, «PENDING» placeholders to fill), pitch, demo runner, reviewers pass 1 and 2, Isaac merge, SLAM, radar DSP and validation, Gemini decider.
 
 ## Integration queue (orchestrator does or forwards these)
+
+0. TODO after the mission eval finishes: widen drone pads to 4.5 m spacing (heavy drone span 3.1 m; currently 2.6 m, rotors overlap). Grid (-6,-49),(-1.5,-49),(3,-49); collapse (-62,-150),(-57.5,-150),(-53,-150). Clear of the van cones at base+5.4 m. Then regenerate scenario_seed7.js.
+0. Quick Isaac brief sent: docs/ISAAC_QUICK.md (23:20). FULL brief due once van/dummies/live/motion land, about 00:30. Update ISAAC_BRIEF.md and send it to the user.
+0. **DELIVERABLE (user, 22:55): ≤60 s single-take Isaac stream capture with perception on screen and ONE unscripted live change.** Everything serves this. The user said: no Whisper download, no new downloads for the audio work.
+
 
 1. When **tasking, recon and speaker** diffs land (`docs/TASKING_INTEGRATION.md`, `docs/SPEAKER.md`), forward them to the mission agent to apply. Apply the `serve.py` broadcast patch myself (scripts/ are orchestrator-owned).
 2. When the **vitals** hooks land, forward them to the mission agent; the dashboard Dig-order panel consumes the vitals fields.

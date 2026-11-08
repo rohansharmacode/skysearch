@@ -1,0 +1,4585 @@
+{
+ "schema": "larpverse.dummy_audio/v1",
+ "generated_by": "scripts/build_dummy_audio.py",
+ "updated": "2026-11-07T23:47:28",
+ "format": {
+  "sample_rate": 48000,
+  "channels": 1,
+  "sample_width_bits": 16,
+  "peak_ceiling_dbfs": -1.0,
+  "loudness": "gated RMS dBFS (50 ms frames within 30 dB of the loudest, > -70 dBFS)",
+  "target_rms_dbfs": {
+   "voice": -20.0,
+   "weak_voice": -32.0,
+   "knock": -24.0,
+   "groan": -26.0,
+   "cough": -22.0,
+   "cry": -22.0,
+   "dog": -20.0,
+   "generator": -22.0,
+   "settling": -24.0,
+   "wind": -26.0,
+   "siren": -24.0
+  }
+ },
+ "rubble_model": {
+  "depths_m": [
+   0.5,
+   1.0,
+   1.5,
+   2.0
+  ],
+  "loss_db": "min(d * (3 + 6 * f_kHz), 70)",
+  "void_reverb": "RT60 0.22 s, direct-to-reverberant +8 dB",
+  "status": "ESTIMATE, not measured. 3 dB/m broadband matches acoustic/scene.py and sim/callout.py; the frequency slope is a heuristic for porous granular rubble"
+ },
+ "kinds": [
+  "voice",
+  "weak_voice",
+  "knock",
+  "groan",
+  "cough",
+  "cry",
+  "dog",
+  "generator",
+  "settling",
+  "wind",
+  "siren"
+ ],
+ "clips": [
+  {
+   "id": "voice_en_help_real_a",
+   "file": "voice_en_help_real_a.wav",
+   "kind": "voice",
+   "human": true,
+   "language": "en",
+   "transcript": "Help me!",
+   "transcript_en": "Help me!",
+   "source": "teammate recording set (F. Valisalo), data/audio_real/frances/voice_04.wav",
+   "licence": "CC0 1.0",
+   "attribution": "\"help me\" by Gemesil (https://freesound.org/people/Gemesil/sounds/529115), CC0",
+   "origin_url": "https://freesound.org/people/Gemesil/sounds/529115",
+   "processing": [
+    "trim / best window",
+    "resample 16 -> 48 kHz (no content above 8 kHz)",
+    "high-pass 80 Hz",
+    "loudness match"
+   ],
+   "synthetic": false,
+   "sample_rate": 48000,
+   "duration_s": 1.477,
+   "rms_dbfs": -20.0,
+   "peak_dbfs": -7.78,
+   "through_rubble_depth_m": 0.0,
+   "parent": null,
+   "suggested_spl_db_1m": 90,
+   "schedule": {
+    "mode": "loop",
+    "period_s": 9.0,
+    "jitter_s": 2.0
+   },
+   "notes": "transcript from the Freesound title, not checked word by word"
+  },
+  {
+   "id": "voice_en_help_real_a__0.5m",
+   "file": "rubble/voice_en_help_real_a__0.5m.wav",
+   "kind": "voice",
+   "human": true,
+   "language": "en",
+   "transcript": "Help me!",
+   "transcript_en": "Help me!",
+   "source": "teammate recording set (F. Valisalo), data/audio_real/frances/voice_04.wav",
+   "licence": "CC0 1.0",
+   "attribution": "\"help me\" by Gemesil (https://freesound.org/people/Gemesil/sounds/529115), CC0",
+   "origin_url": "https://freesound.org/people/Gemesil/sounds/529115",
+   "processing": [
+    "trim / best window",
+    "resample 16 -> 48 kHz (no content above 8 kHz)",
+    "high-pass 80 Hz",
+    "loudness match",
+    "through rubble 0.5 m: estimated loss d*(3+6 f/kHz) dB + small-void reverb (RT60 0.22 s)"
+   ],
+   "synthetic": false,
+   "sample_rate": 48000,
+   "duration_s": 1.727,
+   "rms_dbfs": -22.33,
+   "peak_dbfs": -11.23,
+   "through_rubble_depth_m": 0.5,
+   "parent": "voice_en_help_real_a",
+   "suggested_spl_db_1m": 90,
+   "schedule": {
+    "mode": "loop",
+    "period_s": 9.0,
+    "jitter_s": 2.0
+   },
+   "notes": "transcript from the Freesound title, not checked word by word"
+  },
+  {
+   "id": "voice_en_help_real_a__1.0m",
+   "file": "rubble/voice_en_help_real_a__1.0m.wav",
+   "kind": "voice",
+   "human": true,
+   "language": "en",
+   "transcript": "Help me!",
+   "transcript_en": "Help me!",
+   "source": "teammate recording set (F. Valisalo), data/audio_real/frances/voice_04.wav",
+   "licence": "CC0 1.0",
+   "attribution": "\"help me\" by Gemesil (https://freesound.org/people/Gemesil/sounds/529115), CC0",
+   "origin_url": "https://freesound.org/people/Gemesil/sounds/529115",
+   "processing": [
+    "trim / best window",
+    "resample 16 -> 48 kHz (no content above 8 kHz)",
+    "high-pass 80 Hz",
+    "loudness match",
+    "through rubble 1.0 m: estimated loss d*(3+6 f/kHz) dB + small-void reverb (RT60 0.22 s)"
+   ],
+   "synthetic": false,
+   "sample_rate": 48000,
+   "duration_s": 1.727,
+   "rms_dbfs": -24.93,
+   "peak_dbfs": -11.72,
+   "through_rubble_depth_m": 1.0,
+   "parent": "voice_en_help_real_a",
+   "suggested_spl_db_1m": 90,
+   "schedule": {
+    "mode": "loop",
+    "period_s": 9.0,
+    "jitter_s": 2.0
+   },
+   "notes": "transcript from the Freesound title, not checked word by word"
+  },
+  {
+   "id": "voice_en_help_real_a__1.5m",
+   "file": "rubble/voice_en_help_real_a__1.5m.wav",
+   "kind": "voice",
+   "human": true,
+   "language": "en",
+   "transcript": "Help me!",
+   "transcript_en": "Help me!",
+   "source": "teammate recording set (F. Valisalo), data/audio_real/frances/voice_04.wav",
+   "licence": "CC0 1.0",
+   "attribution": "\"help me\" by Gemesil (https://freesound.org/people/Gemesil/sounds/529115), CC0",
+   "origin_url": "https://freesound.org/people/Gemesil/sounds/529115",
+   "processing": [
+    "trim / best window",
+    "resample 16 -> 48 kHz (no content above 8 kHz)",
+    "high-pass 80 Hz",
+    "loudness match",
+    "through rubble 1.5 m: estimated loss d*(3+6 f/kHz) dB + small-void reverb (RT60 0.22 s)"
+   ],
+   "synthetic": false,
+   "sample_rate": 48000,
+   "duration_s": 1.727,
+   "rms_dbfs": -28.19,
+   "peak_dbfs": -17.71,
+   "through_rubble_depth_m": 1.5,
+   "parent": "voice_en_help_real_a",
+   "suggested_spl_db_1m": 90,
+   "schedule": {
+    "mode": "loop",
+    "period_s": 9.0,
+    "jitter_s": 2.0
+   },
+   "notes": "transcript from the Freesound title, not checked word by word"
+  },
+  {
+   "id": "voice_en_help_real_a__2.0m",
+   "file": "rubble/voice_en_help_real_a__2.0m.wav",
+   "kind": "voice",
+   "human": true,
+   "language": "en",
+   "transcript": "Help me!",
+   "transcript_en": "Help me!",
+   "source": "teammate recording set (F. Valisalo), data/audio_real/frances/voice_04.wav",
+   "licence": "CC0 1.0",
+   "attribution": "\"help me\" by Gemesil (https://freesound.org/people/Gemesil/sounds/529115), CC0",
+   "origin_url": "https://freesound.org/people/Gemesil/sounds/529115",
+   "processing": [
+    "trim / best window",
+    "resample 16 -> 48 kHz (no content above 8 kHz)",
+    "high-pass 80 Hz",
+    "loudness match",
+    "through rubble 2.0 m: estimated loss d*(3+6 f/kHz) dB + small-void reverb (RT60 0.22 s)"
+   ],
+   "synthetic": false,
+   "sample_rate": 48000,
+   "duration_s": 1.727,
+   "rms_dbfs": -30.42,
+   "peak_dbfs": -19.84,
+   "through_rubble_depth_m": 2.0,
+   "parent": "voice_en_help_real_a",
+   "suggested_spl_db_1m": 90,
+   "schedule": {
+    "mode": "loop",
+    "period_s": 9.0,
+    "jitter_s": 2.0
+   },
+   "notes": "transcript from the Freesound title, not checked word by word"
+  },
+  {
+   "id": "voice_en_help_real_b",
+   "file": "voice_en_help_real_b.wav",
+   "kind": "voice",
+   "human": true,
+   "language": "en",
+   "transcript": "Help! Help me!",
+   "transcript_en": "Help! Help me!",
+   "source": "teammate recording set (F. Valisalo), data/audio_real/frances/voice_07.wav",
+   "licence": "CC0 1.0",
+   "attribution": "\"HELP HELP ME.\" by Legnalegna55 (https://freesound.org/people/Legnalegna55/sounds/539276), CC0",
+   "origin_url": "https://freesound.org/people/Legnalegna55/sounds/539276",
+   "processing": [
+    "trim / best window",
+    "resample 16 -> 48 kHz (no content above 8 kHz)",
+    "high-pass 80 Hz",
+    "loudness match"
+   ],
+   "synthetic": false,
+   "sample_rate": 48000,
+   "duration_s": 1.82,
+   "rms_dbfs": -20.0,
+   "peak_dbfs": -2.75,
+   "through_rubble_depth_m": 0.0,
+   "parent": null,
+   "suggested_spl_db_1m": 90,
+   "schedule": {
+    "mode": "loop",
+    "period_s": 9.0,
+    "jitter_s": 2.0
+   },
+   "notes": "transcript from the Freesound title, not checked word by word"
+  },
+  {
+   "id": "voice_en_help_real_b__0.5m",
+   "file": "rubble/voice_en_help_real_b__0.5m.wav",
+   "kind": "voice",
+   "human": true,
+   "language": "en",
+   "transcript": "Help! Help me!",
+   "transcript_en": "Help! Help me!",
+   "source": "teammate recording set (F. Valisalo), data/audio_real/frances/voice_07.wav",
+   "licence": "CC0 1.0",
+   "attribution": "\"HELP HELP ME.\" by Legnalegna55 (https://freesound.org/people/Legnalegna55/sounds/539276), CC0",
+   "origin_url": "https://freesound.org/people/Legnalegna55/sounds/539276",
+   "processing": [
+    "trim / best window",
+    "resample 16 -> 48 kHz (no content above 8 kHz)",
+    "high-pass 80 Hz",
+    "loudness match",
+    "through rubble 0.5 m: estimated loss d*(3+6 f/kHz) dB + small-void reverb (RT60 0.22 s)"
+   ],
+   "synthetic": false,
+   "sample_rate": 48000,
+   "duration_s": 2.07,
+   "rms_dbfs": -25.71,
+   "peak_dbfs": -7.44,
+   "through_rubble_depth_m": 0.5,
+   "parent": "voice_en_help_real_b",
+   "suggested_spl_db_1m": 90,
+   "schedule": {
+    "mode": "loop",
+    "period_s": 9.0,
+    "jitter_s": 2.0
+   },
+   "notes": "transcript from the Freesound title, not checked word by word"
+  },
+  {
+   "id": "voice_en_help_real_b__1.0m",
+   "file": "rubble/voice_en_help_real_b__1.0m.wav",
+   "kind": "voice",
+   "human": true,
+   "language": "en",
+   "transcript": "Help! Help me!",
+   "transcript_en": "Help! Help me!",
+   "source": "teammate recording set (F. Valisalo), data/audio_real/frances/voice_07.wav",
+   "licence": "CC0 1.0",
+   "attribution": "\"HELP HELP ME.\" by Legnalegna55 (https://freesound.org/people/Legnalegna55/sounds/539276), CC0",
+   "origin_url": "https://freesound.org/people/Legnalegna55/sounds/539276",
+   "processing": [
+    "trim / best window",
+    "resample 16 -> 48 kHz (no content above 8 kHz)",
+    "high-pass 80 Hz",
+    "loudness match",
+    "through rubble 1.0 m: estimated loss d*(3+6 f/kHz) dB + small-void reverb (RT60 0.22 s)"
+   ],
+   "synthetic": false,
+   "sample_rate": 48000,
+   "duration_s": 2.07,
+   "rms_dbfs": -31.19,
+   "peak_dbfs": -14.24,
+   "through_rubble_depth_m": 1.0,
+   "parent": "voice_en_help_real_b",
+   "suggested_spl_db_1m": 90,
+   "schedule": {
+    "mode": "loop",
+    "period_s": 9.0,
+    "jitter_s": 2.0
+   },
+   "notes": "transcript from the Freesound title, not checked word by word"
+  },
+  {
+   "id": "voice_en_help_real_b__1.5m",
+   "file": "rubble/voice_en_help_real_b__1.5m.wav",
+   "kind": "voice",
+   "human": true,
+   "language": "en",
+   "transcript": "Help! Help me!",
+   "transcript_en": "Help! Help me!",
+   "source": "teammate recording set (F. Valisalo), data/audio_real/frances/voice_07.wav",
+   "licence": "CC0 1.0",
+   "attribution": "\"HELP HELP ME.\" by Legnalegna55 (https://freesound.org/people/Legnalegna55/sounds/539276), CC0",
+   "origin_url": "https://freesound.org/people/Legnalegna55/sounds/539276",
+   "processing": [
+    "trim / best window",
+    "resample 16 -> 48 kHz (no content above 8 kHz)",
+    "high-pass 80 Hz",
+    "loudness match",
+    "through rubble 1.5 m: estimated loss d*(3+6 f/kHz) dB + small-void reverb (RT60 0.22 s)"
+   ],
+   "synthetic": false,
+   "sample_rate": 48000,
+   "duration_s": 2.07,
+   "rms_dbfs": -34.37,
+   "peak_dbfs": -19.63,
+   "through_rubble_depth_m": 1.5,
+   "parent": "voice_en_help_real_b",
+   "suggested_spl_db_1m": 90,
+   "schedule": {
+    "mode": "loop",
+    "period_s": 9.0,
+    "jitter_s": 2.0
+   },
+   "notes": "transcript from the Freesound title, not checked word by word"
+  },
+  {
+   "id": "voice_en_help_real_b__2.0m",
+   "file": "rubble/voice_en_help_real_b__2.0m.wav",
+   "kind": "voice",
+   "human": true,
+   "language": "en",
+   "transcript": "Help! Help me!",
+   "transcript_en": "Help! Help me!",
+   "source": "teammate recording set (F. Valisalo), data/audio_real/frances/voice_07.wav",
+   "licence": "CC0 1.0",
+   "attribution": "\"HELP HELP ME.\" by Legnalegna55 (https://freesound.org/people/Legnalegna55/sounds/539276), CC0",
+   "origin_url": "https://freesound.org/people/Legnalegna55/sounds/539276",
+   "processing": [
+    "trim / best window",
+    "resample 16 -> 48 kHz (no content above 8 kHz)",
+    "high-pass 80 Hz",
+    "loudness match",
+    "through rubble 2.0 m: estimated loss d*(3+6 f/kHz) dB + small-void reverb (RT60 0.22 s)"
+   ],
+   "synthetic": false,
+   "sample_rate": 48000,
+   "duration_s": 2.07,
+   "rms_dbfs": -39.9,
+   "peak_dbfs": -24.73,
+   "through_rubble_depth_m": 2.0,
+   "parent": "voice_en_help_real_b",
+   "suggested_spl_db_1m": 90,
+   "schedule": {
+    "mode": "loop",
+    "period_s": 9.0,
+    "jitter_s": 2.0
+   },
+   "notes": "transcript from the Freesound title, not checked word by word"
+  },
+  {
+   "id": "voice_en_help_real_c",
+   "file": "voice_en_help_real_c.wav",
+   "kind": "voice",
+   "human": true,
+   "language": "en",
+   "transcript": "Help me! (repeated)",
+   "transcript_en": "Help me! (repeated)",
+   "source": "teammate recording set (F. Valisalo), data/audio_real/frances/voice_08.wav",
+   "licence": "CC0 1.0",
+   "attribution": "\"Help Me!.wav\" by Bee_Abney (https://freesound.org/people/Bee_Abney/sounds/567532), CC0",
+   "origin_url": "https://freesound.org/people/Bee_Abney/sounds/567532",
+   "processing": [
+    "trim / best window",
+    "resample 16 -> 48 kHz (no content above 8 kHz)",
+    "high-pass 80 Hz",
+    "loudness match"
+   ],
+   "synthetic": false,
+   "sample_rate": 48000,
+   "duration_s": 5.0,
+   "rms_dbfs": -20.02,
+   "peak_dbfs": -6.4,
+   "through_rubble_depth_m": 0.0,
+   "parent": null,
+   "suggested_spl_db_1m": 90,
+   "schedule": {
+    "mode": "loop",
+    "period_s": 9.0,
+    "jitter_s": 2.0
+   },
+   "notes": "transcript from the Freesound title, not checked word by word"
+  },
+  {
+   "id": "voice_en_help_real_c__0.5m",
+   "file": "rubble/voice_en_help_real_c__0.5m.wav",
+   "kind": "voice",
+   "human": true,
+   "language": "en",
+   "transcript": "Help me! (repeated)",
+   "transcript_en": "Help me! (repeated)",
+   "source": "teammate recording set (F. Valisalo), data/audio_real/frances/voice_08.wav",
+   "licence": "CC0 1.0",
+   "attribution": "\"Help Me!.wav\" by Bee_Abney (https://freesound.org/people/Bee_Abney/sounds/567532), CC0",
+   "origin_url": "https://freesound.org/people/Bee_Abney/sounds/567532",
+   "processing": [
+    "trim / best window",
+    "resample 16 -> 48 kHz (no content above 8 kHz)",
+    "high-pass 80 Hz",
+    "loudness match",
+    "through rubble 0.5 m: estimated loss d*(3+6 f/kHz) dB + small-void reverb (RT60 0.22 s)"
+   ],
+   "synthetic": false,
+   "sample_rate": 48000,
+   "duration_s": 5.25,
+   "rms_dbfs": -22.98,
+   "peak_dbfs": -8.25,
+   "through_rubble_depth_m": 0.5,
+   "parent": "voice_en_help_real_c",
+   "suggested_spl_db_1m": 90,
+   "schedule": {
+    "mode": "loop",
+    "period_s": 9.0,
+    "jitter_s": 2.0
+   },
+   "notes": "transcript from the Freesound title, not checked word by word"
+  },
+  {
+   "id": "voice_en_help_real_c__1.0m",
+   "file": "rubble/voice_en_help_real_c__1.0m.wav",
+   "kind": "voice",
+   "human": true,
+   "language": "en",
+   "transcript": "Help me! (repeated)",
+   "transcript_en": "Help me! (repeated)",
+   "source": "teammate recording set (F. Valisalo), data/audio_real/frances/voice_08.wav",
+   "licence": "CC0 1.0",
+   "attribution": "\"Help Me!.wav\" by Bee_Abney (https://freesound.org/people/Bee_Abney/sounds/567532), CC0",
+   "origin_url": "https://freesound.org/people/Bee_Abney/sounds/567532",
+   "processing": [
+    "trim / best window",
+    "resample 16 -> 48 kHz (no content above 8 kHz)",
+    "high-pass 80 Hz",
+    "loudness match",
+    "through rubble 1.0 m: estimated loss d*(3+6 f/kHz) dB + small-void reverb (RT60 0.22 s)"
+   ],
+   "synthetic": false,
+   "sample_rate": 48000,
+   "duration_s": 5.25,
+   "rms_dbfs": -26.33,
+   "peak_dbfs": -12.9,
+   "through_rubble_depth_m": 1.0,
+   "parent": "voice_en_help_real_c",
+   "suggested_spl_db_1m": 90,
+   "schedule": {
+    "mode": "loop",
+    "period_s": 9.0,
+    "jitter_s": 2.0
+   },
+   "notes": "transcript from the Freesound title, not checked word by word"
+  },
+  {
+   "id": "voice_en_help_real_c__1.5m",
+   "file": "rubble/voice_en_help_real_c__1.5m.wav",
+   "kind": "voice",
+   "human": true,
+   "language": "en",
+   "transcript": "Help me! (repeated)",
+   "transcript_en": "Help me! (repeated)",
+   "source": "teammate recording set (F. Valisalo), data/audio_real/frances/voice_08.wav",
+   "licence": "CC0 1.0",
+   "attribution": "\"Help Me!.wav\" by Bee_Abney (https://freesound.org/people/Bee_Abney/sounds/567532), CC0",
+   "origin_url": "https://freesound.org/people/Bee_Abney/sounds/567532",
+   "processing": [
+    "trim / best window",
+    "resample 16 -> 48 kHz (no content above 8 kHz)",
+    "high-pass 80 Hz",
+    "loudness match",
+    "through rubble 1.5 m: estimated loss d*(3+6 f/kHz) dB + small-void reverb (RT60 0.22 s)"
+   ],
+   "synthetic": false,
+   "sample_rate": 48000,
+   "duration_s": 5.25,
+   "rms_dbfs": -30.62,
+   "peak_dbfs": -16.22,
+   "through_rubble_depth_m": 1.5,
+   "parent": "voice_en_help_real_c",
+   "suggested_spl_db_1m": 90,
+   "schedule": {
+    "mode": "loop",
+    "period_s": 9.0,
+    "jitter_s": 2.0
+   },
+   "notes": "transcript from the Freesound title, not checked word by word"
+  },
+  {
+   "id": "voice_en_help_real_c__2.0m",
+   "file": "rubble/voice_en_help_real_c__2.0m.wav",
+   "kind": "voice",
+   "human": true,
+   "language": "en",
+   "transcript": "Help me! (repeated)",
+   "transcript_en": "Help me! (repeated)",
+   "source": "teammate recording set (F. Valisalo), data/audio_real/frances/voice_08.wav",
+   "licence": "CC0 1.0",
+   "attribution": "\"Help Me!.wav\" by Bee_Abney (https://freesound.org/people/Bee_Abney/sounds/567532), CC0",
+   "origin_url": "https://freesound.org/people/Bee_Abney/sounds/567532",
+   "processing": [
+    "trim / best window",
+    "resample 16 -> 48 kHz (no content above 8 kHz)",
+    "high-pass 80 Hz",
+    "loudness match",
+    "through rubble 2.0 m: estimated loss d*(3+6 f/kHz) dB + small-void reverb (RT60 0.22 s)"
+   ],
+   "synthetic": false,
+   "sample_rate": 48000,
+   "duration_s": 5.25,
+   "rms_dbfs": -33.82,
+   "peak_dbfs": -19.53,
+   "through_rubble_depth_m": 2.0,
+   "parent": "voice_en_help_real_c",
+   "suggested_spl_db_1m": 90,
+   "schedule": {
+    "mode": "loop",
+    "period_s": 9.0,
+    "jitter_s": 2.0
+   },
+   "notes": "transcript from the Freesound title, not checked word by word"
+  },
+  {
+   "id": "voice_en_please_real",
+   "file": "voice_en_please_real.wav",
+   "kind": "voice",
+   "human": true,
+   "language": "en",
+   "transcript": "Please help me, I'm so scared, please help me.",
+   "transcript_en": "Please help me, I'm so scared, please help me.",
+   "source": "teammate recording set (F. Valisalo), data/audio_real/frances/voice_06.wav",
+   "licence": "CC0 1.0",
+   "attribution": "\"Please Help Me Im So Scared Please Help Me\" by DRFX (https://freesound.org/people/DRFX/sounds/397688), CC0",
+   "origin_url": "https://freesound.org/people/DRFX/sounds/397688",
+   "processing": [
+    "trim / best window",
+    "resample 16 -> 48 kHz (no content above 8 kHz)",
+    "high-pass 80 Hz",
+    "loudness match"
+   ],
+   "synthetic": false,
+   "sample_rate": 48000,
+   "duration_s": 6.0,
+   "rms_dbfs": -20.16,
+   "peak_dbfs": -1.0,
+   "through_rubble_depth_m": 0.0,
+   "parent": null,
+   "suggested_spl_db_1m": 90,
+   "schedule": {
+    "mode": "loop",
+    "period_s": 9.0,
+    "jitter_s": 2.0
+   },
+   "notes": "transcript from the Freesound title, not checked word by word"
+  },
+  {
+   "id": "voice_en_please_real__0.5m",
+   "file": "rubble/voice_en_please_real__0.5m.wav",
+   "kind": "voice",
+   "human": true,
+   "language": "en",
+   "transcript": "Please help me, I'm so scared, please help me.",
+   "transcript_en": "Please help me, I'm so scared, please help me.",
+   "source": "teammate recording set (F. Valisalo), data/audio_real/frances/voice_06.wav",
+   "licence": "CC0 1.0",
+   "attribution": "\"Please Help Me Im So Scared Please Help Me\" by DRFX (https://freesound.org/people/DRFX/sounds/397688), CC0",
+   "origin_url": "https://freesound.org/people/DRFX/sounds/397688",
+   "processing": [
+    "trim / best window",
+    "resample 16 -> 48 kHz (no content above 8 kHz)",
+    "high-pass 80 Hz",
+    "loudness match",
+    "through rubble 0.5 m: estimated loss d*(3+6 f/kHz) dB + small-void reverb (RT60 0.22 s)"
+   ],
+   "synthetic": false,
+   "sample_rate": 48000,
+   "duration_s": 6.25,
+   "rms_dbfs": -21.6,
+   "peak_dbfs": -3.41,
+   "through_rubble_depth_m": 0.5,
+   "parent": "voice_en_please_real",
+   "suggested_spl_db_1m": 90,
+   "schedule": {
+    "mode": "loop",
+    "period_s": 9.0,
+    "jitter_s": 2.0
+   },
+   "notes": "transcript from the Freesound title, not checked word by word"
+  },
+  {
+   "id": "voice_en_please_real__1.0m",
+   "file": "rubble/voice_en_please_real__1.0m.wav",
+   "kind": "voice",
+   "human": true,
+   "language": "en",
+   "transcript": "Please help me, I'm so scared, please help me.",
+   "transcript_en": "Please help me, I'm so scared, please help me.",
+   "source": "teammate recording set (F. Valisalo), data/audio_real/frances/voice_06.wav",
+   "licence": "CC0 1.0",
+   "attribution": "\"Please Help Me Im So Scared Please Help Me\" by DRFX (https://freesound.org/people/DRFX/sounds/397688), CC0",
+   "origin_url": "https://freesound.org/people/DRFX/sounds/397688",
+   "processing": [
+    "trim / best window",
+    "resample 16 -> 48 kHz (no content above 8 kHz)",
+    "high-pass 80 Hz",
+    "loudness match",
+    "through rubble 1.0 m: estimated loss d*(3+6 f/kHz) dB + small-void reverb (RT60 0.22 s)"
+   ],
+   "synthetic": false,
+   "sample_rate": 48000,
+   "duration_s": 6.25,
+   "rms_dbfs": -25.13,
+   "peak_dbfs": -5.53,
+   "through_rubble_depth_m": 1.0,
+   "parent": "voice_en_please_real",
+   "suggested_spl_db_1m": 90,
+   "schedule": {
+    "mode": "loop",
+    "period_s": 9.0,
+    "jitter_s": 2.0
+   },
+   "notes": "transcript from the Freesound title, not checked word by word"
+  },
+  {
+   "id": "voice_en_please_real__1.5m",
+   "file": "rubble/voice_en_please_real__1.5m.wav",
+   "kind": "voice",
+   "human": true,
+   "language": "en",
+   "transcript": "Please help me, I'm so scared, please help me.",
+   "transcript_en": "Please help me, I'm so scared, please help me.",
+   "source": "teammate recording set (F. Valisalo), data/audio_real/frances/voice_06.wav",
+   "licence": "CC0 1.0",
+   "attribution": "\"Please Help Me Im So Scared Please Help Me\" by DRFX (https://freesound.org/people/DRFX/sounds/397688), CC0",
+   "origin_url": "https://freesound.org/people/DRFX/sounds/397688",
+   "processing": [
+    "trim / best window",
+    "resample 16 -> 48 kHz (no content above 8 kHz)",
+    "high-pass 80 Hz",
+    "loudness match",
+    "through rubble 1.5 m: estimated loss d*(3+6 f/kHz) dB + small-void reverb (RT60 0.22 s)"
+   ],
+   "synthetic": false,
+   "sample_rate": 48000,
+   "duration_s": 6.25,
+   "rms_dbfs": -26.93,
+   "peak_dbfs": -9.83,
+   "through_rubble_depth_m": 1.5,
+   "parent": "voice_en_please_real",
+   "suggested_spl_db_1m": 90,
+   "schedule": {
+    "mode": "loop",
+    "period_s": 9.0,
+    "jitter_s": 2.0
+   },
+   "notes": "transcript from the Freesound title, not checked word by word"
+  },
+  {
+   "id": "voice_en_please_real__2.0m",
+   "file": "rubble/voice_en_please_real__2.0m.wav",
+   "kind": "voice",
+   "human": true,
+   "language": "en",
+   "transcript": "Please help me, I'm so scared, please help me.",
+   "transcript_en": "Please help me, I'm so scared, please help me.",
+   "source": "teammate recording set (F. Valisalo), data/audio_real/frances/voice_06.wav",
+   "licence": "CC0 1.0",
+   "attribution": "\"Please Help Me Im So Scared Please Help Me\" by DRFX (https://freesound.org/people/DRFX/sounds/397688), CC0",
+   "origin_url": "https://freesound.org/people/DRFX/sounds/397688",
+   "processing": [
+    "trim / best window",
+    "resample 16 -> 48 kHz (no content above 8 kHz)",
+    "high-pass 80 Hz",
+    "loudness match",
+    "through rubble 2.0 m: estimated loss d*(3+6 f/kHz) dB + small-void reverb (RT60 0.22 s)"
+   ],
+   "synthetic": false,
+   "sample_rate": 48000,
+   "duration_s": 6.25,
+   "rms_dbfs": -30.03,
+   "peak_dbfs": -11.3,
+   "through_rubble_depth_m": 2.0,
+   "parent": "voice_en_please_real",
+   "suggested_spl_db_1m": 90,
+   "schedule": {
+    "mode": "loop",
+    "period_s": 9.0,
+    "jitter_s": 2.0
+   },
+   "notes": "transcript from the Freesound title, not checked word by word"
+  },
+  {
+   "id": "voice_en_call_tts",
+   "file": "voice_en_call_tts.wav",
+   "kind": "voice",
+   "human": true,
+   "language": "en",
+   "transcript": "Help! Can anyone hear me? My leg is trapped!",
+   "transcript_en": "Help! Can anyone hear me? My leg is trapped!",
+   "source": "TTS: Piper en_US-lessac-low (MIT code; voice: see its model card)",
+   "licence": "Piper TTS (MIT); voice model licence per its model card (rhasspy/piper-voices)",
+   "attribution": "Synthesised with Piper (en_US-lessac-low.onnx)",
+   "origin_url": null,
+   "processing": [
+    "Piper TTS",
+    "raised-voice processing: +10 % pitch, +5 dB presence at 2.5 kHz, soft saturation",
+    "loudness match"
+   ],
+   "synthetic": true,
+   "sample_rate": 48000,
+   "duration_s": 2.487,
+   "rms_dbfs": -20.0,
+   "peak_dbfs": -11.67,
+   "through_rubble_depth_m": 0.0,
+   "parent": null,
+   "suggested_spl_db_1m": 90,
+   "schedule": {
+    "mode": "loop",
+    "period_s": 9.0,
+    "jitter_s": 2.0
+   }
+  },
+  {
+   "id": "voice_en_call_tts__0.5m",
+   "file": "rubble/voice_en_call_tts__0.5m.wav",
+   "kind": "voice",
+   "human": true,
+   "language": "en",
+   "transcript": "Help! Can anyone hear me? My leg is trapped!",
+   "transcript_en": "Help! Can anyone hear me? My leg is trapped!",
+   "source": "TTS: Piper en_US-lessac-low (MIT code; voice: see its model card)",
+   "licence": "Piper TTS (MIT); voice model licence per its model card (rhasspy/piper-voices)",
+   "attribution": "Synthesised with Piper (en_US-lessac-low.onnx)",
+   "origin_url": null,
+   "processing": [
+    "Piper TTS",
+    "raised-voice processing: +10 % pitch, +5 dB presence at 2.5 kHz, soft saturation",
+    "loudness match",
+    "through rubble 0.5 m: estimated loss d*(3+6 f/kHz) dB + small-void reverb (RT60 0.22 s)"
+   ],
+   "synthetic": true,
+   "sample_rate": 48000,
+   "duration_s": 2.737,
+   "rms_dbfs": -21.53,
+   "peak_dbfs": -11.02,
+   "through_rubble_depth_m": 0.5,
+   "parent": "voice_en_call_tts",
+   "suggested_spl_db_1m": 90,
+   "schedule": {
+    "mode": "loop",
+    "period_s": 9.0,
+    "jitter_s": 2.0
+   }
+  },
+  {
+   "id": "voice_en_call_tts__1.0m",
+   "file": "rubble/voice_en_call_tts__1.0m.wav",
+   "kind": "voice",
+   "human": true,
+   "language": "en",
+   "transcript": "Help! Can anyone hear me? My leg is trapped!",
+   "transcript_en": "Help! Can anyone hear me? My leg is trapped!",
+   "source": "TTS: Piper en_US-lessac-low (MIT code; voice: see its model card)",
+   "licence": "Piper TTS (MIT); voice model licence per its model card (rhasspy/piper-voices)",
+   "attribution": "Synthesised with Piper (en_US-lessac-low.onnx)",
+   "origin_url": null,
+   "processing": [
+    "Piper TTS",
+    "raised-voice processing: +10 % pitch, +5 dB presence at 2.5 kHz, soft saturation",
+    "loudness match",
+    "through rubble 1.0 m: estimated loss d*(3+6 f/kHz) dB + small-void reverb (RT60 0.22 s)"
+   ],
+   "synthetic": true,
+   "sample_rate": 48000,
+   "duration_s": 2.737,
+   "rms_dbfs": -24.36,
+   "peak_dbfs": -12.38,
+   "through_rubble_depth_m": 1.0,
+   "parent": "voice_en_call_tts",
+   "suggested_spl_db_1m": 90,
+   "schedule": {
+    "mode": "loop",
+    "period_s": 9.0,
+    "jitter_s": 2.0
+   }
+  },
+  {
+   "id": "voice_en_call_tts__1.5m",
+   "file": "rubble/voice_en_call_tts__1.5m.wav",
+   "kind": "voice",
+   "human": true,
+   "language": "en",
+   "transcript": "Help! Can anyone hear me? My leg is trapped!",
+   "transcript_en": "Help! Can anyone hear me? My leg is trapped!",
+   "source": "TTS: Piper en_US-lessac-low (MIT code; voice: see its model card)",
+   "licence": "Piper TTS (MIT); voice model licence per its model card (rhasspy/piper-voices)",
+   "attribution": "Synthesised with Piper (en_US-lessac-low.onnx)",
+   "origin_url": null,
+   "processing": [
+    "Piper TTS",
+    "raised-voice processing: +10 % pitch, +5 dB presence at 2.5 kHz, soft saturation",
+    "loudness match",
+    "through rubble 1.5 m: estimated loss d*(3+6 f/kHz) dB + small-void reverb (RT60 0.22 s)"
+   ],
+   "synthetic": true,
+   "sample_rate": 48000,
+   "duration_s": 2.737,
+   "rms_dbfs": -26.99,
+   "peak_dbfs": -16.93,
+   "through_rubble_depth_m": 1.5,
+   "parent": "voice_en_call_tts",
+   "suggested_spl_db_1m": 90,
+   "schedule": {
+    "mode": "loop",
+    "period_s": 9.0,
+    "jitter_s": 2.0
+   }
+  },
+  {
+   "id": "voice_en_call_tts__2.0m",
+   "file": "rubble/voice_en_call_tts__2.0m.wav",
+   "kind": "voice",
+   "human": true,
+   "language": "en",
+   "transcript": "Help! Can anyone hear me? My leg is trapped!",
+   "transcript_en": "Help! Can anyone hear me? My leg is trapped!",
+   "source": "TTS: Piper en_US-lessac-low (MIT code; voice: see its model card)",
+   "licence": "Piper TTS (MIT); voice model licence per its model card (rhasspy/piper-voices)",
+   "attribution": "Synthesised with Piper (en_US-lessac-low.onnx)",
+   "origin_url": null,
+   "processing": [
+    "Piper TTS",
+    "raised-voice processing: +10 % pitch, +5 dB presence at 2.5 kHz, soft saturation",
+    "loudness match",
+    "through rubble 2.0 m: estimated loss d*(3+6 f/kHz) dB + small-void reverb (RT60 0.22 s)"
+   ],
+   "synthetic": true,
+   "sample_rate": 48000,
+   "duration_s": 2.737,
+   "rms_dbfs": -29.78,
+   "peak_dbfs": -18.98,
+   "through_rubble_depth_m": 2.0,
+   "parent": "voice_en_call_tts",
+   "suggested_spl_db_1m": 90,
+   "schedule": {
+    "mode": "loop",
+    "period_s": 9.0,
+    "jitter_s": 2.0
+   }
+  },
+  {
+   "id": "voice_en_here_tts",
+   "file": "voice_en_here_tts.wav",
+   "kind": "voice",
+   "human": true,
+   "language": "en",
+   "transcript": "I'm here! I'm here! Over here!",
+   "transcript_en": "I'm here! I'm here! Over here!",
+   "source": "TTS: Piper en_US-lessac-low (MIT code; voice: see its model card)",
+   "licence": "Piper TTS (MIT); voice model licence per its model card (rhasspy/piper-voices)",
+   "attribution": "Synthesised with Piper (en_US-lessac-low.onnx)",
+   "origin_url": null,
+   "processing": [
+    "Piper TTS",
+    "raised-voice processing: +10 % pitch, +5 dB presence at 2.5 kHz, soft saturation",
+    "loudness match"
+   ],
+   "synthetic": true,
+   "sample_rate": 48000,
+   "duration_s": 2.2,
+   "rms_dbfs": -20.0,
+   "peak_dbfs": -10.15,
+   "through_rubble_depth_m": 0.0,
+   "parent": null,
+   "suggested_spl_db_1m": 90,
+   "schedule": {
+    "mode": "after_callout",
+    "latency_s": [
+     1.5,
+     3.5
+    ],
+    "repeats": 2,
+    "period_s": 4.0
+   }
+  },
+  {
+   "id": "voice_en_here_tts__0.5m",
+   "file": "rubble/voice_en_here_tts__0.5m.wav",
+   "kind": "voice",
+   "human": true,
+   "language": "en",
+   "transcript": "I'm here! I'm here! Over here!",
+   "transcript_en": "I'm here! I'm here! Over here!",
+   "source": "TTS: Piper en_US-lessac-low (MIT code; voice: see its model card)",
+   "licence": "Piper TTS (MIT); voice model licence per its model card (rhasspy/piper-voices)",
+   "attribution": "Synthesised with Piper (en_US-lessac-low.onnx)",
+   "origin_url": null,
+   "processing": [
+    "Piper TTS",
+    "raised-voice processing: +10 % pitch, +5 dB presence at 2.5 kHz, soft saturation",
+    "loudness match",
+    "through rubble 0.5 m: estimated loss d*(3+6 f/kHz) dB + small-void reverb (RT60 0.22 s)"
+   ],
+   "synthetic": true,
+   "sample_rate": 48000,
+   "duration_s": 2.45,
+   "rms_dbfs": -22.57,
+   "peak_dbfs": -11.42,
+   "through_rubble_depth_m": 0.5,
+   "parent": "voice_en_here_tts",
+   "suggested_spl_db_1m": 90,
+   "schedule": {
+    "mode": "after_callout",
+    "latency_s": [
+     1.5,
+     3.5
+    ],
+    "repeats": 2,
+    "period_s": 4.0
+   }
+  },
+  {
+   "id": "voice_en_here_tts__1.0m",
+   "file": "rubble/voice_en_here_tts__1.0m.wav",
+   "kind": "voice",
+   "human": true,
+   "language": "en",
+   "transcript": "I'm here! I'm here! Over here!",
+   "transcript_en": "I'm here! I'm here! Over here!",
+   "source": "TTS: Piper en_US-lessac-low (MIT code; voice: see its model card)",
+   "licence": "Piper TTS (MIT); voice model licence per its model card (rhasspy/piper-voices)",
+   "attribution": "Synthesised with Piper (en_US-lessac-low.onnx)",
+   "origin_url": null,
+   "processing": [
+    "Piper TTS",
+    "raised-voice processing: +10 % pitch, +5 dB presence at 2.5 kHz, soft saturation",
+    "loudness match",
+    "through rubble 1.0 m: estimated loss d*(3+6 f/kHz) dB + small-void reverb (RT60 0.22 s)"
+   ],
+   "synthetic": true,
+   "sample_rate": 48000,
+   "duration_s": 2.45,
+   "rms_dbfs": -24.89,
+   "peak_dbfs": -12.92,
+   "through_rubble_depth_m": 1.0,
+   "parent": "voice_en_here_tts",
+   "suggested_spl_db_1m": 90,
+   "schedule": {
+    "mode": "after_callout",
+    "latency_s": [
+     1.5,
+     3.5
+    ],
+    "repeats": 2,
+    "period_s": 4.0
+   }
+  },
+  {
+   "id": "voice_en_here_tts__1.5m",
+   "file": "rubble/voice_en_here_tts__1.5m.wav",
+   "kind": "voice",
+   "human": true,
+   "language": "en",
+   "transcript": "I'm here! I'm here! Over here!",
+   "transcript_en": "I'm here! I'm here! Over here!",
+   "source": "TTS: Piper en_US-lessac-low (MIT code; voice: see its model card)",
+   "licence": "Piper TTS (MIT); voice model licence per its model card (rhasspy/piper-voices)",
+   "attribution": "Synthesised with Piper (en_US-lessac-low.onnx)",
+   "origin_url": null,
+   "processing": [
+    "Piper TTS",
+    "raised-voice processing: +10 % pitch, +5 dB presence at 2.5 kHz, soft saturation",
+    "loudness match",
+    "through rubble 1.5 m: estimated loss d*(3+6 f/kHz) dB + small-void reverb (RT60 0.22 s)"
+   ],
+   "synthetic": true,
+   "sample_rate": 48000,
+   "duration_s": 2.45,
+   "rms_dbfs": -26.71,
+   "peak_dbfs": -16.19,
+   "through_rubble_depth_m": 1.5,
+   "parent": "voice_en_here_tts",
+   "suggested_spl_db_1m": 90,
+   "schedule": {
+    "mode": "after_callout",
+    "latency_s": [
+     1.5,
+     3.5
+    ],
+    "repeats": 2,
+    "period_s": 4.0
+   }
+  },
+  {
+   "id": "voice_en_here_tts__2.0m",
+   "file": "rubble/voice_en_here_tts__2.0m.wav",
+   "kind": "voice",
+   "human": true,
+   "language": "en",
+   "transcript": "I'm here! I'm here! Over here!",
+   "transcript_en": "I'm here! I'm here! Over here!",
+   "source": "TTS: Piper en_US-lessac-low (MIT code; voice: see its model card)",
+   "licence": "Piper TTS (MIT); voice model licence per its model card (rhasspy/piper-voices)",
+   "attribution": "Synthesised with Piper (en_US-lessac-low.onnx)",
+   "origin_url": null,
+   "processing": [
+    "Piper TTS",
+    "raised-voice processing: +10 % pitch, +5 dB presence at 2.5 kHz, soft saturation",
+    "loudness match",
+    "through rubble 2.0 m: estimated loss d*(3+6 f/kHz) dB + small-void reverb (RT60 0.22 s)"
+   ],
+   "synthetic": true,
+   "sample_rate": 48000,
+   "duration_s": 2.45,
+   "rms_dbfs": -28.8,
+   "peak_dbfs": -19.01,
+   "through_rubble_depth_m": 2.0,
+   "parent": "voice_en_here_tts",
+   "suggested_spl_db_1m": 90,
+   "schedule": {
+    "mode": "after_callout",
+    "latency_s": [
+     1.5,
+     3.5
+    ],
+    "repeats": 2,
+    "period_s": 4.0
+   }
+  },
+  {
+   "id": "voice_zh_call_tts",
+   "file": "voice_zh_call_tts.wav",
+   "kind": "voice",
+   "human": true,
+   "language": "zh-TW",
+   "transcript": "救命啊！有沒有人聽得到？我的腳被壓住了！",
+   "transcript_en": "Help! Can anyone hear me? My leg is pinned!",
+   "source": "TTS: Piper zh_CN-huayan-x_low (Mainland female voice; the model's phoneme map has no tone symbols, so tones are weak). Placeholder until a native Taiwanese Mandarin recording",
+   "licence": "Piper TTS (MIT); voice model licence per its model card (rhasspy/piper-voices)",
+   "attribution": "Synthesised with Piper (zh_CN-huayan-x_low.onnx)",
+   "origin_url": null,
+   "processing": [
+    "Piper TTS",
+    "raised-voice processing: +10 % pitch, +5 dB presence at 2.5 kHz, soft saturation",
+    "loudness match"
+   ],
+   "synthetic": true,
+   "sample_rate": 48000,
+   "duration_s": 3.433,
+   "rms_dbfs": -20.0,
+   "peak_dbfs": -11.04,
+   "through_rubble_depth_m": 0.0,
+   "parent": null,
+   "suggested_spl_db_1m": 90,
+   "schedule": {
+    "mode": "loop",
+    "period_s": 9.0,
+    "jitter_s": 2.0
+   }
+  },
+  {
+   "id": "voice_zh_call_tts__0.5m",
+   "file": "rubble/voice_zh_call_tts__0.5m.wav",
+   "kind": "voice",
+   "human": true,
+   "language": "zh-TW",
+   "transcript": "救命啊！有沒有人聽得到？我的腳被壓住了！",
+   "transcript_en": "Help! Can anyone hear me? My leg is pinned!",
+   "source": "TTS: Piper zh_CN-huayan-x_low (Mainland female voice; the model's phoneme map has no tone symbols, so tones are weak). Placeholder until a native Taiwanese Mandarin recording",
+   "licence": "Piper TTS (MIT); voice model licence per its model card (rhasspy/piper-voices)",
+   "attribution": "Synthesised with Piper (zh_CN-huayan-x_low.onnx)",
+   "origin_url": null,
+   "processing": [
+    "Piper TTS",
+    "raised-voice processing: +10 % pitch, +5 dB presence at 2.5 kHz, soft saturation",
+    "loudness match",
+    "through rubble 0.5 m: estimated loss d*(3+6 f/kHz) dB + small-void reverb (RT60 0.22 s)"
+   ],
+   "synthetic": true,
+   "sample_rate": 48000,
+   "duration_s": 3.683,
+   "rms_dbfs": -21.37,
+   "peak_dbfs": -11.06,
+   "through_rubble_depth_m": 0.5,
+   "parent": "voice_zh_call_tts",
+   "suggested_spl_db_1m": 90,
+   "schedule": {
+    "mode": "loop",
+    "period_s": 9.0,
+    "jitter_s": 2.0
+   }
+  },
+  {
+   "id": "voice_zh_call_tts__1.0m",
+   "file": "rubble/voice_zh_call_tts__1.0m.wav",
+   "kind": "voice",
+   "human": true,
+   "language": "zh-TW",
+   "transcript": "救命啊！有沒有人聽得到？我的腳被壓住了！",
+   "transcript_en": "Help! Can anyone hear me? My leg is pinned!",
+   "source": "TTS: Piper zh_CN-huayan-x_low (Mainland female voice; the model's phoneme map has no tone symbols, so tones are weak). Placeholder until a native Taiwanese Mandarin recording",
+   "licence": "Piper TTS (MIT); voice model licence per its model card (rhasspy/piper-voices)",
+   "attribution": "Synthesised with Piper (zh_CN-huayan-x_low.onnx)",
+   "origin_url": null,
+   "processing": [
+    "Piper TTS",
+    "raised-voice processing: +10 % pitch, +5 dB presence at 2.5 kHz, soft saturation",
+    "loudness match",
+    "through rubble 1.0 m: estimated loss d*(3+6 f/kHz) dB + small-void reverb (RT60 0.22 s)"
+   ],
+   "synthetic": true,
+   "sample_rate": 48000,
+   "duration_s": 3.683,
+   "rms_dbfs": -25.36,
+   "peak_dbfs": -13.72,
+   "through_rubble_depth_m": 1.0,
+   "parent": "voice_zh_call_tts",
+   "suggested_spl_db_1m": 90,
+   "schedule": {
+    "mode": "loop",
+    "period_s": 9.0,
+    "jitter_s": 2.0
+   }
+  },
+  {
+   "id": "voice_zh_call_tts__1.5m",
+   "file": "rubble/voice_zh_call_tts__1.5m.wav",
+   "kind": "voice",
+   "human": true,
+   "language": "zh-TW",
+   "transcript": "救命啊！有沒有人聽得到？我的腳被壓住了！",
+   "transcript_en": "Help! Can anyone hear me? My leg is pinned!",
+   "source": "TTS: Piper zh_CN-huayan-x_low (Mainland female voice; the model's phoneme map has no tone symbols, so tones are weak). Placeholder until a native Taiwanese Mandarin recording",
+   "licence": "Piper TTS (MIT); voice model licence per its model card (rhasspy/piper-voices)",
+   "attribution": "Synthesised with Piper (zh_CN-huayan-x_low.onnx)",
+   "origin_url": null,
+   "processing": [
+    "Piper TTS",
+    "raised-voice processing: +10 % pitch, +5 dB presence at 2.5 kHz, soft saturation",
+    "loudness match",
+    "through rubble 1.5 m: estimated loss d*(3+6 f/kHz) dB + small-void reverb (RT60 0.22 s)"
+   ],
+   "synthetic": true,
+   "sample_rate": 48000,
+   "duration_s": 3.683,
+   "rms_dbfs": -27.57,
+   "peak_dbfs": -15.88,
+   "through_rubble_depth_m": 1.5,
+   "parent": "voice_zh_call_tts",
+   "suggested_spl_db_1m": 90,
+   "schedule": {
+    "mode": "loop",
+    "period_s": 9.0,
+    "jitter_s": 2.0
+   }
+  },
+  {
+   "id": "voice_zh_call_tts__2.0m",
+   "file": "rubble/voice_zh_call_tts__2.0m.wav",
+   "kind": "voice",
+   "human": true,
+   "language": "zh-TW",
+   "transcript": "救命啊！有沒有人聽得到？我的腳被壓住了！",
+   "transcript_en": "Help! Can anyone hear me? My leg is pinned!",
+   "source": "TTS: Piper zh_CN-huayan-x_low (Mainland female voice; the model's phoneme map has no tone symbols, so tones are weak). Placeholder until a native Taiwanese Mandarin recording",
+   "licence": "Piper TTS (MIT); voice model licence per its model card (rhasspy/piper-voices)",
+   "attribution": "Synthesised with Piper (zh_CN-huayan-x_low.onnx)",
+   "origin_url": null,
+   "processing": [
+    "Piper TTS",
+    "raised-voice processing: +10 % pitch, +5 dB presence at 2.5 kHz, soft saturation",
+    "loudness match",
+    "through rubble 2.0 m: estimated loss d*(3+6 f/kHz) dB + small-void reverb (RT60 0.22 s)"
+   ],
+   "synthetic": true,
+   "sample_rate": 48000,
+   "duration_s": 3.683,
+   "rms_dbfs": -29.23,
+   "peak_dbfs": -18.2,
+   "through_rubble_depth_m": 2.0,
+   "parent": "voice_zh_call_tts",
+   "suggested_spl_db_1m": 90,
+   "schedule": {
+    "mode": "loop",
+    "period_s": 9.0,
+    "jitter_s": 2.0
+   }
+  },
+  {
+   "id": "voice_zh_here_tts",
+   "file": "voice_zh_here_tts.wav",
+   "kind": "voice",
+   "human": true,
+   "language": "zh-TW",
+   "transcript": "我在這裡！我在這裡啦！",
+   "transcript_en": "I'm here! I'm right here!",
+   "source": "TTS: Piper zh_CN-huayan-x_low (Mainland female voice; the model's phoneme map has no tone symbols, so tones are weak). Placeholder until a native Taiwanese Mandarin recording",
+   "licence": "Piper TTS (MIT); voice model licence per its model card (rhasspy/piper-voices)",
+   "attribution": "Synthesised with Piper (zh_CN-huayan-x_low.onnx)",
+   "origin_url": null,
+   "processing": [
+    "Piper TTS",
+    "raised-voice processing: +10 % pitch, +5 dB presence at 2.5 kHz, soft saturation",
+    "loudness match"
+   ],
+   "synthetic": true,
+   "sample_rate": 48000,
+   "duration_s": 1.76,
+   "rms_dbfs": -20.0,
+   "peak_dbfs": -10.55,
+   "through_rubble_depth_m": 0.0,
+   "parent": null,
+   "suggested_spl_db_1m": 90,
+   "schedule": {
+    "mode": "after_callout",
+    "latency_s": [
+     1.5,
+     3.5
+    ],
+    "repeats": 2,
+    "period_s": 4.0
+   }
+  },
+  {
+   "id": "voice_zh_here_tts__0.5m",
+   "file": "rubble/voice_zh_here_tts__0.5m.wav",
+   "kind": "voice",
+   "human": true,
+   "language": "zh-TW",
+   "transcript": "我在這裡！我在這裡啦！",
+   "transcript_en": "I'm here! I'm right here!",
+   "source": "TTS: Piper zh_CN-huayan-x_low (Mainland female voice; the model's phoneme map has no tone symbols, so tones are weak). Placeholder until a native Taiwanese Mandarin recording",
+   "licence": "Piper TTS (MIT); voice model licence per its model card (rhasspy/piper-voices)",
+   "attribution": "Synthesised with Piper (zh_CN-huayan-x_low.onnx)",
+   "origin_url": null,
+   "processing": [
+    "Piper TTS",
+    "raised-voice processing: +10 % pitch, +5 dB presence at 2.5 kHz, soft saturation",
+    "loudness match",
+    "through rubble 0.5 m: estimated loss d*(3+6 f/kHz) dB + small-void reverb (RT60 0.22 s)"
+   ],
+   "synthetic": true,
+   "sample_rate": 48000,
+   "duration_s": 2.01,
+   "rms_dbfs": -23.09,
+   "peak_dbfs": -11.85,
+   "through_rubble_depth_m": 0.5,
+   "parent": "voice_zh_here_tts",
+   "suggested_spl_db_1m": 90,
+   "schedule": {
+    "mode": "after_callout",
+    "latency_s": [
+     1.5,
+     3.5
+    ],
+    "repeats": 2,
+    "period_s": 4.0
+   }
+  },
+  {
+   "id": "voice_zh_here_tts__1.0m",
+   "file": "rubble/voice_zh_here_tts__1.0m.wav",
+   "kind": "voice",
+   "human": true,
+   "language": "zh-TW",
+   "transcript": "我在這裡！我在這裡啦！",
+   "transcript_en": "I'm here! I'm right here!",
+   "source": "TTS: Piper zh_CN-huayan-x_low (Mainland female voice; the model's phoneme map has no tone symbols, so tones are weak). Placeholder until a native Taiwanese Mandarin recording",
+   "licence": "Piper TTS (MIT); voice model licence per its model card (rhasspy/piper-voices)",
+   "attribution": "Synthesised with Piper (zh_CN-huayan-x_low.onnx)",
+   "origin_url": null,
+   "processing": [
+    "Piper TTS",
+    "raised-voice processing: +10 % pitch, +5 dB presence at 2.5 kHz, soft saturation",
+    "loudness match",
+    "through rubble 1.0 m: estimated loss d*(3+6 f/kHz) dB + small-void reverb (RT60 0.22 s)"
+   ],
+   "synthetic": true,
+   "sample_rate": 48000,
+   "duration_s": 2.01,
+   "rms_dbfs": -25.8,
+   "peak_dbfs": -14.16,
+   "through_rubble_depth_m": 1.0,
+   "parent": "voice_zh_here_tts",
+   "suggested_spl_db_1m": 90,
+   "schedule": {
+    "mode": "after_callout",
+    "latency_s": [
+     1.5,
+     3.5
+    ],
+    "repeats": 2,
+    "period_s": 4.0
+   }
+  },
+  {
+   "id": "voice_zh_here_tts__1.5m",
+   "file": "rubble/voice_zh_here_tts__1.5m.wav",
+   "kind": "voice",
+   "human": true,
+   "language": "zh-TW",
+   "transcript": "我在這裡！我在這裡啦！",
+   "transcript_en": "I'm here! I'm right here!",
+   "source": "TTS: Piper zh_CN-huayan-x_low (Mainland female voice; the model's phoneme map has no tone symbols, so tones are weak). Placeholder until a native Taiwanese Mandarin recording",
+   "licence": "Piper TTS (MIT); voice model licence per its model card (rhasspy/piper-voices)",
+   "attribution": "Synthesised with Piper (zh_CN-huayan-x_low.onnx)",
+   "origin_url": null,
+   "processing": [
+    "Piper TTS",
+    "raised-voice processing: +10 % pitch, +5 dB presence at 2.5 kHz, soft saturation",
+    "loudness match",
+    "through rubble 1.5 m: estimated loss d*(3+6 f/kHz) dB + small-void reverb (RT60 0.22 s)"
+   ],
+   "synthetic": true,
+   "sample_rate": 48000,
+   "duration_s": 2.01,
+   "rms_dbfs": -28.42,
+   "peak_dbfs": -17.34,
+   "through_rubble_depth_m": 1.5,
+   "parent": "voice_zh_here_tts",
+   "suggested_spl_db_1m": 90,
+   "schedule": {
+    "mode": "after_callout",
+    "latency_s": [
+     1.5,
+     3.5
+    ],
+    "repeats": 2,
+    "period_s": 4.0
+   }
+  },
+  {
+   "id": "voice_zh_here_tts__2.0m",
+   "file": "rubble/voice_zh_here_tts__2.0m.wav",
+   "kind": "voice",
+   "human": true,
+   "language": "zh-TW",
+   "transcript": "我在這裡！我在這裡啦！",
+   "transcript_en": "I'm here! I'm right here!",
+   "source": "TTS: Piper zh_CN-huayan-x_low (Mainland female voice; the model's phoneme map has no tone symbols, so tones are weak). Placeholder until a native Taiwanese Mandarin recording",
+   "licence": "Piper TTS (MIT); voice model licence per its model card (rhasspy/piper-voices)",
+   "attribution": "Synthesised with Piper (zh_CN-huayan-x_low.onnx)",
+   "origin_url": null,
+   "processing": [
+    "Piper TTS",
+    "raised-voice processing: +10 % pitch, +5 dB presence at 2.5 kHz, soft saturation",
+    "loudness match",
+    "through rubble 2.0 m: estimated loss d*(3+6 f/kHz) dB + small-void reverb (RT60 0.22 s)"
+   ],
+   "synthetic": true,
+   "sample_rate": 48000,
+   "duration_s": 2.01,
+   "rms_dbfs": -31.47,
+   "peak_dbfs": -20.15,
+   "through_rubble_depth_m": 2.0,
+   "parent": "voice_zh_here_tts",
+   "suggested_spl_db_1m": 90,
+   "schedule": {
+    "mode": "after_callout",
+    "latency_s": [
+     1.5,
+     3.5
+    ],
+    "repeats": 2,
+    "period_s": 4.0
+   }
+  },
+  {
+   "id": "voice_id_call_tts",
+   "file": "voice_id_call_tts.wav",
+   "kind": "voice",
+   "human": true,
+   "language": "id",
+   "transcript": "Tolong! Ada yang bisa dengar saya? Kaki saya terjepit!",
+   "transcript_en": "Help! Can anyone hear me? My leg is trapped!",
+   "source": "TTS: Piper id_ID-news_tts-medium",
+   "licence": "Piper TTS (MIT); voice model licence per its model card (rhasspy/piper-voices)",
+   "attribution": "Synthesised with Piper (id_ID-news_tts-medium.onnx)",
+   "origin_url": null,
+   "processing": [
+    "Piper TTS",
+    "raised-voice processing: +10 % pitch, +5 dB presence at 2.5 kHz, soft saturation",
+    "loudness match"
+   ],
+   "synthetic": true,
+   "sample_rate": 48000,
+   "duration_s": 3.293,
+   "rms_dbfs": -20.0,
+   "peak_dbfs": -11.17,
+   "through_rubble_depth_m": 0.0,
+   "parent": null,
+   "suggested_spl_db_1m": 90,
+   "schedule": {
+    "mode": "loop",
+    "period_s": 9.0,
+    "jitter_s": 2.0
+   }
+  },
+  {
+   "id": "voice_id_call_tts__0.5m",
+   "file": "rubble/voice_id_call_tts__0.5m.wav",
+   "kind": "voice",
+   "human": true,
+   "language": "id",
+   "transcript": "Tolong! Ada yang bisa dengar saya? Kaki saya terjepit!",
+   "transcript_en": "Help! Can anyone hear me? My leg is trapped!",
+   "source": "TTS: Piper id_ID-news_tts-medium",
+   "licence": "Piper TTS (MIT); voice model licence per its model card (rhasspy/piper-voices)",
+   "attribution": "Synthesised with Piper (id_ID-news_tts-medium.onnx)",
+   "origin_url": null,
+   "processing": [
+    "Piper TTS",
+    "raised-voice processing: +10 % pitch, +5 dB presence at 2.5 kHz, soft saturation",
+    "loudness match",
+    "through rubble 0.5 m: estimated loss d*(3+6 f/kHz) dB + small-void reverb (RT60 0.22 s)"
+   ],
+   "synthetic": true,
+   "sample_rate": 48000,
+   "duration_s": 3.543,
+   "rms_dbfs": -23.4,
+   "peak_dbfs": -11.19,
+   "through_rubble_depth_m": 0.5,
+   "parent": "voice_id_call_tts",
+   "suggested_spl_db_1m": 90,
+   "schedule": {
+    "mode": "loop",
+    "period_s": 9.0,
+    "jitter_s": 2.0
+   }
+  },
+  {
+   "id": "voice_id_call_tts__1.0m",
+   "file": "rubble/voice_id_call_tts__1.0m.wav",
+   "kind": "voice",
+   "human": true,
+   "language": "id",
+   "transcript": "Tolong! Ada yang bisa dengar saya? Kaki saya terjepit!",
+   "transcript_en": "Help! Can anyone hear me? My leg is trapped!",
+   "source": "TTS: Piper id_ID-news_tts-medium",
+   "licence": "Piper TTS (MIT); voice model licence per its model card (rhasspy/piper-voices)",
+   "attribution": "Synthesised with Piper (id_ID-news_tts-medium.onnx)",
+   "origin_url": null,
+   "processing": [
+    "Piper TTS",
+    "raised-voice processing: +10 % pitch, +5 dB presence at 2.5 kHz, soft saturation",
+    "loudness match",
+    "through rubble 1.0 m: estimated loss d*(3+6 f/kHz) dB + small-void reverb (RT60 0.22 s)"
+   ],
+   "synthetic": true,
+   "sample_rate": 48000,
+   "duration_s": 3.543,
+   "rms_dbfs": -27.01,
+   "peak_dbfs": -15.9,
+   "through_rubble_depth_m": 1.0,
+   "parent": "voice_id_call_tts",
+   "suggested_spl_db_1m": 90,
+   "schedule": {
+    "mode": "loop",
+    "period_s": 9.0,
+    "jitter_s": 2.0
+   }
+  },
+  {
+   "id": "voice_id_call_tts__1.5m",
+   "file": "rubble/voice_id_call_tts__1.5m.wav",
+   "kind": "voice",
+   "human": true,
+   "language": "id",
+   "transcript": "Tolong! Ada yang bisa dengar saya? Kaki saya terjepit!",
+   "transcript_en": "Help! Can anyone hear me? My leg is trapped!",
+   "source": "TTS: Piper id_ID-news_tts-medium",
+   "licence": "Piper TTS (MIT); voice model licence per its model card (rhasspy/piper-voices)",
+   "attribution": "Synthesised with Piper (id_ID-news_tts-medium.onnx)",
+   "origin_url": null,
+   "processing": [
+    "Piper TTS",
+    "raised-voice processing: +10 % pitch, +5 dB presence at 2.5 kHz, soft saturation",
+    "loudness match",
+    "through rubble 1.5 m: estimated loss d*(3+6 f/kHz) dB + small-void reverb (RT60 0.22 s)"
+   ],
+   "synthetic": true,
+   "sample_rate": 48000,
+   "duration_s": 3.543,
+   "rms_dbfs": -30.94,
+   "peak_dbfs": -17.88,
+   "through_rubble_depth_m": 1.5,
+   "parent": "voice_id_call_tts",
+   "suggested_spl_db_1m": 90,
+   "schedule": {
+    "mode": "loop",
+    "period_s": 9.0,
+    "jitter_s": 2.0
+   }
+  },
+  {
+   "id": "voice_id_call_tts__2.0m",
+   "file": "rubble/voice_id_call_tts__2.0m.wav",
+   "kind": "voice",
+   "human": true,
+   "language": "id",
+   "transcript": "Tolong! Ada yang bisa dengar saya? Kaki saya terjepit!",
+   "transcript_en": "Help! Can anyone hear me? My leg is trapped!",
+   "source": "TTS: Piper id_ID-news_tts-medium",
+   "licence": "Piper TTS (MIT); voice model licence per its model card (rhasspy/piper-voices)",
+   "attribution": "Synthesised with Piper (id_ID-news_tts-medium.onnx)",
+   "origin_url": null,
+   "processing": [
+    "Piper TTS",
+    "raised-voice processing: +10 % pitch, +5 dB presence at 2.5 kHz, soft saturation",
+    "loudness match",
+    "through rubble 2.0 m: estimated loss d*(3+6 f/kHz) dB + small-void reverb (RT60 0.22 s)"
+   ],
+   "synthetic": true,
+   "sample_rate": 48000,
+   "duration_s": 3.543,
+   "rms_dbfs": -32.9,
+   "peak_dbfs": -19.4,
+   "through_rubble_depth_m": 2.0,
+   "parent": "voice_id_call_tts",
+   "suggested_spl_db_1m": 90,
+   "schedule": {
+    "mode": "loop",
+    "period_s": 9.0,
+    "jitter_s": 2.0
+   }
+  },
+  {
+   "id": "voice_id_here_tts",
+   "file": "voice_id_here_tts.wav",
+   "kind": "voice",
+   "human": true,
+   "language": "id",
+   "transcript": "Saya di sini! Di sini!",
+   "transcript_en": "I'm here! Over here!",
+   "source": "TTS: Piper id_ID-news_tts-medium",
+   "licence": "Piper TTS (MIT); voice model licence per its model card (rhasspy/piper-voices)",
+   "attribution": "Synthesised with Piper (id_ID-news_tts-medium.onnx)",
+   "origin_url": null,
+   "processing": [
+    "Piper TTS",
+    "raised-voice processing: +10 % pitch, +5 dB presence at 2.5 kHz, soft saturation",
+    "loudness match"
+   ],
+   "synthetic": true,
+   "sample_rate": 48000,
+   "duration_s": 1.858,
+   "rms_dbfs": -20.0,
+   "peak_dbfs": -11.53,
+   "through_rubble_depth_m": 0.0,
+   "parent": null,
+   "suggested_spl_db_1m": 90,
+   "schedule": {
+    "mode": "after_callout",
+    "latency_s": [
+     1.5,
+     3.5
+    ],
+    "repeats": 2,
+    "period_s": 4.0
+   }
+  },
+  {
+   "id": "voice_id_here_tts__0.5m",
+   "file": "rubble/voice_id_here_tts__0.5m.wav",
+   "kind": "voice",
+   "human": true,
+   "language": "id",
+   "transcript": "Saya di sini! Di sini!",
+   "transcript_en": "I'm here! Over here!",
+   "source": "TTS: Piper id_ID-news_tts-medium",
+   "licence": "Piper TTS (MIT); voice model licence per its model card (rhasspy/piper-voices)",
+   "attribution": "Synthesised with Piper (id_ID-news_tts-medium.onnx)",
+   "origin_url": null,
+   "processing": [
+    "Piper TTS",
+    "raised-voice processing: +10 % pitch, +5 dB presence at 2.5 kHz, soft saturation",
+    "loudness match",
+    "through rubble 0.5 m: estimated loss d*(3+6 f/kHz) dB + small-void reverb (RT60 0.22 s)"
+   ],
+   "synthetic": true,
+   "sample_rate": 48000,
+   "duration_s": 2.108,
+   "rms_dbfs": -22.33,
+   "peak_dbfs": -11.65,
+   "through_rubble_depth_m": 0.5,
+   "parent": "voice_id_here_tts",
+   "suggested_spl_db_1m": 90,
+   "schedule": {
+    "mode": "after_callout",
+    "latency_s": [
+     1.5,
+     3.5
+    ],
+    "repeats": 2,
+    "period_s": 4.0
+   }
+  },
+  {
+   "id": "voice_id_here_tts__1.0m",
+   "file": "rubble/voice_id_here_tts__1.0m.wav",
+   "kind": "voice",
+   "human": true,
+   "language": "id",
+   "transcript": "Saya di sini! Di sini!",
+   "transcript_en": "I'm here! Over here!",
+   "source": "TTS: Piper id_ID-news_tts-medium",
+   "licence": "Piper TTS (MIT); voice model licence per its model card (rhasspy/piper-voices)",
+   "attribution": "Synthesised with Piper (id_ID-news_tts-medium.onnx)",
+   "origin_url": null,
+   "processing": [
+    "Piper TTS",
+    "raised-voice processing: +10 % pitch, +5 dB presence at 2.5 kHz, soft saturation",
+    "loudness match",
+    "through rubble 1.0 m: estimated loss d*(3+6 f/kHz) dB + small-void reverb (RT60 0.22 s)"
+   ],
+   "synthetic": true,
+   "sample_rate": 48000,
+   "duration_s": 2.108,
+   "rms_dbfs": -25.91,
+   "peak_dbfs": -16.17,
+   "through_rubble_depth_m": 1.0,
+   "parent": "voice_id_here_tts",
+   "suggested_spl_db_1m": 90,
+   "schedule": {
+    "mode": "after_callout",
+    "latency_s": [
+     1.5,
+     3.5
+    ],
+    "repeats": 2,
+    "period_s": 4.0
+   }
+  },
+  {
+   "id": "voice_id_here_tts__1.5m",
+   "file": "rubble/voice_id_here_tts__1.5m.wav",
+   "kind": "voice",
+   "human": true,
+   "language": "id",
+   "transcript": "Saya di sini! Di sini!",
+   "transcript_en": "I'm here! Over here!",
+   "source": "TTS: Piper id_ID-news_tts-medium",
+   "licence": "Piper TTS (MIT); voice model licence per its model card (rhasspy/piper-voices)",
+   "attribution": "Synthesised with Piper (id_ID-news_tts-medium.onnx)",
+   "origin_url": null,
+   "processing": [
+    "Piper TTS",
+    "raised-voice processing: +10 % pitch, +5 dB presence at 2.5 kHz, soft saturation",
+    "loudness match",
+    "through rubble 1.5 m: estimated loss d*(3+6 f/kHz) dB + small-void reverb (RT60 0.22 s)"
+   ],
+   "synthetic": true,
+   "sample_rate": 48000,
+   "duration_s": 2.108,
+   "rms_dbfs": -28.18,
+   "peak_dbfs": -17.54,
+   "through_rubble_depth_m": 1.5,
+   "parent": "voice_id_here_tts",
+   "suggested_spl_db_1m": 90,
+   "schedule": {
+    "mode": "after_callout",
+    "latency_s": [
+     1.5,
+     3.5
+    ],
+    "repeats": 2,
+    "period_s": 4.0
+   }
+  },
+  {
+   "id": "voice_id_here_tts__2.0m",
+   "file": "rubble/voice_id_here_tts__2.0m.wav",
+   "kind": "voice",
+   "human": true,
+   "language": "id",
+   "transcript": "Saya di sini! Di sini!",
+   "transcript_en": "I'm here! Over here!",
+   "source": "TTS: Piper id_ID-news_tts-medium",
+   "licence": "Piper TTS (MIT); voice model licence per its model card (rhasspy/piper-voices)",
+   "attribution": "Synthesised with Piper (id_ID-news_tts-medium.onnx)",
+   "origin_url": null,
+   "processing": [
+    "Piper TTS",
+    "raised-voice processing: +10 % pitch, +5 dB presence at 2.5 kHz, soft saturation",
+    "loudness match",
+    "through rubble 2.0 m: estimated loss d*(3+6 f/kHz) dB + small-void reverb (RT60 0.22 s)"
+   ],
+   "synthetic": true,
+   "sample_rate": 48000,
+   "duration_s": 2.108,
+   "rms_dbfs": -29.61,
+   "peak_dbfs": -19.36,
+   "through_rubble_depth_m": 2.0,
+   "parent": "voice_id_here_tts",
+   "suggested_spl_db_1m": 90,
+   "schedule": {
+    "mode": "after_callout",
+    "latency_s": [
+     1.5,
+     3.5
+    ],
+    "repeats": 2,
+    "period_s": 4.0
+   }
+  },
+  {
+   "id": "voice_vi_call_tts",
+   "file": "voice_vi_call_tts.wav",
+   "kind": "voice",
+   "human": true,
+   "language": "vi",
+   "transcript": "Cứu tôi với! Có ai nghe thấy tôi không? Chân tôi bị kẹt!",
+   "transcript_en": "Help me! Can anyone hear me? My leg is stuck!",
+   "source": "TTS: Piper vi_VN-vivos-x_low (multi-speaker)",
+   "licence": "Piper TTS (MIT); voice model licence per its model card (rhasspy/piper-voices)",
+   "attribution": "Synthesised with Piper (vi_VN-vivos-x_low.onnx)",
+   "origin_url": null,
+   "processing": [
+    "Piper TTS",
+    "raised-voice processing: +10 % pitch, +5 dB presence at 2.5 kHz, soft saturation",
+    "loudness match"
+   ],
+   "synthetic": true,
+   "sample_rate": 48000,
+   "duration_s": 4.596,
+   "rms_dbfs": -20.0,
+   "peak_dbfs": -9.79,
+   "through_rubble_depth_m": 0.0,
+   "parent": null,
+   "suggested_spl_db_1m": 90,
+   "schedule": {
+    "mode": "loop",
+    "period_s": 9.0,
+    "jitter_s": 2.0
+   }
+  },
+  {
+   "id": "voice_vi_call_tts__0.5m",
+   "file": "rubble/voice_vi_call_tts__0.5m.wav",
+   "kind": "voice",
+   "human": true,
+   "language": "vi",
+   "transcript": "Cứu tôi với! Có ai nghe thấy tôi không? Chân tôi bị kẹt!",
+   "transcript_en": "Help me! Can anyone hear me? My leg is stuck!",
+   "source": "TTS: Piper vi_VN-vivos-x_low (multi-speaker)",
+   "licence": "Piper TTS (MIT); voice model licence per its model card (rhasspy/piper-voices)",
+   "attribution": "Synthesised with Piper (vi_VN-vivos-x_low.onnx)",
+   "origin_url": null,
+   "processing": [
+    "Piper TTS",
+    "raised-voice processing: +10 % pitch, +5 dB presence at 2.5 kHz, soft saturation",
+    "loudness match",
+    "through rubble 0.5 m: estimated loss d*(3+6 f/kHz) dB + small-void reverb (RT60 0.22 s)"
+   ],
+   "synthetic": true,
+   "sample_rate": 48000,
+   "duration_s": 4.846,
+   "rms_dbfs": -23.52,
+   "peak_dbfs": -10.95,
+   "through_rubble_depth_m": 0.5,
+   "parent": "voice_vi_call_tts",
+   "suggested_spl_db_1m": 90,
+   "schedule": {
+    "mode": "loop",
+    "period_s": 9.0,
+    "jitter_s": 2.0
+   }
+  },
+  {
+   "id": "voice_vi_call_tts__1.0m",
+   "file": "rubble/voice_vi_call_tts__1.0m.wav",
+   "kind": "voice",
+   "human": true,
+   "language": "vi",
+   "transcript": "Cứu tôi với! Có ai nghe thấy tôi không? Chân tôi bị kẹt!",
+   "transcript_en": "Help me! Can anyone hear me? My leg is stuck!",
+   "source": "TTS: Piper vi_VN-vivos-x_low (multi-speaker)",
+   "licence": "Piper TTS (MIT); voice model licence per its model card (rhasspy/piper-voices)",
+   "attribution": "Synthesised with Piper (vi_VN-vivos-x_low.onnx)",
+   "origin_url": null,
+   "processing": [
+    "Piper TTS",
+    "raised-voice processing: +10 % pitch, +5 dB presence at 2.5 kHz, soft saturation",
+    "loudness match",
+    "through rubble 1.0 m: estimated loss d*(3+6 f/kHz) dB + small-void reverb (RT60 0.22 s)"
+   ],
+   "synthetic": true,
+   "sample_rate": 48000,
+   "duration_s": 4.846,
+   "rms_dbfs": -27.12,
+   "peak_dbfs": -12.16,
+   "through_rubble_depth_m": 1.0,
+   "parent": "voice_vi_call_tts",
+   "suggested_spl_db_1m": 90,
+   "schedule": {
+    "mode": "loop",
+    "period_s": 9.0,
+    "jitter_s": 2.0
+   }
+  },
+  {
+   "id": "voice_vi_call_tts__1.5m",
+   "file": "rubble/voice_vi_call_tts__1.5m.wav",
+   "kind": "voice",
+   "human": true,
+   "language": "vi",
+   "transcript": "Cứu tôi với! Có ai nghe thấy tôi không? Chân tôi bị kẹt!",
+   "transcript_en": "Help me! Can anyone hear me? My leg is stuck!",
+   "source": "TTS: Piper vi_VN-vivos-x_low (multi-speaker)",
+   "licence": "Piper TTS (MIT); voice model licence per its model card (rhasspy/piper-voices)",
+   "attribution": "Synthesised with Piper (vi_VN-vivos-x_low.onnx)",
+   "origin_url": null,
+   "processing": [
+    "Piper TTS",
+    "raised-voice processing: +10 % pitch, +5 dB presence at 2.5 kHz, soft saturation",
+    "loudness match",
+    "through rubble 1.5 m: estimated loss d*(3+6 f/kHz) dB + small-void reverb (RT60 0.22 s)"
+   ],
+   "synthetic": true,
+   "sample_rate": 48000,
+   "duration_s": 4.846,
+   "rms_dbfs": -30.44,
+   "peak_dbfs": -17.67,
+   "through_rubble_depth_m": 1.5,
+   "parent": "voice_vi_call_tts",
+   "suggested_spl_db_1m": 90,
+   "schedule": {
+    "mode": "loop",
+    "period_s": 9.0,
+    "jitter_s": 2.0
+   }
+  },
+  {
+   "id": "voice_vi_call_tts__2.0m",
+   "file": "rubble/voice_vi_call_tts__2.0m.wav",
+   "kind": "voice",
+   "human": true,
+   "language": "vi",
+   "transcript": "Cứu tôi với! Có ai nghe thấy tôi không? Chân tôi bị kẹt!",
+   "transcript_en": "Help me! Can anyone hear me? My leg is stuck!",
+   "source": "TTS: Piper vi_VN-vivos-x_low (multi-speaker)",
+   "licence": "Piper TTS (MIT); voice model licence per its model card (rhasspy/piper-voices)",
+   "attribution": "Synthesised with Piper (vi_VN-vivos-x_low.onnx)",
+   "origin_url": null,
+   "processing": [
+    "Piper TTS",
+    "raised-voice processing: +10 % pitch, +5 dB presence at 2.5 kHz, soft saturation",
+    "loudness match",
+    "through rubble 2.0 m: estimated loss d*(3+6 f/kHz) dB + small-void reverb (RT60 0.22 s)"
+   ],
+   "synthetic": true,
+   "sample_rate": 48000,
+   "duration_s": 4.846,
+   "rms_dbfs": -34.18,
+   "peak_dbfs": -20.92,
+   "through_rubble_depth_m": 2.0,
+   "parent": "voice_vi_call_tts",
+   "suggested_spl_db_1m": 90,
+   "schedule": {
+    "mode": "loop",
+    "period_s": 9.0,
+    "jitter_s": 2.0
+   }
+  },
+  {
+   "id": "voice_vi_here_tts",
+   "file": "voice_vi_here_tts.wav",
+   "kind": "voice",
+   "human": true,
+   "language": "vi",
+   "transcript": "Tôi ở đây! Ở đây!",
+   "transcript_en": "I'm here! Over here!",
+   "source": "TTS: Piper vi_VN-vivos-x_low (multi-speaker)",
+   "licence": "Piper TTS (MIT); voice model licence per its model card (rhasspy/piper-voices)",
+   "attribution": "Synthesised with Piper (vi_VN-vivos-x_low.onnx)",
+   "origin_url": null,
+   "processing": [
+    "Piper TTS",
+    "raised-voice processing: +10 % pitch, +5 dB presence at 2.5 kHz, soft saturation",
+    "loudness match"
+   ],
+   "synthetic": true,
+   "sample_rate": 48000,
+   "duration_s": 1.382,
+   "rms_dbfs": -20.0,
+   "peak_dbfs": -10.36,
+   "through_rubble_depth_m": 0.0,
+   "parent": null,
+   "suggested_spl_db_1m": 90,
+   "schedule": {
+    "mode": "after_callout",
+    "latency_s": [
+     1.5,
+     3.5
+    ],
+    "repeats": 2,
+    "period_s": 4.0
+   }
+  },
+  {
+   "id": "voice_vi_here_tts__0.5m",
+   "file": "rubble/voice_vi_here_tts__0.5m.wav",
+   "kind": "voice",
+   "human": true,
+   "language": "vi",
+   "transcript": "Tôi ở đây! Ở đây!",
+   "transcript_en": "I'm here! Over here!",
+   "source": "TTS: Piper vi_VN-vivos-x_low (multi-speaker)",
+   "licence": "Piper TTS (MIT); voice model licence per its model card (rhasspy/piper-voices)",
+   "attribution": "Synthesised with Piper (vi_VN-vivos-x_low.onnx)",
+   "origin_url": null,
+   "processing": [
+    "Piper TTS",
+    "raised-voice processing: +10 % pitch, +5 dB presence at 2.5 kHz, soft saturation",
+    "loudness match",
+    "through rubble 0.5 m: estimated loss d*(3+6 f/kHz) dB + small-void reverb (RT60 0.22 s)"
+   ],
+   "synthetic": true,
+   "sample_rate": 48000,
+   "duration_s": 1.632,
+   "rms_dbfs": -23.75,
+   "peak_dbfs": -10.71,
+   "through_rubble_depth_m": 0.5,
+   "parent": "voice_vi_here_tts",
+   "suggested_spl_db_1m": 90,
+   "schedule": {
+    "mode": "after_callout",
+    "latency_s": [
+     1.5,
+     3.5
+    ],
+    "repeats": 2,
+    "period_s": 4.0
+   }
+  },
+  {
+   "id": "voice_vi_here_tts__1.0m",
+   "file": "rubble/voice_vi_here_tts__1.0m.wav",
+   "kind": "voice",
+   "human": true,
+   "language": "vi",
+   "transcript": "Tôi ở đây! Ở đây!",
+   "transcript_en": "I'm here! Over here!",
+   "source": "TTS: Piper vi_VN-vivos-x_low (multi-speaker)",
+   "licence": "Piper TTS (MIT); voice model licence per its model card (rhasspy/piper-voices)",
+   "attribution": "Synthesised with Piper (vi_VN-vivos-x_low.onnx)",
+   "origin_url": null,
+   "processing": [
+    "Piper TTS",
+    "raised-voice processing: +10 % pitch, +5 dB presence at 2.5 kHz, soft saturation",
+    "loudness match",
+    "through rubble 1.0 m: estimated loss d*(3+6 f/kHz) dB + small-void reverb (RT60 0.22 s)"
+   ],
+   "synthetic": true,
+   "sample_rate": 48000,
+   "duration_s": 1.632,
+   "rms_dbfs": -27.92,
+   "peak_dbfs": -15.83,
+   "through_rubble_depth_m": 1.0,
+   "parent": "voice_vi_here_tts",
+   "suggested_spl_db_1m": 90,
+   "schedule": {
+    "mode": "after_callout",
+    "latency_s": [
+     1.5,
+     3.5
+    ],
+    "repeats": 2,
+    "period_s": 4.0
+   }
+  },
+  {
+   "id": "voice_vi_here_tts__1.5m",
+   "file": "rubble/voice_vi_here_tts__1.5m.wav",
+   "kind": "voice",
+   "human": true,
+   "language": "vi",
+   "transcript": "Tôi ở đây! Ở đây!",
+   "transcript_en": "I'm here! Over here!",
+   "source": "TTS: Piper vi_VN-vivos-x_low (multi-speaker)",
+   "licence": "Piper TTS (MIT); voice model licence per its model card (rhasspy/piper-voices)",
+   "attribution": "Synthesised with Piper (vi_VN-vivos-x_low.onnx)",
+   "origin_url": null,
+   "processing": [
+    "Piper TTS",
+    "raised-voice processing: +10 % pitch, +5 dB presence at 2.5 kHz, soft saturation",
+    "loudness match",
+    "through rubble 1.5 m: estimated loss d*(3+6 f/kHz) dB + small-void reverb (RT60 0.22 s)"
+   ],
+   "synthetic": true,
+   "sample_rate": 48000,
+   "duration_s": 1.632,
+   "rms_dbfs": -31.29,
+   "peak_dbfs": -19.6,
+   "through_rubble_depth_m": 1.5,
+   "parent": "voice_vi_here_tts",
+   "suggested_spl_db_1m": 90,
+   "schedule": {
+    "mode": "after_callout",
+    "latency_s": [
+     1.5,
+     3.5
+    ],
+    "repeats": 2,
+    "period_s": 4.0
+   }
+  },
+  {
+   "id": "voice_vi_here_tts__2.0m",
+   "file": "rubble/voice_vi_here_tts__2.0m.wav",
+   "kind": "voice",
+   "human": true,
+   "language": "vi",
+   "transcript": "Tôi ở đây! Ở đây!",
+   "transcript_en": "I'm here! Over here!",
+   "source": "TTS: Piper vi_VN-vivos-x_low (multi-speaker)",
+   "licence": "Piper TTS (MIT); voice model licence per its model card (rhasspy/piper-voices)",
+   "attribution": "Synthesised with Piper (vi_VN-vivos-x_low.onnx)",
+   "origin_url": null,
+   "processing": [
+    "Piper TTS",
+    "raised-voice processing: +10 % pitch, +5 dB presence at 2.5 kHz, soft saturation",
+    "loudness match",
+    "through rubble 2.0 m: estimated loss d*(3+6 f/kHz) dB + small-void reverb (RT60 0.22 s)"
+   ],
+   "synthetic": true,
+   "sample_rate": 48000,
+   "duration_s": 1.632,
+   "rms_dbfs": -34.42,
+   "peak_dbfs": -22.12,
+   "through_rubble_depth_m": 2.0,
+   "parent": "voice_vi_here_tts",
+   "suggested_spl_db_1m": 90,
+   "schedule": {
+    "mode": "after_callout",
+    "latency_s": [
+     1.5,
+     3.5
+    ],
+    "repeats": 2,
+    "period_s": 4.0
+   }
+  },
+  {
+   "id": "weak_en_tts",
+   "file": "weak_en_tts.wav",
+   "kind": "weak_voice",
+   "human": true,
+   "language": "en",
+   "transcript": "hello... is anyone there... water...",
+   "transcript_en": "hello... is anyone there... water...",
+   "source": "TTS: Piper en_US-lessac-low (MIT code; voice: see its model card); PROCESSED to a weak voice",
+   "licence": "Piper TTS (MIT); voice model licence per its model card (rhasspy/piper-voices)",
+   "attribution": "Synthesised with Piper (en_US-lessac-low.onnx)",
+   "origin_url": null,
+   "processing": [
+    "Piper TTS, slow (length_scale 1.35)",
+    "long pauses 1.5-2.4 s with faint inhales",
+    "energy decay -6 dB across the clip",
+    "pitch/tempo decay -6 %",
+    "breathy noise mix (-14 dB)",
+    "low-pass 4 kHz",
+    "loudness match at -32 dBFS (12 dB under normal voice)"
+   ],
+   "synthetic": true,
+   "sample_rate": 48000,
+   "duration_s": 7.911,
+   "rms_dbfs": -32.0,
+   "peak_dbfs": -14.86,
+   "through_rubble_depth_m": 0.0,
+   "parent": null,
+   "suggested_spl_db_1m": 72,
+   "schedule": {
+    "mode": "loop",
+    "period_s": 25.0,
+    "jitter_s": 5.0
+   }
+  },
+  {
+   "id": "weak_en_tts__0.5m",
+   "file": "rubble/weak_en_tts__0.5m.wav",
+   "kind": "weak_voice",
+   "human": true,
+   "language": "en",
+   "transcript": "hello... is anyone there... water...",
+   "transcript_en": "hello... is anyone there... water...",
+   "source": "TTS: Piper en_US-lessac-low (MIT code; voice: see its model card); PROCESSED to a weak voice",
+   "licence": "Piper TTS (MIT); voice model licence per its model card (rhasspy/piper-voices)",
+   "attribution": "Synthesised with Piper (en_US-lessac-low.onnx)",
+   "origin_url": null,
+   "processing": [
+    "Piper TTS, slow (length_scale 1.35)",
+    "long pauses 1.5-2.4 s with faint inhales",
+    "energy decay -6 dB across the clip",
+    "pitch/tempo decay -6 %",
+    "breathy noise mix (-14 dB)",
+    "low-pass 4 kHz",
+    "loudness match at -32 dBFS (12 dB under normal voice)",
+    "through rubble 0.5 m: estimated loss d*(3+6 f/kHz) dB + small-void reverb (RT60 0.22 s)"
+   ],
+   "synthetic": true,
+   "sample_rate": 48000,
+   "duration_s": 8.161,
+   "rms_dbfs": -32.73,
+   "peak_dbfs": -18.76,
+   "through_rubble_depth_m": 0.5,
+   "parent": "weak_en_tts",
+   "suggested_spl_db_1m": 72,
+   "schedule": {
+    "mode": "loop",
+    "period_s": 25.0,
+    "jitter_s": 5.0
+   }
+  },
+  {
+   "id": "weak_en_tts__1.0m",
+   "file": "rubble/weak_en_tts__1.0m.wav",
+   "kind": "weak_voice",
+   "human": true,
+   "language": "en",
+   "transcript": "hello... is anyone there... water...",
+   "transcript_en": "hello... is anyone there... water...",
+   "source": "TTS: Piper en_US-lessac-low (MIT code; voice: see its model card); PROCESSED to a weak voice",
+   "licence": "Piper TTS (MIT); voice model licence per its model card (rhasspy/piper-voices)",
+   "attribution": "Synthesised with Piper (en_US-lessac-low.onnx)",
+   "origin_url": null,
+   "processing": [
+    "Piper TTS, slow (length_scale 1.35)",
+    "long pauses 1.5-2.4 s with faint inhales",
+    "energy decay -6 dB across the clip",
+    "pitch/tempo decay -6 %",
+    "breathy noise mix (-14 dB)",
+    "low-pass 4 kHz",
+    "loudness match at -32 dBFS (12 dB under normal voice)",
+    "through rubble 1.0 m: estimated loss d*(3+6 f/kHz) dB + small-void reverb (RT60 0.22 s)"
+   ],
+   "synthetic": true,
+   "sample_rate": 48000,
+   "duration_s": 8.161,
+   "rms_dbfs": -36.74,
+   "peak_dbfs": -21.72,
+   "through_rubble_depth_m": 1.0,
+   "parent": "weak_en_tts",
+   "suggested_spl_db_1m": 72,
+   "schedule": {
+    "mode": "loop",
+    "period_s": 25.0,
+    "jitter_s": 5.0
+   }
+  },
+  {
+   "id": "weak_en_tts__1.5m",
+   "file": "rubble/weak_en_tts__1.5m.wav",
+   "kind": "weak_voice",
+   "human": true,
+   "language": "en",
+   "transcript": "hello... is anyone there... water...",
+   "transcript_en": "hello... is anyone there... water...",
+   "source": "TTS: Piper en_US-lessac-low (MIT code; voice: see its model card); PROCESSED to a weak voice",
+   "licence": "Piper TTS (MIT); voice model licence per its model card (rhasspy/piper-voices)",
+   "attribution": "Synthesised with Piper (en_US-lessac-low.onnx)",
+   "origin_url": null,
+   "processing": [
+    "Piper TTS, slow (length_scale 1.35)",
+    "long pauses 1.5-2.4 s with faint inhales",
+    "energy decay -6 dB across the clip",
+    "pitch/tempo decay -6 %",
+    "breathy noise mix (-14 dB)",
+    "low-pass 4 kHz",
+    "loudness match at -32 dBFS (12 dB under normal voice)",
+    "through rubble 1.5 m: estimated loss d*(3+6 f/kHz) dB + small-void reverb (RT60 0.22 s)"
+   ],
+   "synthetic": true,
+   "sample_rate": 48000,
+   "duration_s": 8.161,
+   "rms_dbfs": -38.63,
+   "peak_dbfs": -24.14,
+   "through_rubble_depth_m": 1.5,
+   "parent": "weak_en_tts",
+   "suggested_spl_db_1m": 72,
+   "schedule": {
+    "mode": "loop",
+    "period_s": 25.0,
+    "jitter_s": 5.0
+   }
+  },
+  {
+   "id": "weak_en_tts__2.0m",
+   "file": "rubble/weak_en_tts__2.0m.wav",
+   "kind": "weak_voice",
+   "human": true,
+   "language": "en",
+   "transcript": "hello... is anyone there... water...",
+   "transcript_en": "hello... is anyone there... water...",
+   "source": "TTS: Piper en_US-lessac-low (MIT code; voice: see its model card); PROCESSED to a weak voice",
+   "licence": "Piper TTS (MIT); voice model licence per its model card (rhasspy/piper-voices)",
+   "attribution": "Synthesised with Piper (en_US-lessac-low.onnx)",
+   "origin_url": null,
+   "processing": [
+    "Piper TTS, slow (length_scale 1.35)",
+    "long pauses 1.5-2.4 s with faint inhales",
+    "energy decay -6 dB across the clip",
+    "pitch/tempo decay -6 %",
+    "breathy noise mix (-14 dB)",
+    "low-pass 4 kHz",
+    "loudness match at -32 dBFS (12 dB under normal voice)",
+    "through rubble 2.0 m: estimated loss d*(3+6 f/kHz) dB + small-void reverb (RT60 0.22 s)"
+   ],
+   "synthetic": true,
+   "sample_rate": 48000,
+   "duration_s": 8.161,
+   "rms_dbfs": -41.74,
+   "peak_dbfs": -28.12,
+   "through_rubble_depth_m": 2.0,
+   "parent": "weak_en_tts",
+   "suggested_spl_db_1m": 72,
+   "schedule": {
+    "mode": "loop",
+    "period_s": 25.0,
+    "jitter_s": 5.0
+   }
+  },
+  {
+   "id": "weak_zh_tts",
+   "file": "weak_zh_tts.wav",
+   "kind": "weak_voice",
+   "human": true,
+   "language": "zh-TW",
+   "transcript": "有人嗎……我在這……水……",
+   "transcript_en": "Anyone there... I'm here... water...",
+   "source": "TTS: Piper zh_CN-huayan-x_low (Mainland female voice; the model's phoneme map has no tone symbols, so tones are weak). Placeholder until a native Taiwanese Mandarin recording; PROCESSED to a weak voice",
+   "licence": "Piper TTS (MIT); voice model licence per its model card (rhasspy/piper-voices)",
+   "attribution": "Synthesised with Piper (zh_CN-huayan-x_low.onnx)",
+   "origin_url": null,
+   "processing": [
+    "Piper TTS, slow (length_scale 1.35)",
+    "long pauses 1.5-2.4 s with faint inhales",
+    "energy decay -6 dB across the clip",
+    "pitch/tempo decay -6 %",
+    "breathy noise mix (-14 dB)",
+    "low-pass 4 kHz",
+    "loudness match at -32 dBFS (12 dB under normal voice)"
+   ],
+   "synthetic": true,
+   "sample_rate": 48000,
+   "duration_s": 6.676,
+   "rms_dbfs": -32.0,
+   "peak_dbfs": -14.89,
+   "through_rubble_depth_m": 0.0,
+   "parent": null,
+   "suggested_spl_db_1m": 72,
+   "schedule": {
+    "mode": "loop",
+    "period_s": 25.0,
+    "jitter_s": 5.0
+   }
+  },
+  {
+   "id": "weak_zh_tts__0.5m",
+   "file": "rubble/weak_zh_tts__0.5m.wav",
+   "kind": "weak_voice",
+   "human": true,
+   "language": "zh-TW",
+   "transcript": "有人嗎……我在這……水……",
+   "transcript_en": "Anyone there... I'm here... water...",
+   "source": "TTS: Piper zh_CN-huayan-x_low (Mainland female voice; the model's phoneme map has no tone symbols, so tones are weak). Placeholder until a native Taiwanese Mandarin recording; PROCESSED to a weak voice",
+   "licence": "Piper TTS (MIT); voice model licence per its model card (rhasspy/piper-voices)",
+   "attribution": "Synthesised with Piper (zh_CN-huayan-x_low.onnx)",
+   "origin_url": null,
+   "processing": [
+    "Piper TTS, slow (length_scale 1.35)",
+    "long pauses 1.5-2.4 s with faint inhales",
+    "energy decay -6 dB across the clip",
+    "pitch/tempo decay -6 %",
+    "breathy noise mix (-14 dB)",
+    "low-pass 4 kHz",
+    "loudness match at -32 dBFS (12 dB under normal voice)",
+    "through rubble 0.5 m: estimated loss d*(3+6 f/kHz) dB + small-void reverb (RT60 0.22 s)"
+   ],
+   "synthetic": true,
+   "sample_rate": 48000,
+   "duration_s": 6.926,
+   "rms_dbfs": -33.96,
+   "peak_dbfs": -18.12,
+   "through_rubble_depth_m": 0.5,
+   "parent": "weak_zh_tts",
+   "suggested_spl_db_1m": 72,
+   "schedule": {
+    "mode": "loop",
+    "period_s": 25.0,
+    "jitter_s": 5.0
+   }
+  },
+  {
+   "id": "weak_zh_tts__1.0m",
+   "file": "rubble/weak_zh_tts__1.0m.wav",
+   "kind": "weak_voice",
+   "human": true,
+   "language": "zh-TW",
+   "transcript": "有人嗎……我在這……水……",
+   "transcript_en": "Anyone there... I'm here... water...",
+   "source": "TTS: Piper zh_CN-huayan-x_low (Mainland female voice; the model's phoneme map has no tone symbols, so tones are weak). Placeholder until a native Taiwanese Mandarin recording; PROCESSED to a weak voice",
+   "licence": "Piper TTS (MIT); voice model licence per its model card (rhasspy/piper-voices)",
+   "attribution": "Synthesised with Piper (zh_CN-huayan-x_low.onnx)",
+   "origin_url": null,
+   "processing": [
+    "Piper TTS, slow (length_scale 1.35)",
+    "long pauses 1.5-2.4 s with faint inhales",
+    "energy decay -6 dB across the clip",
+    "pitch/tempo decay -6 %",
+    "breathy noise mix (-14 dB)",
+    "low-pass 4 kHz",
+    "loudness match at -32 dBFS (12 dB under normal voice)",
+    "through rubble 1.0 m: estimated loss d*(3+6 f/kHz) dB + small-void reverb (RT60 0.22 s)"
+   ],
+   "synthetic": true,
+   "sample_rate": 48000,
+   "duration_s": 6.926,
+   "rms_dbfs": -36.33,
+   "peak_dbfs": -21.01,
+   "through_rubble_depth_m": 1.0,
+   "parent": "weak_zh_tts",
+   "suggested_spl_db_1m": 72,
+   "schedule": {
+    "mode": "loop",
+    "period_s": 25.0,
+    "jitter_s": 5.0
+   }
+  },
+  {
+   "id": "weak_zh_tts__1.5m",
+   "file": "rubble/weak_zh_tts__1.5m.wav",
+   "kind": "weak_voice",
+   "human": true,
+   "language": "zh-TW",
+   "transcript": "有人嗎……我在這……水……",
+   "transcript_en": "Anyone there... I'm here... water...",
+   "source": "TTS: Piper zh_CN-huayan-x_low (Mainland female voice; the model's phoneme map has no tone symbols, so tones are weak). Placeholder until a native Taiwanese Mandarin recording; PROCESSED to a weak voice",
+   "licence": "Piper TTS (MIT); voice model licence per its model card (rhasspy/piper-voices)",
+   "attribution": "Synthesised with Piper (zh_CN-huayan-x_low.onnx)",
+   "origin_url": null,
+   "processing": [
+    "Piper TTS, slow (length_scale 1.35)",
+    "long pauses 1.5-2.4 s with faint inhales",
+    "energy decay -6 dB across the clip",
+    "pitch/tempo decay -6 %",
+    "breathy noise mix (-14 dB)",
+    "low-pass 4 kHz",
+    "loudness match at -32 dBFS (12 dB under normal voice)",
+    "through rubble 1.5 m: estimated loss d*(3+6 f/kHz) dB + small-void reverb (RT60 0.22 s)"
+   ],
+   "synthetic": true,
+   "sample_rate": 48000,
+   "duration_s": 6.926,
+   "rms_dbfs": -38.6,
+   "peak_dbfs": -24.42,
+   "through_rubble_depth_m": 1.5,
+   "parent": "weak_zh_tts",
+   "suggested_spl_db_1m": 72,
+   "schedule": {
+    "mode": "loop",
+    "period_s": 25.0,
+    "jitter_s": 5.0
+   }
+  },
+  {
+   "id": "weak_zh_tts__2.0m",
+   "file": "rubble/weak_zh_tts__2.0m.wav",
+   "kind": "weak_voice",
+   "human": true,
+   "language": "zh-TW",
+   "transcript": "有人嗎……我在這……水……",
+   "transcript_en": "Anyone there... I'm here... water...",
+   "source": "TTS: Piper zh_CN-huayan-x_low (Mainland female voice; the model's phoneme map has no tone symbols, so tones are weak). Placeholder until a native Taiwanese Mandarin recording; PROCESSED to a weak voice",
+   "licence": "Piper TTS (MIT); voice model licence per its model card (rhasspy/piper-voices)",
+   "attribution": "Synthesised with Piper (zh_CN-huayan-x_low.onnx)",
+   "origin_url": null,
+   "processing": [
+    "Piper TTS, slow (length_scale 1.35)",
+    "long pauses 1.5-2.4 s with faint inhales",
+    "energy decay -6 dB across the clip",
+    "pitch/tempo decay -6 %",
+    "breathy noise mix (-14 dB)",
+    "low-pass 4 kHz",
+    "loudness match at -32 dBFS (12 dB under normal voice)",
+    "through rubble 2.0 m: estimated loss d*(3+6 f/kHz) dB + small-void reverb (RT60 0.22 s)"
+   ],
+   "synthetic": true,
+   "sample_rate": 48000,
+   "duration_s": 6.926,
+   "rms_dbfs": -40.27,
+   "peak_dbfs": -25.34,
+   "through_rubble_depth_m": 2.0,
+   "parent": "weak_zh_tts",
+   "suggested_spl_db_1m": 72,
+   "schedule": {
+    "mode": "loop",
+    "period_s": 25.0,
+    "jitter_s": 5.0
+   }
+  },
+  {
+   "id": "weak_id_tts",
+   "file": "weak_id_tts.wav",
+   "kind": "weak_voice",
+   "human": true,
+   "language": "id",
+   "transcript": "halo... ada orang... air...",
+   "transcript_en": "Hello... anyone... water...",
+   "source": "TTS: Piper id_ID-news_tts-medium; PROCESSED to a weak voice",
+   "licence": "Piper TTS (MIT); voice model licence per its model card (rhasspy/piper-voices)",
+   "attribution": "Synthesised with Piper (id_ID-news_tts-medium.onnx)",
+   "origin_url": null,
+   "processing": [
+    "Piper TTS, slow (length_scale 1.35)",
+    "long pauses 1.5-2.4 s with faint inhales",
+    "energy decay -6 dB across the clip",
+    "pitch/tempo decay -6 %",
+    "breathy noise mix (-14 dB)",
+    "low-pass 4 kHz",
+    "loudness match at -32 dBFS (12 dB under normal voice)"
+   ],
+   "synthetic": true,
+   "sample_rate": 48000,
+   "duration_s": 7.877,
+   "rms_dbfs": -32.0,
+   "peak_dbfs": -14.33,
+   "through_rubble_depth_m": 0.0,
+   "parent": null,
+   "suggested_spl_db_1m": 72,
+   "schedule": {
+    "mode": "loop",
+    "period_s": 25.0,
+    "jitter_s": 5.0
+   }
+  },
+  {
+   "id": "weak_id_tts__0.5m",
+   "file": "rubble/weak_id_tts__0.5m.wav",
+   "kind": "weak_voice",
+   "human": true,
+   "language": "id",
+   "transcript": "halo... ada orang... air...",
+   "transcript_en": "Hello... anyone... water...",
+   "source": "TTS: Piper id_ID-news_tts-medium; PROCESSED to a weak voice",
+   "licence": "Piper TTS (MIT); voice model licence per its model card (rhasspy/piper-voices)",
+   "attribution": "Synthesised with Piper (id_ID-news_tts-medium.onnx)",
+   "origin_url": null,
+   "processing": [
+    "Piper TTS, slow (length_scale 1.35)",
+    "long pauses 1.5-2.4 s with faint inhales",
+    "energy decay -6 dB across the clip",
+    "pitch/tempo decay -6 %",
+    "breathy noise mix (-14 dB)",
+    "low-pass 4 kHz",
+    "loudness match at -32 dBFS (12 dB under normal voice)",
+    "through rubble 0.5 m: estimated loss d*(3+6 f/kHz) dB + small-void reverb (RT60 0.22 s)"
+   ],
+   "synthetic": true,
+   "sample_rate": 48000,
+   "duration_s": 8.127,
+   "rms_dbfs": -35.63,
+   "peak_dbfs": -20.28,
+   "through_rubble_depth_m": 0.5,
+   "parent": "weak_id_tts",
+   "suggested_spl_db_1m": 72,
+   "schedule": {
+    "mode": "loop",
+    "period_s": 25.0,
+    "jitter_s": 5.0
+   }
+  },
+  {
+   "id": "weak_id_tts__1.0m",
+   "file": "rubble/weak_id_tts__1.0m.wav",
+   "kind": "weak_voice",
+   "human": true,
+   "language": "id",
+   "transcript": "halo... ada orang... air...",
+   "transcript_en": "Hello... anyone... water...",
+   "source": "TTS: Piper id_ID-news_tts-medium; PROCESSED to a weak voice",
+   "licence": "Piper TTS (MIT); voice model licence per its model card (rhasspy/piper-voices)",
+   "attribution": "Synthesised with Piper (id_ID-news_tts-medium.onnx)",
+   "origin_url": null,
+   "processing": [
+    "Piper TTS, slow (length_scale 1.35)",
+    "long pauses 1.5-2.4 s with faint inhales",
+    "energy decay -6 dB across the clip",
+    "pitch/tempo decay -6 %",
+    "breathy noise mix (-14 dB)",
+    "low-pass 4 kHz",
+    "loudness match at -32 dBFS (12 dB under normal voice)",
+    "through rubble 1.0 m: estimated loss d*(3+6 f/kHz) dB + small-void reverb (RT60 0.22 s)"
+   ],
+   "synthetic": true,
+   "sample_rate": 48000,
+   "duration_s": 8.127,
+   "rms_dbfs": -40.17,
+   "peak_dbfs": -25.18,
+   "through_rubble_depth_m": 1.0,
+   "parent": "weak_id_tts",
+   "suggested_spl_db_1m": 72,
+   "schedule": {
+    "mode": "loop",
+    "period_s": 25.0,
+    "jitter_s": 5.0
+   }
+  },
+  {
+   "id": "weak_id_tts__1.5m",
+   "file": "rubble/weak_id_tts__1.5m.wav",
+   "kind": "weak_voice",
+   "human": true,
+   "language": "id",
+   "transcript": "halo... ada orang... air...",
+   "transcript_en": "Hello... anyone... water...",
+   "source": "TTS: Piper id_ID-news_tts-medium; PROCESSED to a weak voice",
+   "licence": "Piper TTS (MIT); voice model licence per its model card (rhasspy/piper-voices)",
+   "attribution": "Synthesised with Piper (id_ID-news_tts-medium.onnx)",
+   "origin_url": null,
+   "processing": [
+    "Piper TTS, slow (length_scale 1.35)",
+    "long pauses 1.5-2.4 s with faint inhales",
+    "energy decay -6 dB across the clip",
+    "pitch/tempo decay -6 %",
+    "breathy noise mix (-14 dB)",
+    "low-pass 4 kHz",
+    "loudness match at -32 dBFS (12 dB under normal voice)",
+    "through rubble 1.5 m: estimated loss d*(3+6 f/kHz) dB + small-void reverb (RT60 0.22 s)"
+   ],
+   "synthetic": true,
+   "sample_rate": 48000,
+   "duration_s": 8.127,
+   "rms_dbfs": -42.43,
+   "peak_dbfs": -27.16,
+   "through_rubble_depth_m": 1.5,
+   "parent": "weak_id_tts",
+   "suggested_spl_db_1m": 72,
+   "schedule": {
+    "mode": "loop",
+    "period_s": 25.0,
+    "jitter_s": 5.0
+   }
+  },
+  {
+   "id": "weak_id_tts__2.0m",
+   "file": "rubble/weak_id_tts__2.0m.wav",
+   "kind": "weak_voice",
+   "human": true,
+   "language": "id",
+   "transcript": "halo... ada orang... air...",
+   "transcript_en": "Hello... anyone... water...",
+   "source": "TTS: Piper id_ID-news_tts-medium; PROCESSED to a weak voice",
+   "licence": "Piper TTS (MIT); voice model licence per its model card (rhasspy/piper-voices)",
+   "attribution": "Synthesised with Piper (id_ID-news_tts-medium.onnx)",
+   "origin_url": null,
+   "processing": [
+    "Piper TTS, slow (length_scale 1.35)",
+    "long pauses 1.5-2.4 s with faint inhales",
+    "energy decay -6 dB across the clip",
+    "pitch/tempo decay -6 %",
+    "breathy noise mix (-14 dB)",
+    "low-pass 4 kHz",
+    "loudness match at -32 dBFS (12 dB under normal voice)",
+    "through rubble 2.0 m: estimated loss d*(3+6 f/kHz) dB + small-void reverb (RT60 0.22 s)"
+   ],
+   "synthetic": true,
+   "sample_rate": 48000,
+   "duration_s": 8.127,
+   "rms_dbfs": -44.08,
+   "peak_dbfs": -28.82,
+   "through_rubble_depth_m": 2.0,
+   "parent": "weak_id_tts",
+   "suggested_spl_db_1m": 72,
+   "schedule": {
+    "mode": "loop",
+    "period_s": 25.0,
+    "jitter_s": 5.0
+   }
+  },
+  {
+   "id": "weak_vi_tts",
+   "file": "weak_vi_tts.wav",
+   "kind": "weak_voice",
+   "human": true,
+   "language": "vi",
+   "transcript": "có ai không... nước... cho tôi nước...",
+   "transcript_en": "Anyone there... water... give me water...",
+   "source": "TTS: Piper vi_VN-vivos-x_low (multi-speaker); PROCESSED to a weak voice",
+   "licence": "Piper TTS (MIT); voice model licence per its model card (rhasspy/piper-voices)",
+   "attribution": "Synthesised with Piper (vi_VN-vivos-x_low.onnx)",
+   "origin_url": null,
+   "processing": [
+    "Piper TTS, slow (length_scale 1.35)",
+    "long pauses 1.5-2.4 s with faint inhales",
+    "energy decay -6 dB across the clip",
+    "pitch/tempo decay -6 %",
+    "breathy noise mix (-14 dB)",
+    "low-pass 4 kHz",
+    "loudness match at -32 dBFS (12 dB under normal voice)"
+   ],
+   "synthetic": true,
+   "sample_rate": 48000,
+   "duration_s": 8.338,
+   "rms_dbfs": -32.0,
+   "peak_dbfs": -13.73,
+   "through_rubble_depth_m": 0.0,
+   "parent": null,
+   "suggested_spl_db_1m": 72,
+   "schedule": {
+    "mode": "loop",
+    "period_s": 25.0,
+    "jitter_s": 5.0
+   }
+  },
+  {
+   "id": "weak_vi_tts__0.5m",
+   "file": "rubble/weak_vi_tts__0.5m.wav",
+   "kind": "weak_voice",
+   "human": true,
+   "language": "vi",
+   "transcript": "có ai không... nước... cho tôi nước...",
+   "transcript_en": "Anyone there... water... give me water...",
+   "source": "TTS: Piper vi_VN-vivos-x_low (multi-speaker); PROCESSED to a weak voice",
+   "licence": "Piper TTS (MIT); voice model licence per its model card (rhasspy/piper-voices)",
+   "attribution": "Synthesised with Piper (vi_VN-vivos-x_low.onnx)",
+   "origin_url": null,
+   "processing": [
+    "Piper TTS, slow (length_scale 1.35)",
+    "long pauses 1.5-2.4 s with faint inhales",
+    "energy decay -6 dB across the clip",
+    "pitch/tempo decay -6 %",
+    "breathy noise mix (-14 dB)",
+    "low-pass 4 kHz",
+    "loudness match at -32 dBFS (12 dB under normal voice)",
+    "through rubble 0.5 m: estimated loss d*(3+6 f/kHz) dB + small-void reverb (RT60 0.22 s)"
+   ],
+   "synthetic": true,
+   "sample_rate": 48000,
+   "duration_s": 8.588,
+   "rms_dbfs": -36.14,
+   "peak_dbfs": -19.65,
+   "through_rubble_depth_m": 0.5,
+   "parent": "weak_vi_tts",
+   "suggested_spl_db_1m": 72,
+   "schedule": {
+    "mode": "loop",
+    "period_s": 25.0,
+    "jitter_s": 5.0
+   }
+  },
+  {
+   "id": "weak_vi_tts__1.0m",
+   "file": "rubble/weak_vi_tts__1.0m.wav",
+   "kind": "weak_voice",
+   "human": true,
+   "language": "vi",
+   "transcript": "có ai không... nước... cho tôi nước...",
+   "transcript_en": "Anyone there... water... give me water...",
+   "source": "TTS: Piper vi_VN-vivos-x_low (multi-speaker); PROCESSED to a weak voice",
+   "licence": "Piper TTS (MIT); voice model licence per its model card (rhasspy/piper-voices)",
+   "attribution": "Synthesised with Piper (vi_VN-vivos-x_low.onnx)",
+   "origin_url": null,
+   "processing": [
+    "Piper TTS, slow (length_scale 1.35)",
+    "long pauses 1.5-2.4 s with faint inhales",
+    "energy decay -6 dB across the clip",
+    "pitch/tempo decay -6 %",
+    "breathy noise mix (-14 dB)",
+    "low-pass 4 kHz",
+    "loudness match at -32 dBFS (12 dB under normal voice)",
+    "through rubble 1.0 m: estimated loss d*(3+6 f/kHz) dB + small-void reverb (RT60 0.22 s)"
+   ],
+   "synthetic": true,
+   "sample_rate": 48000,
+   "duration_s": 8.588,
+   "rms_dbfs": -39.21,
+   "peak_dbfs": -22.48,
+   "through_rubble_depth_m": 1.0,
+   "parent": "weak_vi_tts",
+   "suggested_spl_db_1m": 72,
+   "schedule": {
+    "mode": "loop",
+    "period_s": 25.0,
+    "jitter_s": 5.0
+   }
+  },
+  {
+   "id": "weak_vi_tts__1.5m",
+   "file": "rubble/weak_vi_tts__1.5m.wav",
+   "kind": "weak_voice",
+   "human": true,
+   "language": "vi",
+   "transcript": "có ai không... nước... cho tôi nước...",
+   "transcript_en": "Anyone there... water... give me water...",
+   "source": "TTS: Piper vi_VN-vivos-x_low (multi-speaker); PROCESSED to a weak voice",
+   "licence": "Piper TTS (MIT); voice model licence per its model card (rhasspy/piper-voices)",
+   "attribution": "Synthesised with Piper (vi_VN-vivos-x_low.onnx)",
+   "origin_url": null,
+   "processing": [
+    "Piper TTS, slow (length_scale 1.35)",
+    "long pauses 1.5-2.4 s with faint inhales",
+    "energy decay -6 dB across the clip",
+    "pitch/tempo decay -6 %",
+    "breathy noise mix (-14 dB)",
+    "low-pass 4 kHz",
+    "loudness match at -32 dBFS (12 dB under normal voice)",
+    "through rubble 1.5 m: estimated loss d*(3+6 f/kHz) dB + small-void reverb (RT60 0.22 s)"
+   ],
+   "synthetic": true,
+   "sample_rate": 48000,
+   "duration_s": 8.588,
+   "rms_dbfs": -43.52,
+   "peak_dbfs": -26.89,
+   "through_rubble_depth_m": 1.5,
+   "parent": "weak_vi_tts",
+   "suggested_spl_db_1m": 72,
+   "schedule": {
+    "mode": "loop",
+    "period_s": 25.0,
+    "jitter_s": 5.0
+   }
+  },
+  {
+   "id": "weak_vi_tts__2.0m",
+   "file": "rubble/weak_vi_tts__2.0m.wav",
+   "kind": "weak_voice",
+   "human": true,
+   "language": "vi",
+   "transcript": "có ai không... nước... cho tôi nước...",
+   "transcript_en": "Anyone there... water... give me water...",
+   "source": "TTS: Piper vi_VN-vivos-x_low (multi-speaker); PROCESSED to a weak voice",
+   "licence": "Piper TTS (MIT); voice model licence per its model card (rhasspy/piper-voices)",
+   "attribution": "Synthesised with Piper (vi_VN-vivos-x_low.onnx)",
+   "origin_url": null,
+   "processing": [
+    "Piper TTS, slow (length_scale 1.35)",
+    "long pauses 1.5-2.4 s with faint inhales",
+    "energy decay -6 dB across the clip",
+    "pitch/tempo decay -6 %",
+    "breathy noise mix (-14 dB)",
+    "low-pass 4 kHz",
+    "loudness match at -32 dBFS (12 dB under normal voice)",
+    "through rubble 2.0 m: estimated loss d*(3+6 f/kHz) dB + small-void reverb (RT60 0.22 s)"
+   ],
+   "synthetic": true,
+   "sample_rate": 48000,
+   "duration_s": 8.588,
+   "rms_dbfs": -47.34,
+   "peak_dbfs": -31.39,
+   "through_rubble_depth_m": 2.0,
+   "parent": "weak_vi_tts",
+   "suggested_spl_db_1m": 72,
+   "schedule": {
+    "mode": "loop",
+    "period_s": 25.0,
+    "jitter_s": 5.0
+   }
+  },
+  {
+   "id": "weak_en_real_processed",
+   "file": "weak_en_real_processed.wav",
+   "kind": "weak_voice",
+   "human": true,
+   "language": "en",
+   "transcript": "help me... help me...",
+   "transcript_en": "help me... help me...",
+   "source": "teammate recording set (F. Valisalo), data/audio_real/frances/voice_04.wav",
+   "licence": "CC0 1.0",
+   "attribution": "\"help me\" by Gemesil (https://freesound.org/people/Gemesil/sounds/529115), CC0",
+   "origin_url": "https://freesound.org/people/Gemesil/sounds/529115",
+   "processing": [
+    "real CC0 'help me' twice",
+    "PROCESSED to a weak voice: pauses + inhales, energy and pitch decay, breathy noise, low-pass 4 kHz",
+    "loudness match at -32 dBFS"
+   ],
+   "synthetic": false,
+   "sample_rate": 48000,
+   "duration_s": 5.488,
+   "rms_dbfs": -32.0,
+   "peak_dbfs": -16.76,
+   "through_rubble_depth_m": 0.0,
+   "parent": null,
+   "suggested_spl_db_1m": 72,
+   "schedule": {
+    "mode": "loop",
+    "period_s": 25.0,
+    "jitter_s": 5.0
+   }
+  },
+  {
+   "id": "weak_en_real_processed__0.5m",
+   "file": "rubble/weak_en_real_processed__0.5m.wav",
+   "kind": "weak_voice",
+   "human": true,
+   "language": "en",
+   "transcript": "help me... help me...",
+   "transcript_en": "help me... help me...",
+   "source": "teammate recording set (F. Valisalo), data/audio_real/frances/voice_04.wav",
+   "licence": "CC0 1.0",
+   "attribution": "\"help me\" by Gemesil (https://freesound.org/people/Gemesil/sounds/529115), CC0",
+   "origin_url": "https://freesound.org/people/Gemesil/sounds/529115",
+   "processing": [
+    "real CC0 'help me' twice",
+    "PROCESSED to a weak voice: pauses + inhales, energy and pitch decay, breathy noise, low-pass 4 kHz",
+    "loudness match at -32 dBFS",
+    "through rubble 0.5 m: estimated loss d*(3+6 f/kHz) dB + small-void reverb (RT60 0.22 s)"
+   ],
+   "synthetic": false,
+   "sample_rate": 48000,
+   "duration_s": 5.738,
+   "rms_dbfs": -33.39,
+   "peak_dbfs": -18.65,
+   "through_rubble_depth_m": 0.5,
+   "parent": "weak_en_real_processed",
+   "suggested_spl_db_1m": 72,
+   "schedule": {
+    "mode": "loop",
+    "period_s": 25.0,
+    "jitter_s": 5.0
+   }
+  },
+  {
+   "id": "weak_en_real_processed__1.0m",
+   "file": "rubble/weak_en_real_processed__1.0m.wav",
+   "kind": "weak_voice",
+   "human": true,
+   "language": "en",
+   "transcript": "help me... help me...",
+   "transcript_en": "help me... help me...",
+   "source": "teammate recording set (F. Valisalo), data/audio_real/frances/voice_04.wav",
+   "licence": "CC0 1.0",
+   "attribution": "\"help me\" by Gemesil (https://freesound.org/people/Gemesil/sounds/529115), CC0",
+   "origin_url": "https://freesound.org/people/Gemesil/sounds/529115",
+   "processing": [
+    "real CC0 'help me' twice",
+    "PROCESSED to a weak voice: pauses + inhales, energy and pitch decay, breathy noise, low-pass 4 kHz",
+    "loudness match at -32 dBFS",
+    "through rubble 1.0 m: estimated loss d*(3+6 f/kHz) dB + small-void reverb (RT60 0.22 s)"
+   ],
+   "synthetic": false,
+   "sample_rate": 48000,
+   "duration_s": 5.738,
+   "rms_dbfs": -35.45,
+   "peak_dbfs": -22.04,
+   "through_rubble_depth_m": 1.0,
+   "parent": "weak_en_real_processed",
+   "suggested_spl_db_1m": 72,
+   "schedule": {
+    "mode": "loop",
+    "period_s": 25.0,
+    "jitter_s": 5.0
+   }
+  },
+  {
+   "id": "weak_en_real_processed__1.5m",
+   "file": "rubble/weak_en_real_processed__1.5m.wav",
+   "kind": "weak_voice",
+   "human": true,
+   "language": "en",
+   "transcript": "help me... help me...",
+   "transcript_en": "help me... help me...",
+   "source": "teammate recording set (F. Valisalo), data/audio_real/frances/voice_04.wav",
+   "licence": "CC0 1.0",
+   "attribution": "\"help me\" by Gemesil (https://freesound.org/people/Gemesil/sounds/529115), CC0",
+   "origin_url": "https://freesound.org/people/Gemesil/sounds/529115",
+   "processing": [
+    "real CC0 'help me' twice",
+    "PROCESSED to a weak voice: pauses + inhales, energy and pitch decay, breathy noise, low-pass 4 kHz",
+    "loudness match at -32 dBFS",
+    "through rubble 1.5 m: estimated loss d*(3+6 f/kHz) dB + small-void reverb (RT60 0.22 s)"
+   ],
+   "synthetic": false,
+   "sample_rate": 48000,
+   "duration_s": 5.738,
+   "rms_dbfs": -40.09,
+   "peak_dbfs": -27.04,
+   "through_rubble_depth_m": 1.5,
+   "parent": "weak_en_real_processed",
+   "suggested_spl_db_1m": 72,
+   "schedule": {
+    "mode": "loop",
+    "period_s": 25.0,
+    "jitter_s": 5.0
+   }
+  },
+  {
+   "id": "weak_en_real_processed__2.0m",
+   "file": "rubble/weak_en_real_processed__2.0m.wav",
+   "kind": "weak_voice",
+   "human": true,
+   "language": "en",
+   "transcript": "help me... help me...",
+   "transcript_en": "help me... help me...",
+   "source": "teammate recording set (F. Valisalo), data/audio_real/frances/voice_04.wav",
+   "licence": "CC0 1.0",
+   "attribution": "\"help me\" by Gemesil (https://freesound.org/people/Gemesil/sounds/529115), CC0",
+   "origin_url": "https://freesound.org/people/Gemesil/sounds/529115",
+   "processing": [
+    "real CC0 'help me' twice",
+    "PROCESSED to a weak voice: pauses + inhales, energy and pitch decay, breathy noise, low-pass 4 kHz",
+    "loudness match at -32 dBFS",
+    "through rubble 2.0 m: estimated loss d*(3+6 f/kHz) dB + small-void reverb (RT60 0.22 s)"
+   ],
+   "synthetic": false,
+   "sample_rate": 48000,
+   "duration_s": 5.738,
+   "rms_dbfs": -42.6,
+   "peak_dbfs": -28.59,
+   "through_rubble_depth_m": 2.0,
+   "parent": "weak_en_real_processed",
+   "suggested_spl_db_1m": 72,
+   "schedule": {
+    "mode": "loop",
+    "period_s": 25.0,
+    "jitter_s": 5.0
+   }
+  },
+  {
+   "id": "knock_pipe_3x",
+   "file": "knock_pipe_3x.wav",
+   "kind": "knock",
+   "human": true,
+   "language": null,
+   "transcript": null,
+   "transcript_en": null,
+   "source": "procedural synthesis in scripts/build_dummy_audio.py (modal steel pipe: free-free beam modes of a 1.5 m DN50 pipe, half-sine contact 0.6 ms)",
+   "licence": "CC0 1.0 (generated here)",
+   "attribution": "Larpverse team (generated)",
+   "origin_url": null,
+   "processing": [
+    "3 groups of 3 knocks, 0.30 s apart, every ~2.6 s",
+    "loudness match"
+   ],
+   "synthetic": true,
+   "sample_rate": 48000,
+   "duration_s": 6.95,
+   "rms_dbfs": -24.01,
+   "peak_dbfs": -1.0,
+   "through_rubble_depth_m": 0.0,
+   "parent": null,
+   "suggested_spl_db_1m": 88,
+   "schedule": {
+    "mode": "loop",
+    "period_s": 20.0,
+    "jitter_s": 3.0
+   }
+  },
+  {
+   "id": "knock_pipe_3x__0.5m",
+   "file": "rubble/knock_pipe_3x__0.5m.wav",
+   "kind": "knock",
+   "human": true,
+   "language": null,
+   "transcript": null,
+   "transcript_en": null,
+   "source": "procedural synthesis in scripts/build_dummy_audio.py (modal steel pipe: free-free beam modes of a 1.5 m DN50 pipe, half-sine contact 0.6 ms)",
+   "licence": "CC0 1.0 (generated here)",
+   "attribution": "Larpverse team (generated)",
+   "origin_url": null,
+   "processing": [
+    "3 groups of 3 knocks, 0.30 s apart, every ~2.6 s",
+    "loudness match",
+    "through rubble 0.5 m: estimated loss d*(3+6 f/kHz) dB + small-void reverb (RT60 0.22 s)"
+   ],
+   "synthetic": true,
+   "sample_rate": 48000,
+   "duration_s": 7.2,
+   "rms_dbfs": -27.9,
+   "peak_dbfs": -7.59,
+   "through_rubble_depth_m": 0.5,
+   "parent": "knock_pipe_3x",
+   "suggested_spl_db_1m": 88,
+   "schedule": {
+    "mode": "loop",
+    "period_s": 20.0,
+    "jitter_s": 3.0
+   }
+  },
+  {
+   "id": "knock_pipe_3x__1.0m",
+   "file": "rubble/knock_pipe_3x__1.0m.wav",
+   "kind": "knock",
+   "human": true,
+   "language": null,
+   "transcript": null,
+   "transcript_en": null,
+   "source": "procedural synthesis in scripts/build_dummy_audio.py (modal steel pipe: free-free beam modes of a 1.5 m DN50 pipe, half-sine contact 0.6 ms)",
+   "licence": "CC0 1.0 (generated here)",
+   "attribution": "Larpverse team (generated)",
+   "origin_url": null,
+   "processing": [
+    "3 groups of 3 knocks, 0.30 s apart, every ~2.6 s",
+    "loudness match",
+    "through rubble 1.0 m: estimated loss d*(3+6 f/kHz) dB + small-void reverb (RT60 0.22 s)"
+   ],
+   "synthetic": true,
+   "sample_rate": 48000,
+   "duration_s": 7.2,
+   "rms_dbfs": -28.57,
+   "peak_dbfs": -11.39,
+   "through_rubble_depth_m": 1.0,
+   "parent": "knock_pipe_3x",
+   "suggested_spl_db_1m": 88,
+   "schedule": {
+    "mode": "loop",
+    "period_s": 20.0,
+    "jitter_s": 3.0
+   }
+  },
+  {
+   "id": "knock_pipe_3x__1.5m",
+   "file": "rubble/knock_pipe_3x__1.5m.wav",
+   "kind": "knock",
+   "human": true,
+   "language": null,
+   "transcript": null,
+   "transcript_en": null,
+   "source": "procedural synthesis in scripts/build_dummy_audio.py (modal steel pipe: free-free beam modes of a 1.5 m DN50 pipe, half-sine contact 0.6 ms)",
+   "licence": "CC0 1.0 (generated here)",
+   "attribution": "Larpverse team (generated)",
+   "origin_url": null,
+   "processing": [
+    "3 groups of 3 knocks, 0.30 s apart, every ~2.6 s",
+    "loudness match",
+    "through rubble 1.5 m: estimated loss d*(3+6 f/kHz) dB + small-void reverb (RT60 0.22 s)"
+   ],
+   "synthetic": true,
+   "sample_rate": 48000,
+   "duration_s": 7.2,
+   "rms_dbfs": -30.95,
+   "peak_dbfs": -14.04,
+   "through_rubble_depth_m": 1.5,
+   "parent": "knock_pipe_3x",
+   "suggested_spl_db_1m": 88,
+   "schedule": {
+    "mode": "loop",
+    "period_s": 20.0,
+    "jitter_s": 3.0
+   }
+  },
+  {
+   "id": "knock_pipe_3x__2.0m",
+   "file": "rubble/knock_pipe_3x__2.0m.wav",
+   "kind": "knock",
+   "human": true,
+   "language": null,
+   "transcript": null,
+   "transcript_en": null,
+   "source": "procedural synthesis in scripts/build_dummy_audio.py (modal steel pipe: free-free beam modes of a 1.5 m DN50 pipe, half-sine contact 0.6 ms)",
+   "licence": "CC0 1.0 (generated here)",
+   "attribution": "Larpverse team (generated)",
+   "origin_url": null,
+   "processing": [
+    "3 groups of 3 knocks, 0.30 s apart, every ~2.6 s",
+    "loudness match",
+    "through rubble 2.0 m: estimated loss d*(3+6 f/kHz) dB + small-void reverb (RT60 0.22 s)"
+   ],
+   "synthetic": true,
+   "sample_rate": 48000,
+   "duration_s": 7.2,
+   "rms_dbfs": -32.2,
+   "peak_dbfs": -17.32,
+   "through_rubble_depth_m": 2.0,
+   "parent": "knock_pipe_3x",
+   "suggested_spl_db_1m": 88,
+   "schedule": {
+    "mode": "loop",
+    "period_s": 20.0,
+    "jitter_s": 3.0
+   }
+  },
+  {
+   "id": "knock_concrete_3x",
+   "file": "knock_concrete_3x.wav",
+   "kind": "knock",
+   "human": true,
+   "language": null,
+   "transcript": null,
+   "transcript_en": null,
+   "source": "procedural synthesis in scripts/build_dummy_audio.py (concrete slab: Kirchhoff plate modes of a 3.0 x 2.4 x 0.15 m slab + contact thud)",
+   "licence": "CC0 1.0 (generated here)",
+   "attribution": "Larpverse team (generated)",
+   "origin_url": null,
+   "processing": [
+    "3 groups of 3 knocks, 0.30 s apart, every ~2.6 s",
+    "loudness match"
+   ],
+   "synthetic": true,
+   "sample_rate": 48000,
+   "duration_s": 6.95,
+   "rms_dbfs": -24.0,
+   "peak_dbfs": -2.71,
+   "through_rubble_depth_m": 0.0,
+   "parent": null,
+   "suggested_spl_db_1m": 88,
+   "schedule": {
+    "mode": "loop",
+    "period_s": 20.0,
+    "jitter_s": 3.0
+   }
+  },
+  {
+   "id": "knock_concrete_3x__0.5m",
+   "file": "rubble/knock_concrete_3x__0.5m.wav",
+   "kind": "knock",
+   "human": true,
+   "language": null,
+   "transcript": null,
+   "transcript_en": null,
+   "source": "procedural synthesis in scripts/build_dummy_audio.py (concrete slab: Kirchhoff plate modes of a 3.0 x 2.4 x 0.15 m slab + contact thud)",
+   "licence": "CC0 1.0 (generated here)",
+   "attribution": "Larpverse team (generated)",
+   "origin_url": null,
+   "processing": [
+    "3 groups of 3 knocks, 0.30 s apart, every ~2.6 s",
+    "loudness match",
+    "through rubble 0.5 m: estimated loss d*(3+6 f/kHz) dB + small-void reverb (RT60 0.22 s)"
+   ],
+   "synthetic": true,
+   "sample_rate": 48000,
+   "duration_s": 7.2,
+   "rms_dbfs": -27.99,
+   "peak_dbfs": -7.72,
+   "through_rubble_depth_m": 0.5,
+   "parent": "knock_concrete_3x",
+   "suggested_spl_db_1m": 88,
+   "schedule": {
+    "mode": "loop",
+    "period_s": 20.0,
+    "jitter_s": 3.0
+   }
+  },
+  {
+   "id": "knock_concrete_3x__1.0m",
+   "file": "rubble/knock_concrete_3x__1.0m.wav",
+   "kind": "knock",
+   "human": true,
+   "language": null,
+   "transcript": null,
+   "transcript_en": null,
+   "source": "procedural synthesis in scripts/build_dummy_audio.py (concrete slab: Kirchhoff plate modes of a 3.0 x 2.4 x 0.15 m slab + contact thud)",
+   "licence": "CC0 1.0 (generated here)",
+   "attribution": "Larpverse team (generated)",
+   "origin_url": null,
+   "processing": [
+    "3 groups of 3 knocks, 0.30 s apart, every ~2.6 s",
+    "loudness match",
+    "through rubble 1.0 m: estimated loss d*(3+6 f/kHz) dB + small-void reverb (RT60 0.22 s)"
+   ],
+   "synthetic": true,
+   "sample_rate": 48000,
+   "duration_s": 7.2,
+   "rms_dbfs": -31.87,
+   "peak_dbfs": -11.48,
+   "through_rubble_depth_m": 1.0,
+   "parent": "knock_concrete_3x",
+   "suggested_spl_db_1m": 88,
+   "schedule": {
+    "mode": "loop",
+    "period_s": 20.0,
+    "jitter_s": 3.0
+   }
+  },
+  {
+   "id": "knock_concrete_3x__1.5m",
+   "file": "rubble/knock_concrete_3x__1.5m.wav",
+   "kind": "knock",
+   "human": true,
+   "language": null,
+   "transcript": null,
+   "transcript_en": null,
+   "source": "procedural synthesis in scripts/build_dummy_audio.py (concrete slab: Kirchhoff plate modes of a 3.0 x 2.4 x 0.15 m slab + contact thud)",
+   "licence": "CC0 1.0 (generated here)",
+   "attribution": "Larpverse team (generated)",
+   "origin_url": null,
+   "processing": [
+    "3 groups of 3 knocks, 0.30 s apart, every ~2.6 s",
+    "loudness match",
+    "through rubble 1.5 m: estimated loss d*(3+6 f/kHz) dB + small-void reverb (RT60 0.22 s)"
+   ],
+   "synthetic": true,
+   "sample_rate": 48000,
+   "duration_s": 7.2,
+   "rms_dbfs": -35.2,
+   "peak_dbfs": -14.85,
+   "through_rubble_depth_m": 1.5,
+   "parent": "knock_concrete_3x",
+   "suggested_spl_db_1m": 88,
+   "schedule": {
+    "mode": "loop",
+    "period_s": 20.0,
+    "jitter_s": 3.0
+   }
+  },
+  {
+   "id": "knock_concrete_3x__2.0m",
+   "file": "rubble/knock_concrete_3x__2.0m.wav",
+   "kind": "knock",
+   "human": true,
+   "language": null,
+   "transcript": null,
+   "transcript_en": null,
+   "source": "procedural synthesis in scripts/build_dummy_audio.py (concrete slab: Kirchhoff plate modes of a 3.0 x 2.4 x 0.15 m slab + contact thud)",
+   "licence": "CC0 1.0 (generated here)",
+   "attribution": "Larpverse team (generated)",
+   "origin_url": null,
+   "processing": [
+    "3 groups of 3 knocks, 0.30 s apart, every ~2.6 s",
+    "loudness match",
+    "through rubble 2.0 m: estimated loss d*(3+6 f/kHz) dB + small-void reverb (RT60 0.22 s)"
+   ],
+   "synthetic": true,
+   "sample_rate": 48000,
+   "duration_s": 7.2,
+   "rms_dbfs": -36.97,
+   "peak_dbfs": -17.91,
+   "through_rubble_depth_m": 2.0,
+   "parent": "knock_concrete_3x",
+   "suggested_spl_db_1m": 88,
+   "schedule": {
+    "mode": "loop",
+    "period_s": 20.0,
+    "jitter_s": 3.0
+   }
+  },
+  {
+   "id": "knock_pipe_3x_once",
+   "file": "knock_pipe_3x_once.wav",
+   "kind": "knock",
+   "human": true,
+   "language": null,
+   "transcript": null,
+   "transcript_en": null,
+   "source": "procedural synthesis in scripts/build_dummy_audio.py (modal steel pipe, one group of three: the instructed reply to the call-out)",
+   "licence": "CC0 1.0 (generated here)",
+   "attribution": "Larpverse team (generated)",
+   "origin_url": null,
+   "processing": [
+    "one group of 3 knocks",
+    "loudness match"
+   ],
+   "synthetic": true,
+   "sample_rate": 48000,
+   "duration_s": 1.75,
+   "rms_dbfs": -24.0,
+   "peak_dbfs": -1.66,
+   "through_rubble_depth_m": 0.0,
+   "parent": null,
+   "suggested_spl_db_1m": 88,
+   "schedule": {
+    "mode": "after_callout",
+    "latency_s": [
+     1.0,
+     4.0
+    ],
+    "repeats": 3,
+    "period_s": 4.0
+   }
+  },
+  {
+   "id": "knock_pipe_3x_once__0.5m",
+   "file": "rubble/knock_pipe_3x_once__0.5m.wav",
+   "kind": "knock",
+   "human": true,
+   "language": null,
+   "transcript": null,
+   "transcript_en": null,
+   "source": "procedural synthesis in scripts/build_dummy_audio.py (modal steel pipe, one group of three: the instructed reply to the call-out)",
+   "licence": "CC0 1.0 (generated here)",
+   "attribution": "Larpverse team (generated)",
+   "origin_url": null,
+   "processing": [
+    "one group of 3 knocks",
+    "loudness match",
+    "through rubble 0.5 m: estimated loss d*(3+6 f/kHz) dB + small-void reverb (RT60 0.22 s)"
+   ],
+   "synthetic": true,
+   "sample_rate": 48000,
+   "duration_s": 2.0,
+   "rms_dbfs": -26.57,
+   "peak_dbfs": -8.58,
+   "through_rubble_depth_m": 0.5,
+   "parent": "knock_pipe_3x_once",
+   "suggested_spl_db_1m": 88,
+   "schedule": {
+    "mode": "after_callout",
+    "latency_s": [
+     1.0,
+     4.0
+    ],
+    "repeats": 3,
+    "period_s": 4.0
+   }
+  },
+  {
+   "id": "knock_pipe_3x_once__1.0m",
+   "file": "rubble/knock_pipe_3x_once__1.0m.wav",
+   "kind": "knock",
+   "human": true,
+   "language": null,
+   "transcript": null,
+   "transcript_en": null,
+   "source": "procedural synthesis in scripts/build_dummy_audio.py (modal steel pipe, one group of three: the instructed reply to the call-out)",
+   "licence": "CC0 1.0 (generated here)",
+   "attribution": "Larpverse team (generated)",
+   "origin_url": null,
+   "processing": [
+    "one group of 3 knocks",
+    "loudness match",
+    "through rubble 1.0 m: estimated loss d*(3+6 f/kHz) dB + small-void reverb (RT60 0.22 s)"
+   ],
+   "synthetic": true,
+   "sample_rate": 48000,
+   "duration_s": 2.0,
+   "rms_dbfs": -27.45,
+   "peak_dbfs": -11.41,
+   "through_rubble_depth_m": 1.0,
+   "parent": "knock_pipe_3x_once",
+   "suggested_spl_db_1m": 88,
+   "schedule": {
+    "mode": "after_callout",
+    "latency_s": [
+     1.0,
+     4.0
+    ],
+    "repeats": 3,
+    "period_s": 4.0
+   }
+  },
+  {
+   "id": "knock_pipe_3x_once__1.5m",
+   "file": "rubble/knock_pipe_3x_once__1.5m.wav",
+   "kind": "knock",
+   "human": true,
+   "language": null,
+   "transcript": null,
+   "transcript_en": null,
+   "source": "procedural synthesis in scripts/build_dummy_audio.py (modal steel pipe, one group of three: the instructed reply to the call-out)",
+   "licence": "CC0 1.0 (generated here)",
+   "attribution": "Larpverse team (generated)",
+   "origin_url": null,
+   "processing": [
+    "one group of 3 knocks",
+    "loudness match",
+    "through rubble 1.5 m: estimated loss d*(3+6 f/kHz) dB + small-void reverb (RT60 0.22 s)"
+   ],
+   "synthetic": true,
+   "sample_rate": 48000,
+   "duration_s": 2.0,
+   "rms_dbfs": -30.36,
+   "peak_dbfs": -15.0,
+   "through_rubble_depth_m": 1.5,
+   "parent": "knock_pipe_3x_once",
+   "suggested_spl_db_1m": 88,
+   "schedule": {
+    "mode": "after_callout",
+    "latency_s": [
+     1.0,
+     4.0
+    ],
+    "repeats": 3,
+    "period_s": 4.0
+   }
+  },
+  {
+   "id": "knock_pipe_3x_once__2.0m",
+   "file": "rubble/knock_pipe_3x_once__2.0m.wav",
+   "kind": "knock",
+   "human": true,
+   "language": null,
+   "transcript": null,
+   "transcript_en": null,
+   "source": "procedural synthesis in scripts/build_dummy_audio.py (modal steel pipe, one group of three: the instructed reply to the call-out)",
+   "licence": "CC0 1.0 (generated here)",
+   "attribution": "Larpverse team (generated)",
+   "origin_url": null,
+   "processing": [
+    "one group of 3 knocks",
+    "loudness match",
+    "through rubble 2.0 m: estimated loss d*(3+6 f/kHz) dB + small-void reverb (RT60 0.22 s)"
+   ],
+   "synthetic": true,
+   "sample_rate": 48000,
+   "duration_s": 2.0,
+   "rms_dbfs": -31.79,
+   "peak_dbfs": -16.05,
+   "through_rubble_depth_m": 2.0,
+   "parent": "knock_pipe_3x_once",
+   "suggested_spl_db_1m": 88,
+   "schedule": {
+    "mode": "after_callout",
+    "latency_s": [
+     1.0,
+     4.0
+    ],
+    "repeats": 3,
+    "period_s": 4.0
+   }
+  },
+  {
+   "id": "knock_concrete_3x_once",
+   "file": "knock_concrete_3x_once.wav",
+   "kind": "knock",
+   "human": true,
+   "language": null,
+   "transcript": null,
+   "transcript_en": null,
+   "source": "procedural synthesis in scripts/build_dummy_audio.py (concrete slab, one group of three: the instructed reply to the call-out)",
+   "licence": "CC0 1.0 (generated here)",
+   "attribution": "Larpverse team (generated)",
+   "origin_url": null,
+   "processing": [
+    "one group of 3 knocks",
+    "loudness match"
+   ],
+   "synthetic": true,
+   "sample_rate": 48000,
+   "duration_s": 1.75,
+   "rms_dbfs": -24.0,
+   "peak_dbfs": -3.17,
+   "through_rubble_depth_m": 0.0,
+   "parent": null,
+   "suggested_spl_db_1m": 88,
+   "schedule": {
+    "mode": "after_callout",
+    "latency_s": [
+     1.0,
+     4.0
+    ],
+    "repeats": 3,
+    "period_s": 4.0
+   }
+  },
+  {
+   "id": "knock_concrete_3x_once__0.5m",
+   "file": "rubble/knock_concrete_3x_once__0.5m.wav",
+   "kind": "knock",
+   "human": true,
+   "language": null,
+   "transcript": null,
+   "transcript_en": null,
+   "source": "procedural synthesis in scripts/build_dummy_audio.py (concrete slab, one group of three: the instructed reply to the call-out)",
+   "licence": "CC0 1.0 (generated here)",
+   "attribution": "Larpverse team (generated)",
+   "origin_url": null,
+   "processing": [
+    "one group of 3 knocks",
+    "loudness match",
+    "through rubble 0.5 m: estimated loss d*(3+6 f/kHz) dB + small-void reverb (RT60 0.22 s)"
+   ],
+   "synthetic": true,
+   "sample_rate": 48000,
+   "duration_s": 2.0,
+   "rms_dbfs": -26.92,
+   "peak_dbfs": -8.34,
+   "through_rubble_depth_m": 0.5,
+   "parent": "knock_concrete_3x_once",
+   "suggested_spl_db_1m": 88,
+   "schedule": {
+    "mode": "after_callout",
+    "latency_s": [
+     1.0,
+     4.0
+    ],
+    "repeats": 3,
+    "period_s": 4.0
+   }
+  },
+  {
+   "id": "knock_concrete_3x_once__1.0m",
+   "file": "rubble/knock_concrete_3x_once__1.0m.wav",
+   "kind": "knock",
+   "human": true,
+   "language": null,
+   "transcript": null,
+   "transcript_en": null,
+   "source": "procedural synthesis in scripts/build_dummy_audio.py (concrete slab, one group of three: the instructed reply to the call-out)",
+   "licence": "CC0 1.0 (generated here)",
+   "attribution": "Larpverse team (generated)",
+   "origin_url": null,
+   "processing": [
+    "one group of 3 knocks",
+    "loudness match",
+    "through rubble 1.0 m: estimated loss d*(3+6 f/kHz) dB + small-void reverb (RT60 0.22 s)"
+   ],
+   "synthetic": true,
+   "sample_rate": 48000,
+   "duration_s": 2.0,
+   "rms_dbfs": -30.84,
+   "peak_dbfs": -12.58,
+   "through_rubble_depth_m": 1.0,
+   "parent": "knock_concrete_3x_once",
+   "suggested_spl_db_1m": 88,
+   "schedule": {
+    "mode": "after_callout",
+    "latency_s": [
+     1.0,
+     4.0
+    ],
+    "repeats": 3,
+    "period_s": 4.0
+   }
+  },
+  {
+   "id": "knock_concrete_3x_once__1.5m",
+   "file": "rubble/knock_concrete_3x_once__1.5m.wav",
+   "kind": "knock",
+   "human": true,
+   "language": null,
+   "transcript": null,
+   "transcript_en": null,
+   "source": "procedural synthesis in scripts/build_dummy_audio.py (concrete slab, one group of three: the instructed reply to the call-out)",
+   "licence": "CC0 1.0 (generated here)",
+   "attribution": "Larpverse team (generated)",
+   "origin_url": null,
+   "processing": [
+    "one group of 3 knocks",
+    "loudness match",
+    "through rubble 1.5 m: estimated loss d*(3+6 f/kHz) dB + small-void reverb (RT60 0.22 s)"
+   ],
+   "synthetic": true,
+   "sample_rate": 48000,
+   "duration_s": 2.0,
+   "rms_dbfs": -32.75,
+   "peak_dbfs": -16.12,
+   "through_rubble_depth_m": 1.5,
+   "parent": "knock_concrete_3x_once",
+   "suggested_spl_db_1m": 88,
+   "schedule": {
+    "mode": "after_callout",
+    "latency_s": [
+     1.0,
+     4.0
+    ],
+    "repeats": 3,
+    "period_s": 4.0
+   }
+  },
+  {
+   "id": "knock_concrete_3x_once__2.0m",
+   "file": "rubble/knock_concrete_3x_once__2.0m.wav",
+   "kind": "knock",
+   "human": true,
+   "language": null,
+   "transcript": null,
+   "transcript_en": null,
+   "source": "procedural synthesis in scripts/build_dummy_audio.py (concrete slab, one group of three: the instructed reply to the call-out)",
+   "licence": "CC0 1.0 (generated here)",
+   "attribution": "Larpverse team (generated)",
+   "origin_url": null,
+   "processing": [
+    "one group of 3 knocks",
+    "loudness match",
+    "through rubble 2.0 m: estimated loss d*(3+6 f/kHz) dB + small-void reverb (RT60 0.22 s)"
+   ],
+   "synthetic": true,
+   "sample_rate": 48000,
+   "duration_s": 2.0,
+   "rms_dbfs": -36.45,
+   "peak_dbfs": -19.89,
+   "through_rubble_depth_m": 2.0,
+   "parent": "knock_concrete_3x_once",
+   "suggested_spl_db_1m": 88,
+   "schedule": {
+    "mode": "after_callout",
+    "latency_s": [
+     1.0,
+     4.0
+    ],
+    "repeats": 3,
+    "period_s": 4.0
+   }
+  },
+  {
+   "id": "knock_door_esc50",
+   "file": "knock_door_esc50.wav",
+   "kind": "knock",
+   "human": true,
+   "language": null,
+   "transcript": null,
+   "transcript_en": null,
+   "source": "ESC-50 clip 1-101336-A-30 (door_wood_knock), data/audio_real/esc50/1-101336-A-30_16k.wav",
+   "licence": "CC BY-NC 3.0 (non-commercial; hackathon demo only)",
+   "attribution": "ESC-50, K. J. Piczak, ACM Multimedia 2015 (github.com/karolpiczak/ESC-50); Freesound sound 101336 (freesound.org/s/101336)",
+   "origin_url": "https://freesound.org/s/101336",
+   "processing": [
+    "ESC-50 door_wood_knock (wood door, not rubble: use as a variety clip)",
+    "resample 16 -> 48 kHz",
+    "high-pass 80 Hz",
+    "loudness match"
+   ],
+   "synthetic": false,
+   "sample_rate": 48000,
+   "duration_s": 3.04,
+   "rms_dbfs": -24.0,
+   "peak_dbfs": -5.1,
+   "through_rubble_depth_m": 0.0,
+   "parent": null,
+   "suggested_spl_db_1m": 88,
+   "schedule": {
+    "mode": "loop",
+    "period_s": 20.0,
+    "jitter_s": 3.0
+   }
+  },
+  {
+   "id": "knock_door_esc50__0.5m",
+   "file": "rubble/knock_door_esc50__0.5m.wav",
+   "kind": "knock",
+   "human": true,
+   "language": null,
+   "transcript": null,
+   "transcript_en": null,
+   "source": "ESC-50 clip 1-101336-A-30 (door_wood_knock), data/audio_real/esc50/1-101336-A-30_16k.wav",
+   "licence": "CC BY-NC 3.0 (non-commercial; hackathon demo only)",
+   "attribution": "ESC-50, K. J. Piczak, ACM Multimedia 2015 (github.com/karolpiczak/ESC-50); Freesound sound 101336 (freesound.org/s/101336)",
+   "origin_url": "https://freesound.org/s/101336",
+   "processing": [
+    "ESC-50 door_wood_knock (wood door, not rubble: use as a variety clip)",
+    "resample 16 -> 48 kHz",
+    "high-pass 80 Hz",
+    "loudness match",
+    "through rubble 0.5 m: estimated loss d*(3+6 f/kHz) dB + small-void reverb (RT60 0.22 s)"
+   ],
+   "synthetic": false,
+   "sample_rate": 48000,
+   "duration_s": 3.29,
+   "rms_dbfs": -26.39,
+   "peak_dbfs": -8.12,
+   "through_rubble_depth_m": 0.5,
+   "parent": "knock_door_esc50",
+   "suggested_spl_db_1m": 88,
+   "schedule": {
+    "mode": "loop",
+    "period_s": 20.0,
+    "jitter_s": 3.0
+   }
+  },
+  {
+   "id": "knock_door_esc50__1.0m",
+   "file": "rubble/knock_door_esc50__1.0m.wav",
+   "kind": "knock",
+   "human": true,
+   "language": null,
+   "transcript": null,
+   "transcript_en": null,
+   "source": "ESC-50 clip 1-101336-A-30 (door_wood_knock), data/audio_real/esc50/1-101336-A-30_16k.wav",
+   "licence": "CC BY-NC 3.0 (non-commercial; hackathon demo only)",
+   "attribution": "ESC-50, K. J. Piczak, ACM Multimedia 2015 (github.com/karolpiczak/ESC-50); Freesound sound 101336 (freesound.org/s/101336)",
+   "origin_url": "https://freesound.org/s/101336",
+   "processing": [
+    "ESC-50 door_wood_knock (wood door, not rubble: use as a variety clip)",
+    "resample 16 -> 48 kHz",
+    "high-pass 80 Hz",
+    "loudness match",
+    "through rubble 1.0 m: estimated loss d*(3+6 f/kHz) dB + small-void reverb (RT60 0.22 s)"
+   ],
+   "synthetic": false,
+   "sample_rate": 48000,
+   "duration_s": 3.29,
+   "rms_dbfs": -27.97,
+   "peak_dbfs": -10.9,
+   "through_rubble_depth_m": 1.0,
+   "parent": "knock_door_esc50",
+   "suggested_spl_db_1m": 88,
+   "schedule": {
+    "mode": "loop",
+    "period_s": 20.0,
+    "jitter_s": 3.0
+   }
+  },
+  {
+   "id": "knock_door_esc50__1.5m",
+   "file": "rubble/knock_door_esc50__1.5m.wav",
+   "kind": "knock",
+   "human": true,
+   "language": null,
+   "transcript": null,
+   "transcript_en": null,
+   "source": "ESC-50 clip 1-101336-A-30 (door_wood_knock), data/audio_real/esc50/1-101336-A-30_16k.wav",
+   "licence": "CC BY-NC 3.0 (non-commercial; hackathon demo only)",
+   "attribution": "ESC-50, K. J. Piczak, ACM Multimedia 2015 (github.com/karolpiczak/ESC-50); Freesound sound 101336 (freesound.org/s/101336)",
+   "origin_url": "https://freesound.org/s/101336",
+   "processing": [
+    "ESC-50 door_wood_knock (wood door, not rubble: use as a variety clip)",
+    "resample 16 -> 48 kHz",
+    "high-pass 80 Hz",
+    "loudness match",
+    "through rubble 1.5 m: estimated loss d*(3+6 f/kHz) dB + small-void reverb (RT60 0.22 s)"
+   ],
+   "synthetic": false,
+   "sample_rate": 48000,
+   "duration_s": 3.29,
+   "rms_dbfs": -30.48,
+   "peak_dbfs": -13.33,
+   "through_rubble_depth_m": 1.5,
+   "parent": "knock_door_esc50",
+   "suggested_spl_db_1m": 88,
+   "schedule": {
+    "mode": "loop",
+    "period_s": 20.0,
+    "jitter_s": 3.0
+   }
+  },
+  {
+   "id": "knock_door_esc50__2.0m",
+   "file": "rubble/knock_door_esc50__2.0m.wav",
+   "kind": "knock",
+   "human": true,
+   "language": null,
+   "transcript": null,
+   "transcript_en": null,
+   "source": "ESC-50 clip 1-101336-A-30 (door_wood_knock), data/audio_real/esc50/1-101336-A-30_16k.wav",
+   "licence": "CC BY-NC 3.0 (non-commercial; hackathon demo only)",
+   "attribution": "ESC-50, K. J. Piczak, ACM Multimedia 2015 (github.com/karolpiczak/ESC-50); Freesound sound 101336 (freesound.org/s/101336)",
+   "origin_url": "https://freesound.org/s/101336",
+   "processing": [
+    "ESC-50 door_wood_knock (wood door, not rubble: use as a variety clip)",
+    "resample 16 -> 48 kHz",
+    "high-pass 80 Hz",
+    "loudness match",
+    "through rubble 2.0 m: estimated loss d*(3+6 f/kHz) dB + small-void reverb (RT60 0.22 s)"
+   ],
+   "synthetic": false,
+   "sample_rate": 48000,
+   "duration_s": 3.29,
+   "rms_dbfs": -31.64,
+   "peak_dbfs": -15.76,
+   "through_rubble_depth_m": 2.0,
+   "parent": "knock_door_esc50",
+   "suggested_spl_db_1m": 88,
+   "schedule": {
+    "mode": "loop",
+    "period_s": 20.0,
+    "jitter_s": 3.0
+   }
+  },
+  {
+   "id": "cough_esc50",
+   "file": "cough_esc50.wav",
+   "kind": "cough",
+   "human": true,
+   "language": null,
+   "transcript": null,
+   "transcript_en": null,
+   "source": "ESC-50 clip 2-108017-A-24 (coughing), data/audio_real/esc50/2-108017-A-24_16k.wav",
+   "licence": "CC BY-NC 3.0 (non-commercial; hackathon demo only)",
+   "attribution": "ESC-50, K. J. Piczak, ACM Multimedia 2015 (github.com/karolpiczak/ESC-50); Freesound sound 108017 (freesound.org/s/108017)",
+   "origin_url": "https://freesound.org/s/108017",
+   "processing": [
+    "trim",
+    "resample 16 -> 48 kHz",
+    "high-pass 80 Hz (the clip had sub-50 Hz handling rumble)",
+    "loudness match"
+   ],
+   "synthetic": false,
+   "sample_rate": 48000,
+   "duration_s": 3.746,
+   "rms_dbfs": -22.7,
+   "peak_dbfs": -1.0,
+   "through_rubble_depth_m": 0.0,
+   "parent": null,
+   "suggested_spl_db_1m": 80,
+   "schedule": {
+    "mode": "loop",
+    "period_s": 15.0,
+    "jitter_s": 5.0
+   }
+  },
+  {
+   "id": "cough_esc50__0.5m",
+   "file": "rubble/cough_esc50__0.5m.wav",
+   "kind": "cough",
+   "human": true,
+   "language": null,
+   "transcript": null,
+   "transcript_en": null,
+   "source": "ESC-50 clip 2-108017-A-24 (coughing), data/audio_real/esc50/2-108017-A-24_16k.wav",
+   "licence": "CC BY-NC 3.0 (non-commercial; hackathon demo only)",
+   "attribution": "ESC-50, K. J. Piczak, ACM Multimedia 2015 (github.com/karolpiczak/ESC-50); Freesound sound 108017 (freesound.org/s/108017)",
+   "origin_url": "https://freesound.org/s/108017",
+   "processing": [
+    "trim",
+    "resample 16 -> 48 kHz",
+    "high-pass 80 Hz (the clip had sub-50 Hz handling rumble)",
+    "loudness match",
+    "through rubble 0.5 m: estimated loss d*(3+6 f/kHz) dB + small-void reverb (RT60 0.22 s)"
+   ],
+   "synthetic": false,
+   "sample_rate": 48000,
+   "duration_s": 3.996,
+   "rms_dbfs": -25.57,
+   "peak_dbfs": -3.5,
+   "through_rubble_depth_m": 0.5,
+   "parent": "cough_esc50",
+   "suggested_spl_db_1m": 80,
+   "schedule": {
+    "mode": "loop",
+    "period_s": 15.0,
+    "jitter_s": 5.0
+   }
+  },
+  {
+   "id": "cough_esc50__1.0m",
+   "file": "rubble/cough_esc50__1.0m.wav",
+   "kind": "cough",
+   "human": true,
+   "language": null,
+   "transcript": null,
+   "transcript_en": null,
+   "source": "ESC-50 clip 2-108017-A-24 (coughing), data/audio_real/esc50/2-108017-A-24_16k.wav",
+   "licence": "CC BY-NC 3.0 (non-commercial; hackathon demo only)",
+   "attribution": "ESC-50, K. J. Piczak, ACM Multimedia 2015 (github.com/karolpiczak/ESC-50); Freesound sound 108017 (freesound.org/s/108017)",
+   "origin_url": "https://freesound.org/s/108017",
+   "processing": [
+    "trim",
+    "resample 16 -> 48 kHz",
+    "high-pass 80 Hz (the clip had sub-50 Hz handling rumble)",
+    "loudness match",
+    "through rubble 1.0 m: estimated loss d*(3+6 f/kHz) dB + small-void reverb (RT60 0.22 s)"
+   ],
+   "synthetic": false,
+   "sample_rate": 48000,
+   "duration_s": 3.996,
+   "rms_dbfs": -28.69,
+   "peak_dbfs": -5.93,
+   "through_rubble_depth_m": 1.0,
+   "parent": "cough_esc50",
+   "suggested_spl_db_1m": 80,
+   "schedule": {
+    "mode": "loop",
+    "period_s": 15.0,
+    "jitter_s": 5.0
+   }
+  },
+  {
+   "id": "cough_esc50__1.5m",
+   "file": "rubble/cough_esc50__1.5m.wav",
+   "kind": "cough",
+   "human": true,
+   "language": null,
+   "transcript": null,
+   "transcript_en": null,
+   "source": "ESC-50 clip 2-108017-A-24 (coughing), data/audio_real/esc50/2-108017-A-24_16k.wav",
+   "licence": "CC BY-NC 3.0 (non-commercial; hackathon demo only)",
+   "attribution": "ESC-50, K. J. Piczak, ACM Multimedia 2015 (github.com/karolpiczak/ESC-50); Freesound sound 108017 (freesound.org/s/108017)",
+   "origin_url": "https://freesound.org/s/108017",
+   "processing": [
+    "trim",
+    "resample 16 -> 48 kHz",
+    "high-pass 80 Hz (the clip had sub-50 Hz handling rumble)",
+    "loudness match",
+    "through rubble 1.5 m: estimated loss d*(3+6 f/kHz) dB + small-void reverb (RT60 0.22 s)"
+   ],
+   "synthetic": false,
+   "sample_rate": 48000,
+   "duration_s": 3.996,
+   "rms_dbfs": -32.35,
+   "peak_dbfs": -10.46,
+   "through_rubble_depth_m": 1.5,
+   "parent": "cough_esc50",
+   "suggested_spl_db_1m": 80,
+   "schedule": {
+    "mode": "loop",
+    "period_s": 15.0,
+    "jitter_s": 5.0
+   }
+  },
+  {
+   "id": "cough_esc50__2.0m",
+   "file": "rubble/cough_esc50__2.0m.wav",
+   "kind": "cough",
+   "human": true,
+   "language": null,
+   "transcript": null,
+   "transcript_en": null,
+   "source": "ESC-50 clip 2-108017-A-24 (coughing), data/audio_real/esc50/2-108017-A-24_16k.wav",
+   "licence": "CC BY-NC 3.0 (non-commercial; hackathon demo only)",
+   "attribution": "ESC-50, K. J. Piczak, ACM Multimedia 2015 (github.com/karolpiczak/ESC-50); Freesound sound 108017 (freesound.org/s/108017)",
+   "origin_url": "https://freesound.org/s/108017",
+   "processing": [
+    "trim",
+    "resample 16 -> 48 kHz",
+    "high-pass 80 Hz (the clip had sub-50 Hz handling rumble)",
+    "loudness match",
+    "through rubble 2.0 m: estimated loss d*(3+6 f/kHz) dB + small-void reverb (RT60 0.22 s)"
+   ],
+   "synthetic": false,
+   "sample_rate": 48000,
+   "duration_s": 3.996,
+   "rms_dbfs": -35.89,
+   "peak_dbfs": -14.14,
+   "through_rubble_depth_m": 2.0,
+   "parent": "cough_esc50",
+   "suggested_spl_db_1m": 80,
+   "schedule": {
+    "mode": "loop",
+    "period_s": 15.0,
+    "jitter_s": 5.0
+   }
+  },
+  {
+   "id": "cry_esc50",
+   "file": "cry_esc50.wav",
+   "kind": "cry",
+   "human": true,
+   "language": null,
+   "transcript": null,
+   "transcript_en": null,
+   "source": "ESC-50 clip 3-151080-A-20 (crying_baby), data/audio_real/esc50/3-151080-A-20_16k.wav",
+   "licence": "CC BY-NC 3.0 (non-commercial; hackathon demo only)",
+   "attribution": "ESC-50, K. J. Piczak, ACM Multimedia 2015 (github.com/karolpiczak/ESC-50); Freesound sound 151080 (freesound.org/s/151080)",
+   "origin_url": "https://freesound.org/s/151080",
+   "processing": [
+    "trim",
+    "resample 16 -> 48 kHz",
+    "high-pass 80 Hz",
+    "loudness match"
+   ],
+   "synthetic": false,
+   "sample_rate": 48000,
+   "duration_s": 3.923,
+   "rms_dbfs": -22.0,
+   "peak_dbfs": -5.83,
+   "through_rubble_depth_m": 0.0,
+   "parent": null,
+   "suggested_spl_db_1m": 85,
+   "schedule": {
+    "mode": "loop",
+    "period_s": 12.0,
+    "jitter_s": 4.0
+   },
+   "notes": "ESC-50 class crying_baby: an infant cry (the only cry source on disk). Not used in any seed-7 profile."
+  },
+  {
+   "id": "cry_esc50__0.5m",
+   "file": "rubble/cry_esc50__0.5m.wav",
+   "kind": "cry",
+   "human": true,
+   "language": null,
+   "transcript": null,
+   "transcript_en": null,
+   "source": "ESC-50 clip 3-151080-A-20 (crying_baby), data/audio_real/esc50/3-151080-A-20_16k.wav",
+   "licence": "CC BY-NC 3.0 (non-commercial; hackathon demo only)",
+   "attribution": "ESC-50, K. J. Piczak, ACM Multimedia 2015 (github.com/karolpiczak/ESC-50); Freesound sound 151080 (freesound.org/s/151080)",
+   "origin_url": "https://freesound.org/s/151080",
+   "processing": [
+    "trim",
+    "resample 16 -> 48 kHz",
+    "high-pass 80 Hz",
+    "loudness match",
+    "through rubble 0.5 m: estimated loss d*(3+6 f/kHz) dB + small-void reverb (RT60 0.22 s)"
+   ],
+   "synthetic": false,
+   "sample_rate": 48000,
+   "duration_s": 4.173,
+   "rms_dbfs": -27.31,
+   "peak_dbfs": -12.29,
+   "through_rubble_depth_m": 0.5,
+   "parent": "cry_esc50",
+   "suggested_spl_db_1m": 85,
+   "schedule": {
+    "mode": "loop",
+    "period_s": 12.0,
+    "jitter_s": 4.0
+   },
+   "notes": "ESC-50 class crying_baby: an infant cry (the only cry source on disk). Not used in any seed-7 profile."
+  },
+  {
+   "id": "cry_esc50__1.0m",
+   "file": "rubble/cry_esc50__1.0m.wav",
+   "kind": "cry",
+   "human": true,
+   "language": null,
+   "transcript": null,
+   "transcript_en": null,
+   "source": "ESC-50 clip 3-151080-A-20 (crying_baby), data/audio_real/esc50/3-151080-A-20_16k.wav",
+   "licence": "CC BY-NC 3.0 (non-commercial; hackathon demo only)",
+   "attribution": "ESC-50, K. J. Piczak, ACM Multimedia 2015 (github.com/karolpiczak/ESC-50); Freesound sound 151080 (freesound.org/s/151080)",
+   "origin_url": "https://freesound.org/s/151080",
+   "processing": [
+    "trim",
+    "resample 16 -> 48 kHz",
+    "high-pass 80 Hz",
+    "loudness match",
+    "through rubble 1.0 m: estimated loss d*(3+6 f/kHz) dB + small-void reverb (RT60 0.22 s)"
+   ],
+   "synthetic": false,
+   "sample_rate": 48000,
+   "duration_s": 4.173,
+   "rms_dbfs": -33.14,
+   "peak_dbfs": -18.44,
+   "through_rubble_depth_m": 1.0,
+   "parent": "cry_esc50",
+   "suggested_spl_db_1m": 85,
+   "schedule": {
+    "mode": "loop",
+    "period_s": 12.0,
+    "jitter_s": 4.0
+   },
+   "notes": "ESC-50 class crying_baby: an infant cry (the only cry source on disk). Not used in any seed-7 profile."
+  },
+  {
+   "id": "cry_esc50__1.5m",
+   "file": "rubble/cry_esc50__1.5m.wav",
+   "kind": "cry",
+   "human": true,
+   "language": null,
+   "transcript": null,
+   "transcript_en": null,
+   "source": "ESC-50 clip 3-151080-A-20 (crying_baby), data/audio_real/esc50/3-151080-A-20_16k.wav",
+   "licence": "CC BY-NC 3.0 (non-commercial; hackathon demo only)",
+   "attribution": "ESC-50, K. J. Piczak, ACM Multimedia 2015 (github.com/karolpiczak/ESC-50); Freesound sound 151080 (freesound.org/s/151080)",
+   "origin_url": "https://freesound.org/s/151080",
+   "processing": [
+    "trim",
+    "resample 16 -> 48 kHz",
+    "high-pass 80 Hz",
+    "loudness match",
+    "through rubble 1.5 m: estimated loss d*(3+6 f/kHz) dB + small-void reverb (RT60 0.22 s)"
+   ],
+   "synthetic": false,
+   "sample_rate": 48000,
+   "duration_s": 4.173,
+   "rms_dbfs": -37.38,
+   "peak_dbfs": -23.41,
+   "through_rubble_depth_m": 1.5,
+   "parent": "cry_esc50",
+   "suggested_spl_db_1m": 85,
+   "schedule": {
+    "mode": "loop",
+    "period_s": 12.0,
+    "jitter_s": 4.0
+   },
+   "notes": "ESC-50 class crying_baby: an infant cry (the only cry source on disk). Not used in any seed-7 profile."
+  },
+  {
+   "id": "cry_esc50__2.0m",
+   "file": "rubble/cry_esc50__2.0m.wav",
+   "kind": "cry",
+   "human": true,
+   "language": null,
+   "transcript": null,
+   "transcript_en": null,
+   "source": "ESC-50 clip 3-151080-A-20 (crying_baby), data/audio_real/esc50/3-151080-A-20_16k.wav",
+   "licence": "CC BY-NC 3.0 (non-commercial; hackathon demo only)",
+   "attribution": "ESC-50, K. J. Piczak, ACM Multimedia 2015 (github.com/karolpiczak/ESC-50); Freesound sound 151080 (freesound.org/s/151080)",
+   "origin_url": "https://freesound.org/s/151080",
+   "processing": [
+    "trim",
+    "resample 16 -> 48 kHz",
+    "high-pass 80 Hz",
+    "loudness match",
+    "through rubble 2.0 m: estimated loss d*(3+6 f/kHz) dB + small-void reverb (RT60 0.22 s)"
+   ],
+   "synthetic": false,
+   "sample_rate": 48000,
+   "duration_s": 4.173,
+   "rms_dbfs": -42.01,
+   "peak_dbfs": -28.87,
+   "through_rubble_depth_m": 2.0,
+   "parent": "cry_esc50",
+   "suggested_spl_db_1m": 85,
+   "schedule": {
+    "mode": "loop",
+    "period_s": 12.0,
+    "jitter_s": 4.0
+   },
+   "notes": "ESC-50 class crying_baby: an infant cry (the only cry source on disk). Not used in any seed-7 profile."
+  },
+  {
+   "id": "dog_bark",
+   "file": "dog_bark.wav",
+   "kind": "dog",
+   "human": false,
+   "language": null,
+   "transcript": null,
+   "transcript_en": null,
+   "source": "teammate recording set (F. Valisalo), data/audio_real/frances/dog_03.wav",
+   "licence": "CC0 1.0",
+   "attribution": "\"Dogs Barking\" by darranambler (https://freesound.org/people/darranambler/sounds/344955), CC0",
+   "origin_url": "https://freesound.org/people/darranambler/sounds/344955",
+   "processing": [
+    "best 4 s window (one bout)",
+    "resample 16 -> 48 kHz",
+    "high-pass 60 Hz",
+    "loudness match"
+   ],
+   "synthetic": false,
+   "sample_rate": 48000,
+   "duration_s": 4.305,
+   "rms_dbfs": -20.0,
+   "peak_dbfs": -4.28,
+   "through_rubble_depth_m": 0.0,
+   "parent": null,
+   "suggested_spl_db_1m": 90,
+   "schedule": {
+    "mode": "loop",
+    "period_s": 15.0,
+    "jitter_s": 5.0
+   }
+  },
+  {
+   "id": "generator_60hz",
+   "file": "generator_60hz.wav",
+   "kind": "generator",
+   "human": false,
+   "language": null,
+   "transcript": null,
+   "transcript_en": null,
+   "source": "procedural synthesis in scripts/build_dummy_audio.py (4-cyl diesel genset at 1800 rpm, 60 Hz mains (Taiwan))",
+   "licence": "CC0 1.0 (generated here)",
+   "attribution": "Larpverse team (generated)",
+   "origin_url": null,
+   "processing": [
+    "seamless 12 s loop",
+    "loudness match"
+   ],
+   "synthetic": true,
+   "sample_rate": 48000,
+   "duration_s": 12.0,
+   "rms_dbfs": -22.01,
+   "peak_dbfs": -8.6,
+   "through_rubble_depth_m": 0.0,
+   "parent": null,
+   "suggested_spl_db_1m": 85,
+   "schedule": {
+    "mode": "continuous"
+   }
+  },
+  {
+   "id": "generator_50hz",
+   "file": "generator_50hz.wav",
+   "kind": "generator",
+   "human": false,
+   "language": null,
+   "transcript": null,
+   "transcript_en": null,
+   "source": "procedural synthesis in scripts/build_dummy_audio.py (4-cyl diesel genset at 1500 rpm, 50 Hz (as acoustic/scene.py))",
+   "licence": "CC0 1.0 (generated here)",
+   "attribution": "Larpverse team (generated)",
+   "origin_url": null,
+   "processing": [
+    "seamless 12 s loop",
+    "loudness match"
+   ],
+   "synthetic": true,
+   "sample_rate": 48000,
+   "duration_s": 12.0,
+   "rms_dbfs": -22.01,
+   "peak_dbfs": -8.42,
+   "through_rubble_depth_m": 0.0,
+   "parent": null,
+   "suggested_spl_db_1m": 85,
+   "schedule": {
+    "mode": "continuous"
+   }
+  },
+  {
+   "id": "settling_creak_trickle",
+   "file": "settling_creak_trickle.wav",
+   "kind": "settling",
+   "human": false,
+   "language": null,
+   "transcript": null,
+   "transcript_en": null,
+   "source": "procedural synthesis in scripts/build_dummy_audio.py (stick-slip creak, crack + thump, Poisson gravel trickle, low rumble)",
+   "licence": "CC0 1.0 (generated here)",
+   "attribution": "Larpverse team (generated)",
+   "origin_url": null,
+   "processing": [
+    "loudness match"
+   ],
+   "synthetic": true,
+   "sample_rate": 48000,
+   "duration_s": 10.0,
+   "rms_dbfs": -24.15,
+   "peak_dbfs": -1.0,
+   "through_rubble_depth_m": 0.0,
+   "parent": null,
+   "suggested_spl_db_1m": 80,
+   "schedule": {
+    "mode": "loop",
+    "period_s": 30.0,
+    "jitter_s": 10.0
+   }
+  },
+  {
+   "id": "wind_real",
+   "file": "wind_real.wav",
+   "kind": "wind",
+   "human": false,
+   "language": null,
+   "transcript": null,
+   "transcript_en": null,
+   "source": "teammate recording set (F. Valisalo), data/audio_real/frances/wind_03.wav",
+   "licence": "CC0 1.0",
+   "attribution": "\"Wind 2.mp3\" by FunWithSound (https://freesound.org/people/FunWithSound/sounds/390740), CC0",
+   "origin_url": "https://freesound.org/people/FunWithSound/sounds/390740",
+   "processing": [
+    "best 12.5 s window",
+    "0.5 s loop crossfade",
+    "resample 16 -> 48 kHz",
+    "loudness match"
+   ],
+   "synthetic": false,
+   "sample_rate": 48000,
+   "duration_s": 12.0,
+   "rms_dbfs": -26.01,
+   "peak_dbfs": -6.89,
+   "through_rubble_depth_m": 0.0,
+   "parent": null,
+   "suggested_spl_db_1m": 60,
+   "schedule": {
+    "mode": "continuous",
+    "aural": "nonSpatial"
+   }
+  },
+  {
+   "id": "siren_distant",
+   "file": "siren_distant.wav",
+   "kind": "siren",
+   "human": false,
+   "language": null,
+   "transcript": null,
+   "transcript_en": null,
+   "source": "teammate recording set (F. Valisalo), data/audio_real/frances/siren_04.wav",
+   "licence": "CC0 1.0",
+   "attribution": "\"Distant Ambulance Siren\" by brunoboselli (https://freesound.org/people/brunoboselli/sounds/469363), CC0",
+   "origin_url": "https://freesound.org/people/brunoboselli/sounds/469363",
+   "processing": [
+    "best 12 s window",
+    "fades",
+    "resample 16 -> 48 kHz",
+    "loudness match"
+   ],
+   "synthetic": false,
+   "sample_rate": 48000,
+   "duration_s": 12.0,
+   "rms_dbfs": -24.0,
+   "peak_dbfs": -9.81,
+   "through_rubble_depth_m": 0.0,
+   "parent": null,
+   "suggested_spl_db_1m": 75,
+   "schedule": {
+    "mode": "loop",
+    "period_s": 45.0,
+    "jitter_s": 10.0
+   }
+  }
+ ],
+ "todo": [
+  {
+   "id": "voice_nan_call",
+   "kind": "voice",
+   "language": "nan-TW",
+   "status": "TODO: needs native recording (Taiwanese Hokkien has no open TTS voice; not faked)",
+   "draft_text": "救命喔！有人聽有無？我的跤予物件壓著矣！",
+   "draft_romanisation": "Kiù-miā--ooh! Ū lâng thiann ū bô? Guá ê kha hōo mi̍h-kiānn teh--tio̍h--ah!",
+   "transcript_en": "Help! Can anyone hear? My leg is pinned by something!",
+   "note": "draft wording, unverified: a native speaker should correct it and record it"
+  },
+  {
+   "id": "voice_nan_here",
+   "kind": "voice",
+   "language": "nan-TW",
+   "status": "TODO: needs native recording",
+   "draft_text": "我佇遮！我佇遮啦！",
+   "draft_romanisation": "Guá tī tsia! Guá tī tsia--lah!",
+   "transcript_en": "I'm here! I'm here!",
+   "note": "draft wording, unverified"
+  },
+  {
+   "id": "groan",
+   "kind": "groan",
+   "language": null,
+   "status": "TODO: no groan/moan source on disk. ESC-50 has no groan class; YAMNet found no Groan or Wail/moan frame (max 0.26) in the DroneAudioSet crying/humansounds sources. Skipped, not faked.",
+   "note": "record a CC0 groan, or allow one Freesound CC0 download"
+  }
+ ],
+ "profiles": [
+  {
+   "dummy_id": "A3",
+   "pile": "A3",
+   "scenario_kind": "voice",
+   "physio": "distressed_tachypnea",
+   "burial_depth_m": 0.5,
+   "prim": "/World/Dummies/A3",
+   "depth_note": "acoustic path 0.5 m (the voice escapes through a void opening; acoustic/scene.py uses 0.4 m for voices); the radar depth stays the scenario's 0.89 m",
+   "idle": {
+    "playlist": [
+     "voice_zh_call_tts__0.5m",
+     "voice_en_help_real_b__0.5m",
+     "voice_en_call_tts__0.5m"
+    ],
+    "order": "cycle",
+    "mode": "loop",
+    "start_s": 1.0,
+    "period_s": 9.0,
+    "jitter_s": 2.0
+   },
+   "after_callout": {
+    "playlist": [
+     "voice_zh_here_tts__0.5m",
+     "voice_en_here_tts__0.5m"
+    ],
+    "order": "cycle",
+    "mode": "after_callout",
+    "latency_s": [
+     1.5,
+     3.5
+    ],
+    "repeats": 2,
+    "period_s": 4.0
+   },
+   "story": "shouts in Mandarin (Taiwanese wording) and English: 'my leg is trapped'"
+  },
+  {
+   "dummy_id": "B1",
+   "pile": "B1",
+   "scenario_kind": "weak_voice",
+   "physio": "irregular_apneic",
+   "burial_depth_m": 1.0,
+   "prim": "/World/Dummies/B1",
+   "idle": {
+    "playlist": [
+     "weak_en_tts__1.0m",
+     "weak_zh_tts__1.0m"
+    ],
+    "order": "cycle",
+    "mode": "loop",
+    "start_s": 4.0,
+    "period_s": 25.0,
+    "jitter_s": 5.0
+   },
+   "after_callout": null,
+   "story": "weak, fading 'hello... is anyone there... water...'; no voluntary reply to the call-out (irregular_apneic, sim/callout.RESPONSE_MODEL)"
+  },
+  {
+   "dummy_id": "B2",
+   "pile": "B2",
+   "scenario_kind": "knock",
+   "physio": "calm",
+   "burial_depth_m": 1.0,
+   "prim": "/World/Dummies/B2",
+   "idle": {
+    "playlist": [
+     "knock_concrete_3x__1.0m"
+    ],
+    "order": "cycle",
+    "mode": "loop",
+    "start_s": 6.0,
+    "period_s": 20.0,
+    "jitter_s": 3.0
+   },
+   "after_callout": {
+    "playlist": [
+     "knock_concrete_3x_once__1.0m"
+    ],
+    "order": "cycle",
+    "mode": "after_callout",
+    "latency_s": [
+     1.0,
+     4.0
+    ],
+    "repeats": 3,
+    "period_s": 4.0
+   },
+   "alternatives": [
+    "knock_pipe_3x__1.0m",
+    "knock_pipe_3x_once__1.0m"
+   ],
+   "story": "conscious and calm, knocks three times with a stone on a slab; knocks back after 'knock three times'. The pipe clips ring (tonal) and the pipeline read them as dog once in the check: keep concrete for the take"
+  },
+  {
+   "dummy_id": "A2",
+   "pile": "A2",
+   "scenario_kind": "silent",
+   "physio": "unconscious_slow",
+   "burial_depth_m": 1.5,
+   "prim": "/World/Dummies/A2",
+   "idle": null,
+   "after_callout": null,
+   "story": "unconscious: silent, found by radar only. No audio prim needed (or a muted one for live toggles)"
+  },
+  {
+   "dummy_id": "C2",
+   "pile": "C2",
+   "scenario_kind": "dog",
+   "physio": null,
+   "burial_depth_m": 0.0,
+   "prim": "/World/Dummies/C2_dog",
+   "idle": {
+    "playlist": [
+     "dog_bark"
+    ],
+    "order": "cycle",
+    "mode": "loop",
+    "start_s": 3.0,
+    "period_s": 15.0,
+    "jitter_s": 5.0
+   },
+   "after_callout": {
+    "playlist": [
+     "dog_bark"
+    ],
+    "order": "cycle",
+    "mode": "after_callout",
+    "latency_s": [
+     0.5,
+     2.0
+    ],
+    "repeats": 1,
+    "period_s": 0.0
+   },
+   "story": "distractor: a dog on the pile surface (barks at the loudspeaker too); must be dismissed"
+  },
+  {
+   "dummy_id": "C1",
+   "pile": "C1",
+   "scenario_kind": "generator",
+   "physio": null,
+   "burial_depth_m": 0.0,
+   "prim": "/World/Dummies/C1_generator",
+   "idle": {
+    "playlist": [
+     "generator_60hz"
+    ],
+    "order": "cycle",
+    "mode": "continuous"
+   },
+   "after_callout": null,
+   "story": "distractor: a running 60 Hz generator; must be dismissed"
+  },
+  {
+   "dummy_id": "B3",
+   "pile": "B3",
+   "scenario_kind": "settling",
+   "physio": null,
+   "burial_depth_m": 0.0,
+   "prim": "/World/Dummies/B3_settling",
+   "idle": {
+    "playlist": [
+     "settling_creak_trickle"
+    ],
+    "order": "cycle",
+    "mode": "loop",
+    "start_s": 8.0,
+    "period_s": 30.0,
+    "jitter_s": 10.0
+   },
+   "after_callout": null,
+   "story": "distractor: rubble settling (creak, crack, trickle); must be dismissed"
+  }
+ ],
+ "hidden_dummies": [
+  {
+   "dummy_id": "H1_C3_vi",
+   "pile": "C3",
+   "scenario_kind": "voice",
+   "physio": "calm",
+   "burial_depth_m": 0.5,
+   "prim": "/World/Dummies/H1_C3_vi",
+   "active_at_start": false,
+   "activation": "live, mid-take: an operator flips larpverse:active = true on the prim (C3 is a sector nobody tasked in seed 7: no sound, no lead)",
+   "idle": {
+    "playlist": [
+     "voice_vi_call_tts__0.5m",
+     "voice_vi_here_tts__0.5m"
+    ],
+    "order": "cycle",
+    "mode": "loop",
+    "start_s": 0.5,
+    "period_s": 8.0,
+    "jitter_s": 1.5
+   },
+   "after_callout": {
+    "playlist": [
+     "voice_vi_here_tts__0.5m"
+    ],
+    "order": "cycle",
+    "mode": "after_callout",
+    "latency_s": [
+     1.0,
+     3.0
+    ],
+    "repeats": 2,
+    "period_s": 4.0
+   },
+   "story": "a Vietnamese migrant worker starts calling 'Cứu tôi với!' from C3 mid-run; the system must hear a new human source in an untasked sector and re-rank"
+  },
+  {
+   "dummy_id": "H2_A1_id",
+   "pile": "A1",
+   "scenario_kind": "voice",
+   "physio": "distressed_tachypnea",
+   "burial_depth_m": 1.0,
+   "prim": "/World/Dummies/H2_A1_id",
+   "active_at_start": false,
+   "activation": "live, alternative to H1: toggle larpverse:active on the prim (A1 is silent in seed 7)",
+   "idle": {
+    "playlist": [
+     "voice_id_call_tts__1.0m",
+     "voice_id_here_tts__1.0m"
+    ],
+    "order": "cycle",
+    "mode": "loop",
+    "start_s": 0.5,
+    "period_s": 9.0,
+    "jitter_s": 2.0
+   },
+   "after_callout": {
+    "playlist": [
+     "voice_id_here_tts__1.0m"
+    ],
+    "order": "cycle",
+    "mode": "after_callout",
+    "latency_s": [
+     1.5,
+     3.5
+    ],
+    "repeats": 2,
+    "period_s": 4.0
+   },
+   "story": "an Indonesian worker calls 'Tolong!' from A1"
+  }
+ ],
+ "ambient": [
+  {
+   "id": "wind",
+   "clip": "wind_real",
+   "aural": "nonSpatial",
+   "gain": 0.25,
+   "mode": "continuous",
+   "note": "site bed under everything (CC0 field recording, loop-crossfaded)"
+  },
+  {
+   "id": "siren",
+   "clip": "siren_distant",
+   "aural": "spatial",
+   "position_hint": "beyond the site edge, ~150 m",
+   "gain": 0.35,
+   "mode": "loop",
+   "start_s": 20.0,
+   "period_s": 45.0,
+   "jitter_s": 10.0,
+   "note": "distant siren distractor"
+  }
+ ]
+}

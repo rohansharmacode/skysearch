@@ -25,7 +25,7 @@ from scipy.signal import find_peaks
 
 from .scene import C_SOUND
 
-ALGO_VERSION = "assoc-v11"        # bump when localisation / association changes (cache keys)
+ALGO_VERSION = "assoc-v12"        # bump when localisation / association changes (cache keys)
 NFFT = 512
 HOP = 256
 BLOCK_S = 0.5
@@ -329,7 +329,36 @@ def _circ_mean(az, w):
     return float(np.degrees(np.arctan2(np.sum(w * np.sin(a)), np.sum(w * np.cos(a)))) % 360.0)
 
 
-def localise_piles(scene, exclude=()):
+ROTOR_GATE = 8.0                 # deg: components this close to a hovering drone's bearing are its rotors
+
+
+def rotor_bearings(scene, rotors) -> dict:
+    """{drone_id: [bearing to each hovering drone]} from public positions (mission state)."""
+    return {d: [bearing_to(o, xy) for xy in (rotors or {}).values()] for d, o in scene.drones.items()}
+
+
+def skip_rotor_components(comps: dict, rb: dict, gate=ROTOR_GATE) -> dict:
+    """Drop CLEAN components that point at one of our own hovering drones (known positions)."""
+    if not any(rb.values()):
+        return comps
+    return {d: [c for c in cs if all(abs(wrap180(c[0] - r)) > gate for r in rb.get(d, []))]
+            for d, cs in comps.items()}
+
+
+def rotor_dets(scene, rotors, B) -> list:
+    """Pseudo-detections for hovering drones: never reported, only nulled during separation."""
+    out = []
+    for rid, xy in (rotors or {}).items():
+        pd = {d: {"bearing_deg": round(bearing_to(o, xy), 1), "width_deg": 2 * ROTOR_GATE, "sigma_deg": ROTOR_GATE,
+                  "coherence": 0.0, "hit_frac": 0.0, "expected_deg": round(bearing_to(o, xy), 1), "measured": False}
+              for d, o in scene.drones.items()}
+        out.append({"pile_id": f"rotor:{rid}", "excluded": True, "rotor": True, "continuous": True,
+                    "active_blocks": np.ones(B, bool), "block_score": np.zeros(B), "per_drone": pd,
+                    "drones_agreeing": [], "drones_consistent": []})
+    return out
+
+
+def localise_piles(scene, exclude=(), rotors=None):
     """Find sources and assign them to piles with multi-drone association (module docstring).
 
     Every pile, excluded ones included, competes for the CLEAN components, so the sources of
@@ -338,17 +367,22 @@ def localise_piles(scene, exclude=()):
 
     Transient sources: per-block association (>= 2 blocks = 1 s). Stationary sources: the
     unmasked whole-window maps, kept as `continuous` when the beam power is steady or the
-    source has no transient blocks (a generator). Returns (detections, n_blocks)."""
+    source has no transient blocks (a generator).
+
+    rotors: {id: (x, y)} of our own drones hovering during the listen (from mission state). Their
+    bearings are skipped (ROTOR_GATE) before association, and pseudo-detections flagged `rotor`
+    come back so separation nulls them. Returns (detections, n_blocks)."""
     g = _Geom(scene)
+    rb = rotor_bearings(scene, rotors)
     ids = g.ids
     model = SrpModel(scene.mic_offsets, scene.fs)
     gcc = {d: gcc_blocks(model, scene.signals[d], scene.fs) for d in ids}
     B = min(v[1].shape[0] for v in gcc.values())
     blocks = []                                          # per block: events
     for b in range(B):
-        comps = {d: clean(model, gcc[d][0][b], gcc[d][1][b]) for d in ids}
+        comps = skip_rotor_components({d: clean(model, gcc[d][0][b], gcc[d][1][b]) for d in ids}, rb)
         blocks.append((comps, associate(g, comps)))
-    scomps = {d: clean(model, gcc[d][2], gcc[d][3]) for d in ids}
+    scomps = skip_rotor_components({d: clean(model, gcc[d][2], gcc[d][3]) for d in ids}, rb)
     sevents = {e["pile"]: e for e in associate(g, scomps)}
 
     dets = []
@@ -428,6 +462,7 @@ def localise_piles(scene, exclude=()):
             "association": "confident" if confident else "ambiguous",
             "assigned": bool(confident),
         })
+    dets += rotor_dets(scene, rotors, B)
     return dets, B
 
 

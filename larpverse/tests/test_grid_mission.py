@@ -48,11 +48,12 @@ def test_visits_multiple_piles_in_acoustic_priority_order(run):
 
 
 def test_seed7_dsp_default_pings_every_voice_pile(run):
-    """BL-8 / R1-005: with the default dsp radar the demo pings A2, A3 (voice) and B2 (knock)."""
+    """Default radar (dsp, realistic penetration, winch pod, physio chest motion): A2 and B2 ping on the stub
+    acoustics; A3's shallow rapid breathing may stay an open lead (see test_demo_story for the full story)."""
     m, _, state, _ = run
     assert m.radar == "dsp" and state["mission"]["radar"] == "dsp"
     firm = {c["pile_id"] for c in state["radar_candidates"] if c["status"] == "candidate"}
-    assert {"A2", "A3", "B2"} <= firm
+    assert {"A2", "B2"} <= firm
     for c in state["radar_candidates"]:
         assert c["depth_source"] in ("radar_estimate", "nominal") and c["p_kind"] == "share_of_pile_belief"
         assert isinstance(c["support"], int) and c["support_needed"] == 3
@@ -399,3 +400,28 @@ def test_too_few_sites_and_tall_site_ceiling():
     assign, _ = pl.initial_sites(loc, [site], drones, lambda d, s: 10.0)
     assert len(assign) == 1
     assert pl.initial_sites(loc, [], drones, lambda d, s: 10.0)[0] == []
+
+
+def test_decider_context_has_delivery_and_placements():
+    seen = []
+
+    def spy(ctx, options):
+        seen.append((ctx, options))
+        return {"choice": options[0]["id"], "rationale": "test", "by": "test"}
+
+    GridMission(seed=7, verbose=False, acoustic="stub", decider=spy, pile_budget=2, mission_scans=12).run()
+    ctx, opts = seen[0]
+    assert ctx["delivery"] == "pod" and "zone_proposals" in ctx
+    assert all("placements" in o for o in opts if o["action"] != "stop")
+
+
+def test_pointcloud_preview_and_tiles(tmp_path):
+    m = GridMission(seed=7, verbose=False, acoustic="stub", pile_budget=1, out_dir=str(tmp_path), n_points=20000)
+    assert not m.pc_tiles and m.build_state()["pointcloud"]["count"] == 20000      # small cloud: preview only
+    m.LOD0_MAX = 5000
+    m._write_pointcloud(m.world.sample_pointcloud(40000))
+    pc = m.build_state()["pointcloud"]
+    assert pc["count"] <= 5000 and pc["full_count"] == 40000 and pc["lod"] == 0
+    assert sum(t["count"] for t in pc["tiles"]) == 40000
+    t = pc["tiles"][0]
+    assert os.path.getsize(tmp_path / t["url"]) == 12 * t["count"] and t["bounds"][2] - t["bounds"][0] == 16.0

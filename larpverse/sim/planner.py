@@ -41,15 +41,16 @@ def sensor_pose_at(site):
     return [site["xy"][0], site["xy"][1], site["z"] + (POD_SENSOR_HEIGHT if site.get("pod") else LANDED_SENSOR_HEIGHT), 0.0]
 
 
-def pdet(range_m, quality, path_m):
+def pdet(range_m, quality, path_m, dwell=SCAN_DWELL_S):
     """Expected detection probability of a breathing return: range / quality term times the through-rubble
     penetration limit (radar_dsp.reach_prob). Uses hypothesised targets only, never truth."""
-    return detection_prob(range_m, quality, 0.0) * reach_prob(range_m, path_m, quality)
+    return detection_prob(range_m, quality, 0.0) * reach_prob(range_m, path_m, quality, dwell=dwell)
 
 
 def site_quality(site, dwell=SCAN_DWELL_S):
     if site.get("pod"):                # pod seated on the surface: tilt within its spec does not matter
-        return scan_quality(site["roughness"] * POD_ROUGH_FACTOR, max(0.0, site["slope_deg"] - POD_MAX_SLOPE), dwell)
+        return scan_quality(site["roughness"] * POD_ROUGH_FACTOR, max(0.0, site["slope_deg"] - POD_MAX_SLOPE),
+                            max(dwell, 45.0))                       # pod scans dwell 45 s (coordinator.POD_DWELL_S)
     rough = site["roughness"] * (PERCH_ROUGH_FACTOR if site.get("perch") else 1.0)
     return scan_quality(rough, max(0.0, site["slope_deg"] - LEVEL_DEG), dwell)   # levelled mount
 
@@ -84,7 +85,7 @@ class Planner:
             q = site_quality(s)
             tgt = np.stack([px, py, ground_z], 1)
             path = rubble_path(self.grid, pose[:3], tgt)
-            w = pdet(r, q, path) / range_sigma(q, path) ** 2
+            w = pdet(r, q, path, 45.0 if s.get("pod") else SCAN_DWELL_S) / range_sigma(q, path) ** 2
             u = np.stack([dx / dh, dy / dh], 1)
             info.append(w[:, None, None] * u[:, :, None] * u[:, None, :])  # (K,2,2)
         k = min(3, len(cand), len(drones))
@@ -123,7 +124,7 @@ class Planner:
         Xs, Ys = self._XY
         hyp = np.stack([Xs[sup][rng_pick], Ys[sup][rng_pick], self.grid.z.ravel()[sup][rng_pick] - self.cfg.depth_nom], 1)
         path = rubble_path(self.grid, pose[:3], hyp)
-        p_det = pdet(r_true, q, path)
+        p_det = pdet(r_true, q, path, 45.0 if site.get("pod") else SCAN_DWELL_S)
         y = r_true + rng_normals * range_sigma(q, path)
         w = 0.75 * q
         L = self.cfg.eps + np.minimum(w * np.exp(-0.5 * ((y[:, None] - r_c[None, :]) / sig_c[None, :]) ** 2), 1.0)

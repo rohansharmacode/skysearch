@@ -260,7 +260,8 @@ def make_scenario(seed: int = 7, start_pile: str | None = None, site: str = "gri
         name = DEMO_PHYSIO.get(seed, {}).get(v["pile"], name)
         v["physio"] = {"state": name, **{key: float(prng.uniform(*rng_)) for key, rng_ in PHYSIO_STATES[name].items()}}
     sc.truth = {"start_pile": start, "roles": roles, "victims": victims, "sounds": sounds}
-    return sc
+    from .comms import attach_phone_truth          # v1.4: hidden phones (own RNG stream [seed, 123]; nothing else moves)
+    return attach_phone_truth(sc, seed)
 
 
 if __name__ == "__main__":

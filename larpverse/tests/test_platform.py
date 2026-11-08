@@ -162,7 +162,7 @@ def test_heavy_drone_parts_from_spec():
     parts = heavy_parts(spec, "d2")
     names = {p[1] for p in parts}
     assert sum(p[0] == "Rotor" for p in parts) == 8
-    assert {"LidarPuck", "RadarPanel", "SpeakerHorn", "Thermal", "Skid0", "Skid2"} <= names
+    assert {"LidarPuck", "PodRadarFace", "SpeakerHorn", "Thermal", "Skid0", "Skid2"} <= names
     assert sum(n.startswith("Mic") for n in names) == spec.mics.n_mics
     ex, ey, z0, z1 = model_extent(parts)
     assert abs(max(ex, ey) - spec.span_m) < 0.3 and z0 == pytest.approx(0.0) and 1.0 < z1 < 1.6

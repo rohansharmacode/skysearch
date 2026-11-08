@@ -213,6 +213,10 @@ The details are in `docs/ISAAC_VERIFIED_APIS.md`.
 - The output of the dry run, and of the self-test once it lands.
 - One screenshot of the stage after `--max-steps 1`.
 
+## 2026-11-07 23:20: DELIVERABLE CHANGE, read `docs/ISAAC_QUICK.md` now
+
+The hackathon deliverable is a **≤ 60 s video, captured from the stream, with perception on screen next to the actions and one unscripted change, all in a single continuous take**. No cuts, so the multi-shot plan is retired. Please do §2 of ISAAC_QUICK.md (stream and capture check, collapse + pod run, frame time, a rehearsal take) and answer §4. The full brief follows within about 1–1.5 h: van, dummies, live triggers, HUD, smooth multirotor motion.
+
 ## 2026-11-07 23:40: `--site collapse` landed, plus the heavy platform and the winch pod
 
 - **Your map now runs in our stack:** `--site collapse --site-usd <repo>/collapse_site/collapse_site.usda`. ISAAC_BRIEF.md §3 has the exact commands, and the 🟡 rows are now ✅ (dry-run and USD checks only; **not yet on a GPU**). Please do the short `--max-steps 120` run from §5 step 3 and report raycast hits, landing/pod cells and frame time.

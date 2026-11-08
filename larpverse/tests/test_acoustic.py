@@ -243,3 +243,23 @@ def test_busy_llm_falls_back_with_note(monkeypatch, tmp_path):
     j, meta = agent.judge_clips([f], mode="llm", cache_path=str(tmp_path / "c.jsonl"))
     assert j["a"]["by"] == "fallback" and j["a"]["by_note"] == "Gemini busy — using fallback"
     assert meta["busy"] and meta["fallback"] == 1
+
+
+def test_rotor_veto_and_bearing_skip():
+    from acoustic import dsp, models, run
+    from acoustic.scene import FS, knocking, rotor_noise, through_rubble
+    rng = np.random.default_rng(3)
+    rot = rotor_noise(rng, 5.0)
+    knock = through_rubble(knocking(rng, 5.0), 0.8) + 0.01 * rng.normal(size=int(5.0 * FS))
+    assert models.loudness_steadiness(rot) >= run.ROTOR_STEADY > models.loudness_steadiness(knock)
+    assert models.blade_pass(rot) >= run.ROTOR_COMB
+    f = _feat("r", "", "knocking", {"knocking": 0.6}, vad=0.0)
+    f["heuristics"].update(knock_periodicity=0.7, steadiness=0.6, blade_pass=0.4, human_minus_animal=0.0)
+    j = run.class_human_floor(f, {"human": 0.7, "urgency": 0.4, "reliability": 0.8, "rationale": "x", "by": "llm"})
+    assert j["human"] <= run.ROTOR_HUMAN_CAP
+    f["heuristics"].update(steadiness=models.loudness_steadiness(knock),   # a knock train keeps its lead
+                           blade_pass=models.blade_pass(knock))
+    assert run.class_human_floor(f, dict(j, human=0.7))["human"] == 0.7
+    comps = {"d1": [(10.0, 0.6, 30.0), (95.0, 0.4, 30.0)], "d2": [(200.0, 0.5, 30.0)]}
+    kept = dsp.skip_rotor_components(comps, {"d1": [12.0], "d2": [90.0]})
+    assert kept == {"d1": [(95.0, 0.4, 30.0)], "d2": [(200.0, 0.5, 30.0)]}

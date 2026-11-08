@@ -195,11 +195,24 @@ def nearest_pile(piles: dict, xy) -> str:
     return min(piles, key=lambda n: np.hypot(piles[n][0] - xy[0], piles[n][1] - xy[1]))
 
 
+def rotor_noise(rng, dur, bpf=None) -> np.ndarray:
+    """Hovering multirotor: blade-pass comb (BPF ~120-200 Hz and harmonics, slow wobble) + broadband
+    turbulence. Not from truth: our own drones' positions are public mission state."""
+    n = int(dur * FS)
+    t = np.arange(n) / FS
+    f0 = (bpf or rng.uniform(120, 200)) * (1 + 0.01 * np.sin(2 * np.pi * 0.3 * t))
+    ph = 2 * np.pi * np.cumsum(f0) / FS
+    x = sum(np.sin(k * ph + rng.uniform(0, 6.28)) / k ** 0.8 for k in range(1, 16))
+    b, a = sps.butter(2, [150 / (FS / 2), 3000 / (FS / 2)], "band")
+    return _rms_norm(x) + 0.7 * _rms_norm(sps.lfilter(b, a, rng.normal(0, 1, n)))
+
+
 def build_scene(scenario, drones: dict | None = None, seed: int | None = None,
-                duration=DURATION, noise_rms=4.0e-3):
+                duration=DURATION, noise_rms=4.0e-3, rotors: dict | None = None, rotor_level=2.0):
     """Synthesise what the landed arrays hear. ONLY this function reads scenario.truth.
 
     drones: {id: (x, y)}; default three points DRONE_RADIUS from the start pile at 120 deg.
+    rotors: {id: (x, y)} of our own drones hovering during the listen (blade-pass noise sources).
     Returns (Scene, truth_summary); the summary is for evaluation printouts only."""
     import pyroomacoustics as pra
 
@@ -246,6 +259,9 @@ def build_scene(scenario, drones: dict | None = None, seed: int | None = None,
         track = through_rubble(track, p["depth"]) * gain
         room.add_source(list(snd["xy"]), signal=track)
         truth[snd["pile"]] = {"kind": kind, "xy": snd["xy"], "events_s": events, "text": snd.get("text")}
+
+    for rid, xy in (rotors or {}).items():          # our own hovering drones (public positions)
+        room.add_source([float(xy[0]), float(xy[1])], signal=rotor_noise(rng, duration) * rotor_level)
 
     ids = list(drones)
     mics = np.hstack([np.array(drones[d])[:, None] + offs for d in ids])

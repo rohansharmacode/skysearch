@@ -19,6 +19,12 @@ Isaac swap points (see contracts/INTERFACES.md, "v1.1 grid extensions"):
                ``.sample_pointcloud(n)``, ``.pile_xy``) or feed LiDAR with ``ingest_pointcloud``
   * sensors  : pass ``sensor_factory=`` (pile_world, seed) -> object with ``radar_scan(...)``
   * acoustic : pass ``acoustic_fn=`` (scenario, drone_positions, exclude_piles, seed) -> acoustic/v1 dict
+  * speaker  : ``speaker=True`` (default): loudspeaker call-out after each passive listen, reassurance after
+               a ping / response, route guidance to people on open ground (sim/callout.py, contract v1.3);
+               pass ``callout_fn=`` (scenario, plan, seed) -> {"detections": [...]} to replace the generator
+  * comms    : ``comms=True`` (default): drone Wi-Fi hotspots + mesh backhaul to the van, captive-portal events,
+               consent-based phone localisation (sim/comms.py, contract v1.4); a located phone inside a pile is
+               new evidence (lead / re-open), never a confirmed person. CLI ``--no-comms``, ``--uplink``
 """
 from __future__ import annotations
 
@@ -58,8 +64,9 @@ MISSION_SCANS = 24             # autonomous: radar scans for the whole mission (
 MISSION_SCANS_POD = 36         # winch pod: a re-placement is ~20 s + a 36 s winch/scan cycle instead of a re-land
 RESERVE = 0.25                 # every drone keeps this battery fraction; below it the fleet swaps packs
 SWAP_S = 60.0                  # battery swap time at the pads once all drones are docked
-VITALS_LOOK_S = 0.0            # 60 s in-place dwell per firm ping once the vitals hook is live (on hold)
-REVISIT_MIN_COVERAGE = 0.5     # revisit an open lead only if the radar can reach most of its top 2 m
+VITALS_LOOK_S = 60.0           # one 60 s look per firm ping (pod re-lowered / landed drone in place): patterns need 45-60 s
+CALLOUT_LANGS = ("zh-TW", "nan-TW", "en")
+REVISIT_MIN_COVERAGE = 0.25    # revisit an open lead only if the radar can reach most of its top 2 m
 REVISIT_DISCOUNT = 0.5         # an open lead already scanned ranks at half its acoustic priority
 # radar_dsp presets: literature | legacy (docs/RADAR_PENETRATION.md). Default stays "legacy" so the seed-7
 # demo keeps its pings; with "literature" the landing ring is out of radar reach (product decision pending).
@@ -129,8 +136,8 @@ class GridMission:
                  slam=False, slam_scans=SLAM_SCANS, slam_kw=None, slam_cache=SLAM_CACHE,
                  autonomous=True, mission_scans=None, dispatch_policy="acoustic", reserve=RESERVE, swap_s=SWAP_S,
                  listen_s=None, revisit_max=2, penetration=None, launch_pile=None, site="grid", platform=None,
-                 delivery=None,
-                 tasking=None, recon_accept_s=RECON_ACCEPT_S):
+                 delivery=None, speaker=True, callout_fn=None,
+                 tasking=None, recon_accept_s=RECON_ACCEPT_S, comms=True, uplink="oneweb", comms_llm=False):
         """``autonomous`` (default): keep searching until the mission scan budget (``mission_scans``, default
         24), the time limit or the open leads run out; battery swaps at the pads; open leads without a firm
         ping are revisited once. ``pile_budget`` caps pile visits (None = no cap; legacy mode uses 3).
@@ -197,6 +204,15 @@ class GridMission:
         self.slam_metrics = {}         # pile -> metrics line (ATE, map error) for the log / state
         self._terrain = self.grid.z.copy()   # sim-diagnostic reference for the SLAM map-error line only
         self.decisions = []
+        # loudspeaker (contract v1.3): call-out + listen per listen phase, reassurance, guidance; never reads truth
+        # itself: the scenario goes only to the call-out response generator, as with the acoustic pipeline
+        self.speaker, self.callout_fn = None, callout_fn
+        if speaker and self.listen_s > 0:
+            from .callout import Speaker
+            # product decision: 3 call-out languages by default (zh-TW, nan-TW, en); others only when selected / detected
+            self.speaker = Speaker(self.world.pile_xy, self.grid, self.base_xy, seed=seed, langs=CALLOUT_LANGS)
+        self._pending_callout = None
+        self._zone_ai = []             # decider zone suggestions (suggestions only)
         # --- mission state (never touches truth)
         self.t, self.k = 0.0, 0
         self.stage = "pile"            # pile | listen | return | done
@@ -208,6 +224,14 @@ class GridMission:
                              "radar_candidate_ids": [], "why": "Not visited, nothing heard yet. Not cleared."}
                       for name, (x, y) in self.world.pile_xy.items()}
         self._tracks = {}              # drone id -> last <= 200 [x, y, z, t] samples (drones[].track)
+        # rescue hotspot + comms relay (contract v1.4): the phone truth lives in the RadioSim generator inside
+        # sim.comms (like the call-out generator); the mission only sees joined devices, RSSI fits and portal taps
+        self.comms, self._comms_seen = None, set()
+        if comms:
+            from .comms import Comms
+            self.comms = Comms(self.scenario, self.grid, self.base_xy, seed=seed, site="WEIGUAN",
+                               sectors={n: {"xy": p["xy"], "polygon": p["polygon"]} for n, p in self.piles.items()},
+                               internet=uplink is not None, gcs_uplink=uplink, use_llm=comms_llm)
         self.visited = []
         self.done_scans, self.done_cands, self.done_sites = [], [], []
         self.clips, self.acoustic_obs, self.dispatch = [], [], []
@@ -251,7 +275,8 @@ class GridMission:
         cap = f", pile cap {pile_budget}" if pile_budget is not None else ""
         self._say(f"Grid mission start (seed {seed}, {radar} radar, {dispatch_policy} dispatch): 3 drones at the staging "
                   f"area, start pile {self.start_pile} (operator choice); {budget}{cap}")
-        r2, r11 = reach_path_m(REACH_REF_RANGE_M, 0.9), reach_path_m(11.0, 0.9)
+        dw = 45.0 if self.delivery == "pod" else 20.0
+        r2, r11 = reach_path_m(REACH_REF_RANGE_M, 0.9, dwell=dw), reach_path_m(11.0, 0.9, dwell=dw)
         self._say(f"Radar penetration model '{self.penetration}': a good scan sees a breathing chest through about "
                   f"{r2:.1f} m of rubble directly beneath it and {r11:.1f} m from an 11 m stand-off"
                   + ("; deeper than that is beyond radar reach (acoustic lead only)" if self.penetration == "literature"
@@ -447,9 +472,13 @@ class GridMission:
         return ids.index(pod["site"]) + 1 if pod.get("site") in ids else None
 
     def _lead_xy(self, name):
-        """Acoustic lead posterior centre for pile ``name``: least-squares crossing of the human-like bearing
-        cones assigned to it (>= 2 origins >= 3 m apart, crossing within 8 m of the pile), else the pile centre."""
+        """Lead posterior mode for pile ``name``: on a revisit, the earlier radar mode there; else the least-squares
+        crossing of the human-like bearing cones assigned to it if it falls on the pile (within 4 m of its
+        centre); else the pile centre."""
         cx, cy = self.world.pile_xy[name]
+        prev = [c for c in self.done_cands if c.get("pile_id") == name and c.get("kind", "stationary") == "stationary"]
+        if prev:
+            return (float(prev[0]["xy"][0]), float(prev[0]["xy"][1]))
         obs = [o for o in self.acoustic_obs if o.get("pile_id") == name and o.get("bearing_deg") is not None]
         if len(obs) >= 2:
             A, b = np.zeros((2, 2)), np.zeros(2)
@@ -461,7 +490,7 @@ class GridMission:
                 b += w * n * (n @ np.asarray(o["origin"], float))
             if np.linalg.cond(A) < 1e3:
                 x = np.linalg.solve(A, b)
-                if np.hypot(x[0] - cx, x[1] - cy) <= 8.0:
+                if np.hypot(x[0] - cx, x[1] - cy) <= 4.0:
                     return (float(x[0]), float(x[1]))
         return (cx, cy)
 
@@ -577,6 +606,12 @@ class GridMission:
     # ------------------------------------------------------------------ main loop
     def step(self):
         self._poll_tasking()
+        if self.comms is not None:
+            self._comms_step()
+        if self.speaker is not None and self.out_dir:     # operator broadcasts approved on the dashboard (v1.3)
+            n = self.speaker.ingest_operator(os.path.join(self.out_dir, "broadcast_queue.json"), self.t, self._drone_xy())
+            if n:
+                self._say(f"Operator broadcast: {n} approved message(s) queued on the loudspeaker")
         if self.stage == "recon":
             self._recon_step()
         elif self.stage == "pile":
@@ -594,6 +629,9 @@ class GridMission:
                     p["state"] in ("landed", "docked") and not self.flight.drone_state(p["id"])[2] for p in self.flight.poses()):
                 self.listen_end = self.t + self.listen_s
                 self._say(f"All drones down, rotors off: listening for {self.listen_s:.0f} s")
+                if self.speaker is not None and self._pending_callout:
+                    self.listen_end += self._begin_callout(*self._pending_callout)
+                self._pending_callout = None
             if self.stage == "listen" and self.listen_end is not None and self.t >= self.listen_end:
                 self._finish_listen()
             elif self.stage == "swap":
@@ -748,12 +786,15 @@ class GridMission:
             self.stage = "listen"
             if self.delivery == "pod" and self._land_for_listen(pm):
                 self.listen_end = None          # starts once all drones are down with rotors off
+                self._pending_callout = (name, firm, pm)
                 self._say(f"Radar phase at {name} over; drones land off the pile (rotors off) to listen to the other "
                           f"piles for {self.listen_s:.0f} s")
             else:
                 self.listen_end = self.t + self.listen_s
                 self._say(f"Radar phase at {name} over; landed drones listen to the other piles for {self.listen_s:.0f} s "
                           "and stream clips to the acoustic agent")
+                if self.speaker is not None:
+                    self.listen_end += self._begin_callout(name, firm, pm)
         else:
             self._gate(None)
 
@@ -844,11 +885,11 @@ class GridMission:
         for o in scans:
             ps = np.asarray(o["sensor_pose"][:3], float)
             r = np.linalg.norm(pts - ps[None, :], axis=1)
-            hit |= rubble_path(g, ps, pts) <= reach_path_m(r, o["quality"])
+            hit |= rubble_path(g, ps, pts) <= reach_path_m(r, o["quality"], dwell=o.get("dwell_s", 20.0))
         sh = depth <= 2.0
         reach = [o.get("max_reliable_depth_m") for o in scans if o.get("max_reliable_depth_m") is not None]
         if not reach and scans:
-            reach = [reach_path_m(REACH_REF_RANGE_M, o["quality"]) for o in scans]
+            reach = [reach_path_m(REACH_REF_RANGE_M, o["quality"], dwell=o.get("dwell_s", 20.0)) for o in scans]
         return {"radar_coverage": round(float(hit.mean()), 3),
                 "radar_coverage_shallow": round(float(hit[sh].mean()) if sh.any() else 1.0, 3),
                 "radar_reach_m": round(float(np.median(reach)), 2) if reach else None}
@@ -928,8 +969,127 @@ class GridMission:
                     st = "no_signal_not_cleared"
                     why = f"Heard a non-human-like sound once (needs 2 listens to dismiss). {why}"
             p.update(priority=new, status=st, why=why)
+        self._apply_callout()
         if gate:
             self._gate(res)
+
+    # ------------------------------------------------------------------ rescue hotspot / comms (v1.4)
+    COMMS_PRIORITY = {"trapped": 85, "unknown": 50}     # a located connected phone is a lead, never a confirmation
+
+    def _comms_step(self):
+        evs = self.comms.step(self.t, self.flight.poses())
+        if self.out_dir and self.k % 5 == 0:             # live captive-portal submissions + operator replies
+            evs += self.comms.ingest_portal(os.path.join(self.out_dir, "portal.json"), self.t)
+            self.comms.ingest_replies(os.path.join(self.out_dir, "comms_replies.json"), self.t)
+        for ev in evs:
+            dev, typ = ev.get("device"), ev["type"]
+            if typ == "joined" and dev not in self._comms_seen:
+                self._comms_seen.add(dev)
+                self._say(f"Phone {dev} joined the rescue Wi-Fi via {ev['drone_id']} (consent: it opened the portal)")
+            elif typ == "status":
+                self._say(f"Phone {dev}{' (live portal)' if ev.get('live') else ''}: '{ev['status']}'"
+                          + (f", battery {ev['battery_pct']}%" if ev.get("battery_pct") is not None else ""))
+            elif typ == "message":
+                tr = f" -> \"{ev['translation']}\" [{ev['by']}]" if ev.get("translation") and ev["lang"] != "en" else ""
+                self._say(f"Phone {dev} message ({ev['lang']}): \"{ev['text']}\"{tr}")
+            elif typ == "located":
+                self._say(f"Phone {dev}: RSSI fit {ev['est_xy']} +-{ev['sigma_m']:.1f} m"
+                          + (f" in {ev['pile']}" if ev.get("pile") else "") + " (candidate region from multi-drone RSSI)")
+            elif typ == "evidence":
+                self._comms_evidence(ev)
+            elif typ in ("link_lost", "link_restored"):
+                self._say(f"{ev['drone_id']} mesh link {'lost: storing data on board' if typ == 'link_lost' else 'restored'}"
+                          f" ({ev['queued_kb']:.0f} kB queued)")
+
+    def _comms_evidence(self, ev):
+        """A connected phone located inside a pile (sigma <= 6 m): new evidence. Raises the pile to a lead (or
+        re-opens it for a revisit if it was already searched); never changes a ping, never 'confirmed'."""
+        p = self.piles.get(ev["pile"])
+        if p is None:
+            return
+        pr = self.COMMS_PRIORITY.get(ev["status"], 50)
+        why = (f"Connected phone {ev['device']} ({ev['status']}) located at {ev['est_xy']} +-{ev['sigma_m']:.1f} m "
+               "by multi-drone Wi-Fi RSSI: candidate region, not a confirmed person.")
+        searched = ev["pile"] in self.visited
+        self._say(f"New evidence for {ev['pile']}: {why}" + (" Pile already searched: re-opened for a revisit."
+                                                             if searched and p["status"] != "ping" else ""))
+        if p["status"] != "ping" and (p["priority"] or 0) < pr:
+            p.update(priority=pr, status="lead", why=f"{why} {p['why']}".strip())
+        p["comms_evidence"] = {"device": ev["device"], "status": ev["status"], "t": ev["t"],
+                               "est_xy": ev["est_xy"], "sigma_m": ev["sigma_m"]}
+
+    # ------------------------------------------------------------------ loudspeaker (v1.3)
+    def _begin_callout(self, name, firm, pm):
+        """Plan the call-out after the passive listen. Returns the extra landed seconds: message + listen window
+        (rotors off) + the reassurance / guidance broadcasts that follow (played while still landed nearby)."""
+        t_call = self.t + self.listen_s
+        if firm:
+            target = {"type": "ping", "id": firm[0]["id"], "xy": firm[0]["xy"]}
+        else:
+            target = {"type": "sector", "id": name, "xy": self.world.pile_xy[name]}
+        pings = [{"id": c["id"], "xy": c["xy"], "pile_id": c["pile_id"]} for c in self.done_cands
+                 if c["status"] == "candidate"]
+        moving = [{"id": f"{name}-{c['id']}", "xy": c["xy"]} for c in pm.cands
+                  if c.get("kind") == "moving" and c.get("status") == "candidate"]
+        extra, rec = self.speaker.begin_listen(self.scenario, t_call, self._drone_xy(), target, pings, moving,
+                                               callout_fn=self.callout_fn)
+        self._say(f"Call-out {rec['id']} planned: after the passive listen {rec['speaker_drone']} plays the rescue "
+                  f"call-out ({', '.join(rec['langs'])}) towards {target['id']}, then all drones listen "
+                  f"{rec['listen_ends'] - rec['steps'][-1]['t0']:.0f} s for knocks or voices "
+                  f"(+{extra:.0f} s landed incl. reassurance / guidance)")
+        return extra
+
+    def _apply_callout(self):
+        """Fold the last call-out into pile / ping state: responsiveness, priority for responding piles,
+        call-and-response boost of this listen's clips, and log lines. Measurements only (no truth)."""
+        from .acoustic_grid import clip_priority
+        from .callout import association_boost, fuse_triage, response_priority
+        if self.speaker is None or not self.speaker.callouts or self.speaker.callouts[-1].get("applied"):
+            return
+        rec = self.speaker.callouts[-1]
+        rec["applied"] = True
+        quiet = []
+        for sid, r in rec["sectors"].items():
+            p = self.piles.get(sid)
+            if p is None:
+                continue
+            if r["status"] == "no_response":
+                quiet.append(sid)
+                continue
+            self._say(f"Call-out {rec['id']} (listen ended t {rec['listen_ends']:.0f} s) [{sid}]: {r['text']}")
+            if r["status"] != "responded":
+                continue
+            for c in self.clips:
+                if c["pile_id"] == sid and c["listen"] == self.n_listen and c["scores"].get("reliability") is not None:
+                    rel, note = association_boost(c["scores"]["reliability"], r)
+                    c["scores"]["reliability"] = rel
+                    c["priority"] = clip_priority({k: c["scores"][k] or 0.0 for k in ("human", "urgency", "reliability")})
+                    c.setdefault("notes", []).append(note)
+            pr = response_priority(r)
+            if p["status"] != "ping" and pr is not None and pr > (p["priority"] or 0):
+                p.update(priority=pr, status="lead",
+                         why=f"{r['text']} {p['why']}" if p["why"] else r["text"])
+        for sid, agg in self.speaker.state(self.t)["responsiveness"].items():   # strongest evidence + history
+            if sid in self.piles:
+                self.piles[sid]["responsiveness"] = agg
+        if quiet:
+            self._say(f"Call-out {rec['id']}: no response from {', '.join(quiet)} (does not rule out an unconscious "
+                      "person; not cleared)")
+        for c in self.done_cands:
+            pr = rec["pings"].get(c["id"])
+            old = c.get("responsiveness")
+            rank = {"responded": 3, "possible_response": 2, "nonhuman_only": 1, "no_response": 0}
+            if pr and (old is None or rank[pr["status"]] >= rank[old["status"]]):    # strongest evidence wins
+                c["responsiveness"] = {k: pr[k] for k in ("status", "kind", "avpu", "confidence", "text", "callout_t")}
+                if c.get("vitals"):
+                    c["triage_fused"] = fuse_triage(c["vitals"], pr)
+        if rec["reassured"]:
+            self._say(f"Reassurance played from t {rec['listen_ends']:.0f} s ({', '.join(rec['langs'])}) towards {', '.join(rec['reassured'])}: "
+                      "\"Help is coming. Stay still, save your energy, tap if you can hear me.\"")
+        for g in rec["guided"]:
+            self._say(f"Guidance played to {g['track']} at ({g['xy'][0]:.0f}, {g['xy'][1]:.0f}) ({g['source']}): "
+                      f"\"{g['text_en']}\" Route {g['route']['length_m']:.0f} m clear of rubble and tasked zones")
+
 
     @staticmethod
     def _clip_bearings(c, drones):
@@ -945,7 +1105,27 @@ class GridMission:
                         "bearing_deg": b.get("bearing_deg"), "width_deg": b.get("width_deg"), "snr_db": b.get("snr_db")})
         return out
 
+    def _suggest_zone(self):
+        """With an LLM decider and zone proposals waiting, ask it which proposal the operator might task next.
+        Recorded as a suggestion only (zone_suggestions[].why, kind decider_suggestion); never tasks anything."""
+        if self.decider is None or self.recon is None:
+            return
+        props = self.recon.to_state().get("zone_proposals") or []
+        if not props:
+            return
+        try:
+            from agents.gemini_decider import suggest_zone
+            out = suggest_zone(self.build_state())
+        except Exception as e:                       # noqa: BLE001
+            self._say(f"zone suggestion unavailable ({type(e).__name__})")
+            return
+        if out and not any(z.get("proposal") == out.get("proposal") for z in self._zone_ai):
+            self._zone_ai.append({"proposal": out.get("proposal"), "why": out.get("text"), "by": out.get("by"),
+                                  "t": round(self.t, 1), "kind": "decider_suggestion"})
+            self._say(f"Decider ({out.get('by')}): {out.get('text')}")
+
     def _gate(self, res):
+        self._suggest_zone()
         """Dispatch gate after a pile (and its listen): re-rank, then dispatch / revisit / swap / stop."""
         tasked = self._tasked_piles()
         ranked = sorted((p for p in self.piles.values() if p["id"] not in self.visited and p["priority"] is not None
@@ -1068,7 +1248,10 @@ class GridMission:
                     ("no_firm_ping", action != "dispatch"),
                     ("unreachable", ts is None),
                     ("tasked", self._operator_tasked() or (self.tracker is not None and self._reopened(pid)))) if on]
+                placements = [s["xy"] for s in self.done_sites if s.get("pile_id") == pid and s.get("pod")] \
+                    if self.delivery == "pod" else None
                 opts.append({"id": f"o{len(opts) + 1}", "action": action, "pile_id": pid, "priority": prio,
+                             **({"placements": placements} if placements is not None else {}),
                              "score": score, "travel_s": ts, "battery_after_min": bat_after, "evidence": ev,
                              "flags": flags})
             if not self.autonomous:
@@ -1128,8 +1311,12 @@ class GridMission:
                    "budget_left": None if self.pile_budget is None else self.pile_budget - len(self.visited),
                    "scan_budget_left": None if self.mission_scans is None else self.mission_scans - self.scans_used,
                    "priority_min": self.priority_min,
-                   "pings": [{"id": c["id"], "pile_id": c["pile_id"], "status": c["status"], "p_mass": c["p_mass"]}
+                   "delivery": self.delivery,
+                   "pings": [{"id": c["id"], "pile_id": c["pile_id"], "status": c["status"], "p_mass": c["p_mass"],
+                              **({"vitals": c["vitals"]} if c.get("vitals") else {}),
+                              **({"dig_score": c["dig_score"]} if c.get("dig_score") is not None else {})}
                              for c in self.done_cands],
+                   "zone_proposals": (self.recon.to_state().get("zone_proposals") if self.recon is not None else []),
                    "piles": [{k: p[k] for k in ("id", "status", "priority", "why")} for p in self.piles.values()],
                    "fleet": [{"id": p["id"], "battery": p["battery"], "state": p["state"]} for p in self.flight.poses()]}
             t0 = time.time()
@@ -1180,10 +1367,40 @@ class GridMission:
                 f"{self._fly_s:.0f} drone-seconds of flight.")
 
     # ------------------------------------------------------------------ state.json
+    LOD0_MAX = 300_000             # browser preview budget (~3.6 MB float32)
+    TILE_M = 16.0
+
     def _write_pointcloud(self, pts):
-        pts.astype("<f4").tofile(os.path.join(self.out_dir, "pointcloud.bin.tmp"))
-        os.replace(os.path.join(self.out_dir, "pointcloud.bin.tmp"), os.path.join(self.out_dir, "pointcloud.bin"))
-        self.pc_count = int(len(pts))
+        """pointcloud.bin = preview (<= 300k points); above that, full resolution in 16 m tiles (contract v1.3.1)."""
+        pts = np.asarray(pts, "<f4").reshape(-1, 3)
+
+        def put(name, arr):
+            path = os.path.join(self.out_dir, name)
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            arr.astype("<f4").tofile(path + ".tmp")
+            os.replace(path + ".tmp", path)
+
+        lod0 = pts
+        if len(pts) > self.LOD0_MAX:             # voxel thinning first, then a seeded random cap
+            try:
+                from mapping.slam import voxel_down_sample
+                lod0 = voxel_down_sample(pts, 0.15)
+            except Exception:                    # noqa: BLE001  (mapping deps missing: random thinning only)
+                lod0 = pts
+            if len(lod0) > self.LOD0_MAX:
+                lod0 = lod0[np.random.default_rng(0).choice(len(lod0), self.LOD0_MAX, replace=False)]
+        put("pointcloud.bin", lod0)
+        self.pc_tiles = []
+        if len(lod0) < len(pts):
+            k = np.floor(pts[:, :2] / self.TILE_M).astype(int)
+            for kx, ky in np.unique(k, axis=0):
+                sel = (k[:, 0] == kx) & (k[:, 1] == ky)
+                x0, y0 = int(kx * self.TILE_M), int(ky * self.TILE_M)
+                name = f"pc_tiles/x{x0:+04d}_y{y0:+04d}.bin"
+                put(name, pts[sel])
+                self.pc_tiles.append({"url": name, "count": int(sel.sum()),
+                                      "bounds": [x0, y0, x0 + self.TILE_M, y0 + self.TILE_M]})
+        self.pc_count, self.pc_full_count = int(len(lod0)), int(len(pts))
 
     def _hm_list(self):
         if self._hm_cache is None:
@@ -1203,6 +1420,7 @@ class GridMission:
 
     def _drones_out(self):
         out = []
+        playing = self.speaker.active(self.t) if self.speaker is not None else {}
         for d in self.flight.poses():
             d = dict(d)
             tr = self._tracks.setdefault(d["id"], [])
@@ -1213,10 +1431,20 @@ class GridMission:
             if (self.stage == "listen" or (self.stage == "recon" and self.recon.status == "listening")) \
                     and d["state"] in ("landed", "scanning"):
                 d["state"] = "listening"
+            if self.speaker is not None and d["id"] in playing:
+                d["speaker"] = playing[d["id"]]
+            if self.comms is not None:                   # v1.4: mesh link, store-and-forward backlog
+                d.update(self.comms.drone_link(d["id"]))
             out.append(d)
         return out
 
     def _state(self, hm_placeholder=False):
+        st = self._state_base(hm_placeholder)
+        if self._zone_ai:
+            st["zone_suggestions"] = list(st.get("zone_suggestions") or []) + list(self._zone_ai)
+        return st
+
+    def _state_base(self, hm_placeholder=False):
         g = self.grid
         pm = self.pm if self.stage == "pile" else None
         scans = self.done_scans + ([dict(o, pile_id=pm.pile) for o in pm.scans] if pm else [])
@@ -1245,7 +1473,9 @@ class GridMission:
             "heightmap": self.recon.heightmap_state() if self.stage == "recon" else   # v1.2.1: mask + null z
             {"origin": list(g.origin), "res": g.res, "w": g.w, "h": g.h,
              "z": "__HM__" if hm_placeholder else self._hm_list()[0]},
-            "pointcloud": {"url": "pointcloud.bin", "count": self.pc_count},
+            "pointcloud": {"url": "pointcloud.bin", "count": self.pc_count,
+                           **({"lod": 0, "full_count": self.pc_full_count, "tiles": self.pc_tiles}
+                              if getattr(self, "pc_tiles", None) else {})},
             "drones": self._drones_out(),
             "landing_sites": sites,
             "scans": scans,
@@ -1266,7 +1496,8 @@ class GridMission:
                         "in_transit": upcoming,
                         "radar_penetration": self.penetration, "delivery": self.delivery,
                         "platform": self.platform or "legacy_small",
-                        "radar_reach_beneath_m": round(reach_path_m(REACH_REF_RANGE_M, 0.9), 2),
+                        "radar_reach_beneath_m": round(reach_path_m(REACH_REF_RANGE_M, 0.9,
+                                                                    dwell=45.0 if self.delivery == "pod" else 20.0), 2),
                         "autonomous": self.autonomous, "dispatch_policy": self.dispatch_policy, "radar": self.radar,
                         "scan_budget": self.mission_scans, "scans_used": self.scans_used,
                         "battery_reserve": self.reserve, "battery_swaps": self.n_swaps,
@@ -1280,6 +1511,11 @@ class GridMission:
             "dispatch": self.dispatch,
             "decisions": self.decisions,
             "slam": list(self.slam_metrics.values()) if self.slam else None,
+            # ---- v1.4 rescue hotspot + comms relay
+            "comms": self.comms.state() if self.comms is not None else None,
+            # ---- v1.3 speaker (broadcasts, callouts, responsiveness per sector)
+            **(self.speaker.state(self.t) if self.speaker is not None else
+               {"broadcasts": [], "callouts": [], "responsiveness": {}}),
             # ---- v1.2 operator tasking + recon
             "tasking": None if self.tracker is None else {"source": self.tracker.source, "revision": self.tracker.revision,
                                                           "path": self.tasking_path},
@@ -1361,6 +1597,12 @@ def main(argv=None):
                          "default (scenario pile outlines) | none (legacy: every pile, no zones)")
     ap.add_argument("--recon-accept-s", type=float, default=RECON_ACCEPT_S,
                     help="autonomous: auto-accept recon zone proposals after this many seconds without operator tasking")
+    ap.add_argument("--no-speaker", dest="speaker", action="store_false",
+                    help="disable the loudspeaker call-out / reassurance / guidance (contract v1.3)")
+    ap.add_argument("--no-comms", dest="comms", action="store_false",
+                    help="disable the rescue hotspot / comms relay (contract v1.4)")
+    ap.add_argument("--uplink", default="oneweb", choices=["oneweb", "lte", "starlink", "none"],
+                    help="van internet backhaul (Tainan: OneWeb via Chunghwa Telecom, or LTE); none = local only")
     ap.add_argument("--quiet", action="store_true")
     a = ap.parse_args(argv)
     t0 = time.time()
@@ -1375,9 +1617,10 @@ def main(argv=None):
                     pile_budget=a.piles, priority_min=a.priority_min, acoustic=a.acoustic, decider=decider,
                     slam=a.slam, slam_scans=a.slam_scans, autonomous=a.autonomous, mission_scans=a.scans,
                     dispatch_policy=a.dispatch, penetration=a.penetration, site=a.site,
-                    platform=a.platform, delivery=a.delivery,
+                    platform=a.platform, delivery=a.delivery, speaker=a.speaker,
                     tasking=os.path.join(a.out, "tasking.json") if a.tasking == "auto" else a.tasking,
-                    recon_accept_s=a.recon_accept_s)
+                    recon_accept_s=a.recon_accept_s, comms=a.comms,
+                    uplink=None if a.uplink == "none" else a.uplink)
     m.run()
     s = m.summary()
     print(f"done in {time.time() - t0:.1f} s wall, {m.t:.0f} s sim; visited {' -> '.join(s['visited'])}; "

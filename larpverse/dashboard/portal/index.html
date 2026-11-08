@@ -1,0 +1,226 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="dark light">
+<meta name="theme-color" content="#0b1220">
+<title>Rescue Wi-Fi</title>
+<style>
+:root{--bg:#0b1220;--fg:#f8fafc;--mut:#cbd5e1;--card:#111a2e;--line:#334155;--blue:#3b82f6;--blue2:#1d4ed8;--red:#dc2626;--green:#15803d;--warn:#fde68a}
+@media (prefers-color-scheme: light){:root:not([data-theme=dark]){--bg:#ffffff;--fg:#0b1220;--mut:#334155;--card:#f1f5f9;--line:#94a3b8;--warn:#92400e}}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--fg);font:18px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,"Noto Sans TC","PingFang TC","Microsoft JhengHei",sans-serif}
+main{max-width:520px;margin:0 auto;padding:16px 16px calc(24px + env(safe-area-inset-bottom))}
+header{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px}
+.brand{display:flex;align-items:center;gap:8px;font-weight:700;font-size:16px;color:var(--blue)}
+.dot{width:12px;height:12px;border-radius:50%;background:var(--blue);box-shadow:0 0 0 4px rgba(59,130,246,.25)}
+select{font:inherit;font-size:16px;min-height:44px;padding:6px 10px;border-radius:10px;border:2px solid var(--line);background:var(--card);color:var(--fg);max-width:55%}
+h1{font-size:30px;line-height:1.15;margin:12px 0 4px}
+.lead{font-size:20px;margin:0 0 16px;color:var(--mut)}
+.btn{display:block;width:100%;min-height:72px;margin:12px 0;padding:14px 16px;border:0;border-radius:16px;font:inherit;font-size:24px;font-weight:800;color:#fff;cursor:pointer;text-align:center}
+.btn:focus-visible,select:focus-visible,textarea:focus-visible,input:focus-visible{outline:4px solid var(--warn);outline-offset:2px}
+.trapped{background:var(--red)}.safe{background:var(--green)}.msg{background:var(--blue2)}
+.btn.sec{min-height:56px;font-size:20px;background:transparent;color:var(--fg);border:2px solid var(--line)}
+.btn[disabled]{opacity:.6}
+.opts{background:var(--card);border:2px solid var(--line);border-radius:14px;padding:6px 14px;margin:14px 0}
+.opt{display:flex;gap:12px;align-items:flex-start;padding:10px 0;font-size:18px}
+.opt+.opt{border-top:1px solid var(--line)}
+.opt input{width:28px;height:28px;flex:none;margin:2px 0 0;accent-color:var(--blue)}
+.opt small{display:block;color:var(--mut);font-size:15px}
+label.f{display:block;font-weight:700;margin:12px 0 6px}
+textarea,input[type=text],input[type=tel]{width:100%;font:inherit;font-size:18px;padding:12px;border-radius:12px;border:2px solid var(--line);background:var(--card);color:var(--fg)}
+textarea{min-height:120px;resize:vertical}
+.count{font-size:14px;color:var(--mut);text-align:right}
+.ppl{display:flex;gap:8px}.ppl button{flex:1;min-height:52px;font:inherit;font-size:20px;font-weight:700;border-radius:12px;border:2px solid var(--line);background:var(--card);color:var(--fg)}
+.ppl button[aria-pressed=true]{border-color:var(--blue);background:var(--blue);color:#fff}
+.ok{border:3px solid var(--blue);border-radius:16px;padding:16px;margin:16px 0;background:var(--card)}
+.ok h2{margin:0 0 6px;font-size:24px}
+.err{border:3px solid var(--red);border-radius:16px;padding:14px;margin:16px 0;background:var(--card);font-weight:700}
+.reply{border-left:6px solid var(--blue);padding:8px 12px;margin:10px 0;background:var(--card);border-radius:8px;font-size:20px;font-weight:700}
+.note{font-size:15px;color:var(--mut)}
+details{margin:18px 0;font-size:15px;color:var(--mut)}
+summary{font-weight:700;color:var(--fg);min-height:44px;display:flex;align-items:center}
+[hidden]{display:none!important}
+</style>
+</head>
+<body>
+<main>
+<header>
+  <div class="brand"><span class="dot" aria-hidden="true"></span><span data-t="brand">Rescue team Wi-Fi</span></div>
+  <select id="lang" aria-label="Language">
+    <option value="zh-TW">中文（台灣）</option>
+    <option value="nan-TW">台語</option>
+    <option value="en">English</option>
+    <option value="id">Bahasa Indonesia</option>
+    <option value="vi">Tiếng Việt</option>
+    <option value="tl">Tagalog</option>
+  </select>
+</header>
+
+<div id="ok" class="ok" hidden role="status" aria-live="polite">
+  <h2 data-t="okTitle">Your message reached the rescue team.</h2>
+  <p data-t="okBody">Help is coming. Save battery: lower your screen brightness and keep the phone with you.</p>
+</div>
+<div id="err" class="err" hidden role="alert"></div>
+<div id="inbox" aria-live="polite"></div>
+
+<section id="home">
+  <h1 data-t="title">Help is coming.</h1>
+  <p class="lead" data-t="ask">Are you trapped? Tap one button.</p>
+  <button class="btn trapped" id="bTrapped" data-t="trapped">I'm trapped</button>
+  <button class="btn safe" id="bSafe" data-t="safe">I'm safe</button>
+  <button class="btn msg" id="bMsg" data-t="message">Send a message</button>
+
+  <div class="opts">
+    <label class="opt"><input type="checkbox" id="oBat"><span><span data-t="shareBat">Share my battery level</span><small id="batNote" data-t="batNote">Helps the team decide how often to contact you.</small></span></label>
+    <label class="opt"><input type="checkbox" id="oLoc"><span><span data-t="shareLoc">Share my location (optional)</span><small data-t="locNote">Usually not available indoors or under rubble. The rescue drones estimate your position from your phone's Wi-Fi signal anyway.</small></span></label>
+  </div>
+  <label class="f" data-t="people">People with me</label>
+  <div class="ppl" role="group" aria-label="people">
+    <button type="button" data-p="1" aria-pressed="false">1</button><button type="button" data-p="2" aria-pressed="false">2</button><button type="button" data-p="3" aria-pressed="false">3+</button>
+  </div>
+</section>
+
+<section id="compose" hidden>
+  <label class="f" for="text" data-t="writeLabel">Your message (where you are, injuries, who is with you)</label>
+  <textarea id="text" maxlength="280"></textarea>
+  <div class="count"><span id="cnt">0</span>/280</div>
+  <button class="btn msg" id="bSend" data-t="send">Send</button>
+  <button class="btn sec" id="bBack" data-t="back">Back</button>
+</section>
+
+<section id="family" hidden>
+  <div class="opts" style="padding:12px 14px">
+    <strong data-t="famTitle">Message your family</strong>
+    <p class="note" data-t="famNote">The rescue base has internet right now. Your message is sent from the rescue base.</p>
+    <label class="f" for="famC" data-t="famContact">Phone number or email</label>
+    <input type="text" id="famC" maxlength="60" autocomplete="off" inputmode="email">
+    <label class="f" for="famT" data-t="famText">Message</label>
+    <textarea id="famT" maxlength="280" style="min-height:90px"></textarea>
+    <button class="btn msg" id="bFam" data-t="famSend" style="min-height:60px;font-size:20px">Send to family</button>
+  </div>
+</section>
+
+
+<details>
+  <summary data-t="privTitle">Privacy</summary>
+  <p data-t="priv">This network is run by the rescue team. We only receive what you send on this page. Your phone gets a random code instead of your name. While you are connected, the rescue drones measure your phone's signal strength to estimate where you are. We do not record your phone's hardware address. Messages stay with the rescue team and are deleted after the operation.</p>
+</details>
+<p class="note" id="foot" data-t="foot">If you can, tap on metal or a pipe so rescuers can hear you.</p>
+</main>
+<script>
+(function(){
+'use strict';
+var T={
+en:{brand:"Rescue team Wi-Fi",title:"Help is coming.",ask:"Are you trapped? Tap one button.",trapped:"I'm trapped",safe:"I'm safe",message:"Send a message",shareBat:"Share my battery level",batNote:"Helps the team decide how often to contact you.",batNA:"Your browser does not report the battery level.",shareLoc:"Share my location (optional)",locNote:"Usually not available indoors or under rubble. The rescue drones estimate your position from your phone's Wi-Fi signal anyway.",people:"People with me",writeLabel:"Your message (where you are, injuries, who is with you)",send:"Send",back:"Back",famTitle:"Message your family",famNote:"The rescue base has internet right now. Your message is sent from the rescue base.",famContact:"Phone number or email",famText:"Message",famSend:"Send to family",okTitle:"Your message reached the rescue team.",okBody:"Help is coming. Save battery: lower your screen brightness and keep the phone with you.",famOk:"Your family message is queued at the rescue base.",errNet:"Not sent. Stay connected to the RESCUE Wi-Fi and try again.",errBusy:"Too many messages. Wait one minute, then try again.",errEmpty:"Please write a message first.",fromTeam:"From the rescue team:",privTitle:"Privacy",priv:"This network is run by the rescue team. We only receive what you send on this page. Your phone gets a random code instead of your name. While you are connected, the rescue drones measure your phone's signal strength to estimate where you are. We do not record your phone's hardware address. Messages stay with the rescue team and are deleted after the operation.",foot:"If you can, tap on metal or a pipe so rescuers can hear you."},
+"zh-TW":{brand:"救援隊 Wi-Fi",title:"救援人員正在趕來。",ask:"你被困住了嗎？請按一個按鈕。",trapped:"我被困住了",safe:"我平安",message:"傳送訊息",shareBat:"分享我的電量",batNote:"幫助救援隊決定多久聯絡你一次。",batNA:"你的瀏覽器無法提供電量。",shareLoc:"分享我的位置（可選）",locNote:"在室內或瓦礫下通常無法定位。救援無人機會用你手機的 Wi-Fi 訊號估計你的位置。",people:"和我在一起的人數",writeLabel:"你的訊息（你在哪裡、受傷情況、和誰在一起）",send:"傳送",back:"返回",famTitle:"傳訊息給家人",famNote:"救援基地目前有網路。你的訊息會由救援基地送出。",famContact:"電話號碼或電子郵件",famText:"訊息",famSend:"傳給家人",okTitle:"你的訊息已送到救援隊。",okBody:"救援人員正在趕來。請節省電量：調低螢幕亮度，手機放在身邊。",famOk:"你給家人的訊息已在救援基地排隊送出。",errNet:"沒有送出。請保持連線 RESCUE Wi-Fi，再試一次。",errBusy:"訊息太多。請等一分鐘再試。",errEmpty:"請先寫訊息。",fromTeam:"救援隊回覆：",privTitle:"隱私",priv:"這個網路由救援隊架設。我們只會收到你在這個頁面送出的內容。你的手機會得到一個隨機代碼，而不是你的名字。連線期間，救援無人機會測量你手機的訊號強度來估計你的位置。我們不記錄手機的硬體位址。訊息只留在救援隊，救援結束後刪除。",foot:"如果可以，請敲打金屬或水管，讓救援人員聽到你。"},
+"nan-TW":{brand:"救難隊 Wi-Fi",title:"救援的人當咧來矣。",ask:"你敢有予人壓著？請揤一个鈕仔。",trapped:"我予人壓著矣",safe:"我平安",message:"送訊息",shareBat:"分享我的電量",batNote:"予救難隊知影愛偌久聯絡你一擺。",batNA:"你的瀏覽器無提供電量。",shareLoc:"分享我的位置（會使無愛）",locNote:"佇厝內抑是瓦礫下跤，定定揣無位置。救援的無人機會用你手機的 Wi-Fi 訊號來推算你佇佗位。",people:"佮我做伙的人數",writeLabel:"你的訊息（你佇佗位、受傷的情形、佮啥人做伙）",send:"送出",back:"轉去",famTitle:"傳訊息予厝裡的人",famNote:"救援基地這馬有網路。你的訊息會對救援基地送出去。",famContact:"電話號碼抑是電子批",famText:"訊息",famSend:"送予厝裡的人",okTitle:"你的訊息已經送到救難隊。",okBody:"救援的人當咧來矣。請儉電：螢幕較暗咧，手機囥佇身軀邊。",famOk:"你予厝裡的訊息已經佇救援基地排隊。",errNet:"無送出去。請保持連 RESCUE Wi-Fi，閣試一擺。",errBusy:"訊息傷濟。請等一分鐘才閣試。",errEmpty:"請先寫訊息。",fromTeam:"救難隊回覆：",privTitle:"隱私",priv:"這个網路是救難隊設的。阮干焦收著你佇這頁送出的內容。你的手機會得著一个隨機的代碼，毋是你的名。連線的時，救援的無人機會量你手機的訊號強度來推算你的位置。阮無記錄手機的硬體位址。訊息干焦留佇救難隊，救援了會刣掉。",foot:"若會使，請敲鐵仔抑是水管，予救難的人聽會著。"},
+id:{brand:"Wi-Fi Tim Penyelamat",title:"Bantuan sedang datang.",ask:"Apakah Anda terjebak? Tekan satu tombol.",trapped:"Saya terjebak",safe:"Saya aman",message:"Kirim pesan",shareBat:"Bagikan level baterai saya",batNote:"Membantu tim menentukan seberapa sering menghubungi Anda.",batNA:"Browser Anda tidak memberikan level baterai.",shareLoc:"Bagikan lokasi saya (opsional)",locNote:"Biasanya tidak tersedia di dalam gedung atau di bawah reruntuhan. Drone penyelamat memperkirakan posisi Anda dari sinyal Wi-Fi ponsel Anda.",people:"Jumlah orang bersama saya",writeLabel:"Pesan Anda (di mana Anda, luka, siapa bersama Anda)",send:"Kirim",back:"Kembali",famTitle:"Kirim pesan ke keluarga",famNote:"Pos penyelamat sedang terhubung ke internet. Pesan Anda dikirim dari pos penyelamat.",famContact:"Nomor telepon atau email",famText:"Pesan",famSend:"Kirim ke keluarga",okTitle:"Pesan Anda sudah diterima tim penyelamat.",okBody:"Bantuan sedang datang. Hemat baterai: kurangi kecerahan layar dan simpan ponsel di dekat Anda.",famOk:"Pesan untuk keluarga Anda sedang diantrekan di pos penyelamat.",errNet:"Belum terkirim. Tetap terhubung ke Wi-Fi RESCUE lalu coba lagi.",errBusy:"Terlalu banyak pesan. Tunggu satu menit lalu coba lagi.",errEmpty:"Tulis pesan terlebih dahulu.",fromTeam:"Dari tim penyelamat:",privTitle:"Privasi",priv:"Jaringan ini dijalankan oleh tim penyelamat. Kami hanya menerima apa yang Anda kirim di halaman ini. Ponsel Anda mendapat kode acak, bukan nama Anda. Selama terhubung, drone penyelamat mengukur kekuatan sinyal ponsel Anda untuk memperkirakan lokasi Anda. Kami tidak merekam alamat perangkat keras ponsel Anda. Pesan tetap di tim penyelamat dan dihapus setelah operasi.",foot:"Jika bisa, ketuk logam atau pipa agar penyelamat bisa mendengar Anda."},
+vi:{brand:"Wi-Fi Đội cứu hộ",title:"Cứu hộ đang đến.",ask:"Bạn có bị mắc kẹt không? Hãy bấm một nút.",trapped:"Tôi bị mắc kẹt",safe:"Tôi an toàn",message:"Gửi tin nhắn",shareBat:"Chia sẻ mức pin của tôi",batNote:"Giúp đội cứu hộ quyết định liên lạc với bạn bao lâu một lần.",batNA:"Trình duyệt của bạn không cho biết mức pin.",shareLoc:"Chia sẻ vị trí của tôi (không bắt buộc)",locNote:"Thường không có trong nhà hoặc dưới đống đổ nát. Drone cứu hộ ước tính vị trí của bạn từ tín hiệu Wi-Fi của điện thoại.",people:"Số người ở cùng tôi",writeLabel:"Tin nhắn của bạn (bạn ở đâu, bị thương thế nào, ở cùng ai)",send:"Gửi",back:"Quay lại",famTitle:"Nhắn tin cho gia đình",famNote:"Trạm cứu hộ đang có internet. Tin nhắn của bạn được gửi từ trạm cứu hộ.",famContact:"Số điện thoại hoặc email",famText:"Tin nhắn",famSend:"Gửi cho gia đình",okTitle:"Tin nhắn của bạn đã đến đội cứu hộ.",okBody:"Cứu hộ đang đến. Hãy tiết kiệm pin: giảm độ sáng màn hình và giữ điện thoại bên mình.",famOk:"Tin nhắn cho gia đình đang chờ gửi tại trạm cứu hộ.",errNet:"Chưa gửi được. Hãy giữ kết nối Wi-Fi RESCUE và thử lại.",errBusy:"Quá nhiều tin nhắn. Hãy đợi một phút rồi thử lại.",errEmpty:"Hãy viết tin nhắn trước.",fromTeam:"Từ đội cứu hộ:",privTitle:"Quyền riêng tư",priv:"Mạng này do đội cứu hộ vận hành. Chúng tôi chỉ nhận những gì bạn gửi trên trang này. Điện thoại của bạn nhận một mã ngẫu nhiên thay cho tên. Khi bạn đang kết nối, drone cứu hộ đo cường độ tín hiệu điện thoại để ước tính vị trí của bạn. Chúng tôi không ghi lại địa chỉ phần cứng của điện thoại. Tin nhắn chỉ ở lại với đội cứu hộ và được xóa sau chiến dịch.",foot:"Nếu có thể, hãy gõ vào kim loại hoặc đường ống để đội cứu hộ nghe thấy bạn."},
+tl:{brand:"Wi-Fi ng Rescue Team",title:"Paparating na ang tulong.",ask:"Naiipit ka ba? Pindutin ang isang button.",trapped:"Naiipit ako",safe:"Ligtas ako",message:"Magpadala ng mensahe",shareBat:"Ibahagi ang antas ng baterya ko",batNote:"Para malaman ng team kung gaano kadalas ka kokontakin.",batNA:"Hindi ibinibigay ng browser mo ang antas ng baterya.",shareLoc:"Ibahagi ang lokasyon ko (opsyonal)",locNote:"Kadalasang hindi gumagana sa loob ng gusali o sa ilalim ng guho. Tinatantya ng mga rescue drone ang posisyon mo mula sa Wi-Fi signal ng telepono mo.",people:"Bilang ng kasama ko",writeLabel:"Ang mensahe mo (nasaan ka, mga sugat, sino ang kasama mo)",send:"Ipadala",back:"Bumalik",famTitle:"Magmensahe sa pamilya",famNote:"May internet ngayon ang rescue base. Ipapadala ang mensahe mo mula sa rescue base.",famContact:"Numero ng telepono o email",famText:"Mensahe",famSend:"Ipadala sa pamilya",okTitle:"Natanggap ng rescue team ang mensahe mo.",okBody:"Paparating na ang tulong. Tipirin ang baterya: hinaan ang liwanag ng screen at itabi ang telepono.",famOk:"Nakapila na sa rescue base ang mensahe mo para sa pamilya.",errNet:"Hindi naipadala. Manatiling nakakonekta sa RESCUE Wi-Fi at subukan ulit.",errBusy:"Masyadong maraming mensahe. Maghintay ng isang minuto at subukan ulit.",errEmpty:"Sumulat muna ng mensahe.",fromTeam:"Mula sa rescue team:",privTitle:"Privacy",priv:"Ang network na ito ay pinapatakbo ng rescue team. Ang ipinapadala mo lang sa page na ito ang natatanggap namin. May random na code ang telepono mo sa halip na pangalan mo. Habang nakakonekta ka, sinusukat ng mga rescue drone ang lakas ng signal ng telepono mo para matantya kung nasaan ka. Hindi namin itinatala ang hardware address ng telepono mo. Nananatili sa rescue team ang mga mensahe at buburahin pagkatapos ng operasyon.",foot:"Kung kaya mo, kumatok sa metal o tubo para marinig ka ng mga rescuer."}
+};
+var LANGS=["zh-TW","nan-TW","en","id","vi","tl"];
+function $(id){return document.getElementById(id)}
+function store(k,v){try{if(v===undefined)return localStorage.getItem(k);localStorage.setItem(k,v)}catch(e){return null}}
+function pickLang(){
+  var q=(location.search.match(/[?&]lang=([\w-]+)/)||[])[1]; if(q&&T[q])return q;
+  var s=store("rescue.lang"); if(s&&T[s])return s;
+  var ls=(navigator.languages&&navigator.languages.length?navigator.languages:[navigator.language||"en"]);
+  for(var i=0;i<ls.length;i++){var l=(ls[i]||"").toLowerCase();
+    if(l.indexOf("nan")===0)return "nan-TW";
+    if(l.indexOf("zh")===0)return "zh-TW";
+    if(l.indexOf("id")===0||l.indexOf("in")===0||l.indexOf("ms")===0)return "id";
+    if(l.indexOf("vi")===0)return "vi";
+    if(l.indexOf("tl")===0||l.indexOf("fil")===0)return "tl";
+    if(l.indexOf("en")===0)return "en";}
+  return "zh-TW";
+}
+var lang=pickLang();
+function tr(k){return (T[lang]&&T[lang][k])||T.en[k]||k}
+function apply(){
+  document.documentElement.lang=lang; $("lang").value=lang;
+  var els=document.querySelectorAll("[data-t]");
+  for(var i=0;i<els.length;i++)els[i].textContent=tr(els[i].getAttribute("data-t"));
+  if(!batOK)$("batNote").textContent=tr("batNA");
+}
+function token(){
+  var t=store("rescue.device");
+  if(t&&/^[a-z0-9]{6,32}$/.test(t))return t;
+  var a=new Uint8Array(8);
+  if(window.crypto&&crypto.getRandomValues)crypto.getRandomValues(a);else for(var i=0;i<8;i++)a[i]=Math.floor(Math.random()*256);
+  t="";for(var j=0;j<8;j++)t+=("0"+a[j].toString(16)).slice(-2);
+  store("rescue.device",t);return t;
+}
+var dev=token(),people=null,batOK=!!navigator.getBattery,busy=false;
+function battery(){
+  if(!$("oBat").checked||!batOK)return Promise.resolve(null);
+  return navigator.getBattery().then(function(b){return Math.round(b.level*100)},function(){return null});
+}
+function location_(){
+  if(!$("oLoc").checked||!navigator.geolocation)return Promise.resolve(null);
+  return new Promise(function(res){
+    navigator.geolocation.getCurrentPosition(function(p){res({lat:p.coords.latitude,lon:p.coords.longitude,acc_m:Math.round(p.coords.accuracy)})},
+      function(){res(null)},{enableHighAccuracy:true,timeout:8000,maximumAge:60000});
+  });
+}
+function show(id,on){$(id).hidden=!on}
+function err(k){$("err").textContent=tr(k);show("err",true)}
+function post(url,body){
+  return fetch(url,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body),cache:"no-store"})
+    .then(function(r){return r.json().catch(function(){return {}}).then(function(j){j._status=r.status;return j})});
+}
+function send(status,text,family){
+  if(busy)return; busy=true; show("err",false);
+  var btns=document.querySelectorAll(".btn");for(var i=0;i<btns.length;i++)btns[i].disabled=true;
+  Promise.all([battery(),location_()]).then(function(v){
+    var body={device:dev,status:status,lang:lang,message:text||"",battery_pct:v[0],people:people,location:v[1]};
+    if(family)body.family=family;
+    return post("/api/portal",body);
+  }).then(function(j){
+    if(j._status===200){
+      show("ok",true);show("compose",false);show("home",true);
+      if(family){$("famT").value="";var p=document.createElement("p");p.textContent=tr("famOk");$("ok").appendChild(p)}
+      $("ok").scrollIntoView({behavior:"smooth",block:"start"});
+      checkStatus();pollInbox();
+    }else if(j._status===429)err("errBusy");else err("errNet");
+  }).catch(function(){err("errNet")}).then(function(){
+    busy=false;for(var i=0;i<btns.length;i++)btns[i].disabled=false;
+  });
+}
+function checkStatus(){
+  fetch("/api/portal/status",{cache:"no-store"}).then(function(r){return r.ok?r.json():{}}).then(function(j){show("family",!!j.internet)}).catch(function(){});
+}
+var seen={},pollT=null;
+function pollInbox(){
+  if(pollT)return;
+  var tick=function(){
+    fetch("/api/portal/inbox?device="+dev,{cache:"no-store"}).then(function(r){return r.ok?r.json():{replies:[]}}).then(function(j){
+      (j.replies||[]).forEach(function(r){
+        if(seen[r.id])return;seen[r.id]=1;
+        var d=document.createElement("div");d.className="reply";d.lang=r.lang||lang;
+        d.textContent=tr("fromTeam")+" "+r.text;$("inbox").appendChild(d);
+      });
+    }).catch(function(){});
+  };
+  tick();pollT=setInterval(tick,15000);
+}
+$("lang").addEventListener("change",function(){lang=this.value;store("rescue.lang",lang);apply()});
+$("bTrapped").addEventListener("click",function(){send("trapped")});
+$("bSafe").addEventListener("click",function(){send("safe")});
+$("bMsg").addEventListener("click",function(){show("home",false);show("compose",true);show("ok",false);$("text").focus()});
+$("bBack").addEventListener("click",function(){show("compose",false);show("home",true)});
+$("text").addEventListener("input",function(){$("cnt").textContent=this.value.length});
+$("bSend").addEventListener("click",function(){var t=$("text").value.trim();if(!t)return err("errEmpty");send("message",t);$("text").value="";$("cnt").textContent="0"});
+$("bFam").addEventListener("click",function(){var c=$("famC").value.trim(),t=$("famT").value.trim();if(!c||!t)return err("errEmpty");send("message","",{contact:c,text:t})});
+var pb=document.querySelectorAll(".ppl button");
+for(var i=0;i<pb.length;i++)pb[i].addEventListener("click",function(){
+  for(var j=0;j<pb.length;j++)pb[j].setAttribute("aria-pressed","false");
+  this.setAttribute("aria-pressed","true");people=parseInt(this.getAttribute("data-p"),10);
+});
+if(!batOK){$("oBat").disabled=true}
+apply();checkStatus();
+})();
+</script>
+</body>
+</html>

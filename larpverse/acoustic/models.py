@@ -191,6 +191,52 @@ def knock_periodicity(x, rhythm_ok=True) -> float:
     return round(float(max(group, rhythm)), 3)
 
 
+def loudness_steadiness(x, frame_s=0.05) -> float:
+    """p10/p90 of 50 ms band (150-4000 Hz) RMS. Rotors, engines, rain and wind are steady (ESC-50
+    helicopter median 0.47, engine 0.73); speech, cries, coughs, knocks and debris have gaps
+    (<= 0.08 on every ESC-50 human class)."""
+    b, a = sps.butter(2, [150 / (FS / 2), 4000 / (FS / 2)], "band")
+    y = sps.lfilter(b, a, np.asarray(x, float))
+    n = int(frame_s * FS)
+    if len(y) < 4 * n:
+        return 0.0
+    e = np.sqrt(np.mean(y[: len(y) // n * n].reshape(-1, n) ** 2, axis=1)) + 1e-12
+    return round(float(np.percentile(e, 10) / np.percentile(e, 90)), 3)
+
+
+def blade_pass(x, fmin=40.0, fmax=400.0, band=(80.0, 2500.0)) -> float:
+    """Blade-pass comb: share of 80-2500 Hz power in stationary spectral lines (>= 4x the local
+    median, whole-clip Welch, 2 Hz bins) that sit on >= 3 harmonics of one f0 in 40-400 Hz.
+    A rotor's BPF comb is steady over the clip; speech pitch moves and smears out."""
+    f, P = sps.welch(np.asarray(x, float), FS, nperseg=8192)
+    sel = (f >= band[0]) & (f <= band[1])
+    fb, Pb = f[sel], P[sel]
+    if len(Pb) < 20:
+        return 0.0
+    df = f[1] - f[0]
+    k = int(40 / df)
+    pad = np.pad(Pb, k, mode="edge")
+    med = np.array([np.median(pad[i:i + 2 * k + 1]) for i in range(len(Pb))])
+    line = Pb > 4 * med
+    if not line.any():
+        return 0.0
+    tot = Pb.sum() + 1e-20
+    best = 0.0
+    for f0 in np.arange(fmin, fmax, 1.0):
+        h = np.arange(np.ceil(band[0] / f0), np.floor(band[1] / f0) + 1) * f0
+        idx = np.clip(np.round((h - fb[0]) / df).astype(int), 0, len(fb) - 1)
+        on = np.zeros(len(fb), bool)
+        nh = 0
+        for i in idx:                    # +-1 bin around each harmonic
+            w = slice(max(i - 1, 0), i + 2)
+            if line[w].any():
+                nh += 1
+                on[w] |= line[w]
+        if nh >= 3:
+            best = max(best, float(Pb[on].sum() / tot))
+    return round(best, 3)
+
+
 def hum_harmonicity(x) -> float:
     """Fraction of 90-1000 Hz power that sits on 50 or 60 Hz harmonics (+-2 Hz); wind lives below."""
     f, P = sps.welch(x, FS, nperseg=8192)
@@ -234,7 +280,8 @@ def classify(x, vad=None):
     yam_engine = g["engine"]
     hh = hum_harmonicity(x)
     heur = {"knock_periodicity": knock_periodicity(x, rhythm_ok=yam_engine < 0.3 and hh < 0.3),
-            "hum_harmonicity": hh, "human_minus_animal": human_minus_animal(fr, labels)}
+            "hum_harmonicity": hh, "human_minus_animal": human_minus_animal(fr, labels),
+            "steadiness": loudness_steadiness(x), "blade_pass": blade_pass(x)}
     g["knocking"] = max(g["knocking"], 0.8 * heur["knock_periodicity"])
     g["engine"] = max(g["engine"], float(np.clip((heur["hum_harmonicity"] - 0.15) / 0.35, 0, 1)))
     if heur["knock_periodicity"] >= 0.5 and heur["hum_harmonicity"] < 0.35 and yam_engine < 0.5:

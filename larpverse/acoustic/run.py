@@ -70,7 +70,33 @@ def recognise(clip, whisper="base.en"):
     return {"vad": vad, "cls": cls, "scores": scores, "heur": heur, "top": top, "text": text, "why": why}
 
 
+ROTOR_STEADY = 0.3        # loudness_steadiness at/above which a clip sounds like a machine / rotor
+ROTOR_COMB = 0.25         # blade_pass comb share at/above which a clip carries a rotor's BPF harmonics
+ROTOR_HUMAN_CAP = 0.3
+
+
+def rotor_veto(f, j):
+    """Request 0 (docs/ACOUSTIC_VALIDATION.md section 6): a voice/shout/knocking clip that sounds like
+    a rotor (steady loudness or a blade-pass comb) and has no independent speech evidence (VAD < 0.3
+    and human-minus-animal < 0.4) is not a human lead. ESC-50: helicopter false leads 5/12 -> 1/12,
+    false leads 15 -> 7, knock + cough recall unchanged (17/24). Applies to LLM judgments too."""
+    heur = f.get("heuristics", {})
+    st = heur.get("steadiness", 0.0)
+    # a BPF comb only counts on continuous sound: a repeated knock train also has spectral lines
+    rotor = st >= ROTOR_STEADY or (heur.get("blade_pass", 0.0) >= ROTOR_COMB and st >= 0.15)
+    speech = f["vad_speech_ratio"] >= 0.3 or heur.get("human_minus_animal", 0.0) >= 0.4
+    if f["sound_class"] in HUMAN_CLASSES and rotor and not speech and j["human"] > ROTOR_HUMAN_CAP:
+        j = dict(j, human=ROTOR_HUMAN_CAP, rationale=j["rationale"] + "; rotor-like (steady / blade-pass): vetoed")
+    return j
+
+
 def class_human_floor(f, j):
+    """Human floor from the YAMNet class, then the rotor veto (rotor_veto). The per-clip judgment
+    post-processing that validate_real also measures."""
+    return rotor_veto(f, _class_floor(f, j))
+
+
+def _class_floor(f, j):
     """The fallback scorer scales speech evidence by VAD, which collapses under noise; when YAMNet
     already names a human sound class the clip is at least a human lead (docs/ACOUSTIC_VALIDATION.md,
     Requests 1). Ambiguous association still
@@ -256,13 +282,18 @@ def apply_association(clips, dets_by_pile):
 
 
 def analyse(scene, exclude_piles=(), mode="auto", whisper="base.en", save_clips=False, timing=None,
-            gemini_audio=None):
-    """Everything downstream of the microphones. Sees only the Scene (public geometry + signals)."""
+            gemini_audio=None, rotors=None):
+    """Everything downstream of the microphones. Sees only the Scene (public geometry + signals).
+    rotors: {id: (x, y)} of our own drones hovering during the listen (their bearings are skipped)."""
     T = timing if timing is not None else {}
     t = time.time()
-    dets, B = dsp.localise_piles(scene, exclude=set(exclude_piles))
+    dets, B = dsp.localise_piles(scene, exclude=set(exclude_piles), rotors=rotors)
+    rotor_dets = [d for d in dets if d.get("rotor")]
+    dets = [d for d in dets if not d.get("rotor")]
     log, kept = [], []
-    explainers = [d for d in dets if d["excluded"]]     # visited piles' sources: null them, no clips
+    if rotor_dets:
+        log.append("skipped bearings toward hovering drones " + ", ".join(d["pile_id"][6:] for d in rotor_dets))
+    explainers = [d for d in dets if d["excluded"]] + rotor_dets   # null them, no clips
     for d in dets:
         if d["excluded"]:
             continue
@@ -279,6 +310,8 @@ def analyse(scene, exclude_piles=(), mode="auto", whisper="base.en", save_clips=
     seps = []
     pool = kept + explainers
     for d in pool:
+        if d.get("rotor"):
+            continue                                    # nulled in every beam, never separated
         did, snr, clip, dom, idx = dsp.extract_clip(scene, d, B, [o for o in pool if o is not d])
         if not d["excluded"]:
             finalise_association(d, dom)
@@ -450,15 +483,17 @@ def add_gemini_audio(state, items, mode="auto"):
 
 
 def listen_and_rank(scenario, drone_positions: dict | None = None, exclude_piles=(), seed: int | None = None,
-                    mode="auto", whisper="base.en", return_truth=False, gemini_audio=None):
+                    mode="auto", whisper="base.en", return_truth=False, gemini_audio=None, rotors=None):
     """Mission hook: listen from the landed drones and rank the piles. Returns the
     larpverse.acoustic/v1 dict (writes nothing). Only the scene synthesis reads scenario.truth;
-    pass return_truth=True to also get the evaluation summary as a second value."""
+    pass return_truth=True to also get the evaluation summary as a second value. rotors: {id: (x, y)}
+    of our own drones hovering during the listen (mission state); their bearings are skipped."""
     T = {}
     t0 = time.time()
-    scene, truth = build_scene(scenario, drone_positions, seed)
+    scene, truth = build_scene(scenario, drone_positions, seed, rotors=rotors)
     T["scene"] = time.time() - t0
-    state = analyse(scene, exclude_piles, mode, whisper, save_clips=False, timing=T, gemini_audio=gemini_audio)
+    state = analyse(scene, exclude_piles, mode, whisper, save_clips=False, timing=T, gemini_audio=gemini_audio,
+                    rotors=rotors)
     state["timing_s"]["total"] = round(time.time() - t0, 2)
     return (state, truth) if return_truth else state
 
@@ -510,6 +545,7 @@ def main(argv=None):
                     help="scenario start pile (default: the scenario's seeded choice)")
     ap.add_argument("--drone-xy", default=None, help='JSON {"d1": [x, y], ...} of landed drones')
     ap.add_argument("--exclude", default="", help="comma-separated piles to leave out of the ranking")
+    ap.add_argument("--rotor-xy", default=None, help='JSON {"d4": [x, y], ...} of our drones hovering during the listen')
     ap.add_argument("--agent", default="auto", choices=["auto", "llm", "replay", "fallback"])
     ap.add_argument("--gemini-audio", default="auto", choices=["auto", "on", "off"],
                     help="novelty -> Gemini audio stage (auto: on when a Gemini key is configured)")
@@ -527,10 +563,11 @@ def main(argv=None):
 
     T = {}
     t0 = time.time()
-    scene, truth = build_scene(sc, drones, a.seed)
+    rotors = {k: tuple(v) for k, v in json.loads(a.rotor_xy).items()} if a.rotor_xy else None
+    scene, truth = build_scene(sc, drones, a.seed, rotors=rotors)
     T["scene"] = time.time() - t0
     state = analyse(scene, excl, a.agent, a.whisper, save_clips=True, timing=T,
-                    gemini_audio={"auto": None, "on": True, "off": False}[a.gemini_audio])
+                    gemini_audio={"auto": None, "on": True, "off": False}[a.gemini_audio], rotors=rotors)
     state["timing_s"]["total"] = round(time.time() - t0, 2)
     path = write_state(state, a.out)
     print_report(state, None if a.no_truth else truth)

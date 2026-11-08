@@ -171,7 +171,8 @@ def section(cfg, summary, pair, rows, per_seed=False):
     start_txt = ("the scenario's reported start pile (it always holds a victim, so that ping is by construction)"
                  if cfg["start"] == "reported" else "a start pile drawn from the seed alone, independent of the victims")
     dtxt = ("winch-lowered sensor pod on the pile surface (heavy_sar, hover + 20 m winch)" if cfg.get("delivery") == "pod"
-            else "drones land on flat patches around the pile (the old landing ring)")
+            else "drones land on flat patches around the pile (the old landing ring; rows from before the physio "
+                 "chest waveform and 45 s pod dwell, i.e. with the 4-8 mm sinusoid: an upper bound)")
     L = [f"## {'Pod' if cfg.get('delivery') == 'pod' else 'Landing ring'}, radar `{cfg['penetration']}` propagation, "
          f"{cfg['start']} start", "",
          f"Delivery: {dtxt}; {cfg['scans']} radar scans per mission. Start: {start_txt}. Propagation: " + (

@@ -7,13 +7,11 @@ and logged, so the rehearsal log shows which keys this Kit build knows):
 * lens and sensor: a ~72 deg shutter's motion blur (exposure fraction 0.2; take1 showed 0.5 smears the pans and
   the look research puts real drone footage at 0.15-0.25), very subtle lateral chromatic aberration at the frame edges, a soft bloom/flare on the sun's
   speculars (flare scale 0.04: the collapse map's verified value), fine grain, light vignette;
-* atmosphere: dusty air in the sunlight (RTX volumetric in-scattering, low density, only where the take renderer
-  supports it) on top of the distance haze, so the sun reads as shafts through dust after a collapse;
-* grade: a restrained "disaster film" grade, i.e. warm-grey dust, lifted blacks, slightly cool shadows, less
-  saturation than video. It is applied after the grid / urban grade, so it wins where keys overlap.
+* (removed after the 02:40 look check: the film grade, the warm haze colour and volumetric in-scattering washed the
+  grid out, and this Kit build doesn't know /rtx/raytracing/inscattering).
 
-Lighting is set with the existing flags; the recommended disaster-film sky is ``--hdri
-kloofendal_48d_partly_cloudy_4k.hdr`` (soft partly cloudy daylight) with ``--sun 1600 --sun-elev 32``.
+Lighting is left to photoreal's defaults (evening_road sky, warm sun): the 02:40 look check rated that the most
+natural light. Only lens/sensor behaviour is added here.
 Nothing here touches the stage, the mission or what the sensors see.
 """
 from __future__ import annotations
@@ -37,25 +35,10 @@ CINEMA = {
     "/rtx/post/tvNoise/enableVignetting": True,
     "/rtx/post/tvNoise/vignettingSize": 105.0,
     "/rtx/post/tvNoise/vignettingStrength": 0.05,
-    # grade: dusty, slightly lifted blacks, cool shadows / warm mids, less saturation than broadcast video
-    "/rtx/post/colorcorr/enabled": True,
-    "/rtx/post/colorcorr/saturation": [0.82, 0.82, 0.82],
-    "/rtx/post/colorcorr/contrast": [1.06, 1.06, 1.06],
-    "/rtx/post/colorcorr/gamma": [1.0, 1.0, 1.0],
-    "/rtx/post/colorcorr/gain": [1.0, 0.99, 0.97],
-    "/rtx/post/colorcorr/offset": [0.004, 0.005, 0.008],
-    # atmosphere: dusty air (distance haze + volumetric in-scattering where supported)
-    "/rtx/fog/enabled": True,
-    "/rtx/fog/fogColor": [0.76, 0.74, 0.71],
-    "/rtx/raytracing/inscattering/enabled": True,
-    "/rtx/raytracing/inscattering/densityMult": 0.25,
-    "/rtx/raytracing/inscattering/maxDistance": 400.0,
-    "/rtx/raytracing/inscattering/singleScatteringAlbedo": [0.92, 0.90, 0.86],
-    "/rtx/raytracing/inscattering/transmittanceColor": [0.96, 0.94, 0.91],
-    "/rtx/raytracing/inscattering/transmittanceMeasurementDistance": 250.0,
-    "/rtx/raytracing/inscattering/useDetailNoise": True,
+    # No grade, haze or sky changes: the look check (02:40) found the film grade + warm haze + bright HDRI washed out
+    # (low contrast, tan cast) and /rtx/raytracing/inscattering unknown to this Kit. The light stays photoreal's.
 }
-DISASTER_SKY = dict(hdri="kloofendal_48d_partly_cloudy_4k.hdr", sun=1600.0, sun_elev=32.0)
+DISASTER_SKY = None   # was kloofendal + sun 1600: overexposed and washed out on the grid (look check 02:40); keep the default sky
 
 
 def apply(a=None, log=print, extra=None):

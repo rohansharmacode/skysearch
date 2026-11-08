@@ -29,13 +29,13 @@ TINTS = {
     "fracture": ((0.88, 0.87, 0.85), (0.78, 0.76, 0.73)),
     "brick": ((0.92, 0.92, 0.92), (0.80, 0.84, 0.86)),            # 0.80/0.84/0.86 = dust over the red
 }
-SUN_RGB = (1.0, 0.91, 0.80)
+SUN_RGB = (1.0, 0.86, 0.70)   # look check 02:40: a white sun under the blue evening dome cast the frame blue
 GRID_GRADE = {
     "/rtx/post/colorcorr/enabled": True,
-    "/rtx/post/colorcorr/saturation": [0.85, 0.85, 0.85],
-    "/rtx/post/colorcorr/contrast": [1.05, 1.05, 1.05],
-    "/rtx/post/colorcorr/gain": [0.98, 1.0, 1.03],
-    "/rtx/post/colorcorr/offset": [0.003, 0.003, 0.004],
+    "/rtx/post/colorcorr/saturation": [0.95, 0.95, 0.95],
+    "/rtx/post/colorcorr/contrast": [1.08, 1.08, 1.08],
+    "/rtx/post/colorcorr/gain": [1.0, 1.0, 1.0],
+    "/rtx/post/colorcorr/offset": [0.0, 0.0, 0.0],
     "/rtx/ambientOcclusion/enabled": True, "/rtx/ambientOcclusion/rayLength": 2.0,
     "/rtx/post/tvNoise/enabled": True, "/rtx/post/tvNoise/enableFilmGrain": True,
     "/rtx/post/tvNoise/grainAmount": 0.018, "/rtx/post/tvNoise/grainSize": 1.1,
@@ -45,9 +45,7 @@ GRID_GRADE = {
     "/rtx/post/tvNoise/enableVignettingFlickering": False, "/rtx/post/tvNoise/enableGhostFlickering": False,
     "/rtx/post/tvNoise/enableWaveDistortion": False, "/rtx/post/tvNoise/enableVerticalLines": False,
     "/rtx/post/tvNoise/enableRandomSplotches": False,
-    "/rtx/fog/enabled": True,
-    "/rtx/fog/fogColor": [0.74, 0.75, 0.77],
-}
+}   # haze: photoreal's own warm distance haze is kept (a blue-grey fog colour washed the frame out, look check 02:40)
 
 
 def box_uv(P, F, tile=2.0):
@@ -190,7 +188,7 @@ def grade(log=print, extra=None):
             ok += 1
         except Exception:                                   # noqa: BLE001
             pass
-    log(f"[grid-look] grade: {ok}/{len(GRID_GRADE)} settings (saturation 0.85, contrast 1.05, neutral haze, AO, grain)")
+    log(f"[grid-look] grade: {ok}/{len(GRID_GRADE)} settings (saturation 0.95, contrast 1.08, AO, grain; sky, sun strength and haze as photoreal)")
     return ok
 
 

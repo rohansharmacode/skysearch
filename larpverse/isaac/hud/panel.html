@@ -208,7 +208,8 @@ function sense(b, s, ev) {
     if (alt) rows.push(['Next best option', `${alt.pile_id} (priority ${alt.priority})`]);
     return ['DECISION', `Flying to ${esc(d.to_pile || 'the new area')}`, rows, c ? heard(c) : null];
   }
-  if (ph === 'deploy' || ph === 'dispatch' || ph === 'return' || ph === 'battery_swap') {
+  // while the Listening caption is still held, keep showing what was heard (the reason for the flight that follows)
+  if (b !== 3 && (ph === 'deploy' || ph === 'dispatch' || ph === 'return' || ph === 'battery_swap')) {
     const bat = drones.map(q => `${Math.round(100 * (q.battery ?? 0))}%`).join(' · ');
     const alt = drones.length ? drones.reduce((a, q) => a + q.pose[2], 0) / drones.length : null;
     const say = (ph === 'return' || ph === 'battery_swap') ? 'Flying back to swap batteries' : `Flying to ${esc(pile || 'the search area')}`;
@@ -254,7 +255,7 @@ function sense(b, s, ev) {
     return ['RADAR', 'Moving the drones over the rubble to drop the radar pods', [['Drones', String(drones.length)],
         ['Radar reach', st && st.max_reliable_depth_m ? `about ${f1(st.max_reliable_depth_m)} m down` : 'about 3 m down']], null];
   }
-  if (m.stage === 'listen' || ph === 'acoustic' || ph.startsWith('recon_listen')) {
+  if (b === 3 || m.stage === 'listen' || ph === 'acoustic' || ph.startsWith('recon_listen')) {
     const c = humanClips(s).filter(c => !LIVE || !LIVE.last_listen || true)[0];
     const n = drones.filter(d => d.state === 'listening').length;
     if (c) {

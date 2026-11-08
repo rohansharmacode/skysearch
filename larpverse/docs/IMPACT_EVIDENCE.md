@@ -3,7 +3,7 @@
 Researched 8 Nov 2026 for the Larpverse defence. Every number carries a tag:
 **[S]** sourced (stated by the linked source), **[D]** derived (our arithmetic on sourced numbers, shown here),
 **[A]** assumption (team judgement, no direct source). Ranges are low / central / high.
-The machine-readable version is [`data/impact_params.json`](../data/impact_params.json) (93 parameters, same tags).
+The machine-readable version is [`data/impact_params.json`](../data/impact_params.json) (111 parameters, same tags).
 Weak sources are flagged *(weak)*.
 
 ## Judge summary
@@ -263,3 +263,75 @@ Inverter generator path (1.3–2.0 kWh DC per L; 2.0 = DJI D12000iE reference):
 5. **Weiguan "found too late":** there is no time-of-death data, so it is unknowable from public sources.
 6. **Energy:** the car's net alternator output at idle and the drone's real flight power (wind, winch hover) dominate the half-tank range.
    The DJI hover figures are vendor numbers measured in calm conditions at sea level.
+
+## 7. Follow-up: values for the impact model's top-sensitivity inputs
+
+Added 8 Nov 2026 at the coordinator's request. These replace the placeholders `canine_start_h`, `extrication_teams`, `drone_deploy_h`
+and `pinpoint_h` in [IMPACT_MODEL.md](IMPACT_MODEL.md), and add extrication time by entrapment type. They are in the parameter file as v1.1.
+
+### 7a. When do search dogs start working?
+
+| Responder tier | low / central / high | Evidence |
+|---|---|---|
+| Local / regional (same city, NGO dogs) | **1 / 3 / 8 h** [D] | At Weiguan, NGO dogs ("Sunny", "Kara") were the first dogs on scene, and the NFA special-search dog worked "from day 1" [S] ([Epoch Times, citing NFA/CEOC](https://www.epochtimes.com/b5/16/2/10/n4637109.htm)). AP's day-1 snapshot already counted 23 dogs [S]. No source gives the hour. |
+| National, from far cities | **6 / 12 / 30 h** [D] | New Taipei FB left on the morning of 6 Feb with search-radar, sonar and hydraulic kit [S] ([NTPC FB log](https://www.fire.ntpc.gov.tw/upload/1/doc/1091/105年2月份大事紀.pdf)). Its double-certified dog reached Weiguan on 7 Feb [S]. Hualien 2018 (quake at 23:50): 20 dogs from more than 17 counties were working by the next day [S] ([Taipei Times](https://www.taipeitimes.com/News/front/archives/2018/02/08/2003687282)). A FEMA task force must be at its departure point within 6 h [S] ([FEMA](https://www.fema.gov/pdf/emergency/usr/mod1_u2.pdf)). |
+| International | **12 / 24 / 72 h** [S] | The first international team arrived 12–56 h after the quake across 14 events ([Rom & Kelman](https://pmc.ncbi.nlm.nih.gov/articles/PMC7745699/)). Kobe 1995: Swiss dogs worked from about day 3 because of quarantine delays ([CSM](https://www.csmonitor.com/1995/0120/20202.html)). |
+
+Usage: dogs went out 147 times in 8 days at Weiguan, about 18 per day [S, CEOC]. New Taipei alone accounts for 18 of those dog-sorties and 221 person-sorties [S].
+**For a Taiwan scenario the model should use the local tier, central 3 h.** Taiwan declined foreign teams at Weiguan, so the international tier does not apply there.
+
+### 7b. How many dig crews work in parallel at one building?
+
+- **2 / 4 / 8 worksites at once** [D].
+  - At Weiguan the site was split into 4 sectors, each with its own commander [S, Tainan FB]. Chiu & Tseng describe about one or two breaching operations active per sector:
+    - G block entered by ladder;
+    - F14/E12, cutting through 4 slabs;
+    - H shored where it lay on A;
+    - Lee's rescue on B6 [S].
+  - On 8 Feb, the rescues of Tsao, Lee and the 8-year-old girl ran at the same time in different sectors [S, Taipei Times].
+- **Space, not manpower, set the cap.** Tainan declined the US, Singapore and Israel teams because "the disaster site is a confined space" and domestic capacity was enough [S, Tainan FB],
+  even though about 2,000 rescuers were on site.
+- INSARAG capacity per team: Heavy = 2 worksites, Medium = 1 [S]. A dig crew is about 6 people (5 rescue specialists + 1 squad leader) [S, Fire Engineering].
+- The model's current range of 3–12 is wide on the high side. Values above about 8 are not supported for a single building.
+
+### 7c. Time from the quake to the first drone airborne
+
+**No published launch times exist for fire-service drones after an earthquake.** Taiwan fire departments fly drones, but we found no timed record from Hualien 2018 or 2024.
+The value is built from components: **0.25 / 0.75 / 2 h** [D].
+- **First truck rolling:** Tainan FB dispatched units at 04:03, 6 min after the quake, and had a forward command post set up within 1 h [S, Tainan FB].
+- **Launch delay itself is small:** docked "drone as first responder" programmes reach the scene in 73–181 s on average from dispatch:
+  - San Rafael: 73 s over 127 calls;
+  - Chula Vista: 97 s over 17,170 calls;
+  - Southington: 181 s over 38 calls [S] ([San Rafael](https://community.san-rafael.ca.us.aerodome.com/), [review](https://droneindustryreview-io.pages.dev/2025/11/10/first-responder-review-2025-deployments)).
+    These are police programmes with small docked drones.
+- **Heavy drone carried on a truck:** add 5–15 min to unpack, fit packs and run pre-flight checks [A].
+- **High bound:** drones that come from a regional hub or a second-alarm truck.
+
+### 7d. Time from a search alert to the start of digging
+
+**There are no published timings, only the procedure**, so the value stays an assumption: **0.25 / 0.75 / 2 h** [A]. The procedure runs:
+1. Dog alert: at least 3 barks at the same point, or a focused bark of 20 s or more [S] ([SWGDOG](https://www.nist.gov/document/swgdoghumanscentdogs-searchingforlivepeopleindisasterenvironmentspdf)).
+2. Confirmation by a second dog. The FCI rubble test caps a search at 20 min [S] ([FCI](https://WWW.FCI.BE/medias/FCI-SAU-JUG-SEM-2019-CHA-001-MB-RUBBLE-11087.pdf)).
+3. Technical confirmation with a camera or listening device.
+4. Structural check and shoring.
+5. Breach.
+
+At Weiguan, New Taipei ran a search group that "detects life signs, then calls the rescue group down to dig" [S, TVBS via search].
+Victims were dug for as soon as they were located (Tsao's family was found on Sunday morning, and Lee at about 13:00 on Sunday), and the long part was the dig itself [S].
+
+### 7e. Extrication time by entrapment type
+
+| Type (share of survivors) | Extrication time, low / central / high | Evidence |
+|---|---|---|
+| Surface, injured but not trapped (50%) | 0 / 0.1 / 0.5 h [A] | carried or assisted out |
+| Lightly trapped, non-structural (30%) | 0.25 / 0.75 / 2 h [D] | Kobe: 84 (wooden house) to 188 (RC) person-min per rescue [S] ([Cabinet Office](https://www.bousai.go.jp/kyoiku/kyokun/hanshin_awaji/data/detail/1-4-1.html)) ÷ a crew of 4–6 |
+| Void space (15%) | 2 / 6 / 9 h [D] | Haiti, pancake collapse: USA-1 reached the victim 6–7 h after starting [S] ([DMPHP case series](https://www.cambridge.org/core/services/aop-cambridge-core/content/view/4CA28E462E1B2EA9A7553880724DE389/S1935789314000019a.pdf/confined-space-medicine-and-the-medical-management-of-complex-rescues-a-case-series.pdf)); Haiti USAR average 8–9 h [S] |
+| Entombed / deep pancake (5%) | 12 / 20 / 32 h [S] | Weiguan: ~12 h (Lee, B6) and ~20 h (F14/E12, 4 slabs) [S, Chiu]; Haiti: 26 h and 32 h tunnelling operations [S]; freeing a trapped limb alone took 4–6 h [S] |
+
+- The shares come from the 50 / 30 / 15 / 5 split ([GovTech, citing a Cascadia Rising after-action review and probably LAFD](https://www.govtech.com/em/disaster/citizens-as-rescuers-in-building-collapses.html)) [S] *(weak: training-deck figure, origin unconfirmed)*.
+- Kumamoto 2016: the way the victim is trapped (the pressure on them and what lies beneath them) drives rescue difficulty, while the building's damage grade "didn't affect much" [S]
+  ([Kako et al. 2020](https://www.jstage.jst.go.jp/article/jisss/36/0/36_65/_article/-char/en)). We could not read their durations, which are behind the abstract.
+- **Consistency check [D]:** locals take most surface and lightly trapped victims, so professional crews mostly face void and entombed victims at a ratio of 15:5.
+  That gives an expected 0.75 × 6 + 0.25 × 20 = **9.5 h**, which matches the Haiti average of 8–9 h.
+- **Suggestion for the model:** draw each victim's extrication time from the time for their entrapment type, instead of one log-normal around 9 h.
+  The people only radar can find (unconscious, deep) sit mostly in the void and entombed rows.

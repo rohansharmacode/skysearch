@@ -105,6 +105,9 @@ def _base_parser():
     ap.add_argument("--stream-res", default="1920x1080",
                     help="--livestream: hide Kit's editor UI and size the window to this, so the stream is the full-frame "
                          "viewport at a constant resolution ('' = leave Kit's window alone)")
+    ap.add_argument("--take-open", choices=["van", "wide"], default="van",
+                    help="director-take opening shot: van = close on the open door (team default); wide = establishing "
+                         "shot from 24 m: van, drones on the pads and the rubble field in one frame")
     ap.add_argument("--camera", choices=["director", "director-take", "story", "free"], default="director",
                     help="director-take: one continuous spline camera for the single take (isaac/live.py TakeCamera); "
                          "story: state-driven framing of the active/new zone and dispatch, slow orbit, springs "
@@ -704,6 +707,7 @@ def main(argv=None):
     if take:
         from isaac.live import TakeCamera
         from isaac.site import drone_pads
+        TakeCamera.OPEN = a.take_open
         from isaac.van import staging_pose
         cam = TakeCamera(stage, pile_xy, base_xy=base_xy(sc), pads=drone_pads(sc), surface=surface,
                          mirrors=[] if a.dry_run else [compat.PERSP], switch_viewport=True,

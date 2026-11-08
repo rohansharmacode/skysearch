@@ -1155,6 +1155,9 @@ class TakeCamera:
     (isaac/camera.py's black-viewport workaround) through an embedded DirectorCamera."""
 
     MID_DOWN_DEG = 25.0
+    # opening shot: "van" = 9.9 m from the open door at eye height (docs/ISAAC_ASSETS.md); "wide" = an establishing
+    # shot from 24 m south-west and 9 m up: van, drones on the pads and the rubble field beyond in one frame
+    OPEN = "van"
     EYE_HALFLIFE, LOOK_HALFLIFE = 0.9, 0.45     # isaac.motion.SmoothCamera springs (s to close half the gap)
     W_EYE, W_LOOK = 2 * math.log(2) / 0.9, 2 * math.log(2) / 0.45   # the same springs, built in (fallback)
 
@@ -1174,8 +1177,8 @@ class TakeCamera:
         self.eye = self.look + [16 * math.cos(self.az), 16 * math.sin(self.az), 5.0]
         if self.van is not None:                   # open exactly on the van shot: no settling move at t = 0
             self.az = math.atan2(-6.9, -5.8)
-            self.look = self.van + [-1.7, 0.4, 2.0]
-            self.eye = self.look + [9.9 * math.cos(self.az), 9.9 * math.sin(self.az), -0.3]
+            self.look, d, h = self._van_open()
+            self.eye = self.look + [d * math.cos(self.az), d * math.sin(self.az), h]
         self.dc = DirectorCamera(stage, mode="director", start=tuple(self.look), mirrors=mirrors,
                                  switch_viewport=switch_viewport)
         self.path, self.updates, self.mode = self.dc.path, 0, "director-take"
@@ -1198,6 +1201,14 @@ class TakeCamera:
     def is_viewport(self):
         return self.dc.is_viewport
 
+    def _van_open(self):
+        """(look, distance, height) of the opening shot (OPEN)."""
+        if self.OPEN == "wide":
+            z = float(self.surface(*self.pads))
+            look = np.array([0.55 * self.pads[0] + 0.45 * self.van[0], 0.55 * self.pads[1] + 0.45 * self.van[1], z + 1.2])
+            return look, 24.0, 9.0
+        return self.van + [-1.7, 0.4, 2.0], 9.9, -0.3
+
     def on_event(self, xyz, label="stage event", hold_s=5.0):
         self.hold = (self.vt + hold_s, np.asarray(xyz, float), label)
 
@@ -1215,8 +1226,8 @@ class TakeCamera:
             if self.van is not None and not air:
                 # van foreground (docs/ISAAC_ASSETS.md): from the south-west, through the open door to the operator
                 # and the three screens, drones on the pads at frame left
-                door = self.van + [-1.7, 0.4, 2.0]
-                return "van", door, 9.9, -0.3, math.atan2(-6.9, -5.8)
+                door, d, h = self._van_open()
+                return "van", door, d, h, math.atan2(-6.9, -5.8)
             if self.van is not None:
                 # lift-off: crane up beside the van and pan to the pads while the rotors spin up
                 look = np.array([0.6 * self.pads[0] + 0.4 * self.van[0], 0.6 * self.pads[1] + 0.4 * self.van[1], z + 3.0])

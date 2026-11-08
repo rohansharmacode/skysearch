@@ -213,6 +213,18 @@ The details are in `docs/ISAAC_VERIFIED_APIS.md`.
 - The output of the dry run, and of the self-test once it lands.
 - One screenshot of the stage after `--max-steps 1`.
 
+## 2026-11-08 03:00 UTC: rehearsal 1 reviewed (thank you, it looks great)
+
+What works: the van opening, LiDAR mapping, pods on the rubble, the breathing panel, the red ping beacon, the "Live change" panel and the listen phase.
+
+Being fixed now on our side (pull again in about 60 min):
+1. **The Y key doesn't reach Isaac through WebRTC** (reh2). The new primary trigger will be a client-side control (a dashboard button, or `python isaac/live.py --cmd activate --id H2_A1_id` in a terminal). The stage edit you used in reh4a works and is a fine fallback.
+2. **The redirect comes too late** (activated t182 → dispatch t497; reh3 had no redirect by 85 s of video). The fleet will be ordered to the new lead as soon as it's heard, and the pace tightened so the take fits in **60 s**.
+3. **Garbled transcript on screen** ("Oh long, other young bees…" is Whisper on Indonesian). We'll show "voice-like call (language not identified)" unless Gemini returns a transcript.
+4. NVST_R_BUSY: keep only one viewer client open.
+
+Then the final take: grid seed 7, layout B, a single continuous 60 s capture, with the live change triggered by a teammate.
+
 ## 2026-11-08 02:20 UTC: ⚠ SUBMISSIONS CLOSE TODAY 13:00 GMT. Render something NOW.
 
 **Deadline:** about 10.5 h. Any real Isaac footage beats a perfect plan, so please start immediately, in this order:

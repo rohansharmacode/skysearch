@@ -259,14 +259,18 @@ def _frame(Q, n, centre):
     return A0, A1, B0, B1, U, V, N
 
 
-def facade(stage, mats, looks, log, seed=0, slabs=True):
+def facade(stage, mats, looks, log, seed=0, slabs=True, kit=None):
     """Plaster/concrete on the fallen towers and a 3D facade: storey slab edges, columns, framed windows
     (glass or dark broken openings), balconies with parapets on the upper west faces, and broken column stubs
-    with bent rebar at both breaks."""
+    with bent rebar at both breaks. kit: a Blender-built damaged-facade kit folder (isaac/facade_kit.py,
+    --facade-kit) placed per bay / storey instead of the boxes; falls back to the boxes if it does not load."""
+    from isaac import facade_kit as FK
     from isaac import photoreal as PR
     from isaac import rubble as RB
     rng = np.random.default_rng(3100 + seed)
     tot = 0
+    kit_ = FK.load(kit, log) if kit else None
+    krng, kit_n = np.random.default_rng(4100 + seed), {}
     for t in TOWERS:
         base = f"{SITE}/Buildings/Scanned/{t}"
         if not stage.GetPrimAtPath(base).IsValid():
@@ -287,6 +291,7 @@ def facade(stage, mats, looks, log, seed=0, slabs=True):
                                 "chunk", "frame", "void", "stub", "rebar")}
         upper = sorted([i for i, (q, n) in enumerate(quads) if q[:, 2].mean() > centre[2]],
                        key=lambda i: quads[i][0][:, 0].mean())
+        kit_items = []
         for fi, (Q, n) in enumerate(quads):
             A0, A1, B0, B1, U, V, N = _frame(Q, n, centre)
             W, L = np.linalg.norm(A1 - A0), np.linalg.norm(B0 - A0)
@@ -298,6 +303,9 @@ def facade(stage, mats, looks, log, seed=0, slabs=True):
             sh, bw = L / nst, W / nb
             slab_h = 0.24                                                # half thickness (slab + beam, ~0.48 m)
             west = bool(upper) and fi == upper[0]
+            if kit_ is not None:                                         # kit modules instead of the boxes
+                kit_items += FK.plan_face(A0, A1, B0, B1, U, V, N, nst, nb, krng, kit_.counts())
+                continue
 
             def tilted(theta):                                           # rotate (V, N) about U: sagging pieces
                 c, s_ = math.cos(theta), math.sin(theta)
@@ -385,6 +393,10 @@ def facade(stage, mats, looks, log, seed=0, slabs=True):
                         tip = mid + (Y + rng.normal(0, 0.7, 3)) * L1 * 0.4
                         bins["rebar"] += [RB._bar(mid, p0, r=0.014), RB._bar(mid, tip, r=0.014)]
         out = f"{ROOT}/Facade/{t}"
+        if kit_ is not None and kit_items:
+            for k, c in FK.place(stage, f"{out}/kit", kit_, kit_items, log).items():
+                kit_n[k] = kit_n.get(k, 0) + c
+                tot += c
         for k, parts in bins.items():
             mat = {"slab0": looks.get("fslab0"), "slab1": looks.get("fslab1"), "slab2": looks.get("fslab2"),
                    "column": looks.get("fslab1"), "wall": looks.get("fslab2"), "tilewall0": looks.get("ftile0"),
@@ -397,7 +409,8 @@ def facade(stage, mats, looks, log, seed=0, slabs=True):
                 PR.bind(stage, f"{SITE}/Buildings/Scanned/{s}/{part}", mats["concrete2"])
     log(f"[urban] fallen towers: {tot} pieces like the real site (thick grey floor slabs sticking out of dark "
         f"crushed storeys, part-standing tiled walls with window openings, columns, balconies, broken column "
-        f"stubs and rebar at the breaks)" + ("; slabs: formed concrete" if slabs else ""))
+        f"stubs and rebar at the breaks)" + ("; slabs: formed concrete" if slabs else "")
+        + (f"; Blender facade kit {kit_.folder}: {kit_n} instances" if kit_ is not None else ""))
     return tot
 
 
@@ -684,7 +697,7 @@ def dress(stage, sc, a, mats, nv, isa, log=print):
     except Exception as e:
         log(f"[urban] facade tint skipped ({type(e).__name__}: {e})")
     faces = terrain(stage, mats, log, seed, rematerial=not scan)
-    facade(stage, mats, looks, log, seed, slabs=True)
+    facade(stage, mats, looks, log, seed, slabs=True, kit=getattr(a, "facade_kit", "") or None)
     debris(stage, mats, looks, faces, log, seed, n_core=int(getattr(a, "urban_debris", 32000)),
            n_outer=int(getattr(a, "urban_debris", 32000) * 0.28))
     if getattr(a, "crew", 1):

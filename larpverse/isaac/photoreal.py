@@ -61,6 +61,10 @@ def add_args(ap):
     g.add_argument("--rt-quality", type=int, default=0,
                    help="1 = DLAA/DLSS quality + ray-reconstruction real-time mode + motion blur (live take)")
     g.add_argument("--urban-debris", type=int, default=32000, help="3D debris pieces on the core rubble (+28%% outside)")
+    from isaac import facade_kit as _fk
+    g.add_argument("--facade-kit", default=_fk.default_dir(),
+                   help="Blender-built damaged-facade kit folder for the fallen towers (isaac/facade_kit.py; "
+                        "default: isaac/assets/facade_kit if built; '' = the box facade)")
     g.add_argument("--crew", type=int, default=1, help="collapse map: rescue crew models at the staging area")
     g.add_argument("--props", type=int, default=1, help="collapse map: excavators, crawler crane, fire trucks")
     g.add_argument("--clean-overlay", type=int, default=-1,

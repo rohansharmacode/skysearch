@@ -9,9 +9,9 @@
   if (!view) return;
   const css = document.createElement('style');
   css.textContent = `
-  #xstack { right:24px; top:24px; width:450px; max-height:960px; display:flex; flex-direction:column; gap:10px;
+  #xstack { right:24px; top:64px; width:380px; max-height:920px; display:flex; flex-direction:column; gap:10px;
             background:transparent; box-shadow:none; backdrop-filter:none; }
-  #xstack > .xc { background:rgba(10,14,18,0.78); border-radius:16px; backdrop-filter:blur(6px); box-shadow:0 6px 28px rgba(0,0,0,0.35);
+  #xstack > .xc { background:rgba(10,14,18,0.60); border-radius:16px; backdrop-filter:blur(6px); box-shadow:0 6px 28px rgba(0,0,0,0.35);
             padding:12px 16px; border:1px solid rgba(255,255,255,0.08); }
   #xstack .xh { font-size:12px; letter-spacing:.16em; text-transform:uppercase; color:#b8c3cc; display:flex; justify-content:space-between; gap:8px; align-items:baseline; }
   #xstack .xh i { font-style:normal; letter-spacing:0; text-transform:none; color:#8d98a1; font-size:12px; }
@@ -39,12 +39,24 @@
                color:#fff; cursor:pointer; white-space:nowrap; }
   .xs button:hover { background:#3a4128; }
   .xw { display:flex; flex-wrap:wrap; gap:4px 14px; font-size:14px; color:#d5dde3; margin-top:6px; line-height:1.35; }
-  .xw b { color:#8ab4ff; } .xw .tr { color:#ff9b9b; font-weight:700; }`;
+  .xw b { color:#8ab4ff; } .xw .tr { color:#ff9b9b; font-weight:700; }
+  #xtog { position:absolute; right:24px; top:24px; z-index:5; font:700 13px Inter, "Segoe UI", system-ui, sans-serif; padding:6px 11px;
+          border-radius:8px; border:1px solid #39424a; background:rgba(10,14,18,0.72); color:#cfd8de; cursor:pointer; user-select:none; }
+  #xtog:hover { border-color:#ffb020; color:#fff; }
+  #xstack.off { display:none !important; }`;
   document.head.appendChild(css);
   const box = document.createElement('div');
   box.className = 'hud'; box.id = 'xstack';
   const honest = document.getElementById('honest');
   view.insertBefore(box, honest || null);
+  // hide / show toggle (button + key P) so the live camera view can be cleared during a take; default shown
+  const tog = document.createElement('div'); tog.id = 'xtog'; tog.title = 'Hide or show the extra panels (key P)';
+  view.insertBefore(tog, honest || null);
+  let shownX = true;
+  const setShown = v => { shownX = v; box.classList.toggle('off', !v); tog.textContent = v ? 'Hide panels (P)' : 'Show panels (P)'; };
+  tog.addEventListener('click', () => setShown(!shownX));
+  addEventListener('keydown', e => { if ((e.key === 'p' || e.key === 'P') && !/INPUT|TEXTAREA|SELECT/.test((document.activeElement || {}).tagName || '') && !e.ctrlKey && !e.metaKey && !e.altKey) setShown(!shownX); });
+  setShown(true);
 
   const E = x => (typeof esc === 'function' ? esc(x) : String(x ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])));
   const name = id => (typeof pn === 'function' ? pn(id) : String(id ?? ''));
@@ -90,8 +102,10 @@
     const lname = lg ? (L[lg] || (c.languages && c.languages[0] && c.languages[0].name) || lg) : null;
     const orig = c.transcript_original || c.transcript || '';
     const tr = c.translation || (lg && /^en\b/.test(lg) ? orig : '');
-    const said = lg && (tr || orig)
+    const theirs = typeof heard === 'function' ? (() => { try { return heard(c); } catch (e) { return null; } })() : null;
+    const said = theirs ? theirs : lg && (tr || orig)
       ? `“${E(tr || orig)}”${orig && tr && orig !== tr ? `<small>spoken in ${E(lname)}: “${E(orig)}”</small>` : `<small>${E(lname)}</small>`}`
+      : orig ? `“${E(orig)}”<small>language not identified</small>`
       : `${E(String(c.class || 'sound').replace(/_/g, ' ') === 'voice' ? 'voice-like call' : String(c.class || 'sound').replace(/_/g, ' '))} (language not identified)`;
     const dist = (c.distress || []).map(d => `<span class="xtag">${E(String(d).replace(/_/g, ' '))}</span>`).join('');
     return `<div class="xc"><div class="xh">Latest sound · ${E(name(c.pile_id))} ${tag(by === 'gemini' ? 'gemini' : by ? 'box' : null)}<i>listen ${n}</i></div>

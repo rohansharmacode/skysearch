@@ -15,6 +15,19 @@
 
 ---
 
+## ★ Operator ↔ Isaac I/O (the demo loop)
+
+| Direction | Path | Where |
+|---|---|---|
+| **Input:** the operator selects an area | Dashboard "Select area → Send drones" → `POST /api/tasking` → `dashboard/data/tasking.json` | scripts/serve.py, on the GPU box |
+| | `run_mission --live` polls tasking.json every 1 s. A new zone is an order: the drones leave the dock for it (`--start idle`: nothing launches before the first zone) | isaac/live.py, GridMission.order() |
+| **Output:** what the drones sense and decide | `run_mission --live` writes `dashboard/data/state.json` (map, drones, pods, pings, priority list, clips, suggestions), `live.json` (causal lines, PLAN CHANGED banner, badge), `hud.json` (radar waveform), `motion.json` | served by serve.py; read by the dashboard and animation/live-view.html |
+| Other operator inputs | `/api/broadcast` (speaker), `/api/comms/reply` (phones), `/api/portal` (phone reports) | serve.py |
+
+**One command on the GPU box:** `L=/workspace/skysearch/larpverse ISAACLAB=/workspace/isaaclab bash $L/scripts/isaac_demo.sh`. It writes an empty tasking file, starts serve.py, runs the acoustic preflight, then starts the live Isaac run. Add `STUB_ACOUSTIC=1` for rehearsals; `DRY=1` runs the same loop without a GPU.
+
+**Check the loop end to end** from the laptop (with the port forwarded): `python3 scripts/isaac_io_check.py --send-pile A1 --watch 90`. It tasks an area, then prints what Isaac publishes until the mission reacts (PASS/FAIL).
+
 ## 1. The deliverable
 
 > **Simulation video.** Up to **1 minute**, **captured from the stream**. Show **perception on screen next to the actions**, and **one unscripted change** in a **single continuous take**.

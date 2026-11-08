@@ -1,0 +1,9 @@
+12:12:09.564 loading weiguan 7 day (TOUCHDOWN=1, audio model gemini-3.5-flash-lite)
+12:14:07.852 site ready (held)
+12:14:18.883 recording started (start screen)
+12:14:21.911 card 1 glide+click sent
+12:14:26.436 hover I sent
+12:14:30.964 click H sent
+12:14:30.968 isaac: first click received
+12:15:47.580 first autonomous dispatch: [t= 357.0] Dispatch d1-d3 -> pile I at (-13.0, -23.0): Dispatching to pile I (priority 93, score 93) as it is the highest-priority acoustic lead with a clear di
+12:15:59.844 stopped: 100.666000 s, 83806936 B

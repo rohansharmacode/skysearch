@@ -1,0 +1,33 @@
+[t=   0.0] Deploy d1-d3 -> pile B at (-0.5, 23.0): operator-selected start pile, inside tasked zone B [zone B]
+[isaac] Gemini calls: +1 (listen 1), 1 this run
+[isaac] Gemini calls: +1 (listen 2), 2 this run
+[isaac] INTERACTIVE: drones on the pads; waiting for the operator's first click (POST /api/goto -> /home/ubuntu/lv/larpverse/dashboard/data/goto.json)
+[;m[isaac] INTERACTIVE: first click -> launch pile H; rebuilding the mission (same scenario)
+[t=   0.0] Deploy d1-d3 -> pile H at (-0.5, -23.0): operator-selected start pile, inside tasked zone H [zone H]
+[isaac] phase deploy at t=1.0 wall=0.0s x6 behind=0.0s
+[isaac] phase survey at t=14.0 wall=1.4s x7 behind=0.0s
+[isaac] phase landing at t=49.0 wall=7.0s x6 behind=0.0s
+[isaac] LIDAR FLASH H: 30000 points, red 25.7% yellow 1.7% (own points, slope/step)
+[isaac] phase radar at t=68.0 wall=9.5s x12 behind=0.0s
+[isaac] phase relocate at t=88.0 wall=13.2s x24 behind=1.6s
+[isaac] phase rescan at t=109.0 wall=13.7s x24 behind=1.6s
+[isaac] phase relocate at t=129.0 wall=15.6s x24 behind=2.3s
+[isaac] phase rescan at t=148.0 wall=16.1s x24 behind=2.4s
+[isaac] phase relocate at t=168.0 wall=17.9s x24 behind=3.0s
+[isaac] phase rescan at t=188.0 wall=18.6s x24 behind=3.0s
+[isaac] phase relocate at t=208.0 wall=20.4s x24 behind=3.8s
+[isaac] phase rescan at t=229.0 wall=20.8s x24 behind=3.8s
+[isaac] phase relocate at t=249.0 wall=22.5s x24 behind=4.2s
+[isaac] phase rescan at t=268.0 wall=22.9s x24 behind=4.2s
+[t= 288.0] Radar phase at H over; landed drones listen to the other piles for 26 s and stream clips to the acoustic agent
+[isaac] real acoustic pipeline: listen 1 submitted at t 288 (landing patches known); it overlaps the landing, the listen window and the call-out
+[isaac] phase acoustic at t=288.0 wall=23.9s x2.32675 behind=4.2s
+[isaac] Gemini calls: +1 (listen 3), 3 this run
+[isaac] Gemini calls: +1 (listen 4), 4 this run
+[t= 357.0] Decision (gemini, 7765 ms): dispatch I - Dispatching to pile I (priority 93, score 93) as it is the highest-priority acoustic lead with a clear distress call ("Help! Can anyone hear me?
+[t= 357.0] Dispatch d1-d3 -> pile I at (-13.0, -23.0): Dispatching to pile I (priority 93, score 93) as it is the highest-priority acoustic lead with a clear distress call ("Help! Can anyone hear me? 
+[isaac] phase dispatch at t=357.0 wall=70.4s x5 behind=19.3s
+[isaac] phase survey at t=371.0 wall=72.3s x7 behind=19.3s
+[isaac] phase landing at t=405.0 wall=77.7s x6 behind=19.3s
+[isaac] LIDAR FLASH I: 30000 points, red 20.2% yellow 3.4% (own points, slope/step)
+[isaac] phase radar at t=430.0 wall=81.2s x12 behind=19.3s

@@ -4,8 +4,8 @@ make it ultra photorealistic using CGI").
 What film VFX does that a raw real-time render lacks, and what we set (all in try/except, every key read back
 and logged, so the rehearsal log shows which keys this Kit build knows):
 
-* lens and sensor: a 172.8 deg shutter's motion blur (exposure fraction 0.3 at 30 fps; take1 showed 0.5 smears
-  the pans), very subtle lateral chromatic aberration at the frame edges, a soft bloom/flare on the sun's
+* lens and sensor: a ~72 deg shutter's motion blur (exposure fraction 0.2; take1 showed 0.5 smears the pans and
+  the look research puts real drone footage at 0.15-0.25), very subtle lateral chromatic aberration at the frame edges, a soft bloom/flare on the sun's
   speculars (flare scale 0.04: the collapse map's verified value), fine grain, light vignette;
 * atmosphere: dusty air in the sunlight (RTX volumetric in-scattering, low density, only where the take renderer
   supports it) on top of the distance haze, so the sun reads as shafts through dust after a collapse;
@@ -21,22 +21,22 @@ from __future__ import annotations
 CINEMA = {
     # lens / sensor
     "/rtx/post/motionblur/enabled": True,
-    "/rtx/post/motionblur/exposureFraction": 0.3,
+    "/rtx/post/motionblur/exposureFraction": 0.2,
     "/rtx/post/motionblur/numSamples": 8,
     "/rtx/post/chromaticAberration/enabled": True,
-    "/rtx/post/chromaticAberration/strengthR": -0.006,
+    "/rtx/post/chromaticAberration/strengthR": -0.004,
     "/rtx/post/chromaticAberration/strengthG": 0.0,
-    "/rtx/post/chromaticAberration/strengthB": 0.006,
+    "/rtx/post/chromaticAberration/strengthB": 0.004,
     "/rtx/post/lensFlares/enabled": True,
     "/rtx/post/lensFlares/flareScale": 0.04,
     "/rtx/post/tvNoise/enabled": True,
     "/rtx/post/tvNoise/enableFilmGrain": True,
-    "/rtx/post/tvNoise/grainAmount": 0.022,
+    "/rtx/post/tvNoise/grainAmount": 0.018,
     "/rtx/post/tvNoise/grainSize": 1.15,
     "/rtx/post/tvNoise/colorAmount": 0.25,
     "/rtx/post/tvNoise/enableVignetting": True,
     "/rtx/post/tvNoise/vignettingSize": 105.0,
-    "/rtx/post/tvNoise/vignettingStrength": 0.09,
+    "/rtx/post/tvNoise/vignettingStrength": 0.05,
     # grade: dusty, slightly lifted blacks, cool shadows / warm mids, less saturation than broadcast video
     "/rtx/post/colorcorr/enabled": True,
     "/rtx/post/colorcorr/saturation": [0.82, 0.82, 0.82],

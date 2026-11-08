@@ -1,5 +1,46 @@
 # From the Isaac Sim session (newest first)
 
+### 2026-11-08 00:40: rehearsal results (take1, live1) and the fixes now on larpverse-isaac (753999a, d01dcc6)
+
+**Stream and capture (your Q1):**
+- `--livestream 2` streams on the **Isaac Lab route** (`./isaaclab.sh -p run_mission.py ...`; Kit WebRTC on :49100, `/viewer` via nginx).
+- On the **Kit launcher route** (`python.sh ... --launcher kit`) `--livestream` is ignored, and the Lab route writes **no PNGs** with `--record`. So: Lab route for the live take, Kit route for recorded backups.
+- serve.py plus a private `brev port-forward ... -p 8765:8765` tunnel: the judge HUD, the dashboard and `/api/tasking` all work on Rohan's PC. Nothing is public.
+- OBS capture, stream fps and audio are not measured yet: the viewer needs Rohan's own Brev sign-in in a browser on his PC.
+
+**take1 glitch list (recorded, seed 7, director camera, 1080p30, rec-speed 4, 0.45 s per frame for 2 cams):**
+- The story ran end to end: T1a beyond radar reach at t 87, zone OP-T1b added at t 116, dispatch to T1b at t 144.
+- Look: too bright (14–28% clipped at f/9); rubble white with a blue cast; the fallen facade read as a clean grid; standing blocks had blurry blue scan facades; motion blur too strong.
+- Clarity: the camera framed the tower, so the pods, the new zone and the dispatch happened off-centre. Zone outlines and dispatch arcs were invisible at that distance, LiDAR beams faint, radar rings small, drones too small.
+- `heat 0` is expected: no radar lead on this seed, so the belief hotspot stays empty.
+
+**Fixed (dry-run tested, `tests/test_isaac_dryrun.py` 8/8):**
+- **Smooth heavy-multirotor motion** (`--smooth 1`, default). Monotone cubic paths one step behind the newest state (no overshoot, so no dips into the rubble). Tilt from acceleration plus drag, so the drone leans in and flares when braking.
+- **`--camera story`:** one continuous state-driven shot.
+  - It opens wide on the approach from staging and closes in on the active zone.
+  - It widens for the listening domes and frames the drones' zone suggestion and the operator's new zone.
+  - It holds on the zones while the drones fly home to swap batteries, then frames the dispatch flight in.
+  - Critically damped springs and a slow orbit. Your `director-take` can replace it later; same interface.
+- **`--viz-scale 4`:** zone and dispatch lines, rings, LiDAR beams and sound domes 4× wider for the wide shot.
+- **Look:**
+  - f/12;
+  - darker, warmer rubble;
+  - irregular, dirty fallen-tower facade (broken slabs, torn openings, 3 tints);
+  - warm tint on the scan facade photos;
+  - motion blur 0.15.
+- **Drone hardware** (from your hardware list):
+  - OS1-128 LiDAR on a nose bracket pitched 45°;
+  - winch drum, and no radar panel in pod mode;
+  - compute box, mesh radio with 2 antennas, blue Wi-Fi antenna;
+  - red and green nav lights and a blinking white strobe.
+- **Judge HUD:**
+  - DECISION row (latest dispatch and why);
+  - breathing condition on pings (`vitals.condition_text`);
+  - green dispatch in the legend;
+  - the correct step when opened late (fixes "Step 4 of 6" at done).
+  - `isaac/hud/burn.js` burns the HUD into a recorded take, for the backup.
+- **take2** rehearsal with all of this is rendering now (`--camera story --viz-scale 4 --lidar-profile heavy`).
+
 ### 2026-11-08 00:05: answers to ISAAC_QUICK.md, and what already exists for the single take (please don't rebuild it)
 
 **Already on larpverse-isaac and dry-run tested.** Please build on these rather than duplicating them:

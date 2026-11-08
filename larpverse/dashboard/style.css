@@ -606,3 +606,68 @@ body.take #cands > .dig:nth-of-type(n+4), body.take #cands details.rej, body.tak
 body.take .dig { padding: 6px 8px; margin-bottom: 5px; }
 body.take .dig .l2 { font-size: 15px; }
 body.take #liveBar { font-size: 15px; padding: 8px 12px; }
+/* take layout typography: every visible text >= ~15 px so it reads at 1080p video scale */
+.dig .cl-short, .takenote { display: none; }
+body.take .dig .cl-short { display: inline; }
+body.take .dig .cl-full { display: none; }
+body.take .takenote { display: block; margin: 2px 0 0; font: italic 15px/1.3 var(--f-ui); color: #b6c3cc; }
+body.take #hdr .brand { font-size: 16px; }
+body.take #hdr .pill { font-size: 14px; padding: 5px 8px; }
+body.take #hdr .case { font-size: 14px; }
+body.take #hdr .meta { font-size: 16px; gap: 10px; }
+body.take #conn { font-size: 0; }
+body.take #conn::before { margin-right: 0; width: 9px; height: 9px; }
+body.take #liveBar { font-size: 18px; line-height: 1.3; padding: 8px 12px; }
+body.take #liveBar > b { font-size: 15px; padding: 4px 7px; }
+body.take #liveBar .lt { font-size: 16px; }
+body.take #side h2 { font-size: 15px; margin-bottom: 8px; letter-spacing: 0.1em; }
+body.take #side h2 .count { font-size: 15px; }
+body.take .dig { gap: 4px 10px; }
+body.take .dig .rk { font-size: 20px; }
+body.take .dig .l1 b { font-size: 18px; }
+body.take .dig .l1 small, body.take .dig .l4 { display: none; }
+body.take .tri { font-size: 14px; line-height: 20px; padding: 0 7px; border-radius: 10px; }
+body.take .dig .l2 { font-size: 18px; line-height: 1.25; }
+body.take .cm { font-size: 15px; }
+body.take .cm i { width: 12px; height: 7px; }
+body.take .resp { font-size: 14px; }
+body.take .dig .sp small { font-size: 13px; }
+body.take #hud .hh { font-size: 15px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+body.take #hud .vl { font-size: 18px; }
+body.take #hud .vl small { font-size: 15px; }
+body.take #hud .aid { font-size: 15px; }
+body.take #topClip .th { font-size: 16px; }
+body.take #topClip .th b { font-size: 18px; }
+body.take #topClip q { font-size: 19px; }
+body.take #topClip .tr { font-size: 16px; }
+body.take #legend { font-size: 15px; }
+/* narrow take (the 640 px right third of layout B): one column - dig order, waveform, top clip under the map */
+@media (max-width: 800px) {
+  body.take #shell { grid-template-rows: auto auto minmax(300px, 1fr) auto; }
+  body.take #hdr { flex-wrap: nowrap; }
+  body.take #hdr .case { display: none; }
+  body.take #side { grid-template-columns: 1fr; max-height: none; }
+  body.take #secCands { grid-column: 1; grid-row: 1; border-right: 0; }
+  body.take #secHud:not([hidden]) { grid-column: 1; grid-row: 2; }
+  body.take #secTopClip:not([hidden]) { grid-column: 1; grid-row: 3; }
+  body.take #side section { padding: 8px 12px; }
+  body.take .dig { grid-template-columns: 24px minmax(0, 1fr); padding: 5px 8px; margin-bottom: 4px; }
+  body.take .dig .sp { display: none; }
+  body.take .dig .l1, body.take .dig .l2, body.take .dig .l5 { grid-column: 2; }
+  body.take .dig .l5 { grid-row: 2; justify-self: end; align-self: start; }
+  body.take .dig .l2 { grid-row: 2; padding-right: 0; }
+  body.take .dig .l5 { grid-row: 3; justify-self: start; }
+  body.take .dig .rk { grid-row: 1 / span 3; }
+  body.take #hud .hw { height: 56px; }
+  body.take #legend { display: none; }
+  body.take #hud .vl small { display: none; }
+  body.take #hud .hh { display: none; }
+  body.take #hud .hw { height: 48px; }
+  body.take .dig .l5 { grid-row: 1; justify-self: end; align-self: center; }
+  body.take .dig .l1 { grid-column: 2; grid-row: 1; padding-right: 96px; }
+  body.take .dig .l2 { grid-row: 2; }
+  body.take .dig .rk { grid-row: 1 / span 2; }
+  body.take .dig .cm > span { display: none; }
+  body.take .dig .cm i { width: 14px; height: 9px; }
+  body.take .takenote { font-size: 15px; }
+}

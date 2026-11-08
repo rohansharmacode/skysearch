@@ -56,6 +56,16 @@ export function conditionLabel(v, c) {
   if (!k) return r ? `Breathing-like signal${rt} — no pattern analysis — assess` : null;
   return `${k.what}${rt} — ${k.means} — ${k.act}`;
 }
+// Compact label for the video take: what + rate + what it may mean (the full condition_text is in the waveform panel
+// and the 3D view). Non-human sources keep the producer's sentence.
+export function conditionShort(v, c) {
+  const k = conditionOf(v), r = rateOf(v, c), rt = r ? `, ${Math.round(r)}/min` : '';
+  if (!k) return r ? `Breathing-like signal${rt} — not analysed yet` : null;
+  if (v?.source && v.source !== 'human_breathing') return conditionLabel(v, c);
+  const SHORT = { calm: 'stable for now', distressed_tachypnea: 'possible injury or distress', unconscious_slow: 'deep rest or reduced consciousness',
+    irregular_apneic: 'possible airway problem', unclear: 'rescan' };
+  return `${k.what}${rt} — ${SHORT[k.key] || k.means}`;
+}
 export function triageOf(v) {
   const k = conditionOf(v);
   let h = String(v?.triage_hint || '').toLowerCase().trim();

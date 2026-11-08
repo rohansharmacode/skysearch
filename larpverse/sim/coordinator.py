@@ -610,6 +610,8 @@ class Mission:
 
     def _on_scan(self, ev):
         did, sid = ev["drone_id"], ev["site"]
+        if str(sid).startswith("listen-") and did not in self.pending:
+            return                         # a drone that landed to listen (rotors off), not a radar scan
         self.pending.pop(did, None)
         site = self._site(sid)
         pose = sensor_pose_at(site)

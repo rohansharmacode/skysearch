@@ -22,8 +22,10 @@
   html, body { margin:0; width:640px; height:1080px; overflow:hidden; background:#0c1014;
                font-family: Inter, "Segoe UI", system-ui, sans-serif; color:#eef2f5; }
   body.clear { background:transparent; }
-  .wrap { box-sizing:border-box; height:1080px; padding:26px 28px; display:flex;
-          flex-direction:column; gap:16px; }
+  .wrap { box-sizing:border-box; height:1080px; padding:20px 28px 18px; display:flex;
+          flex-direction:column; gap:11px; }
+  .wrap > * { flex:none; }
+  #sense { flex:0 1 auto; min-height:0; overflow:hidden; }   /* never pushes the map, leads or the honesty line off */
   .top { display:flex; justify-content:space-between; align-items:baseline; }
   .live { font-size:15px; letter-spacing:.16em; font-weight:700; color:#ff6b6b; }
   .clock { font-size:15px; color:var(--grey); text-align:right; line-height:1.4; }
@@ -34,30 +36,53 @@
   .steps div.done { color:#aab4bc; border-color:#5b6670; }
   .steps div.now { color:#fff; border-color:var(--amber); font-weight:700; }
   .card { background:rgba(255,255,255,0.045); border:1px solid var(--line); border-radius:14px;
-          padding:18px 20px; }
+          padding:14px 18px; }
+  #cap { min-height:118px; }       /* the map below never jumps when a caption is a line shorter */
   #cap.ev { border-color:var(--amber); background:rgba(255,176,32,0.09); }
-  .t { font-size:33px; font-weight:700; line-height:1.12; }
-  .c { font-size:20px; line-height:1.42; color:#d5dde3; margin-top:9px; }
+  .t { font-size:30px; font-weight:700; line-height:1.12; }
+  .c { font-size:18px; line-height:1.38; color:#d5dde3; margin-top:7px; }
   .h { font-size:13px; letter-spacing:.16em; text-transform:uppercase; color:#8d98a1; margin-bottom:10px; }
   .chiprow { display:flex; gap:12px; align-items:center; }
   .chip { font-size:14px; font-weight:800; letter-spacing:.12em; padding:5px 11px;
           border-radius:7px; color:#0b0f13; white-space:nowrap; }
-  .say { font-size:21px; line-height:1.32; }
-  table { width:100%; border-collapse:collapse; margin-top:12px; }
-  td { font-size:17px; padding:5px 0; border-top:1px solid var(--line); vertical-align:top; }
+  .say { font-size:19px; line-height:1.3; }
+  table { width:100%; border-collapse:collapse; margin-top:8px; }
+  td { font-size:15px; padding:4px 0; border-top:1px solid var(--line); vertical-align:top; }
   td.l { color:#9aa5ae; width:44%; padding-right:10px; }
   td.v { font-variant-numeric: tabular-nums; color:#fff; }
-  .q { font-size:18px; font-style:italic; color:#e9f6f8; margin-top:10px; line-height:1.35; }
+  .q { font-size:16px; font-style:italic; color:#e9f6f8; margin-top:10px; line-height:1.35; }
   .q small { display:block; font-style:normal; color:#8d98a1; font-size:13px; margin-top:3px; }
-  canvas { width:100%; height:104px; display:block; margin-top:12px; }
+  canvas { width:100%; height:80px; display:block; margin-top:8px; }
   .wcap { font-size:13px; color:#8d98a1; margin-top:4px; }
-  .lead { display:flex; gap:12px; align-items:flex-start; margin-top:6px; }
+  .lead { display:flex; gap:12px; align-items:flex-start; margin-top:2px; }
   .dot { width:13px; height:13px; border-radius:50%; background:var(--ping); margin-top:6px;
          box-shadow:0 0 0 4px rgba(255,82,82,0.22); flex:none; }
-  .lead .a { font-size:19px; font-weight:700; }
-  .lead .b { font-size:16px; color:#d5dde3; line-height:1.38; margin-top:2px; }
+  .lead .a { font-size:17px; font-weight:700; }
+  .lead .b { font-size:14px; color:#d5dde3; line-height:1.35; margin-top:1px; }
   .lead .n { font-size:13px; color:#8d98a1; margin-top:3px; }
-  .foot { margin-top:auto; font-size:13px; color:#8d98a1; line-height:1.4; }
+  .foot { margin-top:auto; font-size:12px; color:#8d98a1; line-height:1.35; }
+  /* LiDAR map (Rohan 2026-11-08: "black and white dotted lidar map", side by side with the real view) */
+  #mapc { padding:12px 14px 10px; }
+  .mhead { display:flex; justify-content:space-between; align-items:baseline; }
+  .mhead .h { margin-bottom:0; }
+  .mhead .n { font-size:13px; color:#c9d2d9; font-variant-numeric:tabular-nums; }
+  .mbox { position:relative; margin-top:8px; border-radius:8px; overflow:hidden; background:#000; }
+  .mbox canvas { width:100%; height:auto; margin:0; display:block; }
+  .mbox .pl { position:absolute; font-size:13px; font-weight:600; color:#8a939b; transform:translate(-50%,-50%);
+              letter-spacing:.04em; text-shadow:0 0 3px #000, 0 0 3px #000; white-space:nowrap; }
+  .mbox .pl.on { color:#fff; font-size:15px; font-weight:800; }
+  .mbox .pl.go { color:var(--ok); font-size:15px; font-weight:800; }
+  .mbox .ring { position:absolute; border:2px dashed var(--ok); border-radius:50%; transform:translate(-50%,-50%); }
+  .mbox .dr { position:absolute; left:0; top:0; width:12px; height:12px; margin:-6px 0 0 -6px; border-radius:50%;
+              background:var(--amber); box-shadow:0 0 0 2px #000, 0 0 8px rgba(255,176,32,0.8); transition:transform .3s linear; }
+  .mbox .sc { position:absolute; left:10px; bottom:8px; font-size:12px; color:#c9d2d9; }
+  .mbox .sc i { display:block; height:3px; background:#c9d2d9; margin-bottom:3px; }
+  .mbox .nn { position:absolute; right:10px; top:8px; font-size:12px; font-weight:700; color:#c9d2d9; }
+  .mbox .ld { position:absolute; left:0; top:0; width:12px; height:12px; margin:-6px 0 0 -6px; border-radius:50%;
+              background:var(--ping); box-shadow:0 0 0 2px #000, 0 0 0 6px rgba(255,82,82,0.35); }
+  .mbox .ldl { position:absolute; left:0; top:0; font-size:13px; font-weight:800; color:#ff7b7b; white-space:nowrap;
+               margin:-11px 0 0 13px; padding:1px 6px; border-radius:5px; background:rgba(0,0,0,0.78); }
+  .mleg { font-size:13px; color:#8d98a1; margin-top:6px; line-height:1.35; }
   .hide { display:none !important; }
   .fade { animation: fade .45s ease; } @keyframes fade { from { opacity:.35; transform:translateY(4px); } to { opacity:1; transform:none; } }   /* no near-empty frame on a caption change (reh4b 25 s) */
 </style>
@@ -67,14 +92,19 @@
   <div class="top"><div class="live">● LIVE SIMULATION</div><div class="clock"><b id="clk">0:00</b><br><span id="pace"></span></div></div>
   <div class="steps" id="steps"></div>
   <div class="card" id="cap"><div class="t" id="capt">Waiting for the mission…</div><div class="c" id="capc"></div></div>
+  <div class="card" id="mapc">
+    <div class="mhead"><div class="h">LiDAR map · built live by the drones</div><div class="n" id="mapn"></div></div>
+    <div class="mbox" id="mbox"><canvas id="lmap" width="1108" height="600"></canvas><div class="nn">N ↑</div>
+      <div class="sc" id="msc"><i></i>10 m</div></div>
+    <div class="mleg">White dots: laser hits (brighter = higher rubble). Black: not scanned yet. Orange: drones. Red: radar leads, places for rescuers to check first.</div>
+  </div>
   <div class="card" id="sense">
-    <div class="h">What the drones sense right now</div>
     <div class="chiprow"><div class="chip" id="chip">—</div><div class="say" id="say"></div></div>
     <table id="rows"></table>
     <div id="wavebox" class="hide"><canvas id="wave" width="1200" height="270"></canvas><div class="wcap" id="wcap"></div></div>
     <div class="q hide" id="quote"></div>
   </div>
-  <div class="card hide" id="leads"><div class="h">Places for rescuers to check first</div><div id="leadlist"></div></div>
+  <div class="card hide" id="leads"><div class="h">Places for rescuers to check first (aids, not a diagnosis)</div><div id="leadlist"></div></div>
   <div class="foot">Simulation. The trapped people, their voices and the radar returns are synthetic; the drones never
     see where they are. A lead is a place to check, not a confirmed person.</div>
 </div>
@@ -141,6 +171,8 @@ const pings = s => (s.pings && s.pings.length ? s.pings : (s.radar_candidates ||
 // a scan counts as a breathing-like return only when the radar DSP reported one (range candidates or a breathing
 // frequency); its vitals block alone is computed on whatever the strongest bin held (reh6: "30.8 breaths per minute"
 // on scans the mission logged as "ranges no detection")
+// Rohan 2026-11-08: "Radar stays on drone, less moving parts": --delivery land, the radar rides on the drone, no pod/cable
+const onDrone = s => ((s && s.mission) || {}).delivery === 'land';
 const scanHit = sc => !!(sc && ((sc.ranges && sc.ranges.length) || sc.breathing_hz));
 const humanClips = s => (s.acoustic_clips || []).filter(c => ((c.scores || {}).human ?? c.human ?? 0) >= 0.4)
   .sort((a, b) => (b.priority ?? 0) - (a.priority ?? 0));
@@ -189,9 +221,12 @@ function caption(b, s, ev) {
   const d = (s.dispatch || []).filter(x => x.to_pile).slice(-1)[0];
   const here = pings(s).filter(p => !pile || p.pile_id === pile || String(p.id || '').startsWith(pile));
   if (b === 0) return ['Launch', 'Three rescue drones take off from the command van and fly to the collapsed building.'];
-  if (b === 1) return ['Mapping the rubble', 'A laser scanner on each drone (LiDAR, the purple dots) builds a 3D map, so the drones know where they can safely put their sensors.'];
+  if (b === 1) return ['Mapping the rubble', onDrone(s) ? 'A laser scanner on each drone (LiDAR) builds a 3D map, shown as white dots on the right, so the drones know where they can land safely.'
+                                                  : 'A laser scanner on each drone (LiDAR, the purple dots) builds a 3D map, so the drones know where they can safely put their sensors.'];
   if (b === 2 && here.length) return ['Breathing-like signal found', 'The radar picked up a steady breathing rhythm under the rubble. Rescuers get a place to check first. It is a lead, not a confirmed person.'];
+  if (b === 2 && onDrone(s)) return ['Feeling for breathing', 'Each drone lands on a safe spot from the LiDAR map, with its radar on board. The radar can feel the tiny chest movement of breathing up to about 3 m down.'];
   if (b === 2) return ['Feeling for breathing', 'Each drone lowers a radar pod onto the rubble on a cable. The radar can feel the tiny chest movement of breathing up to about 3 m down.'];
+  if (b === 3 && onDrone(s)) return ['Listening', 'The drones stay landed with their rotors off. One calls out over its loudspeaker; then they all listen for voices and knocking from under the rubble.'];
   if (b === 3) return ['Listening', 'The drones land and switch their rotors off. One calls out over its loudspeaker; then they all listen for voices and knocking from under the rubble.'];
   const rp = b === 4 ? replanAfter(ev) : null;
   if (rp && evSeenAt !== null && vnow() - evSeenAt >= 8) {
@@ -219,7 +254,7 @@ function caption(b, s, ev) {
     return ['The swarm decides', `The drones decided by themselves to search ${to} next${why}.`];
   }
   if (b === 6 && here.length) return ['Breathing-like signal found', `At ${esc(pile)} the radar picked up a breathing rhythm. Another place for rescuers to check. A lead, not a confirmed person.`];
-  return ['Searching the new area', `The same steps at ${esc(pile || 'the new area')}: map it, then lower the radar pods to feel for breathing.`];
+  return ['Searching the new area', `The same steps at ${esc(pile || 'the new area')}: map it, then ${onDrone(s) ? 'land and feel for breathing with the radar' : 'lower the radar pods to feel for breathing'}.`];
 }
 
 function sense(b, s, ev) {
@@ -285,24 +320,32 @@ function sense(b, s, ev) {
         ['Pattern', v.pattern ? String(v.pattern).replace(/_/g, ' ') : 'measuring (60 s scan)…'],
         ['Scans that agree', p.support != null ? String(p.support) : '–']], null];
     }
+    const Pod = onDrone(s) ? 'Drone' : 'Pod';
     if (sc && sc.vitals && !scanHit(sc))     // the DSP found no return above its threshold: never a "rhythm" (reh6)
-      return ['RADAR', `Pod ${esc(sc.drone_id)}: nothing strong enough to count in this scan`, [
+      return ['RADAR', `${Pod} ${esc(sc.drone_id)}: nothing strong enough to count in this scan`, [
         ['Last scan', `${esc(sc.scan_id)} · quality ${f2(sc.quality)}`],
         ['Result', 'no breathing return above the detection threshold'],
         ['Reach', 'about 3 m down']], null];
     if (sc && sc.vitals) {
       const v = sc.vitals;
       const npk = sc.wave && v.duration_s ? breathPeaks(sc.wave, v.duration_s / (sc.wave.length - 1), v.rate_bpm).length : null;
-      return ['RADAR', v.rate_bpm ? `Pod ${esc(sc.drone_id)} feels a rhythm: ${f1(v.rate_bpm)} breaths per minute` : `Pod ${esc(sc.drone_id)}: no breathing rhythm in this scan`, [
+      return ['RADAR', v.rate_bpm ? `${Pod} ${esc(sc.drone_id)} feels a rhythm: ${f1(v.rate_bpm)} breaths per minute` : `${Pod} ${esc(sc.drone_id)}: no breathing rhythm in this scan`, [
         ['Breaths counted', npk ? `${npk} in ${f0(v.duration_s)} s (white dots)` : (v.n_breaths != null ? `${v.n_breaths} in ${f0(v.duration_s)} s` : '–')],
         ['Breathing rate', v.rate_bpm != null ? `${f1(v.rate_bpm)} per minute` + (v.rate_ci ? ` (likely ${f1(v.rate_ci[0])}–${f1(v.rate_ci[1])})` : '') : '–'],
         ['Signal above noise', v.snr_db != null ? `${f1(v.snr_db)} dB` : '–'],
-        ['Distance from the pod', sc.ranges && sc.ranges.length ? `${f1(sc.ranges[0])} m` : '–']], null];
+        [onDrone(s) ? 'Distance from the radar' : 'Distance from the pod', sc.ranges && sc.ranges.length ? `${f1(sc.ranges[0])} m` : '–']], null];
     }
     if (pods.length) return ['RADAR', down ? `${down} radar pod${down > 1 ? 's' : ''} resting on the rubble, feeling for breathing` : 'Lowering radar pods on their cables', [
         ['Pods on the rubble', `${down} of ${pods.length}`],
         ['Cable out', drones.filter(d => pods.some(p => p.drone_id === d.id)).map(d => `${f1(d.winch_len_m)} m`).join(' · ') || '–'],
         ['Last scan', st ? `${esc(st.scan_id)} · quality ${f2(st.quality)}` : 'none yet']], null];
+    if (onDrone(s)) {
+      const down = drones.filter(d => ['landed', 'scanning'].includes(d.state)).length;
+      return ['RADAR', down ? `${down} drone${down > 1 ? 's' : ''} landed on the rubble, radar on, feeling for breathing` : 'Landing on safe spots from the LiDAR map',
+        [['Drones landed', `${down} of ${drones.length}`],
+         ['Radar reach', st && st.max_reliable_depth_m ? `about ${f1(st.max_reliable_depth_m)} m down` : 'about 3 m down'],
+         ['Last scan', st ? `${esc(st.scan_id)} · quality ${f2(st.quality)}` : 'none yet']], null];
+    }
     return ['RADAR', 'Moving the drones over the rubble to drop the radar pods', [['Drones', String(drones.length)],
         ['Radar reach', st && st.max_reliable_depth_m ? `about ${f1(st.max_reliable_depth_m)} m down` : 'about 3 m down']], null];
   }
@@ -398,8 +441,9 @@ function drawWave(sc) {
   const pk = dur && !none ? breathPeaks(w, dur / (w.length - 1), v.rate_bpm || (sc.breathing_hz ? 60 * sc.breathing_hz : null)) : [];
   g.fillStyle = '#ffffff';
   pk.filter(i => i < n).forEach(i => { g.beginPath(); g.arc(X(i), Y(w[i]) - 14, 6, 0, 2 * Math.PI); g.fill(); });
-  const parts = none ? [`Radar pod ${sc.drone_id} at ${sc.pile}: no breathing return above the detection threshold in this scan`]
-    : [`Measured by radar pod ${sc.drone_id} at ${sc.pile}: chest movement (relative scale)` + (dur ? ` over ${f0(dur)} s` : '')];
+  const rp = onDrone(window._last) ? 'the radar on drone' : 'radar pod';
+  const parts = none ? [`${rp === 'radar pod' ? 'Radar pod' : 'The radar on drone'} ${sc.drone_id} at ${sc.pile}: no breathing return above the detection threshold in this scan`]
+    : [`Measured by ${rp} ${sc.drone_id} at ${sc.pile}: chest movement (relative scale)` + (dur ? ` over ${f0(dur)} s` : '')];
   if (pk.length) parts.push('white dots = breaths');
   else if (sc.breathing_hz && !v.rate_bpm) parts.push(`about ${f0(60 * sc.breathing_hz)}/min (first estimate)`);
   if (v.apnea_events) parts.push(`${v.apnea_events} pause${v.apnea_events > 1 ? 's' : ''} in breathing`);
@@ -408,16 +452,123 @@ function drawWave(sc) {
 
 function leads(s) {
   const P = pings(s).filter(p => p.vitals || p.breathing_hz);
-  $('leads').classList.toggle('hide', !P.length);
+  $('leads').classList.toggle('hide', !P.length || Q.get('leads') !== '1');   // default: the leads are drawn on the LiDAR map
   $('leadlist').innerHTML = P.slice(-2).map(p => {
     const v = p.vitals || {}, rate = v.rate_bpm != null ? `${f0(v.rate_bpm)}/min` : (p.breathing_hz ? `about ${f0(60 * p.breathing_hz)}/min (first estimate)` : '');
     const txt = v.condition_text ? v.condition_text.replace(/\s*->\s*/, ': ') : (v.pattern ? String(v.pattern).replace(/_/g, ' ') + ' breathing' : 'breathing-like rhythm');
     return `<div class="lead"><div class="dot"></div><div><div class="a">${esc(p.id)}${rate ? ' · ' + rate : ''}${v.triage_hint ? ' · ' + esc(v.triage_hint) : ''}</div>` +
-           `<div class="b">${esc(txt.charAt(0).toUpperCase() + txt.slice(1))}</div><div class="n">Aid for rescuers, not a diagnosis.</div></div></div>`;
+           `<div class="b">${esc(txt.charAt(0).toUpperCase() + txt.slice(1))}</div></div></div>`;
   }).join('');
 }
 
+// ---------------------------------------------------------------- LiDAR map
+// Top-down, north up, beside the real (Isaac) view. Every dot is one laser hit that the drones' LiDAR fed to the
+// mission (pointcloud.bin, the file the dashboard's 3D view reads); brighter = higher. Black = not scanned yet.
+// pointcloud.bin starts as the mission's PRIOR map (360k points sampled from the site, full_count 360000): that is
+// not a scan, so it is never drawn. After the first survey the file holds only the ingested hits, appended in
+// order, so each fetch draws just the new ones. Display only; nothing here feeds back into the mission.
+const LM = { cv: $('lmap'), box: $('mbox'), have: 0, busy: false, at: -1e9, key: '', view: null, piles: '', img: null,
+             drones: {}, labels: {}, leads: {}, ring: null, count: 0 };
+LM.g = LM.cv.getContext('2d');
+LM.g.fillStyle = '#000'; LM.g.fillRect(0, 0, LM.cv.width, LM.cv.height);
+function lmView(s) {
+  // the 3x3 piles, padded (the staging area is off the bottom edge; drones there sit on the edge); north up
+  const P = (s.piles || []).map(p => p.xy);
+  if (!P.length) return null;
+  const xs = P.map(p => p[0]), ys = P.map(p => p[1]);
+  const pad = 11, x0 = Math.min(...xs) - pad, x1 = Math.max(...xs) + pad, y0 = Math.min(...ys) - pad, y1 = Math.max(...ys) + pad;
+  const W = LM.cv.width, H = LM.cv.height, k = Math.min(W / (x1 - x0), H / (y1 - y0));   // device px per metre
+  return { k, cx: (x0 + x1) / 2, cy: (y0 + y1) / 2, W, H };
+}
+const lmPx = (v, x, y) => [v.W / 2 + (x - v.cx) * v.k, v.H / 2 - (y - v.cy) * v.k];
+function lmDraw(pts, from) {
+  const v = LM.view, W = v.W, H = v.H;
+  if (!LM.img) { LM.img = LM.g.createImageData(W, H); for (let i = 3; i < LM.img.data.length; i += 4) LM.img.data[i] = 255; }
+  const d = LM.img.data;
+  for (let i = from * 3; i + 2 < pts.length; i += 3) {
+    const [px, py] = lmPx(v, pts[i], pts[i + 1]);
+    const x = px | 0, y = py | 0;
+    if (x < 0 || y < 0 || x >= W - 1 || y >= H - 1) continue;
+    const z = pts[i + 2];
+    // street and ground: fine dim dots; rubble (the public heightmap puts the street at ~0.03 m, pile edges ~0.2 m):
+    // full CSS-pixel dots from grey to white with height, so the piles stand out like a real LiDAR top view
+    const c = z < 0.25 ? 70 : 150 + 105 * Math.sqrt(Math.min(1, (z - 0.25) / 3.5));
+    for (const o of (z < 0.25 ? [0] : [0, 4, 4 * W, 4 * W + 4])) {
+      const j = (y * W + x) * 4 + o;
+      if (d[j] < c) { d[j] = d[j + 1] = d[j + 2] = c; }
+    }
+  }
+  LM.g.putImageData(LM.img, 0, 0);
+}
+function lmReset() { LM.img = null; LM.have = 0; LM.g.fillStyle = '#000'; LM.g.fillRect(0, 0, LM.cv.width, LM.cv.height); }
+function lmFeed(pts) {                                       // Float32Array x,y,z of ALL ingested hits so far
+  const n = Math.floor(pts.length / 3);
+  if (n < LM.have) lmReset();                                // thinned or a new run: redraw from scratch
+  if (n > LM.have) { lmDraw(pts, LM.have); LM.have = n; }
+  LM.count = n;
+  $('mapn').textContent = n ? `${n.toLocaleString('en-GB')} laser points` : 'nothing scanned yet';
+}
+async function lmFetch(url) {
+  LM.busy = true;
+  try {
+    const r = await fetch(url + '?ts=' + Date.now(), { cache: 'no-store' });
+    if (r.ok) lmFeed(new Float32Array(await r.arrayBuffer()));
+  } catch (e) { } finally { LM.busy = false; }
+}
+function lmUpdate(s, b) {
+  if (!LM.view) {
+    LM.view = lmView(s);
+    if (!LM.view) return;
+    const v = LM.view, sc = $('msc').firstElementChild;
+    sc.style.width = `${10 * v.k / 2}px`;                      // 10 m scale bar (CSS px = device px / 2)
+  }
+  const v = LM.view, half = p => [p[0] / 2, p[1] / 2];
+  // pile labels, once; the active pile white, the pile the drones re-planned to green with a ring
+  if (!LM.piles) {
+    LM.piles = (s.piles || []).map(p => {
+      const el = document.createElement('div'); el.className = 'pl'; el.textContent = p.id;
+      const [x, y] = half(lmPx(v, p.xy[0] - 6.5, p.xy[1] + 6.5));
+      el.style.left = `${x}px`; el.style.top = `${y}px`; LM.box.appendChild(el); LM.labels[p.id] = el; return p.id;
+    }).join(',');
+    const ring = document.createElement('div'); ring.className = 'ring hide'; LM.box.appendChild(ring); LM.ring = ring;
+  }
+  const m = s.mission || {}, act = m.active_pile || '';
+  const d = (s.dispatch || []).filter(x => x.to_pile).slice(-1)[0];
+  const go = b === 5 && d ? d.to_pile : '';
+  for (const id in LM.labels) LM.labels[id].className = 'pl' + (id === go ? ' go' : (id === act && !go ? ' on' : ''));
+  const gp = go && (s.piles || []).find(p => p.id === go);
+  LM.ring.classList.toggle('hide', !gp);
+  if (gp) { const [x, y] = half(lmPx(v, gp.xy[0], gp.xy[1])), r = 10.5 * v.k / 2;
+    Object.assign(LM.ring.style, { left: `${x}px`, top: `${y}px`, width: `${2 * r}px`, height: `${2 * r}px` }); }
+  for (const q of s.drones || []) {
+    let el = LM.drones[q.id];
+    if (!el) { el = LM.drones[q.id] = document.createElement('div'); el.className = 'dr'; LM.box.appendChild(el); }
+    let [x, y] = half(lmPx(v, q.pose[0], q.pose[1]));
+    x = Math.max(8, Math.min(v.W / 2 - 8, x)); y = Math.max(8, Math.min(v.H / 2 - 8, y));
+    el.style.transform = `translate(${x.toFixed(1)}px, ${y.toFixed(1)}px)`;
+  }
+  // radar leads (the same list as the leads card): a red dot where the radar placed it, with its breathing rate
+  for (const p of pings(s).filter(p => (p.vitals || p.breathing_hz) && p.xy)) {
+    let e = LM.leads[p.id];
+    if (!e) {
+      e = LM.leads[p.id] = [document.createElement('div'), document.createElement('div')];
+      e[0].className = 'ld'; e[1].className = 'ldl'; e.forEach(x => LM.box.appendChild(x));
+    }
+    const [x, y] = half(lmPx(v, p.xy[0], p.xy[1])), r = p.vitals && p.vitals.rate_bpm;
+    e.forEach(el => { el.style.transform = `translate(${x.toFixed(1)}px, ${y.toFixed(1)}px)`; });
+    e[1].textContent = r != null ? `${p.id} · breathing ${f0(r)}/min` : (p.breathing_hz ? `${p.id} · breathing ~${f0(60 * p.breathing_hz)}/min` : p.id);
+  }
+  // new laser hits: refetch only when the count moved, at most once a second
+  const pc = s.pointcloud || {};
+  if (pc.full_count === 360000 || !pc.url) return;            // the prior map, not a scan
+  const key = `${pc.count}/${pc.full_count || ''}`;
+  if (window.__burn || LM.busy || key === LM.key || vnow() - LM.at < 1.0) return;
+  LM.key = key; LM.at = vnow();
+  lmFetch(DIR + pc.url);
+}
+
 function render(s) {
+  window._last = s;
   const now = vnow(), t = +s.t || 0;
   const ev = event(s);
   const evK = ev ? ev.kind + ':' + ev.t : null;      // a new change gets its own 8 s (reh5b: a stale one at 0 s ate it)
@@ -452,6 +603,7 @@ function render(s) {
   }
   const pile = (s.mission || {}).active_pile;
   const radarNow = ['landing', 'radar', 'relocate', 'rescan'].includes(String(s.phase)) && b !== 4 && b !== 5;
+  lmUpdate(s, b);
   drawWave(radarNow && LIVE && LIVE.last_scan && (!pile || LIVE.last_scan.pile === pile) ? LIVE.last_scan : null);
   const mm = Math.floor(t / 60), ss = Math.floor(t % 60);
   $('clk').textContent = `mission time ${mm}:${String(ss).padStart(2, '0')}`;

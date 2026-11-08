@@ -84,14 +84,15 @@ python3 isaac/run_mission.py --dry-run --live --camera director-take --acoustic 
 ./isaaclab.sh -p $L/isaac/run_mission.py --selftest --headless --enable_cameras --out /workspace/selftest
 ```
 
-**The take** 🎯:
+**The take** 🎯 (run the pre-flight first: it must PASS, and it prints the warm listen latency and the Gemini calls it projects):
 ```bash
+python3 $L/isaac/live.py --preflight
 ./isaaclab.sh -p $L/isaac/run_mission.py --live --livestream 2 --viz kit --enable_cameras \
     --site grid --seed 7 --photoreal 1 --veg 0 --camera director-take --hud overlay --overlay usd --radar dsp
 # collapse site instead: --site collapse --site-usd /workspace/skysearch/collapse_site/collapse_site.usda
 #   (hidden dummies H1_RW_vi / H2_M39_id; re-time it with the dry rehearsal on --site collapse first)
 ```
-Defaults that `--live` sets for you: van on (with `--photoreal 1`), dummies on, heavy drones, winch pods, realistic radar, tasking polled every 1 s, mission thread on, take render settings, keys `U=hidden1, Y=hidden2`, 4 s pre-roll on the van.
+On screen with `--live`: a causal line for every action ("d1-d3 → A1 BECAUSE voice heard, 3/3 drones agree…"), a **PLAN CHANGED** banner after a live input, an **AUTONOMOUS · no operator input** badge, and "not a person: settling debris → no dig" when the radar rejects a return. Speaker audio is off by default (licences); the ring still shows. Defaults that `--live` sets for you: van on (with `--photoreal 1`), dummies on, heavy drones, winch pods, realistic radar, tasking polled every 1 s, mission thread on, take render settings, keys `U=hidden1, Y=hidden2`, 4 s pre-roll on the van.
 
 **Client side** (Rohan's laptop):
 ```bash

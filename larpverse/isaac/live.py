@@ -18,11 +18,14 @@ Honesty boundary
     all display / generator concerns.
 
 Mission hooks
-    Today GridMission has no world-source / preempt / ingest-listen API, so ``attach`` installs a stub through the
-    existing swap points (``scenario``, ``sensor_factory``, ``acoustic_fn``) plus three private calls
-    (``_finish_listen(gate=False)`` as recon does, ``_finish_pile`` and a ``_gate`` wrapper). When the mission
-    owner lands ``set_world_sources`` / ``ingest_listen`` / ``preempt`` (docs/VIDEO_PLAN.md, appendix A), the
-    native hooks are used automatically.
+    Native only (sim/grid_mission.py, fa4e74b): ``set_world_sources`` (generators read the stage), ``ingest_listen``
+    (pod-mic / idle-drone listens folded in without a gate) and ``preempt`` (cut the radar phase after the dwell
+    under way; an operator order wins the gate). ``--live`` refuses to start without them.
+
+Real acoustics (the take)
+    ``AcousticService``: the real pipeline in ``.venv-audio`` as a persistent worker, fed the live dummy WAVs; gate
+    listens are prefetched as soon as the listen landings are commanded, pod-mic listens run asynchronously, Gemini
+    only on gate listens within a counted budget. ``python isaac/live.py --preflight`` fails loudly otherwise.
 
     python isaac/live.py --write-tasking default --out dashboard/data    # seed the dashboard's editable zones
     python isaac/live.py --cmd toggle --id H1 --out dashboard/data       # fallback trigger from a terminal
@@ -55,7 +58,9 @@ KIND_ALIASES = {"shout": "voice", "speech": "voice", "scream": "voice", "call": 
 NONHUMAN_KINDS = ("dog", "generator", "settling", "wind", "siren")
 MOVE_EPS_M = 0.5                 # a dummy moved further than this is a world change
 SIG_SNAP_M = 0.5                 # signature grid: same world within this
+TAKE_GATE_LISTENS = 2            # rotors-off gate listens in a 60 s take (A2, then the redirected pile)
 LISTEN_AFTER_DOWN_S = 66.0       # sim s from "all drones down" to the dispatch gate (26 s listen + call-out, seed 7)
+GEMINI_BUDGET = 20               # Gemini calls per run (free tier ~20 requests / day / model); the pre-flight counts its own
 QUICK_LISTEN_S = 20.0            # pod-mic quick listen cadence (sim s) while pods rest on the rubble
 NEW_EVIDENCE_RISE = 15           # a pile's priority must rise this much over the most it was ever heard at
 NEW_EVIDENCE_NEAR_M = 5.0        # ... and an earlier listen from no further than this extra must have heard it silent
@@ -483,10 +488,10 @@ class LiveWorld:
         self._lock = threading.RLock()
         self.events, self.reads, self.pending_cause = [], 0, {}
         self.stage_ambient = False
-        self.preset = None             # one-shot acoustic result (quick listen folded into the mission)
         self.signatures = True         # whole-scan vitals.identify + displacement per scan for the HUD radar panel
         self.prefetch = {}             # listen_key -> acoustic job submitted when the drones landed (real pipeline)
         self.waiting = None            # {"job", "since"} while a listen waits for the pipeline (HUD)
+        self.gemini_ok = None          # controller hook: may this listen use the Gemini stage (budget)
         self.last_scan, self.last_listen = None, None
         self._prev, self._victims, self._sounds, self.sig = None, [], [], None
         self.t = 0.0
@@ -526,7 +531,7 @@ class LiveWorld:
         self._victims, self._sounds = world_from_dummies(ds, self.locate, self.surface, self.manifest, self.probe,
                                                          ref=self.ref, ref_sounds=self.ref_sounds,
                                                          first_clip=self.first_clip)
-        self.sig = signature(self._victims, self._sounds)
+        self.sig = signature(self._victims, self._sounds + ([] if self.stage_ambient else self.ambient))   # = truth()
         return self
 
     def _event(self, what, d, cause, frm=None):
@@ -709,6 +714,16 @@ sys.stdout.write("\n@@ACOUSTIC_JSON@@" + json.dumps(r))
 """
 
 
+def find_prefetch(prefetch, drones, exclude, seed, sig, tol_m=1.5):
+    """Job id of a prefetched listen for the same world, exclusions and seed with every drone within ``tol_m``."""
+    for key, (jid, pos) in prefetch.items():
+        if key[1:] != (tuple(sorted(set(exclude))), int(seed), sig) or set(pos) != set(drones):
+            continue
+        if all(math.dist(pos[k], drones[k][:2]) <= tol_m for k in drones):
+            return jid
+    return None
+
+
 def listen_key(drones, exclude, seed, sig):
     d = tuple(sorted((k, int(round(float(v[0]))), int(round(float(v[1])))) for k, v in drones.items()))
     return (d, tuple(sorted(set(exclude))), int(seed), sig)
@@ -782,6 +797,16 @@ for line in sys.stdin:
 """
 
 
+def llm_calls(res):
+    """Network LLM calls a listen made (acoustic agent triage + Gemini audio stage), cache hits excluded."""
+    ag = (res or {}).get("agent") or {}
+    n = int(ag.get("llm_calls") or 0)
+    for k, v in ag.items():
+        if isinstance(v, dict) and ("gemini" in k or k.startswith("stage")):
+            n += max(0, int(v.get("calls") or 0) - int(v.get("cached") or 0))
+    return n
+
+
 def _sources_payload(truth):
     """Live sounds -> acoustic.scene.source_track dicts (dummy WAVs already carry their rubble loss). None if any
     sound has no clip (then the pipeline synthesises from the truth dicts instead)."""
@@ -806,6 +831,7 @@ class AcousticService:
         self.sc, self.py, self.say, self.gemini = scenario, python, log or _say_default, bool(gemini)
         self.proc, self.ready, self.info, self.err = None, False, {}, None
         self.results, self.n = {}, 0
+        self.llm_calls = 0                   # network LLM calls made by the pipeline this run (Gemini budget)
         self._lock, self._cv = threading.Lock(), threading.Condition()
         self.latency = []
 
@@ -838,6 +864,10 @@ class AcousticService:
                     self.results[msg["id"]] = msg
                     if "elapsed_s" in msg:
                         self.latency.append(msg["elapsed_s"])
+                    n = llm_calls(msg.get("result"))
+                    if n:
+                        self.llm_calls += n
+                        self.say(f"Gemini calls: +{n} (listen {msg['id']}), {self.llm_calls} this run")
                 self._cv.notify_all()
         with self._cv:
             self.err = self.err or f"worker exited ({self.proc.poll()})"
@@ -848,7 +878,7 @@ class AcousticService:
             if "Traceback" in line or "Error" in line:
                 self.say(f"[acoustic worker] {line.rstrip()[:200]}")
 
-    def submit(self, truth, drones, exclude, seed):
+    def submit(self, truth, drones, exclude, seed, gemini=None):
         with self._lock:
             self.n += 1
             jid = self.n
@@ -856,7 +886,7 @@ class AcousticService:
         req = {"id": jid, "scenario_seed": self.sc.seed, "start_pile": self.sc.public_dict()["start_pile"],
                "site": getattr(self.sc, "site", "grid"), "truth": truth, "sources": src,
                "drones": {k: [float(v[0]), float(v[1])] for k, v in drones.items()}, "exclude": list(exclude),
-               "seed": int(seed), "gemini": self.gemini}
+               "seed": int(seed), "gemini": self.gemini if gemini is None else bool(gemini)}
         self.proc.stdin.write(json.dumps(req) + "\n")
         self.proc.stdin.flush()
         return jid
@@ -908,10 +938,17 @@ def preflight_acoustic(scenario, live=None, log=None, gemini=False, timeout=900.
         say("acoustic pre-flight WARNING: listen_and_rank has no sources= yet; the pipeline synthesises from the "
             "stage positions + transcripts (TTS), not the dummy WAVs (acoustic agent: build_scene(sources=...))")
     lat = time.time() - t0
+    calls = llm_calls(res)
+    r2 = svc.wait(svc.submit(truth, drones, [sp], scenario.seed + 8, gemini=False), timeout)   # warm: the take's latency
+    r = dict(r, elapsed_s=r2["elapsed_s"])
     say(f"acoustic pre-flight PASS: real pipeline in {AUDIO_PY} (mode {mode}, fed {fed}), warm listen "
-        f"{r['elapsed_s']:.1f} s ({lat:.1f} s with the model load), {len(res.get('clips', []))} clips")
+        f"{r['elapsed_s']:.1f} s (first one {lat:.1f} s incl. the model load), {len(res.get('clips', []))} clips")
+    say(f"Gemini: {calls} call(s) in the pre-flight listen ({'Gemini stage on' if gemini else 'Gemini stage off'}); "
+        f"a take makes ~{TAKE_GATE_LISTENS} gate listens -> ~{TAKE_GATE_LISTENS * calls} calls (+ {calls} here) "
+        f"against a free-tier budget of ~{GEMINI_BUDGET}/day/model")
     return svc, {"mode": mode, "fed": fed, "latency_s": r["elapsed_s"], "first_s": round(lat, 1),
-                 "sources_api": svc.info.get("sources_api"), "scene_sources": svc.info.get("scene_sources")}
+                 "sources_api": svc.info.get("sources_api"), "scene_sources": svc.info.get("scene_sources"),
+                 "gemini_calls": calls, "take_gemini_calls_est": TAKE_GATE_LISTENS * calls}
 
 
 def make_acoustic_fn(live, mode="auto", log=None, service=None):
@@ -921,19 +958,16 @@ def make_acoustic_fn(live, mode="auto", log=None, service=None):
     say = log or _say_default
 
     def fn(scenario, drones, exclude, seed):
-        if live.preset is not None:                       # a quick listen already synthesised this result
-            res, live.preset = live.preset, None
-            return res
         live.refresh(None, "listen")
         fresh = live.changed
         if service is not None:                           # the take: the real pipeline on the live sources
-            key = listen_key(drones, exclude, seed, live.sig)
-            jid = live.prefetch.get(key)
+            jid = find_prefetch(live.prefetch, drones, exclude, seed, live.sig)
             t0 = time.time()
             if jid is None:
-                jid = service.submit(live.truth(), drones, exclude, seed)
+                jid = service.submit(live.truth(), drones, exclude, seed,
+                                     gemini=live.gemini_ok() if live.gemini_ok else None)
             else:
-                say(f"listen: using the pipeline run prefetched when the drones landed (job {jid})")
+                say(f"listen: using the pipeline run prefetched when the landings were commanded (job {jid})")
             live.waiting = {"job": jid, "since": t0}
             try:
                 r = service.wait(jid)
@@ -973,6 +1007,8 @@ class LiveController:
                  radar="dsp", keys=DEFAULT_KEYS, log=None, clock=time.monotonic, service=None):
         self.m, self.live, self.out = mission, live, out_dir
         self.service = service             # AcousticService: the real pipeline (the take); None = in-process / stub
+        self.gemini_budget, self._gemini_warned = GEMINI_BUDGET, False
+        live.gemini_ok = self.gemini_ok
         self._ql_job = None                # (job id, points, t) of the pod-mic listen in flight
         self.say = log or _say_default
         self.quick_s, self.preempt_on, self.clock = float(quick_s), bool(preempt), clock
@@ -981,10 +1017,13 @@ class LiveController:
         self._cand_prev = set()            # new-evidence candidates of the previous quick listen (need 2 in a row)
         self.quick = []                    # quick-listen summaries (HUD / live.json)
         self.replans = []                  # [{t, why, from, to}]
-        self.order = None                  # (pile, reason) operator order applied at the next gate
         self.n_changes = 0                 # quick listens folded in + re-plans (the loop rebuilds the state)
+        self.inputs = []                   # live inputs: stage events, tasking revisions, portal reports
+        self.input_pending = None          # {"since", "cause", "expect"} until the next dispatch
+        self.expect = None                 # the pile the fleet would go to next, as ranked before any live input
+        self.banner = None                 # {"text", "since", "t"}: PLAN CHANGED, ~5 s on screen
+        self._state, self._n_dispatch, self._n_events = None, 0, 0
         self.threaded = False              # --mission-thread: USD syncs happen on the render thread only
-        self.cut_pending = None            # re-plan waiting for the radar dwell under way to finish
         self._ql_t, self._ql_n = -1e9, 0
         self._last_poll = -1e9
         self._seen_res = None
@@ -999,38 +1038,14 @@ class LiveController:
 
     # ------------------------------------------------------------------ hooks
     def _attach(self, acoustic, radar):
+        """Hand the live world to the mission's generators (GridMission.set_world_sources, fa4e74b)."""
         m, live = self.m, self.live
-        fn = make_acoustic_fn(live, acoustic, self.say, service=self.service)
-        factory = (lambda pw, seed: LiveRadar(pw, seed, radar, live))
-        if hasattr(m, "set_world_sources"):                # native hook (docs/VIDEO_PLAN.md, Request A1)
-            m.set_world_sources(live.scenario, sensor_factory=factory, acoustic_fn=fn)
-            if not hasattr(m, "preempt"):
-                self._wrap_gate()
-            return "native"
-        m.scenario = live.scenario                         # call-out generator + acoustic stub read truth from here
-        m.acoustic_fn = fn
-        m.sensor_factory = factory
-        if getattr(m, "pm", None) is not None:             # the pile already started: swap its generator too
-            m.pm.sensors = factory(m.pm.world, m.seed)
-        self._wrap_gate()
-        return "stub"
-
-    def _wrap_gate(self):
-        """Operator orders (a new zone, a portal 'trapped' sector) win the next dispatch gate."""
-        m = self.m
-        orig = m._gate
-
-        def gate(res):
-            if self.order is not None and self.order[0] in m.piles:
-                pile, why = self.order
-                self.order = None
-                here = m.visited[-1] if m.visited else None
-                m.dispatch.append({"t": round(m.t, 1), "from_pile": here, "to_pile": pile, "reason": why, "by": "operator"})
-                m._say(f"Operator order: {why}")
-                m._start_pile(pile, why)
-                return None
-            return orig(res)
-        m._gate = gate
+        if not all(hasattr(m, k) for k in ("set_world_sources", "ingest_listen", "preempt")):
+            raise RuntimeError("sim/grid_mission.py has no live hooks (set_world_sources / ingest_listen / preempt, "
+                               "fa4e74b): update the mission before --live")
+        m.set_world_sources(live.scenario, sensor_factory=lambda pw, seed: LiveRadar(pw, seed, radar, live),
+                            acoustic_fn=make_acoustic_fn(live, acoustic, self.say, service=self.service))
+        return "native"
 
     # ------------------------------------------------------------------ per step
     def before_step(self):
@@ -1055,6 +1070,8 @@ class LiveController:
         """Returns True when it changed the mission (folded a quick listen or re-planned)."""
         m = self.m
         n0 = self.n_changes
+        self._state = state
+        self._track_inputs(state)
         if m.last_acoustic is not None and m.last_acoustic is not self._seen_res:
             self._seen_res = m.last_acoustic
             self._note_heard(m.last_acoustic, fold=False)
@@ -1062,13 +1079,57 @@ class LiveController:
         self._check_portal(state)
         self._prefetch_listen()
         self._quick_listen(state)
-        if self.cut_pending is not None:
-            if m.stage != "pile" or m.pm is None:
-                self.cut_pending = None                     # the pile ended by itself: the gate re-ranks anyway
-            elif m.pm.scans and not m.pm.pending:
-                self._cut(self.cut_pending)
-                self.n_changes += 1
+        self._track_dispatch(state)
         return self.n_changes != n0
+
+    # ------------------------------------------------------------------ autonomy badge + PLAN CHANGED banner
+    def _note_input(self, cause):
+        self.inputs.append({"t": round(self.m.t, 1), "cause": cause, "since": self.clock()})
+        if self.input_pending is None:
+            self.input_pending = {"since": self.clock(), "cause": cause, "expect": self.expect}
+
+    def _track_inputs(self, state):
+        evs = self.live.events
+        for e in evs[self._n_events:]:
+            if e["what"] in ("activated", "moved", "added", "clip changed", "deactivated"):
+                self._note_input(f"dummy {e['id']} {e['what']} ({e['cause']})")
+        self._n_events = len(evs)
+        if self.input_pending is None:                     # what the fleet would do next without the live input
+            m = self.m
+            here = m.pm.pile if m.pm is not None else None
+            cand = [p for p in (state.get("piles") or []) if p["id"] not in m.visited and p["id"] != here
+                    and (m._tasked_piles() is None or p["id"] in m._tasked_piles())]
+            cand.sort(key=lambda p: (-(p["priority"] if p["priority"] is not None else -1), p["id"]))
+            self.expect = cand[0]["id"] if cand else None
+
+    def _set_banner(self, text):
+        self.banner = {"text": text, "since": self.clock(), "t": round(self.m.t, 1)}
+        self.say(text)
+
+    def _track_dispatch(self, state):
+        dis = state.get("dispatch") or []
+        if len(dis) <= self._n_dispatch:
+            return
+        new = dis[-1]
+        self._n_dispatch = len(dis)
+        ip = self.input_pending
+        if ip is None:
+            return
+        self.input_pending = None
+        to, old = new.get("to_pile"), ip.get("expect")
+        if to and to != old:
+            q = next((e for r in reversed(self.quick) for e in r.get("new") or [] if e["pile"] == to), None)
+            why = (f"new human-like sound at {to}" if q else "operator order" if new.get("by") == "operator"
+                   else "re-ranked on new evidence")
+            self._set_banner(f"PLAN CHANGED: {old or 'next pile'} → {to} ({why}, unscripted live input)")
+
+    def badge(self):
+        if not self.inputs:
+            return "AUTONOMOUS · no operator input"
+        last = self.inputs[-1]
+        if self.clock() - last["since"] <= BADGE_LIVE_S:
+            return f"LIVE INPUT · {last['cause']}"
+        return f"AUTONOMOUS · {len(self.inputs)} live input(s), last at t {last['t']:.0f}"
 
     def poll(self):
         """Wall-clock poll (1 s): tasking file, command file, stage dummies."""
@@ -1140,6 +1201,7 @@ class LiveController:
         if tr is None or tr.revision == self._tk_rev:
             return
         self._tk_rev = tr.revision
+        self._note_input(f"operator tasking revision {tr.revision}")
         zones = set(tr.zone_ids())
         new = [z for z in tr.zone_ids() if z not in self._zones]
         self._zones = zones
@@ -1165,6 +1227,7 @@ class LiveController:
             if d.get("status") != "trapped" or d.get("id") in self._devices or not d.get("est_xy"):
                 continue
             self._devices.add(d.get("id"))
+            self._note_input(f"phone portal: 'I'm trapped' ({d.get('id')})")
             pile = d.get("pile") or self.live.locate(*d["est_xy"])
             if pile in self.m.piles and pile not in self.m.visited:
                 self._replan(f"portal: a phone reports 'I'm trapped' near {pile} (RSSI fit ±{d.get('est_sigma_m', '?')} m; "
@@ -1172,30 +1235,67 @@ class LiveController:
 
     # ------------------------------------------------------------------ pod-mic quick listens (outputs only)
     def _listen_points(self, state):
+        """Rotors-off microphones now: pods resting on the rubble (their drone hovers above, its own mics are not
+        used) and drones landed on a patch (A4: idle drones land during pod rescans)."""
+        pts = {}
         if getattr(self.m, "delivery", "pod") == "pod":
             pts = {p["drone_id"]: tuple(p["xy"][:2]) for p in state.get("pods") or [] if p.get("status") == "scanning"}
-        else:
-            pts = {d["id"]: tuple(d["pose"][:2]) for d in state.get("drones", []) if d.get("state") in ("scanning", "landed")}
+        for d in state.get("drones", []):
+            if d["id"] not in pts and d.get("state") in ("landed", "listening") or (
+                    getattr(self.m, "delivery", "pod") != "pod" and d.get("state") == "scanning"):
+                pts.setdefault(d["id"], tuple(d["pose"][:2]))
         return pts
 
+    def _listen_targets(self):
+        """Where each drone will sit for the rotors-off listen: its pose if landed, else the destination of its
+        'listen-*' landing job (known the moment the mission commands the landings). None if any is unknown."""
+        m, out = self.m, {}
+        for p in m.flight.poses():
+            did = p["id"]
+            st, _, job = m.flight.drone_state(did)
+            if st in ("landed", "docked") and not job:
+                out[did] = (float(p["pose"][0]), float(p["pose"][1]))
+                continue
+            route = getattr(m.flight.drones.get(did) if isinstance(m.flight.drones, dict) else None, "route", None)
+            if job and str(job.get("site", "")).startswith("listen-") and route:
+                out[did] = (float(route[-1][0]), float(route[-1][1]))
+            else:
+                return None
+        return out
+
     def _prefetch_listen(self):
-        """Real pipeline: submit the rotors-off listen as soon as every drone is down (positions and world are then
-        final), so its result is ready - or nearly - when the listen window ends. A world change after this makes
-        the key differ and the listen is synthesised again (never a stale world)."""
+        """Real pipeline: submit the rotors-off listen the moment its positions are known - when the mission commands
+        the listen landings at the end of the radar phase - so the synthesis overlaps the landing, the listen window
+        and the call-out. The stage world goes in as it is then; a later change makes the world signature differ and
+        the gate listen is synthesised again (never a stale world)."""
         m = self.m
-        if self.service is None or m.stage != "listen" or m.listen_end is None:
+        if self.service is None or m.stage != "listen":
             return
-        drones = m._drone_xy()
+        drones = self._listen_targets()
+        if not drones:
+            return
         exclude = list(dict.fromkeys(m.visited))
         seed = m.seed + 101 * (m.n_listen + 1)
-        key = listen_key(drones, exclude, seed, self.live.sig)
-        if key not in self.live.prefetch:
-            self.live.refresh(m.t, "listen prefetch")
-            key = listen_key(drones, exclude, seed, self.live.sig)
-            if key not in self.live.prefetch:
-                self.live.prefetch[key] = self.service.submit(self.live.truth(), drones, exclude, seed)
-                self.say(f"real acoustic pipeline: listen {m.n_listen + 1} submitted at t {m.t:.0f} "
-                         f"(drones down; result needed at t {m.listen_end:.0f})")
+        self.live.refresh(m.t, "listen prefetch")
+        if find_prefetch(self.live.prefetch, drones, exclude, seed, self.live.sig) is not None:
+            return
+        jid = self.service.submit(self.live.truth(), drones, exclude, seed, gemini=self.gemini_ok())
+        self.live.prefetch[listen_key(drones, exclude, seed, self.live.sig)] = (jid, dict(drones))
+        self.say(f"real acoustic pipeline: listen {m.n_listen + 1} submitted at t {m.t:.0f} (landing patches known); "
+                 f"it overlaps the landing, the listen window and the call-out")
+
+    def gemini_ok(self):
+        """Gemini (zh/id/vi transcripts) only on the gate listens, within the day's budget (free tier ~20/model)."""
+        svc = self.service
+        if svc is None or not svc.gemini:
+            return False
+        if svc.llm_calls >= self.gemini_budget:
+            if not self._gemini_warned:
+                self._gemini_warned = True
+                self.say(f"GEMINI BUDGET REACHED ({svc.llm_calls}/{self.gemini_budget} calls this run): further listens "
+                         "run without the Gemini stage (local transcripts only)")
+            return False
+        return True
 
     def _quick_listen(self, state):
         m = self.m
@@ -1220,7 +1320,7 @@ class LiveController:
         seed = m.seed + 5003 + 17 * self._ql_n
         if self.service is not None:
             self.live.refresh(m.t, "pod-mic listen")
-            self._ql_job = (self.service.submit(self.live.truth(), pts, exclude, seed), pts, m.t)
+            self._ql_job = (self.service.submit(self.live.truth(), pts, exclude, seed, gemini=False), pts, m.t)
             return
         res = m.acoustic_fn(m.scenario, pts, exclude, seed)
         self._handle_quick(res, pts, m.t)
@@ -1237,11 +1337,7 @@ class LiveController:
             return                                         # the pile ended meanwhile: the next gate re-ranks anyway
         pile, pr, was = max(new, key=lambda e: e[1])
         self.n_changes += 1
-        if hasattr(m, "ingest_listen"):                       # native hook (Request A2)
-            m.ingest_listen(res, pts, source="pod-mic")
-        else:
-            self.live.preset = res
-            m._finish_listen(drones=pts, gate=False)          # as recon does: clips + priorities, no gate
+        m.ingest_listen(res, pts, source="pod-mic")
         m._say(f"Pod-mic quick listen {self._ql_n}: NEW human-like sound at {pile} (priority {pr}; earlier listens from "
                f"as close heard {'nothing human-like' if not was else f'at most {was}'} there), confirmed by two "
                "consecutive listens; not a confirmed person")
@@ -1288,37 +1384,23 @@ class LiveController:
 
     # ------------------------------------------------------------------ re-plan
     def _replan(self, why, to_pile=None):
+        """Native GridMission.preempt while a pile is being searched (the cut waits for the dwell under way; the
+        cut pile stays not cleared). Between piles an operator order goes straight to the next dispatch gate."""
         m = self.m
-        rec = {"t": round(m.t, 1), "why": why, "from": m.pm.pile if m.pm is not None else None, "to": to_pile,
-               "stage": m.stage}
-        self.replans.append(rec)
+        self.replans.append({"t": round(m.t, 1), "why": why, "from": m.pm.pile if m.pm is not None else None,
+                             "to": to_pile, "stage": m.stage})
         self.n_changes += 1
-        if to_pile is not None:
-            self.order = (to_pile, why)
-        if hasattr(m, "preempt"):                           # native hook (Request A3)
+        if self.input_pending is not None or to_pile is not None:
+            tgt = to_pile or next((e["pile"] for r in reversed(self.quick) for e in r.get("new") or []), None)
+            here = m.pm.pile if m.pm is not None else (self.expect or "plan")
+            if tgt and tgt != here:
+                self._set_banner(f"PLAN CHANGED: {here} → {tgt} ({_short_why(why)}, unscripted live input)")
+        if m.stage == "pile" and m.pm is not None:
             m.preempt(why, to_pile=to_pile)
-            return
-        if m.stage != "pile" or m.pm is None:
+            m._say(f"RE-PLAN requested: {why}; finishing the radar dwell under way at {m.pm.pile}, then the gate")
+        elif to_pile is not None:
+            m._order = to_pile                              # GridMission._gate honours it first (fa4e74b)
             m._say(f"RE-PLAN queued: {why} (applies at the next dispatch gate)")
-            return
-        if not m.pm.scans or m.pm.pending:                  # finish the dwell under way first (and have >= 1 scan)
-            self.cut_pending = why
-            m._say(f"RE-PLAN: {why}. Finishing the radar dwell under way at {m.pm.pile}, then redirecting")
-            return
-        self._cut(why)
-
-    def _cut(self, why):
-        m = self.m
-        self.cut_pending = None
-        pm = m.pm
-        m._say(f"RE-PLAN: radar phase at {pm.pile} cut short after {len(pm.scans)} scans ({why}); {pm.pile} stays "
-               "not cleared and open for a revisit")
-        saved = m.listen_s
-        m.listen_s = 0.0                                    # gate now: the quick listen just happened
-        try:
-            m._finish_pile()
-        finally:
-            m.listen_s = saved
 
     # ------------------------------------------------------------------ output
     def to_json(self):
@@ -1333,7 +1415,9 @@ class LiveController:
                              "waiting": None if not self.live.waiting else
                              {"job": self.live.waiting["job"], "s": round(time.time() - self.live.waiting["since"], 1)},
                              "latency_s": (self.service.latency[-5:] if self.service is not None else None)},
-                "keys": self.keys}
+                "keys": self.keys, "badge": self.badge(),
+                "banner": None if self.banner is None else dict(self.banner),
+                "causal": _causal(self._state, self)}
 
     def write(self):
         if not self.out:
@@ -1371,6 +1455,47 @@ def pace_for(pace, phase, default):
     return float(pace.get(phase, default)) if pace else float(default)
 
 
+BADGE_LIVE_S = 10.0     # video s the badge reads LIVE INPUT after a stage event / tasking change / portal report
+
+
+def _short_why(why):
+    w = str(why)
+    if "new human-like" in w:
+        return "new voice heard"
+    if "operator re-task" in w or "zone" in w:
+        return "operator zone"
+    if "portal" in w:
+        return "phone portal report"
+    return w[:40]
+
+
+def set_speaker_audio(mission, mode="off", log=None):
+    """Loudspeaker audio for the take. The call-out renders (acoustic/speaker_assets.py) use Piper voices whose
+    licences are unclear or research-only (docs/DUMMY_AUDIO.md Requests), so the take serves NO audio file
+    (``off``) or only eSpeak NG renders (``espeak``); ``any`` leaves it as is. The call-out itself, its timing
+    (durations stay those of the rendered manifest, so the story does not move) and the on-screen speaker ring are
+    unchanged: only ``broadcasts[].audio_url`` is withheld."""
+    say = log or _say_default
+    sp = getattr(mission, "speaker", None)
+    if sp is None or mode == "any":
+        return 0
+    man = getattr(sp, "manifest", {}) or {}
+
+    def lookup(lang, text):
+        from sim.guidance import audio_key
+        it = man.get(audio_key(lang, text))
+        if mode == "espeak" and it and it.get("engine") == "espeak" and it.get("path"):
+            return f"acoustic/data/speaker/{os.path.basename(it['path'])}", "rendered (eSpeak NG, GPL-3.0 engine output)"
+        return None, ("muted for the take (Piper voice licences unclear; see docs/DUMMY_AUDIO.md)" if mode == "off"
+                      else "no eSpeak NG render (python -m acoustic.speaker_assets --engine espeak --force)")
+    sp._audio = lookup
+    if getattr(sp, "log", None) is not None:
+        sp.log.audio_lookup = lookup
+    n = sum(1 for it in man.values() if it.get("engine") == "espeak")
+    say(f"speaker audio for the take: {mode} ({n} eSpeak NG renders available); the on-screen call-out ring stays")
+    return n
+
+
 def parse_keys(spec):
     out = {}
     for part in (spec or "").split(","):
@@ -1378,6 +1503,15 @@ def parse_keys(spec):
             k, v = part.split("=", 1)
             out[k.strip().upper()] = v.strip()
     return out
+
+
+def _causal(state, ctrl):
+    try:
+        from isaac.hud import causal_lines
+        lj = {"last_scan": ctrl.live.last_scan, "quick_listens": ctrl.quick[-5:], "replans": ctrl.replans[-10:]}
+        return causal_lines(state or {}, lj)
+    except Exception:                                       # noqa: BLE001  (output only)
+        return []
 
 
 def parse_test_trigger(spec):
@@ -1698,6 +1832,8 @@ def main(argv=None):
     ap.add_argument("--cmd", choices=["toggle", "activate", "deactivate", "move"], default=None)
     ap.add_argument("--id", default=None, help="dummy id (default: the first hidden dummy)")
     ap.add_argument("--xyz", default=None, help="move: x,y,z")
+    ap.add_argument("--gemini", type=int, choices=[0, 1], default=1,
+                    help="--preflight: include the Gemini audio stage (costs calls from the ~20/day free tier)")
     ap.add_argument("--preflight", action="store_true",
                     help="start the real acoustic pipeline worker (.venv-audio) and run one listen on the live dummies; "
                          "exit 1 LOUDLY if the take would fall back to stub acoustics")
@@ -1712,7 +1848,7 @@ def main(argv=None):
             live.set_active(hid[-1], True, "preflight")      # check a CHANGED world too (fresh, uncached synthesis)
             live.refresh(0.0)
         try:
-            svc, info = preflight_acoustic(sc, live)
+            svc, info = preflight_acoustic(sc, live, gemini=bool(a.gemini))
         except Exception as e:                               # noqa: BLE001
             print("\n" + "!" * 78 + f"\nACOUSTIC PRE-FLIGHT FAILED: {e}\nThe take would use STUB acoustics. Fix it "
                   "(docs/VIDEO_PLAN.md section 6) before rolling.\n" + "!" * 78, flush=True)

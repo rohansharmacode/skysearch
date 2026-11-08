@@ -432,7 +432,7 @@ const zAl = fo(dmap, 182, 152, 140, 40, 'Zone T1a · done', 'chip');
 const zBd = 'M500,150 L730,145 L735,360 L505,365 Z';
 const zB = el('path', { d: zBd, fill: 'url(#hatch)', stroke: '#2cb7af', 'stroke-width': 3, opacity: 0 }, dmap);
 const zBlen = 2 * (230 + 215);
-const zBl = fo(dmap, 508, 152, 170, 40, 'New zone T1b', 'chip zone');
+const zBl = fo(dmap, 566, 300, 170, 40, 'New zone T1b', 'chip zone');
 // voices near T1b
 const vRings = [0, 1, 2].map(() => el('circle', { cx: 615, cy: 255, r: 0, fill: 'none', stroke: '#f0857c', 'stroke-width': 2.5, opacity: 0 }, dmap));
 const vChip = fo(dmap, 540, 300, 200, 40, '<span class="q">Voices heard</span>', 'chip');
@@ -445,7 +445,7 @@ const dDr = COLORS.map((c, i) => {
   return g;
 });
 const dStart = [{ x: 250, y: 220 }, { x: 360, y: 300 }, { x: 300, y: 330 }];
-const dEnd = [{ x: 560, y: 200 }, { x: 680, y: 230 }, { x: 600, y: 320 }];
+const dEnd = [{ x: 560, y: 215 }, { x: 680, y: 200 }, { x: 640, y: 270 }];
 const dArcs = dStart.map((s, i) => el('path', { d: `M${s.x},${s.y} Q${(s.x + dEnd[i].x) / 2},${Math.min(s.y, dEnd[i].y) - 110} ${dEnd[i].x},${dEnd[i].y}`, fill: 'none', stroke: COLORS[i], 'stroke-width': 2, 'stroke-dasharray': '6 6', opacity: 0 }, dmap));
 const cursor = $('#cursor'), addBtn = $('#addzone'), ban1 = $('#ban1'), ban2 = $('#ban2');
 const logLis = $$('#log li').map((li) => ({ li, at: parseFloat(li.dataset.at) }));
@@ -512,7 +512,8 @@ function render(t) {
     const op = vis ? inP * (1 - easeInOut(outP)) : 0;
     s.el.style.opacity = op.toFixed(4);
     s.el.style.visibility = op > 0.001 ? 'visible' : 'hidden';
-    s.el.style.transform = `scale(${(1.025 - 0.025 * inP - 0.02 * easeInOut(outP)).toFixed(4)})`;
+    const drift = 0.018 * clamp((t - s.a) / (s.b - s.a)); // slow push-in keeps holds alive
+    s.el.style.transform = `scale(${(1.025 - 0.025 * inP - 0.02 * easeInOut(outP) + drift).toFixed(4)})`;
     s.el.style.filter = (inP < 0.99 || outP > 0) ? `blur(${((1 - inP) * 10 + outP * 8).toFixed(2)}px)` : 'none';
     s.on = op > 0.001;
   }

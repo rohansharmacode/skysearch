@@ -68,7 +68,7 @@
 <div id="legend" class="panel">
   <span style="--c:var(--lidar)">LiDAR (3D mapping)</span><span style="--c:var(--radar)">Radar (breathing, ~3 m deep)</span>
   <span style="--c:var(--sound)">Sound heard</span><span style="--c:var(--ping)">Radar ping = place to dig first</span>
-  <span style="--c:var(--zone)">Search zone</span><span style="--c:#8a8f95">Grey figure = simulated person</span></div>
+  <span style="--c:var(--ok)">Green line = where the swarm flies next</span><span style="--c:var(--zone)">Search zone</span><span style="--c:#8a8f95">Grey figure = simulated person</span></div>
 <div id="banner" class="panel"></div>
 <div id="honest" class="panel">Simulation: the people, their sounds and the radar returns are synthetic and labelled; the drones never see where the grey figures are.</div>
 <div id="offline" class="panel">Waiting for state.json…</div>
@@ -126,7 +126,12 @@ function rows(s) {
   let rtxt = pods.length ? `${pods.length} pod${pods.length > 1 ? 's' : ''} scanning for breathing` : 'No radar dwell right now';
   let rsub = last ? `last scan ${esc(last.scan_id)} on ${esc(last.pile_id)}: ` + ((last.range_candidates || []).length
       ? `breathing-like return at ${(+last.range_candidates[0]).toFixed(1)} m` : 'no breathing signal (not cleared)') : '';
-  if (pings.length) { rtxt = `PING ${esc(pings[0].id)}: candidate region to dig first`; rsub = 'a place to search, not a confirmed person'; }
+  if (pings.length) {
+    const v = pings[0].vitals || {};
+    rtxt = `PING ${esc(pings[0].id)}: candidate region to dig first`;
+    rsub = (v.condition_text ? `breathing: ${esc(v.condition_text)}` + (v.rate_bpm ? ` (${Math.round(v.rate_bpm)}/min)` : '') + ' · ' : '')
+      + 'a place to search, not a confirmed person';
+  }
   out.push({ chip: pings.length ? 'PING' : 'RADAR', c: pings.length ? 'var(--ping)' : 'var(--radar)', dim: !pods.length && !pings.length, txt: rtxt, sub: rsub });
   const clips = (s.acoustic_clips || []).slice().sort((a, b) => (b.priority ?? 0) - (a.priority ?? 0));
   const human = clips.filter(c => ((c.scores || {}).human ?? 0) >= 0.4);
@@ -145,6 +150,14 @@ function rows(s) {
   if (other.length) out.push({ chip: 'NOISE', c: '#8a8f95', dim: true, txt: other.slice(0, 3).map(c => esc(c.class)).join(', ') + ' — not human, ignored', sub: '' });
   const sug = (s.zone_suggestions || [])[0];
   if (sug && !newZone) out.push({ chip: 'SUGGEST', c: 'var(--amber)', txt: `Drones suggest a new zone ${esc(sug.id)}`, sub: 'outside the tasked zone: the operator decides' });
+  const dec = (s.dispatch || []).slice(-1)[0];
+  if (dec && dec.reason) {
+    let why = String(dec.reason).replace(/\s*\[zone [^\]]*\]\s*$/, '');
+    if (why.length > 70 && why.indexOf(': ') > 20) why = why.slice(0, why.indexOf(': '));   // the voice is in SOUND
+    out.push({ chip: 'DECISION', c: 'var(--ok)', dim: (+s.t || 0) - (+dec.t || 0) > 40,
+      txt: dec.to_pile ? `Fly to ${esc(dec.to_pile)}` : 'Return to staging, swap batteries',
+      sub: esc(why.length > 120 ? why.slice(0, 117) + '…' : why) });
+  }
   const zs = (s.zones || []).filter(z => z.status !== 'cancelled');
   if (zs.length) out.push({ chip: 'ZONES', c: 'var(--zone)', txt: zs.map(z => `${esc(z.id)}: ${esc(String(z.status).replace(/_/g, ' '))}`).join(' · '), sub: '' });
   return out;

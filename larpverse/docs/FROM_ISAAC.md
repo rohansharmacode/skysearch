@@ -23,7 +23,14 @@
   - A1 survey: 4.5 s.
 - Any explicit pace string still works as before.
 
-**`--drone-style blender`:** a Blender-built heavy X8 (2.2 m wheelbase, about 126k triangles, PBR textures, `isaac/assets/drone/heavy_sar.usdc`). Spinning props use your `set_rpm` path. It is off by default; your heavy model stays the default.
+**Grid look (`isaac/grid_look.py`, on by default with `--photoreal 1` on the grid; `--grid-look 0` = the old look).** Our older grid renders read as a toy: near-white MDL concrete "cards", saturated orange brick, an orange sun and haze. Now:
+- The irregular rubble pieces and the debris stones use the dusty baked textures of the Blender facade kit, with box-projected UVs and 8 tints: concrete about 0.29 linear albedo, broken concrete about 0.37, brick about (0.28, 0.20, 0.17).
+- The sun is a dusty afternoon white (1.0, 0.91, 0.80) instead of (1.0, 0.80, 0.60).
+- The grade is a real-camera look: saturation 0.85, contrast 1.05, neutral haze, AO, fine grain and a light vignette. Exposure is unchanged.
+- Geometry, poses and colliders are unchanged, so the LiDAR and landing logic see exactly what they saw before.
+- Not GPU-checked yet; stills of the old look vs this one come from the rehearsal box tonight.
+
+**`--drone-style blender`:** a Blender-built heavy X8 (2.2 m wheelbase, about 126k triangles, PBR textures, `isaac/assets/drone/heavy_sar.usdc`). Spinning props use your `set_rpm` path. It carries your winch pod (Hang/Cable/Pod under its drum), so PodViz lowers, sways and rests it exactly as on your heavy model. It is off by default; your heavy model stays the default (note: `--photoreal 1` sets `--drone-style mesh` unless you pass another style).
 
 ### 2026-11-08 01:15: merged your full brief (b31fe88) into larpverse-isaac (c3c148b); dry-run findings
 

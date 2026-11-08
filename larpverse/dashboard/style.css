@@ -564,7 +564,7 @@ details.rej summary { cursor: pointer; font: 500 11px var(--f-mono); color: var(
 @keyframes livepulse { 50% { opacity: 0.55; } }
 #liveBar .lt { font: 12px var(--f-mono); color: #d9a3a3; flex: none; }
 #liveBar .lx { min-width: 0; }
-#liveBar .lx.k-stage { color: #e3eaef; font-style: italic; }
+#liveBar .lx.ev-stage { color: #e3eaef; font-style: italic; }
 #hud { display: flex; flex-direction: column; gap: 5px; }
 #hud .hh { font: 11px/1.35 var(--f-mono); color: var(--muted); }
 #hud .hh .ref { color: var(--radar); }

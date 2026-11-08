@@ -89,7 +89,7 @@ export function createLive(app) {
     // event line
     const e = eventLine(S, L.live), bar = $('liveBar');
     bar.hidden = !e;
-    if (e) bar.innerHTML = `<b>LIVE</b><span class="lt">t ${Math.round(e.t ?? 0)} s</span><span class="lx k-${e.kind}">${esc(e.text)}</span>`;
+    if (e) bar.innerHTML = `<b>LIVE</b><span class="lt">t ${Math.round(e.t ?? 0)} s</span><span class="lx ev-${e.kind}">${esc(e.text)}</span>`;
     // radar panel
     const rd = L.hud?.panels?.radar, sec = $('secHud');
     sec.hidden = !rd;

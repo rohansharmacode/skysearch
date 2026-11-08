@@ -202,9 +202,8 @@ _wcache = {}
 
 def _whisper(name):
     if name not in _wcache:
-        from faster_whisper import WhisperModel
-        _wcache[name] = WhisperModel(name, device="cpu", compute_type="int8", cpu_threads=2,
-                                     download_root=WHISPER_DIR)
+        from .models import whisper_model                     # LARPVERSE_WHISPER_DEVICE (default cpu, unchanged)
+        _wcache[name] = whisper_model(name, WHISPER_DIR)
     return _wcache[name]
 
 

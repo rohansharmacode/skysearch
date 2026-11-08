@@ -58,7 +58,7 @@ has_key() {   # true if GEMINI_API_KEY is set in the env or in .env; never print
 # Free-tier key: ~20 requests/day PER MODEL, so spread the load. Audio uses flash-lite (the replay cache was recorded
 # on it); the decider and brief use a different model. Override either by exporting it before running.
 export GEMINI_AUDIO_MODEL="${GEMINI_AUDIO_MODEL:-gemini-3.5-flash-lite}"
-export GEMINI_MODEL="${GEMINI_MODEL:-gemini-3.7-flash}"
+export GEMINI_MODEL="${GEMINI_MODEL:-gemini-3.5-flash}"
 if [ -n "$NO_GEMINI" ]; then DECIDER=none; BRIEF_PROVIDER=(--provider none); echo "decider  : argmax (--no-gemini); brief: template"
 elif has_key; then DECIDER=gemini; BRIEF_PROVIDER=(); echo "decider  : Gemini dispatch gate (key found; falls back to argmax on any error)"
 else DECIDER=none; BRIEF_PROVIDER=(--provider none)

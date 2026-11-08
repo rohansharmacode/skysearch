@@ -32,6 +32,8 @@ import json
 import math
 import os
 
+import numpy as np
+
 COL = {
     "body": (0.16, 0.18, 0.21), "arm": (0.10, 0.11, 0.12), "rotor": (0.75, 0.78, 0.82),
     "blade": (0.05, 0.05, 0.06), "lidar": (0.55, 0.30, 0.85), "radar": (0.98, 0.55, 0.12),
@@ -41,10 +43,46 @@ COL = {
     "metal": (0.62, 0.63, 0.65),
 }
 MODELS = ("heavy", "small")
+# --photoreal: real surface materials per part (UsdPreviewSurface; RTX and path tracing) instead of flat colours.
+PBR = False
+STYLE = "blocks"       # "mesh": the smooth heavy-lift model of isaac/drone_mesh.py (photoreal sets it)
+PROP_DISC = 0.06       # PBR: opacity of the spinning-prop blur disc (0 hides it; the blades still turn)
+PBR_LOOK = {           # key -> (rgb, roughness, metallic, clearcoat); rgb None = the part's own colour
+    "body": ((0.19, 0.20, 0.22), 0.32, 0.0, 0.8),       # painted composite shell
+    "stripe": (None, 0.35, 0.0, 0.6),
+    "carbon": ((0.022, 0.022, 0.026), 0.26, 0.0, 0.9),  # carbon-fibre arms and landing gear
+    "metal": ((0.32, 0.33, 0.35), 0.30, 1.0, 0.0),      # motor bells
+    "canopy": ((0.80, 0.81, 0.82), 0.30, 0.0, 0.9),     # light top shell
+    "gimbal": ((0.09, 0.09, 0.10), 0.35, 0.6, 0.0),
+    "plastic": ((0.03, 0.03, 0.035), 0.45, 0.0, 0.0),   # prop blades
+    "radome": ((0.80, 0.80, 0.78), 0.55, 0.0, 0.2),     # radar panel cover
+    "battery": ((0.10, 0.11, 0.12), 0.40, 0.0, 0.4),
+    "lens": ((0.015, 0.015, 0.02), 0.06, 0.0, 1.0),     # LiDAR window, thermal lens
+    "mic": ((0.04, 0.04, 0.045), 0.6, 0.0, 0.0),
+    "speaker": ((0.70, 0.70, 0.68), 0.5, 0.0, 0.0),
+    "disc": ((0.10, 0.10, 0.11), 0.5, 0.0, 0.0),
+    "wifi": ((0.08, 0.30, 0.95), 0.40, 0.0, 0.3),        # blue rescue-Wi-Fi antenna (colour code: blue = Wi-Fi)
+    "nav_red": ((0.6, 0.05, 0.03), 0.3, 0.0, 0.5),
+    "nav_green": ((0.05, 0.6, 0.1), 0.3, 0.0, 0.5),
+    "strobe": ((0.9, 0.9, 0.9), 0.3, 0.0, 0.5),
+}
+EMISSIVE = {"nav_red": (160.0, 8.0, 4.0), "nav_green": (8.0, 130.0, 16.0), "strobe": (260.0, 260.0, 270.0)}
+STROBE = (1.0, 0.09)   # s: anti-collision strobe period and flash length (render clock)
+PART_KEY = (("Fuselage", "body"), ("Canopy", "canopy"), ("Visor", "lens"), ("GpsMast", "gimbal"),
+            ("GpsPuck", "radome"), ("Hinge", "gimbal"), ("Column", "gimbal"), ("Foot", "plastic"),
+            ("YokeGimbal", "gimbal"), ("LensZoom", "lens"), ("LidarCap", "gimbal"), ("Hub", "gimbal"),
+            ("Stripe", "stripe"), ("Battery", "battery"), ("Arm", "carbon"),
+            ("Motor", "metal"), ("Skid", "carbon"), ("Leg", "carbon"), ("Brace", "carbon"), ("Gimbal", "gimbal"),
+            ("LidarPuck", "lens"), ("Thermal", "lens"), ("RadarPanel", "radome"), ("SpeakerHorn", "speaker"),
+            ("Mic", "mic"), ("Blade", "plastic"), ("Disc", "disc"), ("WifiAnt", "wifi"), ("Antenna", "plastic"),
+            ("ComputeBox", "battery"), ("RadioBox", "battery"), ("WinchDrum", "metal"), ("WinchFrame", "carbon"),
+            ("NavRed", "nav_red"), ("NavGreen", "nav_green"), ("NavRear2", "nav_red"), ("NavRear3", "nav_green"),
+            ("Strobe", "strobe"), ("LidarBracket", "gimbal"))
 GEAR_H = 0.60          # heavy: skid bottom to fuselage underside (m, estimate)
 WINCH_BOTTOM = 0.445   # underside of the winch (cable exit), BOM Winch pos z 0.52 - 0.15 / 2
 POD_STOW_Z = 0.175     # stowed pod base (BOM "Pod (stowed)": centre 0.30, height 0.25)
 HOVER_RPM = 1000.0     # 54-in props on a ~80 kg X8 (sim/flight_motion.py estimate, docs/MOTION.md): visual only
+RPM_DIV = max(1, int(os.environ.get("LV_RPM_DIV", "1")))
 BLUR_RPM = 450.0
 SLOW_RPM = 120.0
 ROTOR_ORDER = [f"Rotor{i}_{lvl}" for i in range(4) for lvl in (0, 1)]
@@ -288,6 +326,11 @@ def model_extent(parts):
     for kind, _, t, s, _, rz, attrs in parts:
         if kind == "Line":
             continue
+        if kind == "Mesh":
+            P = attrs["P"]
+            ex, ey = max(ex, float(abs(P[:, 0]).max())), max(ey, float(abs(P[:, 1]).max()))
+            zmin, zmax = min(zmin, float(P[:, 2].min())), max(zmax, float(P[:, 2].max()))
+            continue
         if kind == "Rotor":
             hx = hy = attrs["radius"]
         elif kind == "Cube":
@@ -430,7 +473,23 @@ class DroneViz:
         self.heavy = heavy
         self.spin_rate = 1200.0 if heavy else 2400.0               # deg/s for spin() on the small model
         if heavy:
-            self._build_parts(heavy_parts(spec, did, delivery), looks_root)
+            if STYLE == "blender":            # isaac/tools/blender_drone.py asset; None -> the models below
+                from isaac.blender_drone import build
+                rot = build(stage, self.model, did, log=print, emissive=EMISSIVE)
+                if rot is not None:
+                    self.rotors, self.rotor_ops = rot, [(r["op"], r["sign"]) for r in rot]
+                    try:                      # the team's winch pod (cable, sway, rests on the rubble) under its
+                        pod = [p for p in heavy_parts(spec, did, delivery) if p[6].get("group") == "Pod"]
+                        if pod:               # drum (underside z 0.44 = WINCH_BOTTOM), so PodViz drives it
+                            self._build_parts(pod, looks_root)
+                    except Exception as e:    # noqa: BLE001
+                        print(f"[drone_viz] blender drone: winch pod off ({type(e).__name__}: {e})", flush=True)
+                    return
+            if STYLE == "mesh":
+                from isaac.drone_mesh import dji_parts
+                self._build_parts_mesh(dji_parts(spec, did))
+            else:
+                self._build_parts(heavy_parts(spec, did, delivery), looks_root)
             return
         used_asset = False
         if asset:
@@ -438,6 +497,88 @@ class DroneViz:
         if not used_asset:
             self._primitives(did)
         self._payload()
+
+    def _build_parts_mesh(self, parts):
+        """STYLE 'mesh' (--drone-style mesh): the smooth DJI-class model of isaac/drone_mesh.py."""
+        Gf, UsdGeom, m = self.Gf, self.UsdGeom, self.model
+        for kind, name, t, s, rgb, rot_z, attrs in parts:
+            if kind == "Mesh":
+                self._meshpart(f"{m}/{name}", attrs["P"], attrs["F"], rgb)
+                continue
+            if kind != "Rotor":
+                self._shape(kind, f"{m}/{name}", t, s, rgb, rot_z, **attrs)
+                continue
+            rotor = UsdGeom.Xform.Define(self.stage, f"{m}/{name}")
+            rxf = UsdGeom.Xformable(rotor)
+            rxf.AddTranslateOp(UsdGeom.XformOp.PrecisionDouble).Set(Gf.Vec3d(*t))
+            self.rotor_ops.append((rxf.AddRotateZOp(), attrs["sign"]))
+            disc = self._shape("Cylinder", f"{m}/{name}/Disc", (0, 0, 0), (1, 1, 1), rgb,
+                               Radius=attrs["radius"], Height=0.006, Axis="Z")
+            try:
+                disc.CreateDisplayOpacityAttr([0.25])
+            except Exception:
+                pass
+            if attrs.get("style") == "mesh":
+                from isaac import drone_mesh as DM
+                self._meshpart(f"{m}/{name}/Blade", *DM.blades(attrs["radius"]), COL["blade"])
+                self._meshpart(f"{m}/{name}/Hub", *DM.tube((0, 0, -0.02), (0, 0, 0.03), 0.045), COL["arm"])
+            else:
+                self._shape("Cube", f"{m}/{name}/Blade", (0, 0, 0.006), (2 * attrs["radius"], 0.09, 0.012),
+                            COL["blade"], Size=1.0)
+            if PBR and PROP_DISC <= 0:
+                UsdGeom.Imageable(disc).MakeInvisible()
+        if PBR:
+            self._materials()
+
+    def _materials(self):
+        """--photoreal: bind a real surface material to every part, by part name (PART_KEY)."""
+        from pxr import Sdf, Usd, UsdShade
+        did = self.path.rstrip("/").split("/")[-1]
+        for prim in Usd.PrimRange(self.stage.GetPrimAtPath(self.model)):
+            if not prim.IsA(self.UsdGeom.Gprim):
+                continue
+            key = next((k for pre, k in PART_KEY if prim.GetName().startswith(pre)), None)
+            if key is None:
+                continue
+            rgb, rough, metal, coat = PBR_LOOK[key]
+            if rgb is None:
+                c = self.UsdGeom.Gprim(prim).GetDisplayColorAttr().Get()
+                rgb = tuple(c[0]) if c else (0.8, 0.8, 0.8)
+            mpath = f"/World/Looks/Drone/{key}" + (f"_{did}" if key == "stripe" else "")
+            mat = UsdShade.Material.Get(self.stage, mpath)
+            if not mat:
+                mat = UsdShade.Material.Define(self.stage, mpath)
+                sh = UsdShade.Shader.Define(self.stage, mpath + "/Surface")
+                sh.CreateIdAttr("UsdPreviewSurface")
+                sh.CreateInput("diffuseColor", Sdf.ValueTypeNames.Color3f).Set(self.Gf.Vec3f(*map(float, rgb)))
+                sh.CreateInput("roughness", Sdf.ValueTypeNames.Float).Set(float(rough))
+                sh.CreateInput("metallic", Sdf.ValueTypeNames.Float).Set(float(metal))
+                sh.CreateInput("clearcoat", Sdf.ValueTypeNames.Float).Set(float(coat))
+                sh.CreateInput("clearcoatRoughness", Sdf.ValueTypeNames.Float).Set(0.08)
+                if key == "disc":
+                    sh.CreateInput("opacity", Sdf.ValueTypeNames.Float).Set(float(max(PROP_DISC, 0.0)))
+                if key in EMISSIVE:
+                    sh.CreateInput("emissiveColor", Sdf.ValueTypeNames.Color3f).Set(self.Gf.Vec3f(*EMISSIVE[key]))
+                mat.CreateSurfaceOutput().ConnectToSource(sh.ConnectableAPI(), "surface")
+            UsdShade.MaterialBindingAPI.Apply(prim).Bind(mat)
+
+    # ------------------------------------------------------------------ geometry helpers
+    def _meshpart(self, path, P, F, rgb=(0.5, 0.5, 0.5)):
+        from pxr import Vt
+        from isaac.drone_mesh import vertex_normals
+        Gf, UsdGeom = self.Gf, self.UsdGeom
+        P = np.ascontiguousarray(P, np.float32); F = np.ascontiguousarray(F, np.int32)
+        g = UsdGeom.Mesh.Define(self.stage, path)
+        g.CreatePointsAttr(Vt.Vec3fArray.FromNumpy(P))
+        g.CreateFaceVertexCountsAttr(Vt.IntArray.FromNumpy(np.full(len(F), 3, np.int32)))
+        g.CreateFaceVertexIndicesAttr(Vt.IntArray.FromNumpy(F.reshape(-1)))
+        g.CreateSubdivisionSchemeAttr("none")
+        g.CreateNormalsAttr(Vt.Vec3fArray.FromNumpy(vertex_normals(P, F)))
+        g.SetNormalsInterpolation("vertex")
+        g.CreateExtentAttr(Vt.Vec3fArray([Gf.Vec3f(*map(float, P.min(0))), Gf.Vec3f(*map(float, P.max(0)))]))
+        g.CreateDisplayColorAttr([Gf.Vec3f(*map(float, rgb))])
+        g.CreateDoubleSidedAttr(True)
+        return g
 
     # ------------------------------------------------------------------ heavy model (meshes)
     def _build_parts(self, parts, looks_root):
@@ -687,6 +828,21 @@ class DroneViz:
             return False
 
     # ------------------------------------------------------------------ runtime
+    def _strobe(self, dt):
+        """Anti-collision strobe: a short white flash every STROBE[0] s (phase offset per drone)."""
+        if not hasattr(self, "_strobe_img"):
+            p = self.stage.GetPrimAtPath(f"{self.model}/Strobe")
+            self._strobe_img = self.UsdGeom.Imageable(p) if p and p.IsValid() else None
+            self._strobe_t = (hash(self.path) % 97) / 97.0 * STROBE[0]
+            self._strobe_on = None
+        if self._strobe_img is None:
+            return
+        self._strobe_t = (self._strobe_t + float(dt)) % STROBE[0]
+        on = self._strobe_t < STROBE[1]
+        if on != self._strobe_on:
+            (self._strobe_img.MakeVisible if on else self._strobe_img.MakeInvisible)()
+            self._strobe_on = on
+
     def set_pose(self, x, y, z, yaw_deg, tilt=None):
         roll, pitch = _tilt(tilt)
         self._apply(( float(x), float(y), float(z)), quat_ypr(yaw_deg, pitch, roll))
@@ -717,6 +873,13 @@ class DroneViz:
         if isinstance(rotor_rpm, (int, float)):
             rotor_rpm = [float(rotor_rpm)] * len(self.rotors)
         rpm = list(rotor_rpm) or [0.0]
+        div = RPM_DIV                    # fps opt-in LV_RPM_DIV=N: rotor angles written every Nth frame
+        if div > 1:
+            self._rpm_dt = getattr(self, "_rpm_dt", 0.0) + dt
+            self._rpm_k = getattr(self, "_rpm_k", 0) + 1
+            if self._rpm_k % div:
+                return
+            dt, self._rpm_dt = self._rpm_dt, 0.0
         UsdGeom = self.UsdGeom
         for k, r in enumerate(self.rotors):
             w = abs(float(rpm[k % len(rpm)]))
@@ -732,7 +895,8 @@ class DroneViz:
 
     def spin(self, dt, on=True):
         """Older route: hover rpm while ``on`` (heavy model shows the blur disc); off keeps the blades still."""
-        if not self.heavy:
+        self._strobe(dt)
+        if not self.heavy or not self.rotors:
             if not on:
                 return
             self.rotor_angle = (self.rotor_angle + self.spin_rate * dt) % 360.0

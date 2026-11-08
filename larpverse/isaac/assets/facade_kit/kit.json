@@ -1,0 +1,66 @@
+{
+ "modules": [
+  "slab_0",
+  "slab_1",
+  "slab_2",
+  "slab_3",
+  "slab_4",
+  "wall_0",
+  "wall_1",
+  "wall_2",
+  "wall_3",
+  "wall_4",
+  "wall_5",
+  "wall_6",
+  "void_0",
+  "void_1",
+  "void_2",
+  "void_3",
+  "column_0",
+  "column_1",
+  "column_2",
+  "beam_0",
+  "beam_1",
+  "debris_0",
+  "debris_1",
+  "debris_2",
+  "debris_3",
+  "debris_4"
+ ],
+ "textures": {
+  "concrete": {
+   "albedo": "textures/concrete_albedo.png",
+   "rough": "textures/concrete_rough.png",
+   "normal": "textures/concrete_normal.png"
+  },
+  "fracture": {
+   "albedo": "textures/fracture_albedo.png",
+   "rough": "textures/fracture_rough.png",
+   "normal": "textures/fracture_normal.png"
+  },
+  "tile_a": {
+   "albedo": "textures/tile_a_albedo.png",
+   "rough": "textures/tile_a_rough.png",
+   "normal": "textures/tile_a_normal.png"
+  },
+  "tile_b": {
+   "albedo": "textures/tile_b_albedo.png",
+   "rough": "textures/tile_b_rough.png",
+   "normal": "textures/tile_b_normal.png"
+  },
+  "interior": {
+   "albedo": "textures/interior_albedo.png",
+   "rough": "textures/interior_rough.png",
+   "normal": "textures/interior_normal.png"
+  },
+  "brick": {
+   "albedo": "textures/brick_albedo.png",
+   "rough": "textures/brick_rough.png",
+   "normal": "textures/brick_normal.png"
+  }
+ },
+ "seed": 7,
+ "frame": "x=U (bay 3.0 m), y=V (storey 2.9 m), z=N outward; origin bay centre on face plane",
+ "bay": 3.0,
+ "storey": 2.9
+}

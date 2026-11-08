@@ -646,9 +646,23 @@ def process_if(iq: np.ndarray, params: RadarParams | None = None, cfg: DspConfig
         try:                          # breathing-pattern triage aid (sim/vitals.py); never blocks detection
             from . import vitals as _vitals
             vit = _vitals.extract(x_bin, fs, kind="iq", wavelength=params.wavelength, range_m=r_ref,
-                                  quality=quality, snr_db=float(snr_db), params=params)
+                                  quality=quality, snr_db=float(snr_db), params=params, keep_arrays=True)
+            d_full = vit.pop("_displacement", None)
+            vit.pop("_apneas_s", None)
+            vit.pop("_breath_times_s", None)
         except Exception:             # noqa: BLE001
-            vit = None
+            vit, d_full = None, None
+        try:                          # ~4 Hz, <= 240-sample copy of the chest displacement (mm) for
+            if vit is not None and d_full is not None:     # agents/gemini_vitals; private: stripped from state.json
+                k_mm = 1e3 if (vit.get("signature") or {}).get("units") == "mm" else 1.0
+                step = max(1, int(round(fs / 4.0)))
+                dd = np.asarray(d_full, float) * k_mm
+                n = dd.size // step
+                if n:
+                    w = dd[:n * step].reshape(n, step).mean(axis=1)[-240:]
+                    vit["_wave"] = {"fs": round(fs / step, 4), "mm": [round(float(v), 4) for v in w - w.mean()]}
+        except Exception:             # noqa: BLE001
+            pass
         cands.append({"bin": int(k), "range_m": r_ref, "confidence": conf, "breathing_hz": est["rate_hz"], "vitals": vit,
                       "snr_db": float(snr_db), "asym": asym, "static_frac": static_frac, "peakiness": est["peakiness"], "band_ratio": est["band_ratio"],
                       "_disp": disp, "_filt": est["filtered"], "_f": est["f"], "_p": est["p"]})

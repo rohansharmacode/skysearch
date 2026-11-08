@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Larpverse · take overlay</title>
+<!--
+  The judges' take overlay, simple version (Rohan 2026-11-08: "too complicated ... more understandable").
+  One caption that says what is happening, one line that says what the drones sense right now, a clock.
+  Transparent 1920x1080: an OBS browser source over the Isaac stream, or burned in with isaac/hud/burn.js.
+  Reads the same mission state the drones run on; display only.
+
+    /isaac/hud/take.html?speed=4            ?state=<url> another state.json     ?bg=1 dark background
+-->
+<style>
+  :root { --lidar:#a07bff; --radar:#ff7a1a; --sound:#22c3d6; --ping:#ff4545; --zone:#f2f5f7; --ok:#4fd18b;
+          --amber:#ffb020; --grey:#9aa4ad; }
+  html, body { margin:0; width:1920px; height:1080px; overflow:hidden; background:transparent;
+               font-family: Inter, "Segoe UI", system-ui, sans-serif; color:#fff; }
+  body.bg { background:#0b0f13; }
+  .card { position:absolute; background:rgba(10,14,18,0.66); border-radius:16px; backdrop-filter:blur(6px);
+          box-shadow:0 6px 28px rgba(0,0,0,0.35); }
+  #cap { left:48px; top:44px; width:760px; padding:22px 28px 22px; border:2px solid transparent; transition:border-color .6s; }
+  #cap.live { border-color:var(--amber); }
+  #cap .k { font-size:16px; letter-spacing:.18em; text-transform:uppercase; color:#b8c3cc; }
+  #cap .t { font-size:42px; font-weight:700; margin:6px 0 8px; line-height:1.1; }
+  #cap .c { font-size:24px; line-height:1.4; color:#e6ecf0; }
+  #dots { display:flex; gap:8px; margin-top:16px; }
+  #dots i { width:34px; height:5px; border-radius:3px; background:rgba(255,255,255,0.18); }
+  #dots i.on { background:rgba(255,255,255,0.75); } #dots i.now { background:var(--amber); }
+  #sense { left:48px; bottom:52px; max-width:1100px; padding:16px 24px; display:flex; align-items:center; gap:18px; }
+  #sense .chip { font-size:17px; font-weight:700; letter-spacing:.12em; padding:7px 14px; border-radius:8px; color:#0b0f13; white-space:nowrap; }
+  #sense .txt { font-size:28px; line-height:1.3; }
+  #sense .data { white-space:nowrap; font: 500 19px/1.35 "JetBrains Mono", "IBM Plex Mono", ui-monospace, monospace; color:#cfd9e0; margin-top:4px; }
+  #sense .data:empty { display:none; }
+  #clock { right:48px; top:44px; padding:14px 22px; text-align:right; }
+  #clock .l { font-size:15px; letter-spacing:.16em; color:#ff6b6b; font-weight:700; }
+  #clock .v { font-size:30px; font-weight:700; margin-top:2px; }
+  #honest { right:48px; bottom:52px; padding:10px 16px; font-size:15px; color:#c9d2d9; max-width:520px; line-height:1.35; }
+  .fade { animation: fade .5s ease; } @keyframes fade { from { opacity:0; transform:translateY(6px); } to { opacity:1; transform:none; } }
+  #offline { left:48px; top:44px; padding:14px 20px; font-size:20px; display:none; }
+</style>
+</head>
+<body>
+<div id="cap" class="card"><div class="k" id="capk"></div><div class="t" id="capt">Waiting for the mission…</div><div class="c" id="capc"></div><div id="dots"></div></div>
+<div id="sense" class="card"><div class="chip" id="chip">—</div><div><div class="txt" id="stxt">—</div><div class="data" id="sdata"></div></div></div>
+<div id="clock" class="card"><div class="l">● LIVE SIMULATION</div><div class="v" id="clk">t = 0 s</div></div>
+<div id="honest" class="card">Simulation. The trapped people, their voices and the radar returns are synthetic; the drones never see where they are.</div>
+<div id="offline" class="card">Waiting for state.json…</div>
+<script>
+const Q = new URLSearchParams(location.search);
+if (Q.get('bg')) document.body.classList.add('bg');
+const SRC = Q.get('state') || '../../dashboard/data/state.json';
+const SPEED = Q.get('speed') || '';
+const $ = id => document.getElementById(id);
+const GLOSS = { voice: 'Help! Can anyone hear me? My leg is trapped.', weak_voice: 'Anyone there… water…' };
+const STEPS = [
+  ['Launch', 'Three rescue drones fly from the staging area to the collapsed building the operator marked.'],
+  ['Mapping the rubble', 'Each drone’s laser scanner (LiDAR, purple) builds a 3D map, to find safe spots for its sensors.'],
+  ['Feeling for breathing', 'The drones lower radar pods onto the rubble. The radar senses the tiny movement of breathing up to about 3 m down (orange).'],
+  ['Listening', 'Rotors off, microphones on: the drones listen for voices and knocking (teal).'],
+  ['Live change: a new search zone', 'The operator adds a search zone live. Nobody tells the drones what to do next.'],
+  ['The swarm re-plans', 'The drones choose the new zone on their own and fly there to search it (green arc).'],
+  ['Searching the new zone', 'The same steps as before, now in the zone the operator added: map it, then lower the radar pods.'],
+  ['Breathing-like signal', 'The radar marks a place for rescuers to dig first. It is a lead, not a confirmed person.'],
+];
+$('dots').innerHTML = STEPS.map(() => '<i></i>').join('');
+let lastRev = null, revT = null, newZoneId = null, adaptT = null, maxStep = 0, lastStep = -1, lastSense = '', lastOk = 0;
+
+function esc(x) { return String(x ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
+const firm = s => (s.radar_candidates || []).filter(c => c.status === 'candidate');
+
+function stepOf(s) {
+  const ph = String(s.phase || ''), now = +s.t || 0;
+  const rev = +((s.tasking || {}).revision || 0);
+  const adapted = adaptT !== null || (rev > 1 && (s.dispatch || []).some(d => d.to_pile));
+  if (adapted && firm(s).length) return 7;
+  if (revT !== null && adaptT === null && now - revT < 12) return 4;
+  if (adapted) return (ph === 'dispatch' || ph === 'deploy') ? 5 : 6;
+  if (rev > 1) return 4;
+  if (ph === 'deploy') return 0;
+  if (ph === 'survey' || ph.startsWith('recon_mapping')) return 1;
+  if (['landing', 'radar', 'relocate', 'rescan'].includes(ph)) return firm(s).length ? 7 : 2;
+  if (ph === 'acoustic') return 3;
+  return Math.max(0, maxStep);
+}
+
+function zoneNow(s) {
+  return (s.zones || []).find(z => ['surveying', 'scanning', 'in_progress'].includes(z.status)) || null;
+}
+
+const f1 = v => (v == null || isNaN(v)) ? '–' : (+v).toFixed(1);
+const f2 = v => (v == null || isNaN(v)) ? '–' : (+v).toFixed(2);
+const pctOf = v => (v == null) ? null : Math.round(100 * v);
+const compass = b => { const c = ((90 - b) % 360 + 360) % 360;       // sim bearing: deg CCW from +x (east)
+  return `${c.toFixed(0)}° ${['N','NE','E','SE','S','SW','W','NW'][Math.round(c / 45) % 8]}`; };
+const posErr = c => { const v = c.cov; if (!v) return null;            // 1-sigma of the position fit (major axis)
+  const a = v[0][0], b = v[0][1], d = v[1][1], l = (a + d) / 2 + Math.sqrt(((a - d) / 2) ** 2 + b * b);
+  return `position ± ${Math.sqrt(l).toFixed(1)} m`; };
+const depth = c => c.depth_m == null ? null : (c.depth_source === 'radar_estimate'
+  ? `depth ${f1(c.depth_m)} ± ${f1(c.depth_sigma)} m` : 'depth not measured yet');   // 'nominal' = an assumed default
+const bpm = hz => hz ? `${(hz * 60).toFixed(0)} breaths/min (${f2(hz)} Hz)` : null;
+
+function data(s, st, chip) {
+  // the numbers the drones actually measured, straight from the mission state
+  const m = s.mission || {}, now = +s.t || 0;
+  const scans = (s.scans || []).filter(x => !m.active_pile || x.pile_id === m.active_pile), last = scans[scans.length - 1];
+  if (chip === 'LIDAR') {
+    const z = zoneNow(s), d = s.drones || [];
+    const alt = d.length ? d.reduce((a, q) => a + q.pose[2], 0) / d.length : null;
+    const p = z && z.coverage ? pctOf(z.coverage.lidar_mapped) : null;
+    return [p ? `zone mapped ${p}%` : null, alt ? `mean altitude ${f1(alt)} m` : null, `${d.length} drones`].filter(Boolean).join('  ·  ');
+  }
+  if (chip === 'RADAR' && st !== 7) {
+    const weak = (s.radar_candidates || []).find(c => c.status === 'insufficient_evidence');
+    if (weak) return [`${weak.id}: ${weak.support} of ${weak.support_needed} required scans agree`, bpm(weak.breathing_hz),
+                      posErr(weak), depth(weak)].filter(Boolean).join('  ·  ');
+    const pods = (s.pods || []).filter(p => p.status === 'scanning' || p.status === 'lowering');
+    if (pods.length) {
+      const w = (s.drones || []).filter(d => pods.some(p => p.drone_id === d.id)).map(d => f1(d.winch_len_m));
+      const down = pods.filter(p => p.status === 'scanning').length;
+      return [`winch out ${w.join(' / ')} m`, down ? `${down} of ${pods.length} pods on the rubble` : 'pods descending',
+              last ? `last scan ${last.scan_id}: quality ${f2(last.quality)}` : null].filter(Boolean).join('  ·  ');
+    }
+    if (String(s.phase) === 'landing') return `${(s.drones || []).length} drones flying to their pod drop points`;
+    if (last) {
+      const rc = (last.range_candidates || []).map((r, i) => `${f1(r)} m (conf ${f2((last.confidence || [])[i])})`);
+      return [`scan ${last.scan_id} by ${last.drone_id}`, rc.length ? `return at ${rc.join(', ')}` : 'no breathing return',
+              `quality ${f2(last.quality)}`, `sees ≤ ${f1(last.max_reliable_depth_m)} m deep`].join('  ·  ');
+    }
+    return '';
+  }
+  if (chip === 'RADAR' && st === 7) {
+    const c = firm(s)[0], v = c.vitals || {};
+    return [bpm(c.breathing_hz || (v.rate_bpm ? v.rate_bpm / 60 : null)), posErr(c), depth(c),
+            c.support != null ? `${c.support} scans agree` : null, v.pattern ? `pattern ${String(v.pattern).replace(/_/g, ' ')}` : null].filter(Boolean).join('  ·  ');
+  }
+  if (chip === 'SOUND') {
+    const c = (s.acoustic_clips || []).filter(c => ((c.scores || {}).human ?? 0) >= 0.4).sort((a, b) => (b.priority ?? 0) - (a.priority ?? 0))[0];
+    if (!c) {
+      const n = (s.drones || []).filter(d => d.state === 'listening').length;
+      const left = m.listen_ends != null ? Math.max(0, Math.round(m.listen_ends - now)) : null;
+      return [`${n} of ${(s.drones || []).length} drones listening`, 'landed, rotors off', left !== null ? `analysis in ${left} s` : null].filter(Boolean).join('  ·  ');
+    }
+    return [`human ${f2((c.scores || {}).human)}`, c.bearing_deg != null ? `bearing ${compass(c.bearing_deg)} ± ${(c.width_deg / 2).toFixed(0)}° from ${c.drone_id}` : null,
+            c.snr_db != null ? `SNR ${f1(c.snr_db)} dB` : null, c.doa_agree ? `${c.doa_agree} drones agree` : null,
+            c.priority != null ? `priority ${c.priority}/100` : null].filter(Boolean).join('  ·  ');
+  }
+  if (chip === 'DECISION') {
+    const d = (s.dispatch || []).filter(d => d.to_pile).slice(-1)[0];
+    const c = (s.acoustic_clips || []).filter(c => c.pile_id === (d || {}).to_pile).sort((a, b) => (b.priority ?? 0) - (a.priority ?? 0))[0];
+    return c ? [`priority ${c.priority}/100`, `human ${f2((c.scores || {}).human)}`, `urgency ${f2((c.scores || {}).urgency)}`, c.doa_agree ? `${c.doa_agree} bearings agree` : null].filter(Boolean).join('  ·  ') : '';
+  }
+  if (chip === 'OPERATOR') {
+    const z = (s.zones || []).find(z => z.id === newZoneId), cv = (z || {}).coverage || {};
+    return [`tasking rev ${(s.tasking || {}).revision}`, z ? `${pctOf(cv.lidar_mapped) || 0}% mapped on earlier passes` : null,
+            z ? (cv.listened ? 'listened' : 'not listened yet') : null, z ? `radar reached ${pctOf(cv.radar_reached) || 0}%` : null].filter(Boolean).join('  ·  ');
+  }
+  if (chip === 'FLEET' || chip === 'FLYING') {
+    const d = s.drones || [];
+    return d.length ? 'battery ' + d.map(q => `${q.id} ${Math.round(100 * (q.battery ?? 0))}%`).join(' · ') : '';
+  }
+  return '';
+}
+
+function sense(s, st) {
+  const ph = String(s.phase || ''), m = s.mission || {};
+  const z = zoneNow(s);
+  const zid = z ? z.id : (m.active_pile || 'the zone');
+  if (st === 7) {
+    const c = firm(s)[0], v = c.vitals || {};
+    return ['RADAR', 'var(--ping)', `Breathing-like signal under the rubble${v.condition_text ? ': ' + esc(v.condition_text) : ''}. Dig here first.`];
+  }
+  if (st === 4) return ['OPERATOR', 'var(--zone)', `New search zone ${esc(newZoneId || '')} added live`];
+  if (ph === 'return' || ph === 'battery_swap') return ['FLEET', 'var(--grey)', 'Returning to the staging area to swap batteries'];
+  if (st === 5) {
+    const d = (s.dispatch || []).filter(d => d.to_pile).slice(-1)[0];
+    const why = d && /acoustic|voice|Help/i.test(d.reason || '') ? 'the strongest voice came from there' : 'highest priority';
+    return ['DECISION', 'var(--ok)', `Flying to ${esc(d ? d.to_pile : 'the new zone')}: ${why}`];
+  }
+  if (ph === 'deploy') return ['FLYING', 'var(--grey)', `Flying to zone ${esc(zid)}`];
+  if (ph === 'survey' || ph.startsWith('recon_mapping')) {
+    return ['LIDAR', 'var(--lidar)', `Mapping ${esc(zid)} in 3D with laser scanners`];
+  }
+  if (['landing', 'radar', 'relocate', 'rescan'].includes(ph)) {
+    const pods = (s.pods || []).filter(p => p.status === 'scanning').length;
+    const weak = (s.radar_candidates || []).some(c => c.status === 'insufficient_evidence');
+    if (weak) return ['RADAR', 'var(--radar)', 'Possible breathing: checking again from another angle'];
+    if (pods) return ['RADAR', 'var(--radar)', `${pods} radar pod${pods > 1 ? 's' : ''} feeling for breathing`];
+    if (ph === 'landing') return ['RADAR', 'var(--radar)', 'Lowering radar pods onto the rubble'];
+    return ['RADAR', 'var(--radar)', 'No breathing found here yet (not cleared)'];
+  }
+  if (ph === 'acoustic') {
+    const c = (s.acoustic_clips || []).filter(c => ((c.scores || {}).human ?? 0) >= 0.4)
+      .sort((a, b) => (b.priority ?? 0) - (a.priority ?? 0))[0];
+    if (c) {
+      const ascii = c.transcript && /^[\x00-\x7F…]*$/.test(c.transcript);
+      const said = ascii ? c.transcript : (GLOSS[c.class] || c.transcript || '');
+      return ['SOUND', 'var(--sound)', `Voice heard${c.pile_id ? ' near ' + esc(c.pile_id) : ''}: “${esc(said)}”`];
+    }
+    return ['SOUND', 'var(--sound)', 'Listening for voices and knocking…'];
+  }
+  return ['FLEET', 'var(--grey)', 'Standing by'];
+}
+
+function render(s) {
+  $('offline').style.display = 'none';
+  const now = +s.t || 0;
+  const rev = (s.tasking || {}).revision ?? null;
+  if (lastRev !== null && rev !== null && rev > lastRev) {
+    revT = now; adaptT = null;
+    const before = new Set(((window._last || {}).zones || []).map(z => z.id));
+    const nz = (s.zones || []).find(z => !before.has(z.id));
+    newZoneId = nz ? nz.id : null;
+  }
+  lastRev = rev;
+  if (revT !== null && adaptT === null && now - revT >= 4) {
+    const d = (s.dispatch || []).slice(-1)[0];
+    const z = (s.zones || []).find(z => z.id === newZoneId);
+    if ((d && d.t >= revT && d.to_pile) || (z && ['surveying', 'scanning'].includes(z.status))) adaptT = now;
+  }
+  if (!newZoneId && +((s.tasking || {}).revision || 0) > 1) {
+    const z = (s.zones || []).find(z => /^OP-/.test(z.id || ''));
+    newZoneId = z ? z.id : null;
+  }
+  const st = stepOf(s);
+  maxStep = Math.max(maxStep, st);
+  if (st !== lastStep) {
+    $('capk').textContent = `Step ${st + 1} of ${STEPS.length}`;
+    $('capt').textContent = STEPS[st][0];
+    $('capc').textContent = STEPS[st][1];
+    const cap = $('cap'); cap.classList.remove('fade'); void cap.offsetWidth; cap.classList.add('fade');
+    cap.classList.toggle('live', st === 4);
+    lastStep = st;
+  }
+  [...$('dots').children].forEach((el, i) => { el.className = i === st ? 'now' : (i <= maxStep ? 'on' : ''); });
+  const [chip, col, txt] = sense(s, st);
+  const key = chip + txt;
+  $('sdata').textContent = data(s, st, chip);
+  if (key !== lastSense) {
+    $('chip').textContent = chip; $('chip').style.background = col; $('stxt').innerHTML = txt;
+    const el = $('sense'); el.classList.remove('fade'); void el.offsetWidth; el.classList.add('fade');
+    lastSense = key;
+  }
+  $('clk').textContent = `t = ${now.toFixed(0)} s` + (SPEED ? `  ·  ×${SPEED} speed` : '');
+  window._last = s;
+}
+
+async function poll() {
+  try {
+    const r = await fetch(SRC + (SRC.includes('?') ? '&' : '?') + 'ts=' + Date.now(), { cache: 'no-store' });
+    if (!r.ok) throw new Error(r.status);
+    const s = await r.json();
+    lastOk = Date.now();
+    $('offline').style.display = 'none';
+    render(s);
+  } catch (e) {
+    if (Date.now() - lastOk > 5000) $('offline').style.display = 'block';
+  }
+}
+setInterval(poll, 250); poll();
+</script>
+</body>
+</html>

@@ -494,3 +494,20 @@ when that value is higher and the task is a `lead`, then re-picks `radar_ping` a
   - POST `/api/comms/reply`: localhost only; templates, or free text with `confirmed_by`.
   - Captive-portal check URLs redirect to `/dashboard/portal/`.
   - `--lan` binds 0.0.0.0. It's off by default and prints a warning.
+
+## vitals.gemini + pings[].priority (additive; `agents/gemini_vitals.py`)
+
+Gemini reads each firm ping's radar breathing waveform (best scan, ~4 Hz, ≤ 240 samples / 60 s, mm) with the DSP rate as a hint and the strongest human clip heard from the same pile (class, distress cues, language, transcript snippet, urgency), and returns one combined priority. One call per firm ping id (record/replay cache; `LLM_REPLAY=1` never calls the network); any failure or invalid answer falls back deterministically.
+
+```
+"vitals": { ...,
+  "gemini": { "pattern": "deep_slow|shallow_rapid|regular_calm|irregular_pauses|unclear",
+              "rate_bpm": 9.5 | null, "confidence": 0.0-1.0, "priority": 0-100,
+              "reason": "one plain sentence that says check (never diagnosis/confirmed/age/injury as fact)",
+              "by": "gemini|fallback" } }
+"pings": [ { ..., "priority": 0-100, "priority_by": "gemini|fallback" } ]
+```
+
+- Fallback: DSP pattern mapped to the enum (`slow_regular→deep_slow`, `rapid_shallow→shallow_rapid`, `regular_calm`, `irregular_with_pauses→irregular_pauses`, else/non-human `unclear`); `priority = round(100 x clip(dig_score x (1 + 0.5 x audio urgency), 0, 1))`.
+- Dig order (`agents.gemini_decider.dig_order`) sorts by `priority` when present, else by `100 x dig_score`.
+- Mission switch: `GridMission(vitals_ai="fallback")` (default, offline); CLI `--vitals-ai auto|gemini|fallback` (default `auto`, env `VITALS_AI`). Model: `GEMINI_VITALS_MODEL`, else `GEMINI_MODEL`. Scan vitals carry a private `_wave` copy in memory only; it is stripped from `state.json`.

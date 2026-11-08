@@ -41,6 +41,7 @@ LINE_MESH = False        # True: draw lines as flat ribbon meshes LINE_W * width
 # Ping beacon: column radius (m), emissive gain and pulse rate. ~0.3 m wide so it reads in wide shots.
 BEACON_R = 0.15
 BEACON_GLOW = 4.0
+BEACON_H = 14.0                     # beacon height above the surface (m)
 PULSE_HZ = 0.8                      # same period as the animation/dashboard ping ring
 # LiDAR display: only while surveying, then fade out over LIDAR_FADE_S (render-clock seconds) and start a
 # fresh map at the next survey. LIDAR_SURVEY_ONLY = False keeps the old behaviour (points stay forever).
@@ -62,7 +63,17 @@ ZONE_STYLE = {   # status -> (rgba, dashed)
 RECON_PATH = (*GREEN[:3], 0.35)     # recon coverage path in the air: dashed, low alpha
 PROPOSAL = (*GREY[:3], 0.75)        # dashboard-proposed rubble outlines (until the operator accepts them)
 ZONE_W = 2.0                        # width units (x LINE_W); thin enough not to read as a prop
+# --overlay-style simple (Rohan, 2026-11-08: "too complicated"): one idea at a time. Only the zones that matter
+# now (being searched, or newly added), drawn as clean flat outlines above the rubble; the latest dispatch arc;
+# firm pings. No range rings, audio cones, recon paths, proposals, weak candidates or finished-zone outlines.
+SIMPLE = False
+SIMPLE_ZONES = {"surveying", "scanning", "in_progress", "unsearched", "tasked", "ping"}
+CONE_W = 1.6                        # width units: thinner than zones (take2: 4x-wide cones read as loops)
 CONE_HUMAN_MIN = 0.4                # dashboard/app.js: (c.scores?.human ?? 0) >= 0.4
+# Footage clarity (set by photoreal --clean-overlay; the dashboard and state.json are unchanged):
+HIDE_WEAK = False                   # skip "insufficient_evidence" candidates (no beacon, ring or tag)
+RING_TOP = 0                        # >0: per radar scan draw only the N most confident range rings
+SMOOTH_DRAPE = 0.0                  # >0: draped lines ride over the rubble (running max over +-this many m), not into it
 ACTIVE = {"active", "survey", "surveying", "scanning", "searching", "in_progress", "radar", "landing",
           "relocate", "rescan", "acoustic"}
 # Dashboard label look for any burn-in text (post-process / drawtext): dark pill, IBM Plex Mono, coloured border.
@@ -74,6 +85,23 @@ LABEL_STYLE = {
     "text": {"pile": "#e4ebf0", "ping": "#ffd0d0", "priority": "#c4f3f8", "cone": "#fff3b0",
              "dispatch": "#c9f5c9", "drone": "#e4ebf0"},
 }
+
+
+def _ride_over(p, z, win):
+    """Heights for a draped polyline that ride over the rubble instead of following every bump: running max
+    over +-win metres of arc length, then a light running mean (keeps the line clear of the debris)."""
+    d = np.concatenate([[0.0], np.cumsum(np.hypot(*np.diff(p, axis=0).T))])
+    zz = np.empty_like(z)
+    j0 = j1 = 0
+    for i in range(len(z)):
+        while d[i] - d[j0] > win:
+            j0 += 1
+        while j1 + 1 < len(z) and d[j1 + 1] - d[i] <= win:
+            j1 += 1
+        zz[i] = z[j0:j1 + 1].max()
+    k = max(1, min(len(zz) // 2, 3))
+    ker = np.ones(2 * k + 1) / (2 * k + 1)
+    return np.convolve(np.pad(zz, k, mode="edge"), ker, mode="valid")
 
 
 def lidar_colors(z, lo=-0.5, hi=5.0):
@@ -113,7 +141,25 @@ class Overlay:
             n = max(1, int(math.ceil(np.hypot(*(b - a)) / max_seg)))
             out.append(a + (b - a) * (np.arange(1, n + 1) / n)[:, None])
         p = np.concatenate(out)
-        return np.column_stack([p, np.asarray(self.surface(p[:, 0], p[:, 1]), float) + lift])
+        z = np.asarray(self.surface(p[:, 0], p[:, 1]), float)
+        if SMOOTH_DRAPE > 0 and len(z) > 2:
+            z = _ride_over(p, z, SMOOTH_DRAPE)
+        return np.column_stack([p, z + lift])
+
+    def _flat(self, ring, lift=0.6, max_seg=0.6):
+        """Outline at one height just above the rubble inside it (no up-and-down drape over a fallen tower)."""
+        ring = np.asarray(ring, float)
+        dense = [ring[:1]]
+        for a, b in zip(ring[:-1], ring[1:]):
+            n = max(1, int(math.ceil(np.linalg.norm(b - a) / max_seg)))
+            dense.append(a + (b - a) * (np.arange(1, n + 1) / n)[:, None])
+        pts = np.concatenate(dense)
+        lo, hi = ring.min(0), ring.max(0)
+        gx, gy = np.meshgrid(np.linspace(lo[0], hi[0], 9), np.linspace(lo[1], hi[1], 9))
+        zs = np.concatenate([np.asarray(self.surface(pts[:, 0], pts[:, 1]), float).ravel(),
+                             np.asarray(self.surface(gx.ravel(), gy.ravel()), float).ravel()])
+        z = float(np.percentile(zs, 90)) + lift
+        return np.column_stack([pts, np.full(len(pts), z)])
 
     @staticmethod
     def _dashed(poly, rgba, width, acc, dash=1.0, gap=0.6):
@@ -176,8 +222,10 @@ class Overlay:
             zs = float(self.surface(np.array([x]), np.array([y]))[0])
             ze = float(c.get("z_est", zs - 1.2) if c.get("z_est") is not None else zs - 1.2)
             weak = c.get("status") == "insufficient_evidence"
+            if weak and (HIDE_WEAK or SIMPLE):
+                continue
             col = RED_DIM if weak else RED
-            pings.append({"id": str(c.get("id", f"R{len(pings)}")), "pos": (x, y, ze), "top": zs + 14.0,
+            pings.append({"id": str(c.get("id", f"R{len(pings)}")), "pos": (x, y, ze), "top": zs + BEACON_H,
                           "rgba": col, "radius": 0.35})
             cov = np.asarray(c.get("cov") or [[1, 0], [0, 1]], float)
             try:
@@ -187,7 +235,8 @@ class Overlay:
                 w, V = np.array([2.0, 2.0]), np.eye(2)
             a = np.linspace(0, 2 * np.pi, 49)
             ell = (V @ np.stack([w[0] * np.cos(a), w[1] * np.sin(a)])).T + [x, y]
-            self._segs(self._drape(ell, 0.12), col, 3.0, segs)
+            if not SIMPLE:
+                self._segs(self._drape(ell, 0.12), col, 3.0, segs)
 
         # operator search zones: ground-hugging outlines coloured by mission status
         if (ZONES if self.zones is None else self.zones):
@@ -198,11 +247,16 @@ class Overlay:
                     continue
                 rgba, dashed = ZONE_STYLE.get(st, (WHITE, True))
                 ring = np.asarray([q[:2] for q in poly] + [poly[0][:2]], float)
-                line = self._drape(ring, 0.12, max_seg=0.4)
+                if SIMPLE:
+                    if st not in SIMPLE_ZONES:
+                        continue
+                    line = self._flat(ring)
+                else:
+                    line = self._drape(ring, 0.12, max_seg=0.4)
                 (self._dashed if dashed else self._segs)(line, rgba, ZONE_W, segs)
 
         # recon (INTERFACES "Reconnaissance mode (v1.2)"): coverage path in the air, perches, proposed outlines
-        if (ZONES if self.zones is None else self.zones):
+        if (ZONES if self.zones is None else self.zones) and not SIMPLE:
             rc = state.get("recon") if isinstance(state.get("recon"), dict) else {}
             path = np.asarray([q[:3] for q in rc.get("path") or [] if len(q) >= 3], float)
             if len(path) >= 2 and rc.get("status") != "done":
@@ -238,11 +292,14 @@ class Overlay:
             elif pxy is not None and np.hypot(s["sensor_pose"][0] - pxy[0], s["sensor_pose"][1] - pxy[1]) > 16:
                 continue
             scans.append(s)
-        for s in scans[-MAX_SCANS:]:
+        for s in ([] if SIMPLE else scans[-MAX_SCANS:]):
             sx, sy = s["sensor_pose"][:2]
             confs = s.get("confidence") or []
             wgt = float(s.get("used_weight", 1.0) if s.get("used_weight") is not None else 1.0)
-            for i, r in enumerate(s.get("range_candidates") or []):
+            rings = list(enumerate(s.get("range_candidates") or []))
+            if RING_TOP > 0:
+                rings = sorted(rings, key=lambda ir: -(float(confs[ir[0]]) if ir[0] < len(confs) else 0.5))[:RING_TOP]
+            for i, r in rings:
                 cf = float(confs[i]) if i < len(confs) else 0.5
                 rgba = (*AMBER[:3], 0.25 + 0.7 * cf * max(wgt, 0.2))
                 a = np.linspace(0, 2 * np.pi, max(32, int(r * 6)) + 1)
@@ -255,7 +312,7 @@ class Overlay:
             clips = state.get("acoustic") or []
         listens = [c.get("listen") for c in clips if c.get("listen") is not None]
         last_listen = max(listens) if listens else None
-        for c in clips:
+        for c in ([] if SIMPLE else clips):
             sc = c.get("scores")
             if isinstance(sc, dict):
                 human = float(sc.get("human") or 0.0) >= CONE_HUMAN_MIN
@@ -274,12 +331,15 @@ class Overlay:
             arc = np.linspace(b - hw, b + hw, 13)
             edge = np.stack([ox + L * np.cos(arc), oy + L * np.sin(arc)], 1)
             cone = np.vstack([[ox, oy], edge, [[ox, oy]]])
-            self._segs(self._drape(cone, 0.35), YELLOW, 3.0, segs)
+            self._segs(self._drape(cone, 0.35), YELLOW, CONE_W, segs)
             mid = np.array([[ox, oy], [ox + L * np.cos(b), oy + L * np.sin(b)]])
             self._segs(self._drape(mid, 0.35), (*YELLOW[:3], 0.45), 1.5, segs)
 
         # green dispatch arc(s): base -> target
-        for d in state.get("dispatch") or []:
+        disp = [d for d in state.get("dispatch") or [] if isinstance(d, dict)]
+        if SIMPLE:
+            disp = [d for d in disp if d.get("to_pile") or d.get("xy") or d.get("target_xy")][-1:]
+        for d in disp:
             if not isinstance(d, dict):
                 continue
             tgt = d.get("xy") or d.get("target_xy") or d.get("to")
@@ -293,7 +353,11 @@ class Overlay:
             u = np.linspace(0, 1, 33)
             xy = p0 + (p1 - p0) * u[:, None]
             z0 = self.surface(xy[:, 0], xy[:, 1])
-            arc = np.column_stack([xy, np.asarray(z0, float) + 0.4 + 10.0 * 4 * u * (1 - u)])
+            if SIMPLE:                                # one clean arc over everything, not hugging the rubble
+                top = float(np.max(np.asarray(z0, float)))
+                arc = np.column_stack([xy, np.full(len(u), top + 1.5) + 8.0 * 4 * u * (1 - u)])
+            else:
+                arc = np.column_stack([xy, np.asarray(z0, float) + 0.4 + 10.0 * 4 * u * (1 - u)])
             self._segs(arc, GREEN, 4.0, segs)
 
         if segs:
@@ -330,6 +394,8 @@ class Overlay:
             x, y = map(float, c["xy"][:2])
             z = float(self.surface(np.array([x]), np.array([y]))[0])
             weak = c.get("status") == "insufficient_evidence"
+            if weak and (HIDE_WEAK or SIMPLE):
+                continue
             out.append({"kind": "ping", "text": f"{cid} · {'weak candidate' if weak else 'candidate search region'}",
                         "xyz": (x, y, z + 2.0)})
         for o in out:

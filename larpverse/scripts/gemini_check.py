@@ -12,7 +12,7 @@ import time
 import urllib.error
 import urllib.request
 
-MODELS = [os.environ.get("GEMINI_MODEL", "gemini-3.7-flash"),            # decider + breathing analysis
+MODELS = [os.environ.get("GEMINI_MODEL", "gemini-3.5-flash"),            # decider + breathing analysis
           os.environ.get("GEMINI_AUDIO_MODEL", "gemini-3.5-flash-lite")]  # audio distress analysis
 
 

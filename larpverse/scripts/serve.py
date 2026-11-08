@@ -19,6 +19,20 @@ GET  /api/portal/inbox?device=<token>  phone: vetted replies queued for that pho
 POST /api/comms/reply   (operator, localhost only) {device, template | text, lang, confirmed_by}: templates directly,
                         free text only with confirmed_by -> dashboard/data/comms_replies.json
 GET  /generate_204, /hotspot-detect.html, ...  captive-portal probes -> 302 to /dashboard/portal/
+POST /api/goto          operator console (isaac/hud/console.html): {"pile": "B1"} or {"xy": [x, y]} (snapped to the
+                        nearest pile within 15 m, else 400). First click (no dashboard/data/goto.json yet): writes
+                        goto.json, which releases run_mission --interactive with that pile as the launch pile. Later
+                        clicks: a new tasking revision with an operator zone (priority 100) around that pile, so the
+                        mission re-plans to it at its next gate (isaac/live.py operator re-task). GET /api/goto = goto.json.
+POST /api/site          operator console: {"site": "grid"|"weiguan", "seed": int, "look": "day"|"dusk"} stops the running
+                        Isaac and relaunches live2/console_run.sh on that site, held until the first goto.
+                        GET /api/site = dashboard/data/site.json {site, seed, look, status: loading|ready|running, wall}
+POST /api/reset         operator console: back to the held state on the same site/seed/look (relaunch, like /api/site
+                        with force) -> {ok, mode: "reload"}; drones on the pads, goto history and LiDAR map cleared
+POST /api/live          the take's unscripted change from any browser (isaac/hud/live_button.html):
+                        {cmd: activate|deactivate|toggle, id: <dummy id or hidden1/hidden2>} -> dashboard/data/live_cmd.json,
+                        the same file `python3 isaac/live.py --cmd ...` writes; the running take applies it within 1 s.
+                        (Hotkeys typed into the WebRTC viewer don't reach Kit's carb input on the headless box.)
 Stdlib only. Binds to 127.0.0.1 by default; --lan binds 0.0.0.0 for the live phone demo (prints a warning).
 """
 import argparse
@@ -41,6 +55,75 @@ if ROOT not in sys.path:                     # sim.guidance (stdlib-only parts) 
     sys.path.insert(0, ROOT)
 MAX_BODY = 512 * 1024
 MAX_ZONES, MAX_VERTS = 64, 400
+GOTO = os.path.join(ROOT, "dashboard", "data", "goto.json")
+SITE_JSON = os.path.join(ROOT, "dashboard", "data", "site.json")
+CONSOLE_RUN = os.environ.get("LARPVERSE_CONSOLE_RUN", "/home/ubuntu/live2/console_run.sh")
+SITES, LOOKS = ("grid", "weiguan"), ("day", "dusk")
+STATE = os.path.join(ROOT, "dashboard", "data", "state.json")
+SNAP_M = 15.0
+
+
+def _write_json(path, doc):
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path + ".tmp", "w") as f:
+        json.dump(doc, f, indent=1)
+    os.replace(path + ".tmp", path)
+
+
+def _read_json(path, default=None):
+    try:
+        with open(path) as f:
+            return json.load(f)
+    except (OSError, ValueError):
+        return default
+
+
+def pile_centres():
+    """{pile: (x, y)}: the running mission's piles (state.json), else the tasking zones' vertex means."""
+    st = _read_json(STATE) or {}
+    out = {p["id"]: tuple(p["xy"][:2]) for p in (st.get("piles") or []) if isinstance(p, dict) and p.get("xy")}
+    if not out:
+        for z in (_read_json(TASKING) or {}).get("zones") or []:
+            poly = z.get("polygon") or []
+            if poly and len(str(z.get("id"))) <= 3:          # the default per-pile zones (A1..C3)
+                out[z["id"]] = (sum(p[0] for p in poly) / len(poly), sum(p[1] for p in poly) / len(poly))
+    return out, st
+
+
+def goto(body):
+    """Validate a console click; returns (code, doc)."""
+    piles, st = pile_centres()
+    if not piles:
+        return 409, {"error": "no piles known yet (mission not loaded)"}
+    pile, xy = body.get("pile"), body.get("xy")
+    if isinstance(pile, str) and pile in piles:
+        xy = list(piles[pile])
+    elif isinstance(xy, list) and len(xy) == 2 and all(isinstance(v, (int, float)) for v in xy):
+        pile, d = min(((p, ((c[0] - xy[0]) ** 2 + (c[1] - xy[1]) ** 2) ** 0.5) for p, c in piles.items()),
+                      key=lambda pd: pd[1])
+        if d > SNAP_M:
+            return 400, {"error": f"no pile within {SNAP_M:g} m of {xy} (nearest {pile} at {d:.1f} m)"}
+    else:
+        return 400, {"error": "body must be {\"pile\": \"B1\"} or {\"xy\": [x, y]}"}
+    doc = _read_json(GOTO)
+    first = doc is None
+    doc = doc or {"seq": 0, "history": []}
+    ev = {"seq": int(doc.get("seq", 0)) + 1, "pile": pile, "xy": [round(float(v), 2) for v in xy],
+          "kind": "start" if first else "retask", "t": st.get("t"), "wall": time.time()}
+    if not first:                                 # operator re-task: a new zone around the pile, newest = an order
+        tk = _read_json(TASKING)
+        zone = next((z for z in (tk or {}).get("zones") or [] if z.get("id") == pile), None)
+        if tk is None or zone is None:
+            return 409, {"error": f"no tasking zone for {pile} to re-task with"}
+        zones = [z for z in tk["zones"] if not str(z.get("id", "")).startswith("GO")]   # one console order at a time
+        zones.append(dict(zone, id=f"GO{ev['seq']}-{pile}"[:24], name=f"Operator: go to {pile}", priority=100,
+                          status="tasked", note="operator console click"))
+        new_tk = validate(dict(tk, zones=zones, source="operator-console"))
+        _write_json(TASKING, new_tk)
+        ev["tasking_revision"] = new_tk["revision"]
+    doc.update(seq=ev["seq"], last_goto=ev, history=(doc.get("history") or [])[-49:] + [ev])
+    _write_json(GOTO, doc)
+    return 200, doc
 
 
 def _polygon(poly, what):
@@ -133,6 +216,12 @@ class Handler(SimpleHTTPRequestHandler):
         if self.path.split("?")[0] == "/api/broadcast":
             from sim.guidance import queue_load          # stdlib-only part of sim.guidance (numpy optional)
             return self._json(HTTPStatus.OK, queue_load(BROADCAST_Q))
+        if self.path.split("?")[0] in ("/stream.mjpg", "/frame.jpg"):
+            return self._mjpeg_proxy(self.path.split("?")[0])
+        if self.path.split("?")[0] == "/api/site":
+            return self._json(HTTPStatus.OK, _read_json(SITE_JSON, {"status": "unknown"}))
+        if self.path.split("?")[0] == "/api/goto":
+            return self._json(HTTPStatus.OK, _read_json(GOTO, {"seq": 0, "history": [], "last_goto": None}))
         if self.path.split("?")[0] == "/api/tasking":
             try:
                 with open(TASKING) as f:
@@ -147,6 +236,22 @@ class Handler(SimpleHTTPRequestHandler):
             return self._broadcast(route)
         if route in ("/api/portal", "/api/comms/reply"):
             return self._portal_post(route)
+        if route == "/api/live":
+            return self._live_cmd()
+        if route == "/api/site":
+            return self._site()
+        if route == "/api/reset":
+            return self._reset()
+        if route == "/api/goto":
+            n = int(self.headers.get("Content-Length") or 0)
+            if n <= 0 or n > 4096:
+                return self._json(HTTPStatus.BAD_REQUEST, {"error": "empty or too large body"})
+            try:
+                body = json.loads(self.rfile.read(n))
+            except json.JSONDecodeError as e:
+                return self._json(HTTPStatus.BAD_REQUEST, {"error": str(e)})
+            code, doc = goto(body if isinstance(body, dict) else {})
+            return self._json(code, doc)
         if route != "/api/tasking":
             return self._json(HTTPStatus.NOT_FOUND, {"error": "unknown endpoint"})
         n = int(self.headers.get("Content-Length") or 0)
@@ -161,6 +266,104 @@ class Handler(SimpleHTTPRequestHandler):
         with open(tmp, "w") as f:
             json.dump(doc, f, indent=1)
         os.replace(tmp, TASKING)
+        return self._json(HTTPStatus.OK, doc)
+
+    def _site(self):
+        """Relaunch Isaac on another site (live2/console_run.sh, detached; this server keeps running)."""
+        import subprocess
+        n = int(self.headers.get("Content-Length") or 0)
+        try:
+            body = json.loads(self.rfile.read(n)) if 0 < n <= 4096 else {}
+        except json.JSONDecodeError as e:
+            return self._json(HTTPStatus.BAD_REQUEST, {"error": str(e)})
+        site, look = body.get("site", "grid"), body.get("look", "day")
+        seed = body.get("seed", 7)
+        if site not in SITES or look not in LOOKS or not isinstance(seed, int) or not (0 <= seed < 100000):
+            return self._json(HTTPStatus.BAD_REQUEST, {"error": f"site in {SITES}, look in {LOOKS}, seed an int"})
+        return self._launch(site, seed, look)
+
+    def _reset(self):
+        """Back to the held state on the current site: same path as /api/site (Isaac relaunch, ~80 s)."""
+        n = int(self.headers.get("Content-Length") or 0)
+        if n > 4096:
+            return self._json(HTTPStatus.BAD_REQUEST, {"error": "body too large"})
+        if n:
+            self.rfile.read(n)
+        cur = _read_json(SITE_JSON) or {}
+        site, seed, look = cur.get("site", "grid"), cur.get("seed", 7), cur.get("look", "day")
+        if site not in SITES or look not in LOOKS or not isinstance(seed, int):
+            site, seed, look = "grid", 7, "day"
+        code, doc = self._launch(site, seed, look, reply=False)
+        if code != 200:
+            return self._json(code, doc)
+        return self._json(HTTPStatus.OK, dict(ok=True, mode="reload", **doc))
+
+    def _launch(self, site, seed, look, reply=True):
+        """Start live2/console_run.sh detached (this server keeps running); force is implied (always relaunches)."""
+        import subprocess
+        cur = _read_json(SITE_JSON) or {}
+        if cur.get("status") == "loading" and time.time() - float(cur.get("wall") or 0) < 300:
+            res = (HTTPStatus.CONFLICT, {"error": "A site is already loading, try again in a minute.", "site": cur})
+            return self._json(*res) if reply else res
+        doc = {"site": site, "seed": seed, "look": look, "status": "loading", "wall": time.time()}
+        _write_json(SITE_JSON, doc)
+        env = dict(os.environ, SITE=site, SEED=str(seed), LOOK=look, KEEP_SERVE="1")
+        log = open(os.path.expanduser("~/console.log"), "w")
+        subprocess.Popen(["bash", CONSOLE_RUN], env=env, stdout=log, stderr=subprocess.STDOUT,
+                         stdin=subprocess.DEVNULL, start_new_session=True, cwd=os.path.dirname(CONSOLE_RUN))
+        return self._json(HTTPStatus.OK, doc) if reply else (HTTPStatus.OK, doc)
+
+    def _mjpeg_proxy(self, route):
+        """The console's Isaac view: relay scripts/mjpeg.py (127.0.0.1:LARPVERSE_MJPEG_PORT, default 8766), so one
+        private port-forward to this server carries the dashboard, the API and the video."""
+        import urllib.request
+        port = int(os.environ.get("LARPVERSE_MJPEG_PORT", "8766"))
+        try:
+            up = urllib.request.urlopen(f"http://127.0.0.1:{port}{route}", timeout=5)
+        except Exception as e:                                   # noqa: BLE001
+            return self._json(HTTPStatus.SERVICE_UNAVAILABLE, {"error": f"mjpeg source not running ({e})"})
+        self.send_response(200)
+        self.send_header("Content-Type", up.headers.get("Content-Type", "image/jpeg"))
+        if route == "/frame.jpg" and up.headers.get("Content-Length"):
+            self.send_header("Content-Length", up.headers["Content-Length"])
+        self.end_headers()
+        try:
+            while True:
+                chunk = up.read1(65536) if hasattr(up, "read1") else up.read(65536)
+                if not chunk:
+                    break
+                self.wfile.write(chunk)
+                self.wfile.flush()
+        except (BrokenPipeError, ConnectionResetError):
+            pass
+        finally:
+            up.close()
+        return None
+
+    def _live_cmd(self):
+        """The take's live change (isaac/live.py write_cmd format): a person presses a button, nothing is scheduled."""
+        import re
+        n = int(self.headers.get("Content-Length") or 0)
+        if n <= 0 or n > 4096:
+            return self._json(HTTPStatus.BAD_REQUEST, {"error": "empty or too large body"})
+        try:
+            body = json.loads(self.rfile.read(n))
+        except json.JSONDecodeError as e:
+            return self._json(HTTPStatus.BAD_REQUEST, {"error": str(e)})
+        cmd, did = body.get("cmd"), body.get("id")
+        if cmd not in ("activate", "deactivate", "toggle") or not isinstance(did, str) or not re.fullmatch(r"[A-Za-z0-9_]{1,40}", did):
+            return self._json(HTTPStatus.BAD_REQUEST, {"error": "cmd must be activate|deactivate|toggle and id a dummy id"})
+        path = os.path.join(os.path.dirname(TASKING), "live_cmd.json")
+        try:
+            with open(path) as f:
+                seq = int(json.load(f).get("seq", 0)) + 1
+        except (OSError, ValueError):
+            seq = 1
+        doc = {"seq": seq, "cmd": cmd, "id": did, "wall": time.time(), "by": "live_button"}
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path + ".tmp", "w") as f:
+            json.dump(doc, f)
+        os.replace(path + ".tmp", path)
         return self._json(HTTPStatus.OK, doc)
 
     def _broadcast(self, route):

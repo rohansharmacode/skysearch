@@ -42,13 +42,57 @@ def add_args(ap):
     g.add_argument("--sky", type=float, default=900.0, help="HDRI dome intensity")
     g.add_argument("--sun", type=float, default=2200.0, help="sun intensity")
     g.add_argument("--sun-elev", type=float, default=24.0, help="sun elevation (deg): low = long dusk shadows")
-    g.add_argument("--veg", type=int, default=1, help="dry grass, shrubs and a few trees around the site")
+    g.add_argument("--veg", type=int, default=-1,
+                   help="dry grass, shrubs and a few trees: 1 on, 0 off, -1 auto (off on the urban collapse site)")
+    g.add_argument("--fog-start", type=float, default=70.0, help="distance haze starts (m); the brief wants >= 60")
+    g.add_argument("--fog-end", type=float, default=700.0, help="distance haze is full (m)")
+    g.add_argument("--fog-intensity", type=float, default=0.18, help="haze strength (was 0.35: fpv_d2 read hazy)")
+    g.add_argument("--fpv-tilt", type=float, default=40.0, help="fpv camera pitch below the horizon (deg)")
+    g.add_argument("--chase-back", type=float, default=6.0, help="chase camera distance behind the drone (m)")
+    g.add_argument("--chase-up", type=float, default=3.0, help="chase camera height above the drone (m)")
     g.add_argument("--operator", type=int, default=1, help="a person model (operator) at the dashboard table")
+    g.add_argument("--urban-look", type=int, default=1,
+                   help="collapse map: real materials instead of the scan photo on rubble/towers/slabs, 3D facade and "
+                        "debris (isaac/urban_look.py); 0 = the map as shipped")
+    g.add_argument("--urban-terrain", choices=["scan", "mdl"], default="scan",
+                   help="collapse map ground: scan = the scan photo (AI-refined with --scan-ai), mdl = procedural "
+                        "concrete/gravel materials (licence-clean variant for public showings)")
+    g.add_argument("--scan-ai", default="", help="folder of AI-refined scan textures (isaac/tools/ai_textures.py)")
+    g.add_argument("--rt-quality", type=int, default=0,
+                   help="1 = DLAA/DLSS quality + ray-reconstruction real-time mode + motion blur (live take)")
+    g.add_argument("--urban-debris", type=int, default=32000, help="3D debris pieces on the core rubble (+28%% outside)")
+    from isaac import facade_kit as _fk
+    g.add_argument("--facade-kit", default=_fk.default_dir(),
+                   help="Blender-built damaged-facade kit folder for the fallen towers (isaac/facade_kit.py; "
+                        "default: isaac/assets/facade_kit if built; '' = the box facade)")
+    g.add_argument("--cam-grade", type=float, default=0.0,
+                   help="grid site: a drone-camera colour grade on top of the default tonemap, 0 = off, 1 = full "
+                        "(contrast / saturation x1.12, faint warm gain, vignette, fine grain: rehearsal 5b read grey "
+                        "and low-saturation)")
+    g.add_argument("--grid-look", type=int, default=1,
+                   help="grid/weiguan sites: dusty textured rubble (facade-kit textures), neutral real-camera grade, "
+                        "less orange sun (isaac/grid_look.py); 0 = the old MDL look")
+    g.add_argument("--town", default="",
+                   help="town kit folder for the grid site's streets, buildings and street furniture (isaac/town.py), "
+                        "e.g. isaac/assets/town_kit; default '' = off")
+    g.add_argument("--crew", type=int, default=1, help="collapse map: rescue crew models at the staging area")
+    g.add_argument("--props", type=int, default=1, help="collapse map: excavators, crawler crane, fire trucks")
+    g.add_argument("--clean-overlay", type=int, default=-1,
+                   help="footage clarity: hide weak candidates, one radar ring per scan, lines ride over the rubble "
+                        "(1 on, 0 off, -1 auto = on for the collapse map)")
+    g.add_argument("--drone-style", choices=["mesh", "heavy", "blocks", "blender"], default="mesh",
+                   help="mesh = smooth heavy-lift model (isaac/drone_mesh.py: rounded fuselage, carbon arms, coaxial "
+                        "motor pods, tapered props, gimbal, gear); blocks = the old primitive model; blender = the Cycles-built X8 asset "
+                        "(isaac/assets/drone/heavy_sar.usdc, isaac/tools/blender_drone.py)")
+    g.add_argument("--prop-disc", type=float, default=0.06, help="opacity of the spinning-prop blur disc (0 = blades only)")
     g.add_argument("--record", default="", help="write PNG frames per camera to this folder (virtual clock)")
     g.add_argument("--rec-res", default="1920x1080")
     g.add_argument("--rec-fps", type=float, default=30.0, help="video frames per second")
     g.add_argument("--rec-speed", type=float, default=6.0, help="sim seconds per video second when recording")
-    g.add_argument("--rec-cams", default="director", help="comma list: director, wide, chase:d1, fpv:d2, top")
+    g.add_argument("--rec-cams", default="director",
+                   help="comma list: director, wide, chase:d1, fpv:d2, top (26 m over the active pile), "
+                        "mid (30-40 m out, 25 deg down, 35 mm lens, on the active pile; mid:A2 stays on A2), "
+                        "map (80 m straight down, north up, whole site: mirrors the dashboard map)")
     g.add_argument("--rec-stop-t", type=float, default=0.0, help="stop recording at this mission time (s)")
     g.add_argument("--rec-warp", type=float, default=1.0,
                    help="recording: speed up the long radar/rescan/relocate phases by this factor (e.g. 4)")
@@ -56,7 +100,9 @@ def add_args(ap):
     g.add_argument("--rec-windows", default="",
                    help='render/save only these frame ranges per camera, e.g. "director:120-250,560-700;wide:0-110" '
                         "(path-traced passes of just the shots the cut uses)")
-    g.add_argument("--rtx", choices=["realtime", "pathtracing"], default="realtime")
+    g.add_argument("--rtx", choices=["realtime", "pathtracing", "raytraced"], default="realtime",
+                   help="realtime = Kit's RTX Real-Time 2.0 (RealTimePathTracing, its default; DLSS ray reconstruction); "
+                        "pathtracing = offline-quality hero frames; raytraced = the older, cheaper RaytracedLighting")
     g.add_argument("--spp", type=int, default=16, help="--rtx pathtracing: samples per pixel per frame")
     return g
 
@@ -394,8 +440,8 @@ def sky_and_sun(stage, a, nv, log):
 def dress(stage, sc, a, log=print):
     try:                                              # thin glowing lines and fine points, not tubes and balls
         from isaac import overlay as _ov
-        _ov.LINE_W, _ov.POINT_W, _ov.MAX_SCANS = 0.006, 0.035, 3
-        _ov.LINE_MESH = True                          # flat ribbons: exact width in RTX/path-traced renders (teammate, GPU-verified)
+        # flat ribbon meshes 6-12 cm wide: BasisCurves render as ~0.5 m tubes in RTX and path tracing (pt1 vs pt2)
+        _ov.LINE_MESH, _ov.LINE_W, _ov.POINT_W, _ov.MAX_SCANS = True, 0.03, 0.025, 3
     except Exception as e:
         log(f"[photoreal] overlay scale unchanged ({type(e).__name__}: {e})")
     """Call right after scene.build(stage, sc) and before PhysX loads the stage."""
@@ -410,21 +456,52 @@ def dress(stage, sc, a, log=print):
             mats[k] = mdl_material(stage, f"/World/Looks/{k}", M[k], s)
         except Exception as e:
             log(f"[photoreal] material {k} failed: {type(e).__name__}: {e}")
-    sky_and_sun(stage, a, nv, log)
-    if "dirt" in mats:
+    urban_map = str(getattr(a, "site", "")).startswith("collapse")
+    try:                                              # drones: real part materials instead of flat colours
+        from isaac import drone_viz as _dv
+        _dv.PBR, _dv.PROP_DISC = True, float(getattr(a, "prop_disc", 0.06))
+        _dv.STYLE = str(getattr(a, "drone_style", "mesh"))
+    except Exception as e:
+        log(f"[photoreal] drone materials unchanged ({type(e).__name__}: {e})")
+    clean = getattr(a, "clean_overlay", -1)
+    if clean == 1 or (clean == -1 and urban_map):
+        try:
+            from isaac import overlay as _ov
+            _ov.HIDE_WEAK, _ov.RING_TOP, _ov.SMOOTH_DRAPE, _ov.MAX_SCANS = True, 1, 1.5, 1
+            log("[photoreal] clean overlay: weak candidates hidden, one radar ring per scan, lines ride over the rubble")
+        except Exception as e:
+            log(f"[photoreal] clean overlay off ({type(e).__name__}: {e})")
+    if urban_map:                                     # the 3d_model map brings its own sun and sky
+        if getattr(a, "urban_look", 1):
+            from isaac import urban_look
+            urban_look.dress(stage, sc, a, mats, nv, isa, log)
+        else:
+            log("[photoreal] collapse map: keeping its materials, sun and sky; no extra rubble, debris or vegetation")
+    else:
+        sky_and_sun(stage, a, nv, log)
+    if urban_map:
+        pass
+    elif "dirt" in mats:
         bind(stage, "/World/Terrain", mats["dirt"])
         bind(stage, "/World/Apron", mats["dirt"])
-    if "gravel" in mats:
+    if "gravel" in mats and not urban_map:
         rubble_ground(stage, sc, mats["gravel"], log)
     if "asphalt" in mats:
         bind(stage, "/World/Staging/Pad", mats["asphalt"])
-    dress_rubble(stage, sc, mats, log, seed=sc.seed)
-    if getattr(sc, "site", "grid") == "collapse":   # the referenced site has its own 56k-piece debris instancer
-        log("[photoreal] collapse site: keeping its own debris, no extra scatter")
-    else:
+    if not urban_map:
+        dress_rubble(stage, sc, mats, log, seed=sc.seed)
         scatter_debris(stage, sc, mats, log, seed=sc.seed)
-    if a.veg:
+        try:                                          # earthquake-hit town around the grid (isaac/town.py)
+            if getattr(a, "town", ""):
+                from isaac import town
+                town.dress(stage, sc, a.town, log)
+        except Exception as e:
+            log(f"[photoreal] town skipped ({type(e).__name__}: {e})")
+    veg = a.veg if a.veg in (0, 1) else int(not str(getattr(a, "site", "grid")).startswith(("collapse", "weiguan", "mesh:")))
+    if veg:
         vegetation(stage, sc, nv, log, seed=sc.seed)
+    else:
+        log("[photoreal] vegetation off (urban site or --veg 0)")
     if a.operator:
         from isaac.site import base_xy
         bx, by = base_xy(sc)
@@ -437,12 +514,64 @@ def dress(stage, sc, a, log=print):
         import carb
         s = carb.settings.get_settings()
         s.set_bool("/rtx/fog/enabled", True)
-        s.set_float("/rtx/fog/fogColorIntensity", 0.35)
-        s.set_float("/rtx/fog/fogStartDist", 70.0)
-        s.set_float("/rtx/fog/fogEndDist", 450.0)
+        s.set_float("/rtx/fog/fogColorIntensity", float(getattr(a, "fog_intensity", 0.18)))
+        s.set_float("/rtx/fog/fogStartDist", float(getattr(a, "fog_start", 70.0)))
+        s.set_float("/rtx/fog/fogEndDist", float(getattr(a, "fog_end", 700.0)))
+        log(f"[photoreal] haze: start {getattr(a, 'fog_start', 70.0):.0f} m, end {getattr(a, 'fog_end', 700.0):.0f} m, "
+            f"intensity {getattr(a, 'fog_intensity', 0.18):.2f}")
         s.set_float("/rtx/fog/fogColor/0", 0.78); s.set_float("/rtx/fog/fogColor/1", 0.70); s.set_float("/rtx/fog/fogColor/2", 0.60)
     except Exception:
         pass
+    k = float(getattr(a, "cam_grade", 0.0) or 0.0)
+    if k > 0 and not urban_map:
+        cam_grade(k, log)
+    if urban_map and getattr(a, "urban_look", 1):
+        from isaac import urban_look
+        urban_look.grade(a, log)
+        if getattr(a, "rt_quality", 0):
+            urban_look.rt_quality(a, log)
+    elif not urban_map and getattr(a, "grid_look", 1):
+        try:
+            from isaac import grid_look, urban_look
+            grid_look.apply(stage, sc, a, log)
+            if getattr(a, "rt_quality", 0):
+                urban_look.rt_quality(a, log)
+        except Exception as e:
+            log(f"[grid-look] skipped ({type(e).__name__}: {e})")
+
+
+def cam_grade(k=1.0, log=print):
+    """A drone camera's grade (DJI-style 'normal' profile) over Kit's default tonemap: a little more contrast and
+    colour, a faint warm gain, light vignette and fine sensor grain. k scales it (0 = off). No exposure change."""
+    c, sat = 1.0 + 0.12 * k, 1.0 + 0.12 * k
+    gain = [1.0 + 0.02 * k, 1.0, 1.0 - 0.03 * k]
+    G = {"/rtx/post/colorcorr/enabled": True, "/rtx/post/colorcorr/contrast": [c, c, c],
+         "/rtx/post/colorcorr/saturation": [sat, sat, sat], "/rtx/post/colorcorr/gamma": [1.0, 1.0, 1.0],
+         "/rtx/post/colorcorr/gain": gain, "/rtx/post/colorcorr/offset": [0.0, 0.0, 0.0],
+         "/rtx/post/tvNoise/enabled": True, "/rtx/post/tvNoise/enableVignetting": True,
+         "/rtx/post/tvNoise/vignettingSize": 107.0, "/rtx/post/tvNoise/vignettingStrength": 0.06 * k,
+         "/rtx/post/tvNoise/enableFilmGrain": True, "/rtx/post/tvNoise/grainAmount": 0.012 * k,
+         "/rtx/post/tvNoise/grainSize": 1.2, "/rtx/post/tvNoise/enableScanlines": False,
+         "/rtx/post/tvNoise/enableScrollBug": False, "/rtx/post/tvNoise/enableVignettingFlickering": False,
+         "/rtx/post/tvNoise/enableGhostFlickering": False, "/rtx/post/tvNoise/enableWaveDistortion": False,
+         "/rtx/post/tvNoise/enableVerticalLines": False, "/rtx/post/tvNoise/enableRandomSplotches": False}
+    try:
+        import carb
+        s, ok = carb.settings.get_settings(), 0
+        for key, v in G.items():
+            try:
+                if isinstance(v, bool):
+                    s.set_bool(key, v)
+                elif isinstance(v, list):
+                    s.set(key, [float(x) for x in v])            # as urban_look.grade (proven on Kit 110)
+                else:
+                    s.set_float(key, float(v))
+                ok += 1
+            except Exception:
+                pass
+        log(f"[photoreal] camera grade x{k:g}: contrast/saturation {c:.2f}, warm gain, vignette, grain ({ok}/{len(G)})")
+    except Exception as e:
+        log(f"[photoreal] camera grade skipped ({type(e).__name__}: {e})")
 
 
 def set_renderer(a, log=print):
@@ -454,8 +583,10 @@ def set_renderer(a, log=print):
             s.set_int("/rtx/pathtracing/spp", int(a.spp))
             s.set_int("/rtx/pathtracing/totalSpp", int(a.spp))
             s.set_bool("/rtx/pathtracing/optixDenoiser/enabled", True)
-        else:
+        elif a.rtx == "raytraced":
             s.set_string("/rtx/rendermode", "RaytracedLighting")
+        else:                               # Kit 110's default real-time mode; RaytracedLighting is a downgrade
+            s.set_string("/rtx/rendermode", "RealTimePathTracing")
         log(f"[photoreal] renderer: {a.rtx}" + (f" ({a.spp} spp + denoiser)" if a.rtx == "pathtracing" else ""))
     except Exception as e:
         log(f"[photoreal] renderer settings skipped ({type(e).__name__}: {e})")
@@ -473,35 +604,97 @@ def _look_at(eye, target, up=(0, 0, 1)):
 
 
 class Rigs:
-    """Extra recording cameras that follow drones: chase:<id> (behind and above) and fpv:<id> (nose camera),
-    plus top (straight down on the active pile) and wide (slow high orbit of the whole grid and staging)."""
+    """Extra recording cameras.
 
-    def __init__(self, stage, specs, surface):
+      chase:<id>   behind and above a drone (6 m back, 3 m up)       fpv:<id>  nose camera, tilted 40 deg down
+      top          26 m straight down on the active pile               wide      slow high orbit of the whole site
+      mid[:<pile>] 30-40 m out, 25 deg down, 35 mm lens, on the active pile (or one fixed pile), slow drift:
+                   the drones are large enough to read during landing and radar (review T4)
+      map          80 m straight down, north up, lens fitted to the site bounds: mirrors the dashboard map
+
+    piles {name: (x, y)} and bounds (xmin, ymin, xmax, ymax) are optional: mid:<pile> needs piles, and
+    with bounds the wide orbit and the map camera fit any site (without them: the 3x3 grid's numbers)."""
+
+    MID_DIST, MID_ELEV, MID_AZ, MID_FOCAL = 36.0, 25.0, 200.0, 35.0   # m, deg down, bearing pile->camera, mm
+    MAP_H, APERTURE = 80.0, 20.955
+    GRID_BOUNDS = (-36.0, -54.0, 36.0, 36.0)
+
+    def __init__(self, stage, specs, surface, fpv_tilt=40.0, chase_back=6.0, chase_up=3.0, piles=None, bounds=None,
+                 aspect=16 / 9):
         from pxr import Gf, UsdGeom
         self.Gf, self.surface, self.rigs = Gf, surface, []
+        self.fpv_drop = math.tan(math.radians(fpv_tilt))   # metres down per metre forward
+        self.chase_back, self.chase_up = chase_back, chase_up
+        self.piles = dict(piles or {})
+        self.bounds = tuple(float(v) for v in bounds) if bounds else None
+        self.map_h, map_f = self.map_geometry(self.bounds or self.GRID_BOUNDS, aspect)
         for spec in specs:
             mode, _, who = spec.partition(":")
-            if mode not in ("chase", "fpv", "top", "wide"):
+            if mode not in ("chase", "fpv", "top", "wide", "mid", "map"):
                 continue
             path = f"/World/RecCams/{mode}_{who or 'x'}"
             cam = UsdGeom.Camera.Define(stage, path)
-            cam.CreateFocalLengthAttr(9.0 if mode == "fpv" else 16.0)
-            cam.CreateHorizontalApertureAttr(20.955)
+            cam.CreateFocalLengthAttr({"fpv": 9.0, "mid": self.MID_FOCAL, "map": map_f}.get(mode, 16.0))
+            cam.CreateHorizontalApertureAttr(self.APERTURE)
             cam.CreateClippingRangeAttr(Gf.Vec2f(0.03, 3000.0))
             xf = UsdGeom.Xformable(cam); xf.ClearXformOpOrder()
-            self.rigs.append(dict(mode=mode, who=who or "d1", path=path, op=xf.AddTransformOp(UsdGeom.XformOp.PrecisionDouble),
+            if mode in ("chase", "fpv"):
+                who = who or "d1"
+            self.rigs.append(dict(mode=mode, who=who, path=path, op=xf.AddTransformOp(UsdGeom.XformOp.PrecisionDouble),
                                   eye=None, tgt=None, name=spec.replace(":", "_")))
+
+    @classmethod
+    def map_geometry(cls, bounds, aspect=16 / 9, margin=1.08, min_focal=7.0):
+        """Height (m) and focal length (mm) for a straight-down view that shows all of bounds at MAP_H; a site
+        too big for a min_focal lens at MAP_H gets a higher camera instead of a fisheye-like lens."""
+        x0, y0, x1, y1 = bounds
+        w, h = (x1 - x0) * margin, (y1 - y0) * margin
+        f = min(cls.MAP_H * cls.APERTURE / w, cls.MAP_H * cls.APERTURE / aspect / h)
+        return (cls.MAP_H, f) if f >= min_focal else (cls.MAP_H * min_focal / f, min_focal)
+
+    def _top(self, x, y, r=6.0):
+        """Rubble top near (x, y): 80th percentile of the surface on a 5x5 grid of radius r."""
+        g = np.linspace(-r, r, 5)
+        return float(np.percentile([float(self.surface(float(x + u), float(y + v))) for u in g for v in g], 80))
+
+    def _centre(self):
+        x0, y0, x1, y1 = self.bounds or self.GRID_BOUNDS
+        return 0.5 * (x0 + x1), 0.5 * (y0 + y1), max(x1 - x0, y1 - y0)
 
     def update(self, poses, focus, dt):
         for r in self.rigs:
-            if r["mode"] == "wide":                       # establishing / pull-back: whole grid at dusk
+            if r["mode"] == "wide":                       # establishing / pull-back: whole site at dusk
                 r["th"] = r.get("th", -math.pi / 2 - 0.45) + dt * 2 * math.pi / 140.0
-                eye = np.array([64 * math.cos(r["th"]), 64 * math.sin(r["th"]) - 10.0, 36.0])
-                tgt = np.array([0.0, -10.0, 0.0])
+                if self.bounds is None or self.bounds == self.GRID_BOUNDS:     # the grid: as recorded in lv2/pt2
+                    cx, cy, R, H = 0.0, -10.0, 64.0, 36.0
+                else:
+                    cx, cy, span = self._centre()
+                    R, H = 0.62 * span, 0.32 * span
+                eye = np.array([cx + R * math.cos(r["th"]), cy + R * math.sin(r["th"]), H])
+                tgt = np.array([cx, cy, 0.0])
+            elif r["mode"] == "map":                      # static, north up (the 1 cm south offset sets "up")
+                cx, cy, _ = self._centre()
+                eye = np.array([cx, cy - 0.01, self.map_h]); tgt = np.array([cx, cy, 0.0])
+            elif r["mode"] == "mid":
+                if r["who"] and r["who"] in self.piles:
+                    px, py = self.piles[r["who"]][:2]
+                    c = np.array([px, py, 0.5 + 0.5 * float(self.surface(px, py))])
+                elif focus is not None:
+                    c = np.array(focus, float)
+                    c[2] = max(c[2], self._top(c[0], c[1]) - 1.0)   # tall wrecks: aim at the rubble top, not z ~2 m
+                else:
+                    continue
+                r["clock"] = r.get("clock", 0.0) + dt
+                az = math.radians(self.MID_AZ + 6.0 * math.sin(r["clock"] * 2 * math.pi / 50.0))   # slow parallax
+                el = math.radians(self.MID_ELEV)
+                eye = c + self.MID_DIST * np.array([math.cos(el) * math.cos(az), math.cos(el) * math.sin(az), math.sin(el)])
+                eye[2] = max(eye[2], float(self.surface(eye[0], eye[1])) + 2.0)
+                tgt = c
             elif r["mode"] == "top":
                 if focus is None:
                     continue
-                eye = np.array([focus[0], focus[1] - 0.01, focus[2] + 26.0]); tgt = np.array(focus, float)
+                fz = max(float(focus[2]), self._top(focus[0], focus[1]) - 1.0)
+                eye = np.array([focus[0], focus[1] - 0.01, fz + 26.0]); tgt = np.array([focus[0], focus[1], fz])
             else:
                 p = poses.get(r["who"])
                 if p is None:
@@ -511,16 +704,33 @@ class Rigs:
                 pos = np.array([x, y, z])
                 if r["mode"] == "fpv":
                     eye = pos + 0.45 * fwd + [0, 0, -0.08]
-                    tgt = eye + fwd * 10 + [0, 0, -3.5]
+                    tgt = eye + fwd * 10 + [0, 0, -10 * self.fpv_drop]
                 else:
-                    eye = pos - 5.5 * fwd + [0, 0, 2.2]
+                    eye = pos - self.chase_back * fwd + [0, 0, self.chase_up]
                     eye[2] = max(eye[2], float(self.surface(eye[0], eye[1])) + 1.2)
                     tgt = pos + 2.0 * fwd
-            k = 1.0 - math.exp(-dt / (0.25 if r["mode"] == "fpv" else 0.6))
+            k = 1.0 - math.exp(-dt / {"fpv": 0.25, "mid": 1.5, "map": 1e-6}.get(r["mode"], 0.6))
             r["eye"] = eye if r["eye"] is None else r["eye"] + (eye - r["eye"]) * k
             r["tgt"] = tgt if r["tgt"] is None else r["tgt"] + (tgt - r["tgt"]) * k
             M = _look_at(r["eye"], r["tgt"])
             r["op"].Set(self.Gf.Matrix4d(*M.flatten().tolist()))
+
+
+def project(row, P):
+    """Pixel coordinates of world points P (N, 3) in one cameras.jsonl row (numpy only, for post/burn-in).
+
+    Returns (uv (N, 2), depth (N,)); depth <= 0 means behind the camera. Pinhole with square pixels and the
+    horizontal aperture fitted to the image width (how Kit renders a USD camera); principal point at the centre.
+    `world` is USD row-major (p_world = p_cam @ M), the camera looks down its local -Z with +Y up."""
+    M = np.asarray(row["world"], float).reshape(4, 4)
+    P = np.atleast_2d(np.asarray(P, float))[:, :3]
+    pc = np.c_[P, np.ones(len(P))] @ np.linalg.inv(M)
+    d = -pc[:, 2]
+    W, H = float(row["width"]), float(row["height"])
+    f = float(row["focal_mm"]) / float(row["h_aperture_mm"]) * W
+    with np.errstate(divide="ignore", invalid="ignore"):
+        uv = np.c_[W / 2 + f * pc[:, 0] / d, H / 2 - f * pc[:, 1] / d]
+    return uv, d
 
 
 class Recorder:
@@ -602,9 +812,34 @@ class Recorder:
                 continue
             img = np.asarray(d)[..., :3]
             Image.fromarray(img).save(os.path.join(self.out, name, f"f{idx:05d}.png"), compress_level=1)
+            self._pose(name, idx)
             ok += 1
         self.n += ok > 0
         return ok
+
+    def _pose(self, name, idx):
+        """cameras.jsonl: per saved frame, the camera's world matrix and intrinsics, so post can project
+        pile/zone IDs and ping tags into the shot (scripts/cut_video.py). USD convention: row-major 4x4,
+        camera looks down its local -Z, +Y up; focal and apertures in mm (USD tenths of scene units)."""
+        try:
+            import json
+            import omni.usd
+            from pxr import Usd, UsdGeom
+            prim = omni.usd.get_context().get_stage().GetPrimAtPath(self.paths[name])
+            cam = UsdGeom.Camera(prim)
+            M = UsdGeom.Xformable(prim).ComputeLocalToWorldTransform(Usd.TimeCode.Default())
+            rec = dict(frame=idx, cam=name, width=self.wh[0], height=self.wh[1],
+                       world=[float(M[r][c]) for r in range(4) for c in range(4)],
+                       focal_mm=float(cam.GetFocalLengthAttr().Get() or 0),
+                       h_aperture_mm=float(cam.GetHorizontalApertureAttr().Get() or 0),
+                       v_aperture_mm=float(cam.GetVerticalApertureAttr().Get() or 0),
+                       clip=list(cam.GetClippingRangeAttr().Get() or (0, 0)))
+            with open(os.path.join(self.out, "cameras.jsonl"), "a") as fh:
+                fh.write(json.dumps(rec) + "\n")
+        except Exception as e:                         # never let metadata break a recording
+            if not getattr(self, "_pose_warned", False):
+                self.log(f"[photoreal] camera pose log off ({type(e).__name__}: {e})")
+                self._pose_warned = True
 
     def note(self, idx, state, pile):
         """timeline.csv: video frame -> mission time, phase, active pile, pings so far (for cutting the shots)."""

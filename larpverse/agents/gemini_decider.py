@@ -172,10 +172,15 @@ def dig_order(candidates, depth_of=None):
                 d = depth_of(c)
             acc = 1.0 if not isinstance(d, (int, float)) else min(1.0, max(0.2, 1 - d / 4.0))
             s = round(ASSESS_WEIGHT * float(c.get("p_mass") or 0.0) * acc, 3)
+        pr = c.get("priority")
+        pr = pr if isinstance(pr, (int, float)) and not isinstance(pr, bool) else None
         rows.append({"ping": c.get("id"), "pile": c.get("pile_id"), "dig_score": s,
                      "p_mass": c.get("p_mass"), "pattern": _pattern(v),
-                     "triage_hint": (v or {}).get("triage_hint"), "_v": v})
-    rows.sort(key=lambda r: (-r["dig_score"], -(r["p_mass"] or 0), str(r["ping"])))
+                     "triage_hint": (v or {}).get("triage_hint"), "_v": v,
+                     **({"priority": pr, "priority_by": c.get("priority_by")} if pr is not None else {})})
+    # combined breathing + audio priority (agents/gemini_vitals, 0-100) when present, else 100 x dig_score
+    rows.sort(key=lambda r: (-(r["priority"] if "priority" in r else 100.0 * r["dig_score"]),
+                             -r["dig_score"], -(r["p_mass"] or 0), str(r["ping"])))
     for i, r in enumerate(rows, 1):
         r["rank"] = i
         r["condition"] = condition_phrase(r.pop("_v"), first=i == 1)
@@ -263,7 +268,7 @@ def compact_context(context):
         if isinstance(p, dict) and "vitals" in p:
             p["vitals"] = _vitals_summary(p["vitals"])
     if ctx.get("pings") and any(isinstance(p, dict) and ("vitals" in p or "dig_score" in p) for p in ctx["pings"]):
-        ctx["dig_order"] = [{k: r[k] for k in ("rank", "ping", "dig_score", "condition")}
+        ctx["dig_order"] = [{k: r[k] for k in ("rank", "ping", "dig_score", "priority", "condition") if k in r}
                             for r in dig_order([dict(p, status=p.get("status", "candidate")) for p in ctx["pings"]])]
     return ctx
 

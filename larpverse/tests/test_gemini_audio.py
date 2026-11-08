@@ -91,7 +91,7 @@ def test_audio_request_shape_cache_and_replay(monkeypatch):
     gen = body["generationConfig"]
     assert gen["responseSchema"]["type"] == "OBJECT" and gen["thinkingConfig"] == {"thinkingLevel": "low"}
     assert "additionalProperties" not in json.dumps(gen["responseSchema"])
-    assert fake.calls[0]["url"].endswith("/models/gemini-3.7-flash:generateContent")
+    assert fake.calls[0]["url"].endswith("/models/gemini-3.5-flash:generateContent")
     # same audio -> cache; different audio -> new call
     monkeypatch.setattr(llm, "_http_post", _no_network)
     m2 = {}

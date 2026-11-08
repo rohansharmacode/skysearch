@@ -135,6 +135,9 @@ class LabRuntime(KitRuntime):
     def step(self):
         self.sim.step()
 
+    def render(self):
+        self.sim.render()
+
     @property
     def physics_dt(self):
         try:

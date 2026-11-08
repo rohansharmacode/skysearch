@@ -274,7 +274,29 @@ export function createTasking(app) {
     $('planMsg').className = 'tmsg ' + T.msgKind; $('planMsg').textContent = T.msg; $('planMsg').hidden = !T.msg || !T.planning;
     renderRail();
   }
+  // Operator flow on the map: [Select area to scan] -> draw -> [Send drones]; then suggested next areas, one click each.
+  function renderCTA() {
+    const el = $('cta'); if (!el) return;
+    const S = app.S() || {}, tasked = (S.zones || []).filter(z => z.status !== 'cancelled').length + (T.revision && !T.dirty ? T.zones.length : 0);
+    let h = '';
+    if (!T.planning) h = tasked ? '<button class="cta" data-cta="start">+ Select another area</button>' : '<button class="cta big" data-cta="start">Select area to scan</button>';
+    else if (T.drawing || T.lasso) h = `<span class="cta-hint">Click the corners of the area · double-click or tap the first corner to finish</span><button class="cta ghost" data-cta="cancel">Cancel</button>`;
+    else if (T.dirty && T.zones.length) h = `<button class="cta big go" data-cta="send">Send drones → ${T.zones.length} area${T.zones.length > 1 ? 's' : ''}</button><button class="cta ghost" data-cta="clear">Redraw</button>`;
+    else h = `<span class="cta-hint">Click the corners of the area to scan on the map</span><button class="cta ghost" data-cta="cancel">Cancel</button>`;
+    el.classList.toggle('docked', !T.planning && tasked > 0);   // tasked: a small button out of the way; idle / drawing: top centre
+    el.innerHTML = h + (T.msg && /Sent as revision|rejected|ops server/.test(T.msg) ? `<span class="cta-msg ${T.msgKind}">${esc(T.msg)}</span>` : '');
+    // suggested next area (acoustics) as a map card, hidden while drawing
+    const sg = $('suggest'); if (!sg) return;
+    const tasknames = new Set([...T.zones, ...(S.zones || [])].map(z => z.name));
+    const props = [...(S.zone_proposals || [])].filter(p => p.polygon?.length >= 3 && !tasknames.has(`${p.id} ${p.kind === 'rubble_mound' ? 'mound' : 'proposal'}`)).sort((a, b) => (b.score ?? 0) - (a.score ?? 0));
+    const sugs = (S.zone_suggestions || []).filter(x => !tasknames.has(`${x.id} suggested`));
+    const top = sugs[0] ? { kind: 's', id: sugs[0].id, why: sugs[0].why } : props[0] ? { kind: 'p', id: props[0].id, why: props[0].why } : null;
+    sg.hidden = !top || T.planning;
+    if (top) sg.innerHTML = `<div class="sh">Suggested next area · from acoustics</div><div class="sb"><b>${esc(top.id)}</b> ${esc(top.why || '')}</div>
+      <button class="cta go" data-cta="${top.kind === 's' ? 'acceptS' : 'acceptP'}" data-id="${esc(top.id)}">Accept → send drones</button>${sugs.length + props.length > 1 ? `<span class="more">+${sugs.length + props.length - 1} more in the rail</span>` : ''}`;
+  }
   function renderRail() {
+    renderCTA();
     const S = app.S() || {}, sec = $('secZones'); if (!sec) return;
     const rc = S.recon, zs = S.zones || [], sg = S.zone_suggestions || [], pr = [...(S.zone_proposals || [])].sort((a, b) => (b.score ?? 0) - (a.score ?? 0));
     const any = rc || zs.length || sg.length || pr.length;
@@ -285,13 +307,13 @@ export function createTasking(app) {
     const prop = pr.length ? `<div class="sub">Proposed zones <button class="btn sm" data-act="acceptAll">Accept all</button></div>` + pr.map(p => `<div class="zp" data-p="${esc(p.id)}">
         <div class="zh"><span class="tag">proposed</span><b>${esc(p.id)}</b><span class="mut">${p.kind ? esc(p.kind.replace(/_/g, ' ')) : ''}${p.height_max_m != null ? ' · ' + (+p.height_max_m).toFixed(1) + ' m high' : ''}${p.area_m2 != null ? ' · ' + Math.round(p.area_m2) + ' m²' : ''}</span><span class="sc">${p.score != null ? (+p.score).toFixed(2) : ''}</span></div>
         ${p.why ? `<div class="zw">${esc(p.why)}</div>` : ''}
-        <div class="za">${tasked.has(`${p.id} ${p.kind === 'rubble_mound' ? 'mound' : 'proposal'}`) ? '<span class="mut">accepted ✓</span>' : '<button class="btn sm" data-act="accept">Accept</button><button class="btn sm" data-act="edit">Edit</button>'}</div></div>`).join('') : '';
+        <div class="za">${tasked.has(`${p.id} ${p.kind === 'rubble_mound' ? 'mound' : 'proposal'}`) ? '<span class="mut">accepted ✓</span>' : '<button class="btn sm" data-act="accept">Accept → send drones</button><button class="btn sm" data-act="edit">Edit</button>'}</div></div>`).join('') : '';
     const zl = zs.length ? `<div class="sub">Tasked zones</div>` + zs.map(z => { const [lab, col] = zst(z.status), cv = z.coverage || {};
         return `<div class="zt"><b>${esc(z.name || z.id)}</b><span class="chip" style="color:${col};border-color:${col}">${esc(lab)}</span>
           <span class="cov">${cv.lidar_mapped != null ? `<span>LiDAR ${pct(cv.lidar_mapped)}</span>` : ''}${cv.radar_reached != null ? `<span>radar ${pct(cv.radar_reached)}</span>` : ''}${cv.listened != null ? `<span>${cv.listened ? 'listened' : 'not listened'}</span>` : ''}${(z.pings || []).length ? `<span class="pg">${esc(z.pings.join(', '))}</span>` : ''}</span>
           ${z.retask_reason ? `<span class="zw">reopened: ${esc(z.retask_reason)}</span>` : ''}${newEv(S, z) ? `<span class="zev">phone on rescue Wi-Fi inside: new evidence — re-search?</span>` : ''}</div>`; }).join('') : '';
-    const sl = sg.length ? `<div class="sub">Suggested by the drones (outside every zone)</div>` + sg.map(s => `<div class="zp" data-s="${esc(s.id)}"><div class="zh"><span class="tag">suggested</span><b>${esc(s.id)}</b><span class="mut">${s.radius_m || 6} m radius</span></div>
-        ${s.why ? `<div class="zw">${esc(s.why)}</div>` : ''}<div class="za">${tasked.has(`${s.id} suggested`) ? '<span class="mut">added ✓</span>' : '<button class="btn sm" data-act="addSug">Add as zone</button>'}</div></div>`).join('') : '';
+    const sl = sg.length ? `<div class="sub">Suggested next areas (from acoustics)</div>` + sg.map(s => `<div class="zp" data-s="${esc(s.id)}"><div class="zh"><span class="tag">suggested</span><b>${esc(s.id)}</b><span class="mut">${s.radius_m || 6} m radius</span></div>
+        ${s.why ? `<div class="zw">${esc(s.why)}</div>` : ''}<div class="za">${tasked.has(`${s.id} suggested`) ? '<span class="mut">added ✓</span>' : '<button class="btn sm" data-act="addSug">Accept → send drones</button>'}</div></div>`).join('') : '';
     $('zones').innerHTML = rcTxt + prop + zl + sl + (T.msg && !T.planning ? `<p class="tmsg ${T.msgKind}">${esc(T.msg)}</p>` : '')
       + (zs.some(z => z.status === 'searched_no_ping') ? '<p class="caveat0">“Searched — not cleared”: no detection is not proof that nobody is there.</p>' : '');
   }
@@ -317,7 +339,18 @@ export function createTasking(app) {
       if (f === 'priority') { const v = parseInt(e.target.value, 10); z.priority = Number.isFinite(v) && v > 0 ? v : null; }
       T.dirty = true; persist(); render(); app.draw();
     });
-    $('planSend').onclick = () => post(T.zones, 'Tasking accepted by the ops server.');
+    $('planSend').onclick = () => post(T.zones, 'Tasking accepted by the ops server.').then(ok => { if (ok) { T.planning = false; render(); app.draw(); } });
+    const startPlan = () => { T.planning = true; T.tool = 'poly'; T.drawing = null; load(); render(); app.draw(); };
+    const onCta = e => {
+      const b = e.target.closest('[data-cta]'); if (!b) return; const S = app.S() || {}, a = b.dataset.cta;
+      if (a === 'start') startPlan();
+      else if (a === 'cancel') { T.planning = false; T.drawing = null; T.lasso = null; render(); app.draw(); }
+      else if (a === 'clear') { T.dirty = false; T.drawing = null; persist(); load().then(() => { render(); app.draw(); }); }   // back to what the server has
+      else if (a === 'send') post(T.zones, 'Drones dispatched.').then(ok => { if (ok) { T.planning = false; render(); app.draw(); } });
+      else if (a === 'acceptS') { const x = (S.zone_suggestions || []).find(q => q.id === b.dataset.id); if (x) merge([{ name: `${x.id} suggested`, polygon: circlePoly(x.centre, x.radius_m || 6), priority: null, status: 'tasked', note: (x.why || '').slice(0, 200) }], `Accepted ${x.id}: drones dispatched.`); }
+      else if (a === 'acceptP') { const p = (S.zone_proposals || []).find(q => q.id === b.dataset.id); if (p) merge([{ name: `${p.id} ${p.kind === 'rubble_mound' ? 'mound' : 'proposal'}`, polygon: p.polygon, priority: null, status: 'tasked', note: (p.why || '').slice(0, 200) }], `Accepted ${p.id}: drones dispatched.`); }
+    };
+    $('cta').addEventListener('click', onCta); $('suggest').addEventListener('click', onCta);
     $('zones').addEventListener('click', e => {
       const b = e.target.closest('[data-act]'); if (!b) return; const S = app.S() || {};
       const a = b.dataset.act, pid = b.closest('[data-p]')?.dataset.p, sid = b.closest('[data-s]')?.dataset.s;

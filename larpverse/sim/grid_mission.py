@@ -139,7 +139,7 @@ class GridMission:
                  listen_s=None, revisit_max=2, penetration=None, launch_pile=None, site="grid", platform=None,
                  delivery=None, speaker=True, callout_fn=None,
                  tasking=None, recon_accept_s=RECON_ACCEPT_S, comms=True, uplink="oneweb", comms_llm=False,
-                 flight_model="smooth"):
+                 flight_model="smooth", vitals_ai="fallback"):
         """``autonomous`` (default): keep searching until the mission scan budget (``mission_scans``, default
         24), the time limit or the open leads run out; battery swaps at the pads; open leads without a firm
         ping are revisited once. ``pile_budget`` caps pile visits (None = no cap; legacy mode uses 3).
@@ -204,6 +204,9 @@ class GridMission:
         self.sensor_factory = sensor_factory or (lambda pw, s: make_generator(pw, s, radar))
         self.acoustic_fn = acoustic_fn
         self.decider = decider         # optional (context, options) -> {"choice", "rationale", "by"}
+        # agents/gemini_vitals: breathing waveform + audio -> pings[].priority ("auto" | "gemini" | "fallback";
+        # fallback never calls the network). At most one LLM call per firm ping id (results kept here).
+        self.vitals_ai, self._gv_done, self._gv_waves = vitals_ai, {}, {}
         self.slam, self.slam_scans, self.slam_kw, self.slam_cache = slam, slam_scans, dict(slam_kw or {}), slam_cache
         self.slam_metrics = {}         # pile -> metrics line (ATE, map error) for the log / state
         self._terrain = self.grid.z.copy()   # sim-diagnostic reference for the SLAM map-error line only
@@ -816,6 +819,12 @@ class GridMission:
             self._say(f"[{name}] Radar return {c['id']} rejected as not a person: {why}. Kept as a scan note, "
                       "not a ping; no revisit spent on it")
         firm = [c for c in firm if c not in rejected]
+        for c in firm:
+            self._gemini_vitals(c, name)
+        for o in pm.scans:                    # the private waveform copies stay out of state.json
+            for v in o.get("vitals") or []:
+                if isinstance(v, dict):
+                    v.pop("_wave", None)
         if firm:
             c = firm[0]
             p["status"] = "ping"
@@ -892,11 +901,37 @@ class GridMission:
             return
         _, o, v, r, ps = best
         v = dict(with_rubble_path(v, r, float(rubble_path(pm.grid, ps, pt))), scan_id=o["scan_id"])
+        wave = v.pop("_wave", None)
+        if wave:
+            self._gv_waves[c["id"]] = wave
         c["vitals"] = v
         c["dig_score"] = dig_score(v, c["p_mass"], depth)
         self._say(f"Vitals at {c['id']} from {o['scan_id']}{' (60 s look)' if o.get('vitals_look') else ''}: "
                   f"pattern {v.get('pattern')}, rate {v.get('rate_bpm')}/min, hint {v.get('triage_hint')} "
                   f"(confidence {v.get('pattern_conf')}); dig score {c['dig_score']}. A triage aid for rescuers to check")
+
+    def _gemini_vitals(self, c, pile):
+        """agents/gemini_vitals on the ping's best-scan waveform + the strongest clip heard from its pile:
+        vitals.gemini and pings[].priority / priority_by (0-100; the dig order sorts by it). No truth used."""
+        v = c.get("vitals")
+        if not v:
+            return
+        g = self._gv_done.get(c["id"])
+        if g is None:
+            try:
+                from agents.gemini_vitals import analyse_breathing
+            except Exception:                        # noqa: BLE001
+                return
+            clips = [k for k in self.clips if k.get("pile_id") == pile and (k["scores"].get("human") or 0) >= 0.4]
+            audio = max(clips, key=lambda k: k.get("priority") or 0) if clips else None
+            wave = self._gv_waves.get(c["id"]) or {}
+            g = analyse_breathing(wave.get("mm") or [], wave.get("fs") or 4.0, dsp_vitals=v, audio=audio,
+                                  mode=self.vitals_ai, dig=c.get("dig_score"))
+            self._gv_done[c["id"]] = g
+        v["gemini"] = {k: g.get(k) for k in ("pattern", "rate_bpm", "confidence", "priority", "reason", "by")}
+        c["priority"], c["priority_by"] = g["priority"], g["by"]
+        self._say(f"Breathing + audio priority at {c['id']} [{g['by']}]: {g['pattern']}, priority {g['priority']}/100. "
+                  f"{g['reason']}" + (f" ({g['error']})" if g.get("error") and self.vitals_ai != "fallback" else ""))
 
     def _listen_patches(self, pm):
         """Flat off-pile patches around the active pile where a drone can sit with rotors off (cached per pile)."""
@@ -1418,7 +1453,9 @@ class GridMission:
                    "delivery": self.delivery,
                    "pings": [{"id": c["id"], "pile_id": c["pile_id"], "status": c["status"], "p_mass": c["p_mass"],
                               **({"vitals": c["vitals"]} if c.get("vitals") else {}),
-                              **({"dig_score": c["dig_score"]} if c.get("dig_score") is not None else {})}
+                              **({"dig_score": c["dig_score"]} if c.get("dig_score") is not None else {}),
+                              **({"priority": c["priority"], "priority_by": c.get("priority_by")}
+                                 if c.get("priority") is not None else {})}
                              for c in self.done_cands],
                    "zone_proposals": (self.recon.to_state().get("zone_proposals") if self.recon is not None else []),
                    "piles": [{k: p[k] for k in ("id", "status", "priority", "why")} for p in self.piles.values()],
@@ -1551,7 +1588,9 @@ class GridMission:
     def _state_base(self, hm_placeholder=False):
         g = self.grid
         pm = self.pm if self.stage == "pile" else None
-        scans = self.done_scans + ([dict(o, pile_id=pm.pile) for o in pm.scans] if pm else [])
+        scans = self.done_scans + ([dict(o, pile_id=pm.pile, **({"vitals": [
+            {k: x for k, x in v.items() if k != "_wave"} if isinstance(v, dict) else v for v in o["vitals"]]}
+            if o.get("vitals") else {})) for o in pm.scans] if pm else [])
         cands = self.done_cands + (self._live_cands(pm) if pm else [])
         sites = list(self.done_sites)
         next_scan = None
@@ -1715,6 +1754,9 @@ def main(argv=None):
                     help="van internet backhaul (Tainan: OneWeb via Chunghwa Telecom, or LTE); none = local only")
     ap.add_argument("--flight", choices=["smooth", "kinematic"], default="smooth",
                     help="smooth: sim/flight_motion.py multirotor trajectories (docs/MOTION.md); kinematic: legacy")
+    ap.add_argument("--vitals-ai", choices=["auto", "gemini", "fallback"], default=os.environ.get("VITALS_AI", "auto"),
+                    help="Gemini reads each firm ping's breathing waveform + pile audio -> pings[].priority "
+                         "(one call per ping, record/replay cache; LLM_REPLAY=1 = offline; fallback = no network)")
     ap.add_argument("--quiet", action="store_true")
     a = ap.parse_args(argv)
     t0 = time.time()
@@ -1732,7 +1774,7 @@ def main(argv=None):
                     platform=a.platform, delivery=a.delivery, speaker=a.speaker,
                     tasking=os.path.join(a.out, "tasking.json") if a.tasking == "auto" else a.tasking,
                     recon_accept_s=a.recon_accept_s, flight_model=a.flight, comms=a.comms,
-                    uplink=None if a.uplink == "none" else a.uplink)
+                    uplink=None if a.uplink == "none" else a.uplink, vitals_ai=a.vitals_ai)
     m.run()
     s = m.summary()
     print(f"done in {time.time() - t0:.1f} s wall, {m.t:.0f} s sim; visited {' -> '.join(s['visited'])}; "

@@ -55,7 +55,13 @@ const isGrid = () => (Array.isArray(S?.piles) && S.piles.length > 0) || !!S?.rec
 let selListen = null;                                  // null = follow the latest listen
 const openRows = new Set(), openWhy = new Set(), decOpen = new Map();
 let dismOpen = false, showAllPiles = false;
-let DIG = [], DIG_BY = new Map(), REJ = [];   // REJ: pings the radar rejector says are not a person (kept out of the dig order)
+let DIG = [], DIG_BY = new Map(), REJ = [], DIG_PRIO = false;
+const pingOf = c => (S?.pings || []).find(p => p.id === c.id) || null;
+const prioOf = c => { const v = c.priority ?? pingOf(c)?.priority; return Number.isFinite(+v) && v !== null ? +v : null; };
+const geminiOf = c => c.vitals?.gemini || pingOf(c)?.vitals?.gemini || null;
+// breathing pattern in two words; the producer's words win
+const BREATH = { distressed_tachypnea: 'shallow, rapid', unconscious_slow: 'deep, slow', irregular_apneic: 'irregular, with pauses', calm: 'calm, regular' };
+const breathWords = c => { const g = geminiOf(c), v = c.vitals || pingOf(c)?.vitals; return g?.pattern || g?.breathing || v?.breathing_pattern || BREATH[conditionOf(v)?.key] || null; };   // REJ: pings the radar rejector says are not a person (kept out of the dig order)
 let rejOpen = false;
 let TK = null, CM = null, SP = null, LV = null;   // LV: live.json / hud.json (live.js)   // SP: loudspeaker panel + guidance overlay (speaker.js)   // CM: rescue hotspot / comms relay (comms.js)                          // operator tasking + recon overlay (tasking.js)       // dig order (ranked pings), recomputed per state
 
@@ -279,7 +285,25 @@ function gridImage(g, fn, maxCells = 200000) {   // large grids (640x640 collaps
 // Progressive (recon) maps: cells with z null / NaN, or heightmap.mask[k] == 0, are not mapped yet and stay transparent.
 const hmKnown = (g, i, j) => { const k = j * g.w + i, v = g.z[k]; return v != null && Number.isFinite(+v) && !(g.mask && !g.mask[k]); };
 const hmMax = g => { let m = 0.5; for (const v of g.z) if (v != null && +v > m) m = +v; return m; };
+// Height ramp for the LiDAR altitude map (dark violet -> LiDAR purple -> pale lavender), shaded by slope.
+const RAMP = [[22, 18, 38], [52, 40, 104], [110, 78, 200], [155, 107, 255], [214, 196, 255], [246, 240, 255]];
+const ramp = u => { const f = Math.max(0, Math.min(0.999, u)) * (RAMP.length - 1), k = Math.floor(f), t = f - k; return RAMP[k].map((c, n) => c + (RAMP[k + 1][n] - c) * t); };
+let hRange = [0, 1];
+function hmGround(g) { const v = []; for (let k = 0; k < g.z.length; k += 7) { const x = g.z[k]; if (x != null && Number.isFinite(+x)) v.push(+x); } v.sort((a, b) => a - b); return v.length ? v[Math.floor(v.length * 0.05)] : 0; }
 function makeBase() {
+  const g = S.heightmap; if (!g) return null;
+  const z = (i, j) => +g.z[Math.min(g.h - 1, Math.max(0, j)) * g.w + Math.min(g.w - 1, Math.max(0, i))] || 0;
+  const zmax = hmMax(g), z0 = hmGround(g), span = Math.max(0.5, zmax - z0);
+  hRange = [0, span];
+  return gridImage(g, (i, j) => {
+    if (!hmKnown(g, i, j)) return [0, 0, 0, 0];
+    const dx = (z(i + 1, j) - z(i - 1, j)) / (2 * g.res), dy = (z(i, j + 1) - z(i, j - 1)) / (2 * g.res);
+    const shade = Math.max(0, Math.min(1, 0.62 + (-dx * 0.55 + dy * 0.55) / Math.sqrt(1 + dx * dx + dy * dy)));
+    const c = ramp((z(i, j) - z0) / span), k = 0.55 + 0.6 * shade;
+    return [c[0] * k, c[1] * k, c[2] * k, 255];
+  });
+}
+function makeBaseGrey() {
   const g = S.heightmap; if (!g) return null;
   const z = (i, j) => +g.z[Math.min(g.h - 1, Math.max(0, j)) * g.w + Math.min(g.w - 1, Math.max(0, i))] || 0;
   const zmax = hmMax(g);
@@ -460,6 +484,14 @@ function draw(now = performance.now()) {
     if (LEAN() && (!dg?.rank)) continue;
     qLabel(LEAN() ? `#${dg.rank}` : txt, x + 12, y - 10, weak ? '#ffd9a6' : '#ffd0d0', weak ? 'rgba(58,35,6,0.92)' : 'rgba(60,8,8,0.88)', 1, weak ? 'rgba(255,159,67,0.7)' : null);
   }
+  // winch pods (v1.3): seat on the rubble, cable state
+  for (const pd of S.pods || []) {
+    if (!pd.xy || pd.status === 'stowed') continue;
+    const [x, y] = toPx(...pd.xy);
+    ctx.save(); ctx.fillStyle = '#0b1016'; ctx.strokeStyle = '#f0f4f8'; ctx.lineWidth = 1.8; ctx.beginPath(); ctx.arc(x, y, 6.5, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = '#f0f4f8'; ctx.beginPath(); ctx.moveTo(x - 3.5, y - 2); ctx.lineTo(x + 3.5, y - 2); ctx.lineTo(x, y + 3); ctx.closePath(); ctx.fill(); ctx.restore();
+    if (!LEAN()) qLabel(`pod ${pd.drone_id} · ${pd.status}`, x + 10, y + 16, '#e3eaef', undefined, 5);
+  }
   // drones; drones close together in the same state share one label ("d1–d3 · docked")
   const groups = [];
   for (const d of S.drones || []) {
@@ -491,7 +523,7 @@ function drawGridLayer(now) {
     ctx.save(); ctx.fillStyle = 'rgba(200,210,220,0.06)'; ctx.strokeStyle = 'rgba(200,210,220,0.55)'; ctx.setLineDash([4, 3]); ctx.lineWidth = 1.2;
     ctx.fillRect(x0, y0, x1 - x0, y1 - y0); ctx.strokeRect(x0, y0, x1 - x0, y1 - y0); ctx.setLineDash([]);
     for (const p of stg.pads || []) { const [px, py] = toPx(...p); ctx.strokeStyle = 'rgba(200,210,220,0.85)'; ctx.strokeRect(px - 4, py - 4, 8, 8); }
-    ctx.restore(); if (!LEAN()) qLabel(W < 600 ? 'Staging' : 'Staging · operator console', x0 + 4, y1 + 16, '#c3d0d9', undefined, 7);
+    ctx.restore(); if (!LEAN()) qLabel(W < 600 ? 'Van' : 'Van · operator console', x0 + 4, y1 + 16, '#c3d0d9', undefined, 7);
   }
   if (!layers.piles) return;
   const m = S.mission || {}, active = m.active_pile, short = view.scale < 6.5;
@@ -667,6 +699,11 @@ function renderSide() {
   $('togPiles').hidden = !grid;
   $('legendGrid').hidden = !grid;
   renderBanner();
+  const relief = !tilesOn() && !!S.heightmap;
+  $('hlegend').hidden = !relief;
+  if (relief) { baseImg ||= makeBase(); $('hl1').textContent = hRange[1].toFixed(hRange[1] < 10 ? 1 : 0); }
+  const idle = !(S.mission?.visited || []).length && !(S.zones || []).some(z => z.status && z.status !== 'unsearched') && (S.drones || []).every(d => /docked|idle|landed/.test(d.state || ''));
+  $('caption').hidden = !(relief && idle);
   const rc = S.recon; $('reconChip').hidden = !rc; if (rc) $('reconChip').textContent = reconText(rc);
   renderBasemapUI();
   TK?.renderRail();
@@ -705,7 +742,10 @@ function computeDig() {
     const surf = S.heightmap ? hmAt(c.xy[0], c.xy[1]) : null, di = depthInfo(c, surf), e = c.cov ? ellipse(c) : null;
     return { c, di, e, ...digScore(c, di, e) };
   });
-  DIG = all.filter(d => !isRejected(d.c)).sort((a, b) => b.score - a.score || (b.c.p_mass ?? 0) - (a.c.p_mass ?? 0) || a.c.id.localeCompare(b.c.id));
+  for (const d of all) d.prio = prioOf(d.c);
+  const byPrio = all.some(d => d.prio != null);   // mission priority (pings[].priority) wins when the mission sends it
+  DIG = all.filter(d => !isRejected(d.c)).sort((a, b) => (byPrio ? (b.prio ?? -1) - (a.prio ?? -1) : 0) || b.score - a.score || (b.c.p_mass ?? 0) - (a.c.p_mass ?? 0) || a.c.id.localeCompare(b.c.id));
+  DIG_PRIO = byPrio;
   REJ = all.filter(d => isRejected(d.c));
   DIG.forEach((d, k) => { d.rank = k + 1; }); REJ.forEach(d => { d.rank = null; });
   DIG_BY = new Map(all.map(d => [d.c.id, d]));
@@ -713,7 +753,7 @@ function computeDig() {
 function renderCands(grid) {
   computeDig();
   $('nCand').textContent = DIG.length + (REJ.length ? ` + ${REJ.length} rejected` : '');
-  $('candsTitle').textContent = 'Dig order';
+  $('candsTitle').textContent = DIG_PRIO ? 'Priority list' : 'Dig order';
   $('candsTitle').title = grid ? 'Radar pings, ranked' : 'Radar candidates, ranked';
   if (!DIG.length && !REJ.length) { $('cands').innerHTML = '<p class="empty">No radar pings yet. No detection is not proof of absence.</p>'; return; }
   const anyV = DIG.some(d => d.c.vitals);
@@ -729,6 +769,7 @@ function renderCands(grid) {
       <span class="sp${sp?.rateOnly ? ' ro' : ''}">${sp ? sp.svg + `<small>${esc(sp.label)}</small>` : '<small>no breathing signal</small>'}</span>
       <span class="l2 ${cond ? 'k-' + cond.key : 'none'}"><span class="cl-full">${esc(pl || 'No breathing signal at this ping')}</span><span class="cl-short">${esc(conditionShort(v, c) || pl || 'No breathing signal')}</span></span>
       <span class="l5">${v ? confMeter(v.pattern_conf) : '<span class="cm none">no pattern analysis</span>'}${respChip(c.responsiveness)}</span>
+      ${d.prio != null || geminiOf(c) || breathWords(c) ? `<span class="l6">${d.prio != null ? `<b class="pv">priority ${Math.round(d.prio)}</b>` : ''}${breathWords(c) ? `<span class="bw">${esc(breathWords(c))}</span>` : ''}${geminiOf(c)?.reason ? `<span class="gr" title="${esc(geminiOf(c).reason)}"><i>Gemini:</i> ${esc(geminiOf(c).reason)}</span>` : ''}</span>` : ''}
       <span class="l3">depth <b>${esc(di.short)}</b> · ${weak ? `<span class="sup">${esc(supText(c))}</span>` : `belief share <b>${f2(c.p_mass)}</b>`}${v?.rate_ci?.length === 2 && v.rate_ci[0] != null ? ` · rate 95% ${f0(v.rate_ci[0])}–${f0(v.rate_ci[1])}` : ''}</span>
       <span class="l4"><span class="aid">Aid, not a diagnosis</span><span class="cv">${cav.length} caveat${cav.length === 1 ? '' : 's'}</span><span class="go">3D view →</span></span></button>`;
   }).join('') + `<p class="takenote">Candidate regions, not confirmed people · aid for rescuers, not a diagnosis</p>` + (REJ.length ? `<details class="rej"${rejOpen ? ' open' : ''}><summary>Not a person, says the radar · ${REJ.length} (not ranked)</summary>${REJ.map(d => {

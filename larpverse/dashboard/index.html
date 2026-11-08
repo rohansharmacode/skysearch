@@ -66,6 +66,10 @@
       <button class="btn send" id="planSend">Send tasking to drones</button>
       <p id="planMsg" class="tmsg" role="status" hidden></p>
     </div>
+    <div id="cta" class="float"></div>
+    <div id="suggest" class="float" hidden></div>
+    <div id="caption" class="float" hidden>Site mapped by LiDAR on arrival</div>
+    <div id="hlegend" class="float" hidden><span>height above ground, m</span><i></i><div><b id="hl0">0</b><b id="hl1">—</b></div></div>
     <div id="reconTag" class="float" hidden>LiDAR map, live — satellite imagery predates the collapse</div>
     <div id="cursor" class="float mono">x — · y — m</div>
     <div id="attrib" class="float" hidden></div>
@@ -109,12 +113,6 @@
 
   <aside id="side">
     <div class="col colA">
-      <section id="secComms" hidden>
-        <h2>Connected · rescue Wi-Fi <span id="nComms" class="count"></span></h2>
-        <div id="commsMeta"></div>
-        <div id="comms"></div>
-        <p class="caveat0">Phones that chose to join the rescue Wi-Fi. Positions are RSSI candidate regions, not confirmed. Replies use vetted templates; free text waits for an operator.</p>
-      </section>
       <section id="secZones" hidden>
         <h2>Search zones <span id="nZones" class="count"></span></h2>
         <div id="zones"></div>
@@ -127,6 +125,12 @@
       <section id="secDec" hidden>
         <h2>Dispatch decisions <span id="nDec" class="count">0</span></h2>
         <div id="decs"></div>
+      </section>
+      <section id="secComms" hidden>
+        <h2>Connected · rescue Wi-Fi <span id="nComms" class="count"></span></h2>
+        <div id="commsMeta"></div>
+        <div id="comms"></div>
+        <p class="caveat0">Phones that chose to join the rescue Wi-Fi. Positions are RSSI candidate regions, not confirmed. Replies use vetted templates; free text waits for an operator.</p>
       </section>
     </div>
     <div class="col colB">

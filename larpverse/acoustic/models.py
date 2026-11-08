@@ -330,6 +330,27 @@ def classify(x, vad=None):
 
 
 # --------------------------------------------------------------------------- ASR
+def whisper_model(name, download_root, device=None):
+    """A faster-whisper model on the device ``LARPVERSE_WHISPER_DEVICE`` picks. The default ``cpu`` is unchanged:
+    int8 with ``LARPVERSE_WHISPER_THREADS`` threads (default 2). ``cuda`` = float16 on the GPU, ``auto`` = cuda when
+    ctranslate2 sees a GPU. A cuda model that cannot be built falls back to the cpu one (the Isaac take box: the
+    listen took 16-19 s on 2 CPU threads, 2026-11-08 rehearsal 1)."""
+    from faster_whisper import WhisperModel
+    dev = (device or os.environ.get("LARPVERSE_WHISPER_DEVICE", "cpu")).lower()
+    if dev in ("cuda", "auto"):
+        try:
+            if dev == "auto":
+                import ctranslate2
+                if ctranslate2.get_cuda_device_count() < 1:
+                    raise RuntimeError("no CUDA device")
+            return WhisperModel(name, device="cuda", compute_type="float16", download_root=download_root)
+        except Exception as e:                                          # noqa: BLE001
+            import sys
+            print(f"[acoustic] whisper on cuda unavailable ({type(e).__name__}: {e}); using cpu", file=sys.stderr)
+    return WhisperModel(name, device="cpu", compute_type="int8",
+                        cpu_threads=int(os.environ.get("LARPVERSE_WHISPER_THREADS", "2")), download_root=download_root)
+
+
 ASR_MAX_S = 12.0          # Whisper sees at most the loudest 12 s of a clip (latency)
 
 
@@ -347,11 +368,21 @@ def _asr_window(x, max_s=ASR_MAX_S):
 def transcribe(x, model="base.en") -> str:
     key = "asr:" + model
     if key not in _cache:
-        from faster_whisper import WhisperModel
-        _cache[key] = WhisperModel(model, device="cpu", compute_type="int8", cpu_threads=2,
-                                   download_root=os.path.join(MODEL_DIR, "whisper"))
-    segs, _ = _cache[key].transcribe(_norm(_asr_window(x), 0.1), language="en", beam_size=1, temperature=0.0,
-                                     condition_on_previous_text=False, vad_filter=False)
+        _cache[key] = whisper_model(model, os.path.join(MODEL_DIR, "whisper"))
+
+    def run():
+        segs, _ = _cache[key].transcribe(_norm(_asr_window(x), 0.1), language="en", beam_size=1, temperature=0.0,
+                                         condition_on_previous_text=False, vad_filter=False)
+        return list(segs)
+    try:
+        segs = run()
+    except Exception as e:                                              # noqa: BLE001
+        if os.environ.get("LARPVERSE_WHISPER_DEVICE", "cpu").lower() == "cpu":
+            raise
+        import sys                                                      # cuda libraries failed at run time: cpu
+        print(f"[acoustic] whisper on cuda failed ({type(e).__name__}: {e}); retrying on cpu", file=sys.stderr)
+        _cache[key] = whisper_model(model, os.path.join(MODEL_DIR, "whisper"), device="cpu")
+        segs = run()
     # a segment must look like speech to Whisper itself: low no-speech probability AND a
     # reasonable average log-probability (hallucinations on barks/knocks fail one or the other)
     words = [s.text.strip() for s in segs if s.no_speech_prob < 0.6 and s.avg_logprob > -1.0]

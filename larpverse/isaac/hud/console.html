@@ -1,0 +1,738 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Larpverse · live operator console</title>
+<!--
+  The live operator console (Rohan 2026-11-08): "the Isaac SIM simulation should take an input where you click a
+  location and then the drone flies to it, maps the area with lidar and lands, does the radar process and listens
+  to audio which gets sent to Gemini ... After it analyses the audio it picks where to scan next ... Like a live
+  dashboard where u can do all of this ... We still need the animation".
+
+  Left: the live Isaac view (MJPEG from the GPU box). Right: a top-down site map you click to send the drones to a
+  rubble pile, with the LiDAR hits filling in as white dots, then what the drones sense now, what the microphones
+  heard (and whether Gemini or the on-box models analysed it), and the next pile with who chose it and why.
+
+  Reads the run's own files (state.json, live.json, hud.json, pointcloud.bin) next to ?state=, and POSTs clicks to
+  /api/goto {"pile": "B1"} on scripts/serve.py. Display and operator input only: the mission never reads the page.
+
+    /isaac/hud/console.html?state=../../dashboard/data/state.json&stream=/stream.mjpg
+-->
+<style>
+  :root { --lidar:#a98bff; --radar:#ff8a33; --sound:#2fc6d9; --ping:#ff5252; --gem:#8ab4ff;
+          --ok:#4fd18b; --amber:#ffb020; --grey:#a7b0b8; --line:rgba(255,255,255,0.10); }
+  html, body { margin:0; width:100%; height:100%; overflow:hidden; background:#06080a;
+               font-family: Inter, "Segoe UI", system-ui, sans-serif; color:#eef2f5; }
+  #stage { position:absolute; left:0; top:0; width:1920px; height:1080px; transform-origin:0 0;
+           display:grid; grid-template-columns:1280px 640px; background:#0c1014; }
+  /* ---- left: the live Isaac view */
+  #view { position:relative; width:1280px; height:1080px; overflow:hidden; background:#15191d; }
+  #view img { position:absolute; inset:0; width:100%; height:100%; object-fit:cover; display:block; }
+  #nostream { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; text-align:center;
+              color:#8d98a1; font-size:22px; line-height:1.5; padding:0 120px; }
+  .hud { position:absolute; background:rgba(10,14,18,0.74); border-radius:16px; backdrop-filter:blur(6px);
+         box-shadow:0 6px 28px rgba(0,0,0,0.35); }
+  #cap { left:28px; top:24px; width:760px; padding:18px 24px 18px; border:2px solid transparent; }
+  #cap.you { border-color:var(--amber); } #cap.auto { border-color:var(--ok); }
+  #cap .k { font-size:14px; letter-spacing:.18em; text-transform:uppercase; color:#b8c3cc; }
+  #cap .t { font-size:38px; font-weight:700; margin:6px 0 8px; line-height:1.1; }
+  #cap .c { font-size:21px; line-height:1.42; color:#e6ecf0; }
+  #wavebox { left:28px; bottom:24px; width:640px; padding:14px 18px 12px; }
+  #wavebox canvas { width:100%; height:120px; display:block; }
+  .wcap { font-size:14px; color:#aab4bc; margin-top:4px; }
+  #honest { right:24px; bottom:24px; padding:9px 14px; font-size:13px; color:#c9d2d9; max-width:460px; line-height:1.35; }
+  /* ---- right column */
+  .wrap { box-sizing:border-box; height:1080px; padding:18px 24px 16px; display:flex; flex-direction:column; gap:10px;
+          border-left:1px solid #1d2329; }
+  .wrap > * { flex:none; }
+  .top { display:flex; justify-content:space-between; align-items:baseline; }
+  .live { font-size:15px; letter-spacing:.16em; font-weight:700; color:#ff6b6b; }
+  .clock { font-size:14px; color:var(--grey); text-align:right; line-height:1.35; }
+  .clock b { color:#fff; font-size:18px; }
+  .steps { display:flex; gap:4px; }
+  .steps div { flex:1; text-align:center; font-size:11px; color:#6f7a83; padding-top:6px; border-top:4px solid #2a3138; white-space:nowrap; }
+  .steps div.done { color:#aab4bc; border-color:#5b6670; }
+  .steps div.now { color:#fff; border-color:var(--amber); font-weight:700; }
+  .card { background:rgba(255,255,255,0.045); border:1px solid var(--line); border-radius:14px; padding:12px 16px; }
+  .h { font-size:12px; letter-spacing:.16em; text-transform:uppercase; color:#8d98a1; }
+  .hrow { display:flex; justify-content:space-between; align-items:baseline; gap:10px; }
+  .hrow .n { font-size:13px; color:#c9d2d9; font-variant-numeric:tabular-nums; white-space:nowrap; }
+  /* map */
+  .mbox { position:relative; margin-top:8px; border-radius:8px; overflow:hidden; background:#000; cursor:crosshair; }
+  .mbox canvas { width:100%; height:auto; display:block; }
+  .mbox svg { position:absolute; inset:0; width:100%; height:100%; }
+  .mbox svg .pz { fill:rgba(255,255,255,0.0); stroke:rgba(255,255,255,0.22); stroke-width:1.5; stroke-dasharray:4 4; cursor:pointer; }
+  .mbox svg .pz:hover { fill:rgba(255,176,32,0.16); stroke:var(--amber); stroke-dasharray:none; }
+  .mbox svg .pz.sent { stroke:var(--amber); stroke-width:2.5; stroke-dasharray:none; }
+  .mbox .pl { position:absolute; font-size:13px; font-weight:600; color:#8a939b; transform:translate(-50%,-50%); pointer-events:none;
+              letter-spacing:.04em; text-shadow:0 0 3px #000, 0 0 3px #000; white-space:nowrap; }
+  .mbox .pl.on { color:#fff; font-size:15px; font-weight:800; }
+  .mbox .pl.go { color:var(--ok); font-size:15px; font-weight:800; }
+  .mbox .ring { position:absolute; border:2px dashed var(--ok); border-radius:50%; transform:translate(-50%,-50%); pointer-events:none; }
+  .mbox .dr { position:absolute; left:0; top:0; width:12px; height:12px; margin:-6px 0 0 -6px; border-radius:50%; pointer-events:none;
+              background:var(--amber); box-shadow:0 0 0 2px #000, 0 0 8px rgba(255,176,32,0.8); transition:transform .3s linear; }
+  .mbox .ld { position:absolute; left:0; top:0; width:12px; height:12px; margin:-6px 0 0 -6px; border-radius:50%; pointer-events:none;
+              background:var(--ping); box-shadow:0 0 0 2px #000, 0 0 0 6px rgba(255,82,82,0.35); }
+  .mbox .ldl { position:absolute; left:0; top:0; font-size:12px; font-weight:800; color:#ff7b7b; white-space:nowrap; pointer-events:none;
+               margin:-11px 0 0 13px; padding:1px 6px; border-radius:5px; background:rgba(0,0,0,0.78); }
+  .mbox svg .pz.x { fill:rgba(0,0,0,0.45); stroke:rgba(255,255,255,0.35); }
+  .mbox svg .xk { stroke:#000; stroke-width:8; stroke-linecap:round; pointer-events:none; }
+  .mbox svg .xw { stroke:#e9edf0; stroke-width:4; stroke-linecap:round; pointer-events:none; }
+  .mbox .pl.x { color:#e9edf0; }
+  .sc2.rst { margin-left:10px; border-color:#6b3a3a; color:#ffb9b9; }
+  .sc2.rst:hover { border-color:#ff6b6b; color:#fff; }
+  .mbox .sc { position:absolute; left:10px; bottom:8px; font-size:12px; color:#c9d2d9; pointer-events:none; }
+  .mbox .sc i { display:block; height:3px; background:#c9d2d9; margin-bottom:3px; }
+  .mbox .nn { position:absolute; right:10px; top:8px; font-size:12px; font-weight:700; color:#c9d2d9; pointer-events:none; }
+  .mleg { font-size:12px; color:#8d98a1; margin-top:6px; line-height:1.35; }
+  #toast { font-size:14px; margin-top:6px; min-height:19px; color:var(--amber); }
+  #toast.bad { color:#ff6b6b; }
+  /* sense / heard / next */
+  .chiprow { display:flex; gap:10px; align-items:center; margin-top:8px; }
+  .chip { font-size:12px; font-weight:800; letter-spacing:.12em; padding:4px 9px; border-radius:6px; color:#0b0f13; white-space:nowrap; }
+  .say { font-size:18px; line-height:1.3; }
+  table { width:100%; border-collapse:collapse; margin-top:6px; }
+  td { font-size:14px; padding:3px 0; border-top:1px solid var(--line); vertical-align:top; }
+  td.l { color:#9aa5ae; width:42%; padding-right:10px; }
+  td.v { font-variant-numeric: tabular-nums; color:#fff; }
+  .q { font-size:16px; font-style:italic; color:#e9f6f8; margin-top:8px; line-height:1.35; }
+  .q small { display:block; font-style:normal; color:#8d98a1; font-size:12px; margin-top:3px; }
+  .by { display:inline-block; font-size:11px; font-weight:800; letter-spacing:.1em; padding:2px 7px; border-radius:5px;
+        text-transform:uppercase; vertical-align:2px; margin-left:6px; }
+  .by.gem { background:var(--gem); color:#0b0f13; } .by.box { background:#3a434b; color:#dfe5ea; }
+  .why { font-size:14px; color:#d5dde3; line-height:1.38; margin-top:6px; }
+  .big { font-size:22px; font-weight:700; margin-top:6px; }
+  #sense { flex:0 1 auto; min-height:0; overflow:hidden; }
+  .foot { margin-top:auto; font-size:12px; color:#8d98a1; line-height:1.35; }
+  #loading { position:absolute; inset:0; background:rgba(6,8,10,0.86); display:flex; align-items:center; justify-content:center; text-align:center; }
+  #loading .lt { font-size:40px; font-weight:700; } #loading .lc { font-size:21px; color:#aab4bc; margin-top:12px; }
+  #cur { position:fixed; left:-2px; top:-2px; z-index:99; pointer-events:none; filter:drop-shadow(0 2px 3px rgba(0,0,0,.6)); }
+  .ripple { position:fixed; z-index:98; width:16px; height:16px; margin:-8px 0 0 -8px; border-radius:50%; pointer-events:none;
+            border:3px solid var(--amber); animation:rip .7s ease-out forwards; }
+  @keyframes rip { to { transform:scale(4); opacity:0; } }
+  .sites { display:flex; align-items:center; gap:8px; }
+  .sites .sl { font-size:12px; letter-spacing:.16em; text-transform:uppercase; color:#8d98a1; margin-right:2px; }
+  #sitechips { display:flex; gap:8px; flex-wrap:nowrap; }
+  .sc2 { font-size:13px; padding:6px 11px; border-radius:8px; border:1px solid #39424a; color:#cfd8de; background:#151a1f;
+         cursor:pointer; white-space:nowrap; user-select:none; }
+  .sc2:hover { border-color:var(--amber); color:#fff; }
+  .sc2.on { background:#2a2f22; border-color:var(--amber); color:#fff; font-weight:700; }
+  .hide { display:none !important; }
+  .fade { animation: fade .45s ease; } @keyframes fade { from { opacity:.35; transform:translateY(4px); } to { opacity:1; transform:none; } }
+</style>
+</head>
+<body>
+<div id="stage">
+  <div id="view">
+    <div id="nostream">Connecting to the live simulation…</div>
+    <img id="isaac" alt="">
+    <div class="hud" id="cap"><div class="k" id="capk">Live simulation</div><div class="t" id="capt">Waiting for the mission…</div><div class="c" id="capc"></div></div>
+    <div class="hud hide" id="wavebox"><canvas id="wave" width="1280" height="240"></canvas><div class="wcap" id="wcap"></div></div>
+    <div id="loading" class="hide"><div><div class="lt" id="loadt">Loading a new site…</div><div class="lc" id="loadc"></div></div></div>
+    <div class="hud" id="honest">Simulation. The trapped people, their voices and the radar returns are synthetic; the drones never see where they are.</div>
+  </div>
+  <div class="wrap">
+    <div class="top"><div class="live">● LIVE OPERATOR CONSOLE</div><div class="clock"><b id="clk">0:00</b><br><span id="pace"></span></div></div>
+    <div class="steps" id="steps"></div>
+    <div class="sites"><span class="sl">Site</span><span id="sitechips"></span><span class="sc2 rst" id="reset" title="Stop this run and put the drones back on their pads">↺ Reset</span></div>
+    <div class="card" id="mapc">
+      <div class="hrow"><div class="h">Site map · click a rubble pile to search it</div><div class="n" id="mapn"></div></div>
+      <div class="mbox" id="mbox"><canvas id="lmap" width="1176" height="620"></canvas><svg id="msvg"></svg><div class="nn">N ↑</div>
+        <div class="sc" id="msc"><i></i>10 m</div></div>
+      <div class="mleg">Dashed outlines: rubble piles. White dots: LiDAR laser hits (brighter = higher). Orange: drones. Red: radar leads. ✕: searched, nothing found.</div>
+      <div id="toast"></div>
+    </div>
+    <div class="card" id="sense">
+      <div class="h">What the drones sense right now</div>
+      <div class="chiprow"><div class="chip" id="chip">—</div><div class="say" id="say"></div></div>
+      <table id="rows"></table>
+    </div>
+    <div class="card hide" id="heard">
+      <div class="h">What the microphones heard <span id="hby"></span></div>
+      <div class="q" id="hq"></div>
+      <div class="why" id="hwhy"></div>
+    </div>
+    <div class="card hide" id="next">
+      <div class="h">Next pile to search <span id="nby"></span></div>
+      <div class="big" id="nto"></div>
+      <div class="why" id="nwhy"></div>
+    </div>
+    <div class="foot">A lead is a place for rescuers to check, not a confirmed person.</div>
+  </div>
+</div>
+<script>
+const Q = new URLSearchParams(location.search);
+const SRC = Q.get('state') || '../../dashboard/data/state.json';
+const DIR = SRC.replace(/[^/]*$/, '');
+const STREAM = Q.get('stream') || new URL('../../stream.mjpg', location.href).href;
+const API_GOTO = Q.get('api') || new URL('../../api/goto', location.href).href;
+const $ = id => document.getElementById(id);
+const vnow = () => (window.__vt != null ? window.__vt : performance.now() / 1000);
+const HOLD_S = +(Q.get('hold') || 2);
+
+// ---------------------------------------------------------------- fit the 1920x1080 stage to the window
+function fitStage() {
+  const k = Math.min(innerWidth / 1920, innerHeight / 1080), st = $('stage');
+  st.style.transform = `translate(${(innerWidth - 1920 * k) / 2}px, ${(innerHeight - 1080 * k) / 2}px) scale(${k})`;
+}
+addEventListener('resize', fitStage); fitStage();
+
+// ---------------------------------------------------------------- the live Isaac view (MJPEG; reconnects)
+(function stream() {
+  const img = $('isaac');
+  let retry = null;
+  const connect = () => { img.src = STREAM + (STREAM.includes('?') ? '&' : '?') + 'ts=' + Date.now(); };
+  img.onload = () => { $('nostream').classList.add('hide'); };
+  img.onerror = () => {
+    $('nostream').classList.remove('hide');
+    $('nostream').textContent = 'The live Isaac view is not reachable yet. Retrying…';
+    clearTimeout(retry); retry = setTimeout(connect, 3000);
+  };
+  if (Q.get('view')) {                            // the box's own WebRTC viewer page, as on the compose page
+    const fr = document.createElement('iframe');
+    Object.assign(fr, { src: Q.get('view'), allow: 'autoplay' });
+    const vw = +(Q.get('vieww') || 1920);
+    fr.style.cssText = `position:absolute;left:${(1280 - vw) / 2}px;top:0;width:${vw}px;height:1080px;border:0;pointer-events:none`;
+    fr.onload = () => $('nostream').classList.add('hide');
+    $('view').insertBefore(fr, $('cap')); img.remove();
+  } else if (Q.get('still')) { img.src = Q.get('still'); }
+  else if (!window.__burn) connect();
+})();
+
+// ---------------------------------------------------------------- ?cursor=1: a drawn pointer for screen recordings
+if (Q.get('cursor') === '1') {
+  const cur = document.createElement('div'); cur.id = 'cur';
+  cur.innerHTML = '<svg width="34" height="34" viewBox="0 0 24 24"><path d="M3 2l7 19 2.6-7.6L20 11z" fill="#fff" stroke="#000" stroke-width="1.6" stroke-linejoin="round"/></svg>';
+  document.body.appendChild(cur);
+  const st = $('stage');
+  const toStage = e => { const r = st.getBoundingClientRect(), k = r.width / 1920; return [(e.clientX - r.left) / k, (e.clientY - r.top) / k]; };
+  addEventListener('mousemove', e => { cur.style.transform = `translate(${e.clientX}px, ${e.clientY}px)`; });
+  addEventListener('mousedown', e => { const r = document.createElement('div'); r.className = 'ripple';
+    r.style.left = e.clientX + 'px'; r.style.top = e.clientY + 'px'; document.body.appendChild(r); setTimeout(() => r.remove(), 700); });
+  document.documentElement.style.cursor = 'none';
+}
+window.pileCentre = id => {                       // screen px of a pile's centre (for the recorder's mouse moves)
+  const el = LM.zones[id]; if (!el) return null; const r = el.getBoundingClientRect();
+  return [Math.round(r.left + r.width / 2), Math.round(r.top + r.height / 2)];
+};
+
+// ---------------------------------------------------------------- shared helpers (same wording rules as panel.html)
+const STEPS = ['Your click', 'Fly', 'LiDAR map', 'Land', 'Radar', 'Listen', 'Next pile'];
+$('steps').innerHTML = STEPS.map(b => `<div>${b}</div>`).join('');
+const COL = { LIDAR: 'var(--lidar)', RADAR: 'var(--radar)', FOUND: 'var(--ping)', SOUND: 'var(--sound)', SPEAKER: 'var(--sound)',
+              DECISION: 'var(--ok)', FLYING: 'var(--grey)', FLEET: 'var(--grey)', WAITING: 'var(--amber)' };
+const GLOSS = { voice: 'Help! Can anyone hear me?', weak_voice: 'Anyone there… water…', knock: '(knocking)', tapping: '(tapping)' };
+let SAID = [];
+fetch('../../assets/audio/dummies/manifest.json').then(r => r.json()).then(m => {
+  const C = m.clips || m.items || Object.values(m).find(v => Array.isArray(v)) || [];
+  SAID = C.filter(c => c.transcript).map(c => ({ text: c.transcript, en: c.transcript_en, lang: c.language }));
+}).catch(() => {});
+const LANG = { en: 'English', id: 'Indonesian', ms: 'Malay', vi: 'Vietnamese', tl: 'Tagalog', 'zh-TW': 'Mandarin', zh: 'Mandarin', nan: 'Taiwanese Hokkien', 'nan-TW': 'Taiwanese Hokkien' };
+let LIVE = null, HUD = null;
+const esc = x => String(x ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const f0 = v => (v == null || isNaN(v)) ? '–' : Math.round(+v).toString();
+const f1 = v => (v == null || isNaN(v)) ? '–' : (+v).toFixed(1);
+const f2 = v => (v == null || isNaN(v)) ? '–' : (+v).toFixed(2);
+const pct = v => (v == null || isNaN(v)) ? '–' : `${Math.round(100 * v)}%`;
+const compass = b => { const c = ((90 - b) % 360 + 360) % 360;
+  return `${['north', 'north-east', 'east', 'south-east', 'south', 'south-west', 'west', 'north-west'][Math.round(c / 45) % 8]} (${c.toFixed(0)}°)`; };
+const pings = s => (s.pings && s.pings.length ? s.pings : (s.radar_candidates || []).filter(c => c.status === 'candidate'));
+const scanHit = sc => !!(sc && ((sc.ranges && sc.ranges.length) || sc.breathing_hz));
+const humanClips = s => (s.acoustic_clips || []).filter(c => ((c.scores || {}).human ?? c.human ?? 0) >= 0.4)
+  .sort((a, b) => (b.priority ?? 0) - (a.priority ?? 0));
+const pn = id => String(id ?? '').replace(/_/g, ' ');          // weiguan: "A (pancaked_wing)" -> "A (pancaked wing)"
+const pshort = id => String(id ?? '').split(' (')[0];
+const onDrone = s => ((s && s.mission) || {}).delivery === 'land';
+const RADAR_PH = ['landing', 'radar', 'relocate', 'rescan'];
+const byTag = by => by === 'gemini' ? '<span class="by gem">Gemini</span>'
+                  : by ? '<span class="by box">on-box models</span>' : '';
+
+function heard(c) {                                 // what was said, in English, plus the original when it differs
+  const tx = String(c.transcript || '').replace(/…$/, '').trim();
+  if (!tx) return null;
+  const hit = SAID.find(x => x.text && (x.text === tx || x.text.startsWith(tx)));
+  let en = c.text_en || (hit && hit.en) || (/^[\x00-\x7F’']*$/.test(tx) ? c.transcript : GLOSS[c.class] || null);
+  const lang = c.lang || c.language || (hit && hit.lang);
+  let orig = en && tx !== en.replace(/…$/, '') ? c.transcript : '';
+  // multilingual speech-to-text (live.json "heard"): the clip transcript is Whisper's English translation; the
+  // words as spoken ride alongside. Show the meaning first, then the original language and words.
+  const H0 = LIVE && LIVE.heard && LIVE.heard[c.pile_id];
+  const H = H0 && H0.language && H0.language !== 'en' ? H0 : null;
+  let small = '';
+  if (H && H.english && String(H.english).trim() === tx) {          // translated: meaning first, then the words as spoken
+    en = H.english; orig = H.original || '';
+    small = `<small>spoken in ${esc(LANG[H.language] || H.language)}: “${esc(orig)}” · machine-translated</small>`;
+  } else if (H && !H.english && String(H.original || '').trim() === tx) {   // heard in a language, no translation
+    en = null;
+    small = `<small>spoken in ${esc(LANG[H.language] || H.language)} (not translated)</small>`;
+  } else {
+    const nm = lang && lang !== 'en' ? esc(LANG[lang] || lang) : '';
+    small = orig ? `<small>heard${nm ? ' in ' + nm : ''}: “${esc(orig)}”</small>` : '';
+  }
+  return (en ? `“${esc(en)}”` : `“${esc(c.transcript)}”`) + small;
+}
+
+function breathPeaks(w, secPerSample, rateBpm) {
+  const minGap = rateBpm ? 0.5 * 60 / rateBpm : 1.6;
+  const gap = Math.max(1, Math.round(minGap / secPerSample)), pk = [];
+  const hi = Math.max(...w.map(Math.abs)) || 1;
+  for (let i = 1; i < w.length - 1; i++) {
+    if (w[i] < 0.35 * hi || w[i] < w[i - 1] || w[i] < w[i + 1]) continue;
+    if (pk.length && i - pk[pk.length - 1] < gap) { if (w[i] > w[pk[pk.length - 1]]) pk[pk.length - 1] = i; continue; }
+    pk.push(i);
+  }
+  return pk;
+}
+
+// ---------------------------------------------------------------- operator input: the last goto and the hold
+// scripts/serve.py POST /api/goto writes goto.json {seq, last_goto: {seq, pile, xy, kind: start|retask, t, wall}};
+// the interactive runner writes console.json {status: waiting_for_goto|running, launch_pile, goto_seq}
+let GOTO = null, CONSOLE = null;
+const lastGoto = () => (GOTO && GOTO.last_goto) || (LIVE && LIVE.last_goto) || null;
+// held = the run is waiting for the first click; drops at once on a click (the runner's status file lags ~2 s)
+const held = s => {
+  const g = lastGoto(), fresh = g && CONSOLE && +g.wall > +(CONSOLE.wall || 0);
+  if (sent || fresh || (+s.t || 0) >= 0.5) return false;
+  return CONSOLE ? CONSOLE.status === 'waiting_for_goto' : (LIVE && LIVE.held === true) || !g;
+};
+let sent = null;                                   // {pile, at} clicked here, until the sim confirms it
+
+async function gotoPile(pile) {
+  sent = { pile, at: vnow() };
+  toast(`Sending the drones to ${pn(pile)}…`);
+  LM.svgSent(pile);
+  try {
+    const r = await fetch(API_GOTO, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ pile }) });
+    let j = {}; try { j = await r.json(); } catch (e) { }
+    if (!r.ok) throw new Error(j.error || r.status);
+    toast(`Sent: ${pile}. Waiting for the simulation to confirm…`);
+  } catch (e) { sent = null; LM.svgSent(null); toast(`Could not send: ${e.message}`, true); }
+}
+function toast(msg, bad) { const el = $('toast'); el.textContent = msg || ''; el.classList.toggle('bad', !!bad); }
+
+// ---------------------------------------------------------------- the story, straight from the mission phase
+function lastDispatch(s) { return (s.dispatch || []).filter(x => x.to_pile).slice(-1)[0] || null; }
+function lastDecision(s, d) {
+  return (s.decisions || []).filter(x => x.gate === 'dispatch' && (!d || Math.abs((+x.t || 0) - (+d.t || 0)) < 1.5)).slice(-1)[0] || null;
+}
+// was the flight under way the operator's pick? (a goto for that pile at or before the dispatch, or the start pile)
+function byOperator(s, d) {
+  const g = lastGoto();
+  if (!g) return false;
+  if (!d) return true;                            // first flight from the pads after the first click
+  return g.pile === d.to_pile && +g.t <= +d.t + 1;
+}
+function step(s) {
+  const ph = String(s.phase || ''), d = lastDispatch(s);
+  if (held(s)) return 0;
+  if (ph === 'deploy') return 1;
+  if (ph === 'dispatch') return 6;
+  if (ph === 'survey' || ph.startsWith('recon_mapping')) return 2;
+  if (ph === 'landing') return 3;
+  if (RADAR_PH.includes(ph)) return 4;
+  if (ph === 'acoustic' || ph.startsWith('recon_listen') || (s.mission || {}).stage === 'listen') return 5;
+  if (ph === 'return' || ph === 'battery_swap') return 1;
+  return d ? 6 : 1;
+}
+function caption(b, s) {
+  const c = caption0(b, s), g = lastGoto(), d = lastDispatch(s), pile = (s.mission || {}).active_pile || '';
+  const pending = g && g.kind === 'retask' && g.pile !== pile && !(d && d.to_pile === g.pile && +d.t >= +g.t - 1);
+  if (pending && b !== 0) { c[2] += `<br><b style="color:var(--amber)">Next: ${esc(pn(g.pile))}, your pick. The drones finish this step first.</b>`; c[3] = 'you'; }
+  return c;
+}
+function caption0(b, s) {
+  const m = s.mission || {}, ph = String(s.phase || ''), pile = m.active_pile || '';
+  const d = lastDispatch(s), g = lastGoto(), drone = onDrone(s);
+  const here = pings(s).filter(p => !pile || p.pile_id === pile || String(p.id || '').startsWith(pile));
+  if (b === 0) return ['Your turn', 'Click a rubble pile to start', 'The three drones are on their pads at the command van. Click any pile on the map to send them there.', 'you'];
+  if (ph === 'return' || ph === 'battery_swap') return ['Battery', 'Flying back to swap batteries', 'The drones keep a 25% battery reserve, so they return to the van for fresh batteries, then carry on.', ''];
+  if (ph === 'done') return ['Mission', 'Search finished', 'The drones are back at the van. The red dots on the map are the places for rescuers to check first.', ''];
+  if (b === 1 || b === 6) {
+    const to = d ? d.to_pile : pile;
+    if (b === 1 || byOperator(s, d)) return ['You chose', `Flying to ${esc(pn(to))}`, `You picked ${esc(pn(to))}. The drones take off and fly there to search it.`, 'you'];
+    const dec = lastDecision(s, d);
+    const who = dec && dec.by === 'gemini' ? 'Gemini, reading what the microphones heard,' : 'The drones, from what their microphones heard,';
+    return ['The drones decide', `Next: ${esc(pn(to))}`, `${who} chose ${esc(pn(to))} as the next pile to search. Nobody told them where to go.`, 'auto'];
+  }
+  if (b === 2) return ['Step 1 · LiDAR', `Mapping ${esc(pn(pile))}`, 'Each drone’s laser scanner measures the rubble. The white dots on the map are its hits; the drones use them to find safe spots to land.', ''];
+  if (b === 3) return ['Step 2 · Landing', `Landing on ${esc(pn(pile))}`, drone ? 'The drones land on safe spots the LiDAR map found, with the radar on board.' : 'The drones move over the safe spots the LiDAR map found.', ''];
+  if (b === 4 && here.length) return ['Step 3 · Radar', 'Breathing-like signal found', `At ${esc(pn(pile))} the radar picked up a steady breathing rhythm. It is marked red on the map: a place for rescuers to check first, not a confirmed person.`, ''];
+  if (b === 4) return ['Step 3 · Radar', 'Feeling for breathing', drone ? 'The radar on each landed drone senses the tiny chest movement of breathing up to about 3 m down.' : 'Each drone lowers a radar pod onto the rubble. The radar senses the tiny chest movement of breathing up to about 3 m down.', ''];
+  if (b === 5) {
+    const gem = (s.acoustic_agent || {}).provider === 'gemini' || (s.acoustic_clips || []).some(c => c.by === 'gemini');
+    return ['Step 4 · Listening', 'Listening for voices', `Rotors off. One drone calls out over its loudspeaker; then they all listen for voices and knocking. ${gem ? 'Gemini' : 'The on-box speech and sound models'} analyse the audio to choose the next pile.`, ''];
+  }
+  return ['Live simulation', 'Standing by', '', ''];
+}
+
+function sense(s) {
+  const m = s.mission || {}, ph = String(s.phase || ''), t = +s.t || 0, pile = m.active_pile || '';
+  const drones = s.drones || [];
+  if (held(s)) return ['WAITING', 'Drones on their pads, waiting for your click', [['Drones', `${drones.length}, batteries ${drones.map(q => `${Math.round(100 * (q.battery ?? 1))}%`).join(' · ')}`]]];
+  if (['deploy', 'dispatch', 'return', 'battery_swap'].includes(ph)) {
+    const bat = drones.map(q => `${Math.round(100 * (q.battery ?? 0))}%`).join(' · ');
+    const alt = drones.length ? drones.reduce((a, q) => a + q.pose[2], 0) / drones.length : null;
+    return ['FLYING', ph === 'return' || ph === 'battery_swap' ? 'Flying back to swap batteries' : `Flying to ${esc(pn(pile) || 'the pile')}`,
+            [['Battery', bat || '–'], ['Height', alt ? `${f0(alt)} m` : '–']]];
+  }
+  if (ph === 'survey' || ph.startsWith('recon_mapping')) {
+    const L = (HUD && HUD.panels && HUD.panels.lidar) || {};
+    const alt = drones.length ? drones.reduce((a, q) => a + q.pose[2], 0) / drones.length : null;
+    const rows = [['Laser points so far', LM.count ? LM.count.toLocaleString('en-GB') : (L.total ? String(L.total) : '–')]];
+    if (L.coverage != null) rows.push(['Area mapped', pct(L.coverage)]);
+    rows.push(['Flying height', alt ? `${f0(alt)} m` : '–']);
+    return ['LIDAR', `Mapping ${esc(pn(pile))} in 3D with laser scanners`, rows];
+  }
+  if (RADAR_PH.includes(ph)) {
+    const sc = LIVE && LIVE.last_scan && (!pile || LIVE.last_scan.pile === pile) ? LIVE.last_scan : null;
+    const st = (s.scans || []).filter(x => !pile || x.pile_id === pile).slice(-1)[0];
+    const here = pings(s).filter(p => !pile || p.pile_id === pile || String(p.id || '').startsWith(pile));
+    const who = onDrone(s) ? 'Drone' : 'Pod';
+    if (here.length) {
+      const p = here[here.length - 1], v = p.vitals || {};
+      return ['FOUND', 'Breathing-like rhythm under the rubble', [
+        ['Breathing rate', v.rate_bpm != null ? `${f1(v.rate_bpm)} per minute` : (p.breathing_hz ? `about ${f0(60 * p.breathing_hz)} per minute` : '–')],
+        ['Pattern', v.pattern ? String(v.pattern).replace(/_/g, ' ') : 'measuring…'], ['Scans that agree', p.support != null ? String(p.support) : '–']]];
+    }
+    if (sc && sc.vitals && !scanHit(sc)) return ['RADAR', `${who} ${esc(sc.drone_id)}: nothing strong enough to count in this scan`, [
+        ['Last scan', `${esc(sc.scan_id)} · quality ${f2(sc.quality)}`], ['Result', 'no breathing return above the detection threshold'], ['Reach', 'about 3 m down']]];
+    if (sc && sc.vitals) { const v = sc.vitals;
+      return ['RADAR', v.rate_bpm ? `${who} ${esc(sc.drone_id)} feels a rhythm: ${f1(v.rate_bpm)} breaths per minute` : `${who} ${esc(sc.drone_id)}: no breathing rhythm in this scan`, [
+        ['Signal above noise', v.snr_db != null ? `${f1(v.snr_db)} dB` : '–'], ['Distance from the radar', sc.ranges && sc.ranges.length ? `${f1(sc.ranges[0])} m` : '–']]]; }
+    const down = drones.filter(d => ['landed', 'scanning'].includes(d.state)).length;
+    return ['RADAR', down ? `${down} drone${down > 1 ? 's' : ''} landed, radar on, feeling for breathing` : 'Landing on safe spots from the LiDAR map',
+      [['Drones landed', `${down} of ${drones.length}`], ['Last scan', st ? `${esc(st.scan_id)} · quality ${f2(st.quality)}` : 'none yet']]];
+  }
+  if (ph === 'acoustic' || ph.startsWith('recon_listen') || m.stage === 'listen') {
+    const n = drones.filter(d => d.state === 'listening').length;
+    const left = m.listen_ends != null ? Math.max(0, Math.round(m.listen_ends - t)) : null;
+    const bc = (s.broadcasts || []).filter(x => +x.t <= t + 0.5 && t - +x.t < 30).slice(-1)[0];
+    if (bc && bc.kind === 'callout') return ['SPEAKER', `Loudspeaker call-out from drone ${esc(bc.drone_id || '')}`, [['Now', esc(LANG[bc.lang] || bc.lang)], ['Then', 'all drones listen in silence']]];
+    return ['SOUND', 'Rotors off. Listening for voices and knocking…', [['Drones listening', `${n} of ${drones.length}`],
+      ['Quiet time left', left != null && left > 0 ? `${left} s (mission time)` : 'analysing what was heard…']]];
+  }
+  return ['FLEET', 'Standing by', [['Drones', String(drones.length)]]];
+}
+
+// the most recent listen's best human sound, with who analysed it (clip.by: gemini | fallback)
+function heardCard(s) {
+  const C = s.acoustic_clips || [];
+  if (!C.length) { $('heard').classList.add('hide'); return; }
+  const lastL = Math.max(...C.map(c => +c.listen || 0));
+  const cur = C.filter(c => (+c.listen || 0) === lastL);
+  // after a decision, show what was heard at the pile the drones chose (so "heard" and "next pile" tell one story)
+  const d = lastDispatch(s), tMax = Math.max(...C.map(c => +c.t || 0));
+  const chosen = d && +d.t >= tMax - 1 ? C.filter(c => c.pile_id === d.to_pile).sort((a, b) => (+b.t || 0) - (+a.t || 0) || (b.priority ?? 0) - (a.priority ?? 0))[0] : null;
+  const best = chosen || cur.filter(c => ((c.scores || {}).human ?? 0) >= 0.4).sort((a, b) => (b.priority ?? 0) - (a.priority ?? 0))[0];
+  $('heard').classList.remove('hide');
+  const by = (cur.find(c => c.by === 'gemini') ? 'gemini' : (cur[0] || {}).by);
+  $('hby').innerHTML = byTag(by);
+  if (!best) { $('hq').innerHTML = 'No human voice or knocking in the last listen.'; $('hwhy').textContent = ''; return; }
+  const sc = best.scores || {};
+  const cls = String(best.class || 'sound').replace(/_/g, ' ');
+  $('hq').innerHTML = heard(best) || `A ${esc(cls)} near ${esc(best.pile_id)}` + (cls === 'voice' ? ' <small>no words made out</small>' : '');
+  const bits = [`${esc(String(best.class || 'sound').replace(/_/g, ' '))} near ${esc(pn(best.pile_id))}`, `how sure it is a person ${f2(sc.human)}`];
+  if (best.bearing_deg != null) bits.push(`from the ${compass(best.bearing_deg).split(' (')[0]} of drone ${esc(best.drone_id)}`);
+  if (best.doa_agree) bits.push(`${esc(best.doa_agree)} drones agree on the direction`);
+  $('hwhy').innerHTML = bits.join(' · ') + (by === 'gemini' && best.rationale ? `<br>Gemini: ${esc(best.rationale)}` : '');
+}
+
+// the latest next-pile decision: who chose it (decisions[].by: gemini | argmax | fallback) and why
+function nextCard(s) {
+  const d = lastDispatch(s);
+  if (!d) { $('next').classList.add('hide'); return; }
+  $('next').classList.remove('hide');
+  const dec = lastDecision(s, d), op = byOperator(s, d);
+  $('nby').innerHTML = op ? '<span class="by box">you</span>' : byTag(dec && dec.by === 'gemini' ? 'gemini' : 'box');
+  $('nto').textContent = op ? `${pn(d.to_pile)} (your click)` : pn(d.to_pile);
+  const alt = dec && (dec.options || []).filter(o => o.action === 'dispatch' && o.pile_id && o.pile_id !== d.to_pile && o.priority != null)
+                                        .sort((x, y) => y.priority - x.priority)[0];
+  // the on-box fallback says "Fallback (no LLM configured): highest valid priority: A3 (62)": keep the reason only
+  const why = op ? 'You sent the drones here.' : String((dec && dec.rationale) || d.reason || '')
+    .replace(/^fallback \([^)]*\):\s*/i, '').replace(/^highest valid priority: (\S+) \((\d+)\)/i, 'Highest sound priority: $1 ($2 of 100)');
+  $('nwhy').innerHTML = esc(why) + (alt && !op ? `<br><span style="color:#8d98a1">Next best: ${esc(alt.pile_id)} (priority ${alt.priority})</span>` : '');
+}
+
+let waveKey = '';
+function drawWave(sc) {
+  const box = $('wavebox');
+  if (!sc || !sc.wave || !sc.wave.length || !scanHit(sc)) { box.classList.add('hide'); waveKey = ''; return; }
+  box.classList.remove('hide');
+  const key = sc.scan_id + ':' + sc.t;
+  const cv = $('wave'), g = cv.getContext('2d'), W = cv.width, H = cv.height, w = sc.wave;
+  if (key !== waveKey) { waveKey = key; drawWave.born = vnow(); }
+  const frac = Math.min(1, (vnow() - drawWave.born) / 1.6);
+  const v = sc.vitals || {}, dur = +v.duration_s || null;
+  const L = 64, R = 14, T = 20, B = 40, pw = W - L - R, ph = H - T - B;
+  const amp = Math.max(...w.map(Math.abs)) || 1;
+  const X = i => L + i / (w.length - 1) * pw, Y = val => T + ph / 2 - val / amp * (ph / 2 - 6);
+  g.clearRect(0, 0, W, H);
+  g.font = '22px Inter, system-ui, sans-serif'; g.fillStyle = '#8d98a1'; g.strokeStyle = 'rgba(255,255,255,0.13)'; g.lineWidth = 2;
+  g.beginPath(); g.moveTo(L, T + ph / 2); g.lineTo(L + pw, T + ph / 2); g.stroke();
+  g.beginPath(); g.moveTo(L, T); g.lineTo(L, T + ph); g.lineTo(L + pw, T + ph); g.stroke();
+  g.save(); g.translate(22, T + ph / 2); g.rotate(-Math.PI / 2); g.textAlign = 'center'; g.fillText('chest', 0, 0); g.restore();
+  if (dur) {
+    g.textAlign = 'center';
+    const st = dur > 40 ? 10 : 5;
+    for (let s0 = 0; s0 <= dur + 1e-6; s0 += st) {
+      const x = L + s0 / dur * pw;
+      g.beginPath(); g.moveTo(x, T + ph); g.lineTo(x, T + ph + 8); g.stroke();
+      g.fillText(s0 === dur ? `${s0} s` : `${s0}`, Math.min(x, W - R - 22), T + ph + 30);
+    }
+  }
+  g.strokeStyle = '#ff8a33'; g.lineWidth = 5; g.lineJoin = 'round'; g.beginPath();
+  const n = Math.max(2, Math.floor(w.length * frac));
+  for (let i = 0; i < n; i++) { const x = X(i), y = Y(w[i]); i ? g.lineTo(x, y) : g.moveTo(x, y); }
+  g.stroke();
+  const pk = dur ? breathPeaks(w, dur / (w.length - 1), v.rate_bpm || (sc.breathing_hz ? 60 * sc.breathing_hz : null)) : [];
+  g.fillStyle = '#ffffff';
+  pk.filter(i => i < n).forEach(i => { g.beginPath(); g.arc(X(i), Y(w[i]) - 14, 6, 0, 2 * Math.PI); g.fill(); });
+  const who = onDrone(window._last) ? `the radar on drone ${sc.drone_id}` : `radar pod ${sc.drone_id}`;
+  const parts = [`Radar trace from ${who} at ${sc.pile}: chest movement` + (dur ? ` over ${f0(dur)} s` : '')];
+  if (pk.length) parts.push('white dots = breaths');
+  $('wcap').textContent = parts.join(' · ');
+}
+
+// ---------------------------------------------------------------- the site map: click a pile; LiDAR dots fill in
+// Top-down, north up. Dashed outlines are the piles the mission knows (state.piles polygons); clicking one sends the
+// drones there (POST /api/goto). Every white dot is one laser hit the drones' LiDAR fed to the mission
+// (pointcloud.bin; the prior map written at start, full_count 360000, is never drawn). Display + operator input only.
+const LM = { cv: $('lmap'), box: $('mbox'), svg: $('msvg'), have: 0, busy: false, at: -1e9, key: '', view: null, site: '',
+             img: null, drones: {}, labels: {}, leads: {}, zones: {}, ring: null, count: 0, xs: {} };
+LM.g = LM.cv.getContext('2d');
+function lmClear() { LM.g.fillStyle = '#000'; LM.g.fillRect(0, 0, LM.cv.width, LM.cv.height); }
+lmClear();
+function lmView(s) {
+  const P = (s.piles || []).filter(p => p.xy);
+  if (!P.length) return null;
+  const pts = P.flatMap(p => (p.polygon && p.polygon.length ? p.polygon : [p.xy]));
+  const xs = pts.map(p => p[0]), ys = pts.map(p => p[1]), pad = 4;
+  const x0 = Math.min(...xs) - pad, x1 = Math.max(...xs) + pad, y0 = Math.min(...ys) - pad, y1 = Math.max(...ys) + pad;
+  const W = LM.cv.width, H = LM.cv.height, k = Math.min(W / (x1 - x0), H / (y1 - y0));
+  return { k, cx: (x0 + x1) / 2, cy: (y0 + y1) / 2, W, H };
+}
+const lmPx = (v, x, y) => [v.W / 2 + (x - v.cx) * v.k, v.H / 2 - (y - v.cy) * v.k];
+const half = p => [p[0] / 2, p[1] / 2];
+function lmDraw(pts, from) {
+  const v = LM.view, W = v.W, H = v.H;
+  if (!LM.img) { LM.img = LM.g.createImageData(W, H); for (let i = 3; i < LM.img.data.length; i += 4) LM.img.data[i] = 255; }
+  const d = LM.img.data;
+  for (let i = from * 3; i + 2 < pts.length; i += 3) {
+    const [px, py] = lmPx(v, pts[i], pts[i + 1]);
+    const x = px | 0, y = py | 0;
+    if (x < 0 || y < 0 || x >= W - 1 || y >= H - 1) continue;
+    const z = pts[i + 2];
+    const c = z < 0.25 ? 70 : 150 + 105 * Math.sqrt(Math.min(1, (z - 0.25) / 3.5));
+    for (const o of (z < 0.25 ? [0] : [0, 4, 4 * W, 4 * W + 4])) {
+      const j = (y * W + x) * 4 + o;
+      if (d[j] < c) { d[j] = d[j + 1] = d[j + 2] = c; }
+    }
+  }
+  LM.g.putImageData(LM.img, 0, 0);
+}
+function lmReset() { LM.img = null; LM.have = 0; LM.count = 0; LM.key = ''; lmClear(); $('mapn').textContent = 'nothing scanned yet'; }
+function lmFeed(pts) {
+  if (!LM.view) return;
+  const n = Math.floor(pts.length / 3);
+  if (n < LM.have) lmReset();
+  if (n > LM.have) { lmDraw(pts, LM.have); LM.have = n; }
+  LM.count = n;
+  $('mapn').textContent = n ? `${n.toLocaleString('en-GB')} laser points` : 'nothing scanned yet';
+}
+async function lmFetch(url) {
+  LM.busy = true;
+  try {
+    const r = await fetch(url + '?ts=' + Date.now(), { cache: 'no-store' });
+    if (r.ok) lmFeed(new Float32Array(await r.arrayBuffer()));
+  } catch (e) { } finally { LM.busy = false; }
+}
+LM.svgSent = pile => { for (const id in LM.zones) LM.zones[id].classList.toggle('sent', id === pile); };
+function lmBuild(s) {                               // (re)build the static layer for a site: outlines, labels, scale
+  for (const el of [...LM.box.querySelectorAll('.pl,.ring,.dr,.ld,.ldl')]) el.remove();
+  LM.svg.innerHTML = ''; LM.labels = {}; LM.zones = {}; LM.drones = {}; LM.leads = {}; lmReset();
+  const v = LM.view = lmView(s);
+  if (!v) return;
+  LM.svg.setAttribute('viewBox', `0 0 ${v.W / 2} ${v.H / 2}`);
+  $('msc').firstElementChild.style.width = `${10 * v.k / 2}px`;
+  for (const p of s.piles || []) {
+    if (!p.xy) continue;
+    const poly = (p.polygon && p.polygon.length > 2 ? p.polygon : Array.from({ length: 16 }, (_, k) =>
+      [p.xy[0] + 9 * Math.cos(k * Math.PI / 8), p.xy[1] + 9 * Math.sin(k * Math.PI / 8)]));
+    const el = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
+    el.setAttribute('points', poly.map(q => half(lmPx(v, q[0], q[1])).map(a => a.toFixed(1)).join(',')).join(' '));
+    el.setAttribute('class', 'pz'); el.dataset.pile = p.id;
+    el.addEventListener('click', () => gotoPile(p.id));
+    LM.svg.appendChild(el); LM.zones[p.id] = el;
+    const lb = document.createElement('div'); lb.className = 'pl'; lb.textContent = pshort(p.id);
+    const top = poly.reduce((a, q) => (q[1] > a[1] ? q : a), poly[0]);       // label just above the outline
+    const [x, y] = half(lmPx(v, p.xy[0], top[1] + 2.2));
+    lb.style.left = `${x}px`; lb.style.top = `${y}px`; LM.box.appendChild(lb); LM.labels[p.id] = lb;
+  }
+  const ring = document.createElement('div'); ring.className = 'ring hide'; LM.box.appendChild(ring); LM.ring = ring;
+  LM.xs = {};
+}
+// ✕ on a pile the drones searched (radar + listen) and left with nothing found: the mission marks it
+// no_signal_not_cleared / dismissed_nonhuman. The mission's own caveat stands: nothing found is not proof of absence.
+const EMPTY = ['no_signal_not_cleared', 'dismissed_nonhuman'];
+function searchedEmpty(s) {
+  const m = s.mission || {}, vis = new Set(m.visited || []), d = lastDispatch(s);
+  const leaving = d && ['dispatch', 'deploy'].includes(String(s.phase)) ? d.to_pile : null;
+  return new Set((s.piles || []).filter(p => vis.has(p.id) && EMPTY.includes(p.status)
+    && (p.id !== m.active_pile || (leaving && leaving !== p.id))).map(p => p.id));
+}
+function lmCross(s) {
+  const v = LM.view, X = held(s) ? new Set() : searchedEmpty(s);
+  for (const p of s.piles || []) {
+    const on = X.has(p.id) && p.xy, el = LM.xs[p.id];
+    if (LM.zones[p.id]) LM.zones[p.id].classList.toggle('x', !!on);
+    if (LM.labels[p.id]) LM.labels[p.id].classList.toggle('x', !!on);
+    if (!on) { if (el) { el.remove(); delete LM.xs[p.id]; } continue; }
+    if (el) continue;
+    const [cx, cy] = half(lmPx(v, p.xy[0], p.xy[1])), r = 5.5 * v.k / 2;
+    const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+    for (const c of ['xk', 'xw']) for (const [a, b, e, f] of [[-r, -r, r, r], [-r, r, r, -r]]) {
+      const ln = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+      ln.setAttribute('x1', cx + a); ln.setAttribute('y1', cy + b); ln.setAttribute('x2', cx + e); ln.setAttribute('y2', cy + f);
+      ln.setAttribute('class', c); g.appendChild(ln);
+    }
+    LM.svg.appendChild(g); LM.xs[p.id] = g;
+  }
+}
+function lmUpdate(s, b) {
+  const site = JSON.stringify([(s.site || {}).name, (s.piles || []).map(p => p.id + (p.xy || []).join(','))]);
+  if (site !== LM.site) { LM.site = site; LM.key = ''; lmBuild(s); }
+  const v = LM.view;
+  if (!v) return;
+  const m = s.mission || {}, act = m.active_pile || '';
+  const d = lastDispatch(s);
+  const go = ['dispatch', 'deploy'].includes(String(s.phase)) && d ? d.to_pile : '';
+  for (const id in LM.labels) LM.labels[id].className = 'pl' + (id === go ? ' go' : (id === act && !go && !held(s) ? ' on' : ''));
+  const gp = go && (s.piles || []).find(p => p.id === go);
+  LM.ring.classList.toggle('hide', !gp);
+  if (gp) { const [x, y] = half(lmPx(v, gp.xy[0], gp.xy[1])), r = 10.5 * v.k / 2;
+    Object.assign(LM.ring.style, { left: `${x}px`, top: `${y}px`, width: `${2 * r}px`, height: `${2 * r}px` }); }
+  for (const q of s.drones || []) {
+    let el = LM.drones[q.id];
+    if (!el) { el = LM.drones[q.id] = document.createElement('div'); el.className = 'dr'; LM.box.appendChild(el); }
+    let [x, y] = half(lmPx(v, q.pose[0], q.pose[1]));
+    x = Math.max(8, Math.min(v.W / 2 - 8, x)); y = Math.max(8, Math.min(v.H / 2 - 8, y));
+    el.style.transform = `translate(${x.toFixed(1)}px, ${y.toFixed(1)}px)`;
+  }
+  for (const p of pings(s).filter(p => (p.vitals || p.breathing_hz) && p.xy)) {
+    let e = LM.leads[p.id];
+    if (!e) { e = LM.leads[p.id] = [document.createElement('div'), document.createElement('div')];
+      e[0].className = 'ld'; e[1].className = 'ldl'; e.forEach(x => LM.box.appendChild(x)); }
+    const [x, y] = half(lmPx(v, p.xy[0], p.xy[1])), r = p.vitals && p.vitals.rate_bpm;
+    e.forEach(el => { el.style.transform = `translate(${x.toFixed(1)}px, ${y.toFixed(1)}px)`; });
+    e[1].textContent = r != null ? `${pshort(p.id)} · breathing ${f0(r)}/min` : (p.breathing_hz ? `${p.id} · breathing ~${f0(60 * p.breathing_hz)}/min` : p.id);
+  }
+  lmCross(s);
+  const pc = s.pointcloud || {};
+  if (pc.full_count === 360000 || !pc.url) { if (LM.have || LM.count) lmReset(); return; }   // fresh run: nothing scanned yet
+  const key = `${pc.count}/${pc.full_count || ''}`;
+  if (window.__burn || LM.busy || key === LM.key || vnow() - LM.at < 1.0) return;
+  LM.key = key; LM.at = vnow();
+  lmFetch(DIR + pc.url);
+}
+
+// ---------------------------------------------------------------- render
+let shown = { key: '', at: -1e9 }, SEEN = new Set(), senseKey = '', toastAt = 0;
+function render(s) {
+  window._last = s;
+  const now = vnow(), t = +s.t || 0;
+  if (sent && lastGoto() && lastGoto().pile === sent.pile) { toast(`Confirmed: the drones are on their way to ${pn(sent.pile)}.`); sent = null; LM.svgSent(null); toastAt = now; }
+  else if (!sent && toastAt && now - toastAt > 8) { toast(''); toastAt = 0; }
+  else if (sent && now - sent.at > 12) { toast(`No confirmation from the simulation for ${sent.pile} yet. Is it running?`, true); }
+  const b = step(s);
+  const [k, title, text, cls] = caption(b, s);
+  const key = title + '|' + text;
+  if (key !== shown.key && now - shown.at >= HOLD_S) {
+    $('capk').textContent = k; $('capt').textContent = title; $('capc').innerHTML = text;
+    const el = $('cap'); el.className = 'hud ' + (cls || ''); el.classList.remove('fade'); void el.offsetWidth; el.classList.add('fade');
+    shown = { key, at: now, b };
+  }
+  if (held(s)) SEEN.clear();
+  SEEN.add(b);
+  [...$('steps').children].forEach((el, i) => { el.className = i === b ? 'now' : (SEEN.has(i) ? 'done' : ''); });
+  const [chip, say, rows] = sense(s);
+  $('chip').textContent = chip === 'FOUND' ? 'RADAR' : chip; $('chip').style.background = COL[chip] || 'var(--grey)';
+  if (chip + say !== senseKey) { $('say').innerHTML = say; senseKey = chip + say; }
+  $('rows').innerHTML = rows.map(([l, v]) => `<tr><td class="l">${l}</td><td class="v">${v}</td></tr>`).join('');
+  heardCard(s); nextCard(s);
+  lmUpdate(s, b);
+  const pile = (s.mission || {}).active_pile;
+  drawWave(RADAR_PH.includes(String(s.phase)) && LIVE && LIVE.last_scan && (!pile || LIVE.last_scan.pile === pile) ? LIVE.last_scan : null);
+  const mm = Math.floor(t / 60), ss = Math.floor(t % 60);
+  $('clk').textContent = `mission time ${mm}:${String(ss).padStart(2, '0')}`;
+  const hdr = HUD && HUD.panels && HUD.panels.header && HUD.panels.header.text || '';
+  const lap = (hdr.match(/x([\d.]+)/) || [])[1];
+  $('pace').textContent = lap && +lap > 1.01 ? `sped up ×${(+lap).toFixed(0)} (time-lapse)` : 'real time';
+}
+
+async function getJSON(u) {
+  const r = await fetch(u + (u.includes('?') ? '&' : '?') + 'ts=' + Date.now(), { cache: 'no-store' });
+  if (!r.ok) throw new Error(r.status);
+  return r.json();
+}
+async function poll() { try { render(await getJSON(SRC)); } catch (e) { } }
+async function pollSide() {
+  try { LIVE = await getJSON(DIR + 'live.json'); } catch (e) { }
+  try { HUD = await getJSON(DIR + 'hud.json'); } catch (e) { }
+  try { SITE = await getJSON(DIR + 'site.json'); } catch (e) { SITE = null; }
+  try { GOTO = await getJSON(DIR + 'goto.json'); } catch (e) { GOTO = null; }
+  try { CONSOLE = await getJSON(DIR + 'console.json'); } catch (e) { CONSOLE = null; }
+  siteOverlay();
+}
+// site switch (POST /api/site on the box writes site.json {site, seed, look, status: loading|ready|running})
+// ?sites=grid:7:day:Rubble street|weiguan:7:day:Collapsed tower|grid:11:dusk:Street at dusk
+const SITES = (Q.get('sites') || 'grid:7:day:Rubble street|weiguan:7:day:Collapsed tower|grid:11:dusk:Street at dusk, dust')
+  .split('|').map(x => { const [site, seed, look, ...l] = x.split(':'); return { site, seed: +seed, look, label: l.join(':') }; });
+const API_SITE = new URL('../../api/site', location.href).href;
+const siteOf = S => S && SITES.find(x => x.site === S.site && x.seed === +S.seed && x.look === S.look);
+$('sitechips').innerHTML = SITES.map((x, i) => `<span class="sc2" data-i="${i}">${esc(x.label)}</span>`).join('');
+$('sitechips').addEventListener('click', async e => {
+  const el = e.target.closest('.sc2'); if (!el) return;
+  const x = SITES[+el.dataset.i];
+  const cur = siteOf(SITE);
+  if (cur === x && SITE.status !== 'loading') { toast(`Already on ${x.label}.`); return; }
+  toast(`Loading ${x.label}…`);
+  try {
+    const r = await fetch(API_SITE, { method: 'POST', headers: { 'Content-Type': 'application/json' },
+                                      body: JSON.stringify({ site: x.site, seed: x.seed, look: x.look }) });
+    if (!r.ok) { let j = {}; try { j = await r.json(); } catch (e2) { } throw new Error(j.error || r.status); }
+    SITE = { site: x.site, seed: x.seed, look: x.look, status: 'loading' }; siteOverlay();
+  } catch (err) { toast(`Could not switch site: ${err.message}`, true); }
+});
+// Reset: stop this run and put the drones back on their pads (POST /api/reset; older boxes: reload the same site)
+const API_RESET = new URL('../../api/reset', location.href).href;
+let resetting = 0;
+$('reset').addEventListener('click', async () => {
+  if (resetting && vnow() - resetting < 10) return;
+  resetting = vnow(); sent = null; LM.svgSent(null);
+  toast('Resetting: the drones go back to their pads…');
+  try {
+    let r = await fetch(API_RESET, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+    if ((r.status === 404 || r.status === 405) && SITE) {
+      r = await fetch(API_SITE, { method: 'POST', headers: { 'Content-Type': 'application/json' },
+                                  body: JSON.stringify({ site: SITE.site, seed: +SITE.seed, look: SITE.look, force: true }) });
+    }
+    let j = {}; try { j = await r.json(); } catch (e) { }
+    if (!r.ok) throw new Error(j.error || j.message || r.status);
+    SEEN.clear(); toast('Reset. Click any pile to start again.'); toastAt = vnow();
+  } catch (err) { resetting = 0; toast(`Could not reset: ${err.message}`, true); }
+});
+let SITE = null;
+function siteOverlay() {
+  const loading = SITE && SITE.status === 'loading', cur = siteOf(SITE);
+  [...$('sitechips').children].forEach((el, i) => el.classList.toggle('on', SITES[i] === cur));
+  if (SITE && cur) SITE.label = cur.label;
+  if (!loading && /^Loading /.test($('toast').textContent)) toast('');
+  $('loading').classList.toggle('hide', !loading);
+  if (!loading && resetting && vnow() - resetting > 15) resetting = 0;
+  if (loading) { $('loadt').textContent = resetting ? `Resetting: ${SITE.label || SITE.site}` : `Loading a new site: ${SITE.label || SITE.site}`;
+    $('loadc').textContent = 'Isaac Sim is building the scene. The drones start when you click a pile.'; }
+}
+if (!window.__burn) { setInterval(poll, 300); setInterval(pollSide, 500); pollSide().then(poll); }
+</script>
+</body>
+</html>

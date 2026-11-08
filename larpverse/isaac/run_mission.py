@@ -217,6 +217,9 @@ def parse_args(argv=None):
         a.mission_thread = 1 if (a.live_take and not a.dry_run) else 0
     if a.hud is None:
         a.hud = "auto" if a.live_take else "off"
+    if a.live_take and not a.dry_run and a.acoustic == "stub" and not a.allow_stub_acoustic:
+        raise SystemExit("--live --acoustic stub outside --dry-run would be a stub-acoustics take: drop --acoustic stub "
+                         "(the take uses the real pipeline after its pre-flight) or add --allow-stub-acoustic for a rehearsal")
     if a.test_trigger and not a.dry_run:
         raise SystemExit("--test-trigger is for tests / dry-run rehearsals only: the take's change must be a live action")
     if a.live_take and a.replay:
@@ -829,10 +832,10 @@ def main(argv=None):
         preroll = 4.0 if a.live_preroll is None else float(a.live_preroll)
         info = getattr(a, "acoustic_info", None)
         if pace and info and info.get("latency_s"):
-            # the prefetched listen starts when the drones are down; ~66 sim s later (26 s listen + call-out) the gate
-            # needs it. Slow the listen phase so the real pipeline answers inside that window (floor x4: below that
+            # the prefetched listen is submitted at the listen-landing command; ~170 sim s later (landing, 26 s listen,
+            # call-out, reassurance) the gate needs it (measured, review pass 3). Slow the listen phase so the real pipeline answers inside that window (floor x4: below that
             # the mission clock is simply held, shown on the HUD).
-            cap = max(4.0, L.LISTEN_AFTER_DOWN_S / (float(info["latency_s"]) + 1.0))
+            cap = max(4.0, L.LISTEN_WINDOW_S / (float(info["latency_s"]) + 1.0))
             if cap < pace.get("acoustic", base_speed):
                 say(f"real acoustic pipeline answers in {info['latency_s']:.0f} s: listen pace x{pace['acoustic']:g} -> "
                     f"x{cap:.1f} so it lands inside the listen window")

@@ -986,11 +986,11 @@ def _van_lights(stage, root, k=1.0, mast_h=MAST_H):
              ("Flood", (-6.6 + 1.9, -1.0 - 1.7, 2.55), (0, -20, 0), 0.3, 0.2, 9000.0, (1.0, 0.94, 0.85))]
     for name, t, rpy, w, h, inten, col in specs:
         path = f"{root}/Lights/{name}"
-        L = UsdLux.RectLight.Define(stage, path)
+        R = Rz(rpy[2]) @ Ry(rpy[1]) @ Rx(rpy[0])
+        xform(stage, path, t, R=R)                  # pose first: xform() Defines an Xform, which would retype a light
+        L = UsdLux.RectLight.Define(stage, path)    # ... then the light: the prim is a RectLight with the pose ops
         L.CreateWidthAttr(float(w)); L.CreateHeightAttr(float(h))
         L.CreateIntensityAttr(float(inten * k)); L.CreateColorAttr(Gf.Vec3f(*col))
-        R = Rz(rpy[2]) @ Ry(rpy[1]) @ Rx(rpy[0])
-        xform(stage, path, t, R=R)
 
 
 # =============================================================================================== preview CLI

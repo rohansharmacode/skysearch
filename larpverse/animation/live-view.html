@@ -186,7 +186,7 @@ function makeDrone(name) {
   hot.add(new THREE.Mesh(new THREE.CircleGeometry(1, 72).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: C.wifi, transparent: true, opacity: 0.05, depthWrite: false })));
   hot.add(new THREE.Mesh(new THREE.RingGeometry(0.985, 1, 128).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: C.wifi, transparent: true, opacity: 0.4, depthWrite: false })));
   const lbl = label(`<b>${name}</b> <span></span>`, 'drone', g, [0, 1.6, 0]);
-  return { id: name, g, rotors, lidarMat, radarMat, micMat, pod, cable, wave, hot, span: lbl.element.querySelector('span'), yaw: 0, have: false, sp: V(), sv: V() };
+  return { id: name, lblObj: lbl, g, rotors, lidarMat, radarMat, micMat, pod, cable, wave, hot, span: lbl.element.querySelector('span'), yaw: 0, have: false, sp: V(), sv: V() };
 }
 const drones = {};
 const droneOf = id => drones[id] || (drones[id] = makeDrone(id));
@@ -376,7 +376,9 @@ function updateDrones(t, dt) {
     d.wave.visible = scanning; if (scanning) { const f = ((NOW * 1000) / 1400) % 1; d.wave.position.copy(d.pod.position); d.wave.scale.setScalar(0.3 + f * 4.5); d.wave.material.opacity = 0.32 * (1 - f); }
     const hs = (S.comms?.hotspots || []).find(h => h.drone_id === sd.id && h.on);
     d.hot.visible = !!hs; if (hs) { const r = clamp(hs.radius_m_est || 30, 8, 60); d.hot.position.set(pos.x, 0.3, pos.z); d.hot.scale.setScalar(r); }
-    const st = winch ? (winch.seated ? (scanning ? 'pod radar scan' : 'pod down') : 'winch') : (sd.state || '');
+    const docked = !winch && /docked|idle|charging/.test(sd.state || '') && rpm < 0.5, mid = (S.drones || [])[1]?.id === sd.id;
+    d.lblObj.visible = !docked || mid;   // three drones side by side on the pads: one label for the group
+    const st = docked ? (mid ? `+ ${(S.drones || []).length - 1} · docked, waiting for a zone` : '') : winch ? (winch.seated ? (scanning ? 'pod radar scan' : 'pod down') : 'winch') : (sd.state || '');
     if (d.span.textContent !== st) d.span.textContent = st;
   }
 }
@@ -393,6 +395,10 @@ function chooseShot(nowW) {
   const air = ds.filter(d => d.g.position.y > hmAt(d.g.position.x, -d.g.position.z) + 3), pods = ds.filter(d => d.cable.visible);
   const ph = S.phase || '', act = (S.mission || {}).active_pile, pile = (S.piles || []).find(p => p.id === act);
   cam.ang += 0.0016;
+  if (!air.length && !pods.length) {   // idle at the dock (--start idle) or all landed: wide over the site and the dock, slow orbit
+    const site = S.site?.bounds ? T3((S.site.bounds[0] + S.site.bounds[2]) / 2, (S.site.bounds[1] + S.site.bounds[3]) / 2 - 8, 0) : c.clone().setY(0);
+    return [site.clone().add(V(70 * Math.cos(cam.ang * 0.6), 58, 70 * Math.sin(cam.ang * 0.6))), site];
+  }
   if (pods.length) { const pc = V(); pods.forEach(d => pc.add(d.pod.position)); pc.divideScalar(pods.length); return [pc.clone().add(V(32 * Math.cos(cam.ang), 16, 32 * Math.sin(cam.ang))), pc.add(V(0, 2.5, 0))]; }
   if (/survey|mapping/.test(ph) && pile) { const p = T3(pile.xy[0], pile.xy[1], 2); return [p.clone().add(V(40 * Math.cos(cam.ang), 26, 40 * Math.sin(cam.ang))), p]; }
   if (air.length && /dispatch|deploy|return|transit/.test(ph)) {   // follow the fleet from behind, looking ahead along the velocity

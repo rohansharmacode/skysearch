@@ -59,12 +59,17 @@ NONHUMAN_KINDS = ("dog", "generator", "settling", "wind", "siren")
 MOVE_EPS_M = 0.5                 # a dummy moved further than this is a world change
 SIG_SNAP_M = 0.5                 # signature grid: same world within this
 TAKE_GATE_LISTENS = 2            # rotors-off gate listens in a 60 s take (A2, then the redirected pile)
-LISTEN_AFTER_DOWN_S = 66.0       # sim s from "all drones down" to the dispatch gate (26 s listen + call-out, seed 7)
+LISTEN_WINDOW_S = 170.0          # sim s from the listen-landing command (prefetch) to the dispatch gate: measured 176-178
+                                 # on seed 7 (landing + 26 s listen + call-out + reassurance / guidance), review pass 3
+GEMINI_TIMEOUT_S = 6.0           # the take: one Gemini attempt per call, this timeout, then the deterministic fallback
 GEMINI_BUDGET = 20               # Gemini calls per run (free tier ~20 requests / day / model); the pre-flight counts its own
 QUICK_LISTEN_S = 20.0            # pod-mic quick listen cadence (sim s) while pods rest on the rubble
 NEW_EVIDENCE_RISE = 15           # a pile's priority must rise this much over the most it was ever heard at
+STRONG_NEW = 70                  # a new lead this strong needs no second (confirming) pod-mic listen (a weak voice at
+                                 # the detection edge reads ~60 and flickers; the hidden shouts read 76-84)
 NEW_EVIDENCE_NEAR_M = 5.0        # ... and an earlier listen from no further than this extra must have heard it silent
 PREEMPT_MARGIN = 5               # ... and beat the current pile's priority by this to cut its radar phase short
+NEW_EVIDENCE_TIE = 15            # dispatch gate: new evidence ranks level with the best open lead within this many points
 POLL_WALL_S = 1.0                # tasking / command-file / stage poll (wall seconds)
 DEFAULT_KEYS = "U=hidden1,Y=hidden2"   # carb key -> dummy ("hiddenN" = N-th hidden dummy, sorted by id: grid H1_C3_vi,
                                        # H2_A1_id; collapse H1_RW_vi, H2_M39_id). H is Kit's hide key: not used.
@@ -749,11 +754,24 @@ def _fresh_real(sc, drones, exclude, seed, allow_subprocess):
 
 # =============================================================================== real acoustic pipeline (the take)
 _SERVER = r"""
-import inspect, json, sys, time, traceback
+import inspect, json, os, sys, threading, time, traceback
 sys.path.insert(0, %r)
 from sim.scenario import make_scenario
 import acoustic.run as AR
 import acoustic.scene as AS
+T_LLM = float(os.environ.get("LARPVERSE_LLM_TIMEOUT_S") or 0)
+if T_LLM > 0:                                       # the take: one Gemini attempt, short timeout, then the fallback
+    try:
+        from agents import llm as LL
+        for name in ("call_json", "call_json_audio"):
+            f = getattr(LL, name, None)
+            if f is not None:
+                def capped(*x, _f=f, **k):
+                    k["timeout"] = min(float(k.get("timeout") or 25), T_LLM)
+                    return _f(*x, **k)
+                setattr(LL, name, capped)
+    except Exception:
+        pass
 LR = AR.listen_and_rank
 HAS_SRC = "sources" in inspect.signature(LR).parameters
 SCENE_SRC = "sources" in inspect.signature(AS.build_scene).parameters
@@ -763,9 +781,54 @@ def scenario(a):
     if k not in cache:
         cache[k] = make_scenario(k[0], k[1], **({"site": k[2]} if k[2] != "grid" else {}))
     return cache[k]
-print(json.dumps({"ready": True, "sources_api": HAS_SRC, "scene_sources": SCENE_SRC}), flush=True)
-for line in sys.stdin:
-    a = json.loads(line)
+lock = threading.Condition()
+pending, cancelled, eof = [], set(), [False]
+def emit(o):
+    sys.stdout.write(json.dumps(o) + "\n")
+    sys.stdout.flush()
+def reader():
+    for line in sys.stdin:
+        try:
+            a = json.loads(line)
+        except ValueError:
+            continue
+        with lock:
+            if "cancel" in a:
+                cancelled.add(a["cancel"])
+            else:
+                pending.append(a)
+            lock.notify()
+    with lock:
+        eof[0] = True
+        lock.notify()
+threading.Thread(target=reader, daemon=True).start()
+emit({"ready": True, "sources_api": HAS_SRC, "scene_sources": SCENE_SRC, "llm_timeout_s": T_LLM})
+def pick():
+    # gate listens first (the dispatch gate waits on them), newest first; superseded / cancelled jobs are skipped
+    for a in [a for a in pending if a["id"] in cancelled]:
+        pending.remove(a)
+        emit({"id": a["id"], "skipped": "cancelled"})
+    gates = [a for a in pending if a.get("kind") == "gate"]
+    job = gates[-1] if gates else (pending[-1] if pending else None)
+    if job is None:
+        return None
+    for a in list(pending):
+        if a is job:
+            continue
+        if a.get("kind") == job.get("kind") and a["id"] < job["id"] or (job.get("kind") == "gate" and a.get("kind") != "gate"):
+            pending.remove(a)
+            emit({"id": a["id"], "skipped": "superseded by job %%d" %% job["id"]})
+    pending.remove(job)
+    return job
+while True:
+    with lock:
+        while not pending and not eof[0]:
+            lock.wait()
+        if not pending and eof[0]:
+            break
+        a = pick()
+    if a is None:
+        continue
     t0 = time.time()
     try:
         sc = scenario(a)
@@ -789,11 +852,10 @@ for line in sys.stdin:
             AS.build_scene = orig
             if hasattr(AR, "build_scene"):
                 AR.build_scene = orig
-        out = {"id": a["id"], "result": r, "elapsed_s": round(time.time() - t0, 2), "fed": used}
+        out = {"id": a["id"], "kind": a.get("kind"), "result": r, "elapsed_s": round(time.time() - t0, 2), "fed": used}
     except Exception as e:
         out = {"id": a["id"], "error": f"{type(e).__name__}: {e}", "trace": traceback.format_exc()[-1500:]}
-    sys.stdout.write(json.dumps(out) + "\n")
-    sys.stdout.flush()
+    emit(out)
 """
 
 
@@ -821,14 +883,19 @@ def _sources_payload(truth):
     return out
 
 
+class Skipped(RuntimeError):
+    """The worker skipped a job (cancelled, or superseded by a newer / higher-priority listen)."""
+
+
 class AcousticService:
     """The REAL acoustic pipeline (acoustic.run.listen_and_rank in ``.venv-audio``) as a persistent worker process:
     models load once, listens are submitted asynchronously (prefetched as soon as the drones are down) and fed the
     live dummy sources. Same machine as Isaac: nothing crosses the network during the take."""
 
-    def __init__(self, scenario, python=AUDIO_PY, log=None, gemini=False):
+    def __init__(self, scenario, python=AUDIO_PY, log=None, gemini=False, llm_timeout_s=GEMINI_TIMEOUT_S):
         import threading
         self.sc, self.py, self.say, self.gemini = scenario, python, log or _say_default, bool(gemini)
+        self.llm_timeout_s = llm_timeout_s
         self.proc, self.ready, self.info, self.err = None, False, {}, None
         self.results, self.n = {}, 0
         self.llm_calls = 0                   # network LLM calls made by the pipeline this run (Gemini budget)
@@ -839,7 +906,10 @@ class AcousticService:
         import threading
         if not os.path.exists(self.py):
             raise RuntimeError(f"{self.py} not found: run acoustic/setup.sh on this box (docs/VIDEO_PLAN.md section 6)")
-        self.proc = subprocess.Popen(["nice", "-n", "5", self.py, "-u", "-c", _SERVER % REPO], cwd=REPO, text=True,
+        env = dict(os.environ)
+        if self.llm_timeout_s:                           # one attempt, short timeout: a slow Gemini never holds a gate
+            env.update(LARPVERSE_LLM_TIMEOUT_S=str(self.llm_timeout_s), LLM_RETRIES="0", LLM_BACKOFF_BUDGET_S="0")
+        self.proc = subprocess.Popen(["nice", "-n", "5", self.py, "-u", "-c", _SERVER % REPO], cwd=REPO, text=True, env=env,
                                      stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, bufsize=1)
         threading.Thread(target=self._read, daemon=True).start()
         threading.Thread(target=self._drain_err, daemon=True).start()
@@ -878,7 +948,14 @@ class AcousticService:
             if "Traceback" in line or "Error" in line:
                 self.say(f"[acoustic worker] {line.rstrip()[:200]}")
 
-    def submit(self, truth, drones, exclude, seed, gemini=None):
+    def cancel(self, jid):
+        try:
+            self.proc.stdin.write(json.dumps({"cancel": int(jid)}) + "\n")
+            self.proc.stdin.flush()
+        except Exception:                                # noqa: BLE001
+            pass
+
+    def submit(self, truth, drones, exclude, seed, gemini=None, kind="gate"):
         with self._lock:
             self.n += 1
             jid = self.n
@@ -886,7 +963,7 @@ class AcousticService:
         req = {"id": jid, "scenario_seed": self.sc.seed, "start_pile": self.sc.public_dict()["start_pile"],
                "site": getattr(self.sc, "site", "grid"), "truth": truth, "sources": src,
                "drones": {k: [float(v[0]), float(v[1])] for k, v in drones.items()}, "exclude": list(exclude),
-               "seed": int(seed), "gemini": self.gemini if gemini is None else bool(gemini)}
+               "seed": int(seed), "gemini": self.gemini if gemini is None else bool(gemini), "kind": kind}
         self.proc.stdin.write(json.dumps(req) + "\n")
         self.proc.stdin.flush()
         return jid
@@ -905,6 +982,8 @@ class AcousticService:
             raise RuntimeError(f"acoustic worker: no result for listen {jid} ({self.err or 'timeout'})")
         if "error" in r:
             raise RuntimeError(f"acoustic worker listen {jid}: {r['error']}")
+        if "skipped" in r:
+            raise Skipped(f"listen {jid} {r['skipped']}")
         return r
 
     def close(self):
@@ -943,6 +1022,8 @@ def preflight_acoustic(scenario, live=None, log=None, gemini=False, timeout=900.
     r = dict(r, elapsed_s=r2["elapsed_s"])
     say(f"acoustic pre-flight PASS: real pipeline in {AUDIO_PY} (mode {mode}, fed {fed}), warm listen "
         f"{r['elapsed_s']:.1f} s (first one {lat:.1f} s incl. the model load), {len(res.get('clips', []))} clips")
+    say("STREAM: ONE /viewer client only. A second WebRTC client (another tab, a second laptop) gives NVST_R_BUSY "
+        "errors and stalls the stream; close every other viewer before rolling")
     say(f"Gemini: {calls} call(s) in the pre-flight listen ({'Gemini stage on' if gemini else 'Gemini stage off'}); "
         f"a take makes ~{TAKE_GATE_LISTENS} gate listens -> ~{TAKE_GATE_LISTENS * calls} calls (+ {calls} here) "
         f"against a free-tier budget of ~{GEMINI_BUDGET}/day/model")
@@ -970,7 +1051,13 @@ def make_acoustic_fn(live, mode="auto", log=None, service=None):
                 say(f"listen: using the pipeline run prefetched when the landings were commanded (job {jid})")
             live.waiting = {"job": jid, "since": t0}
             try:
-                r = service.wait(jid)
+                try:
+                    r = service.wait(jid)
+                except Skipped:                       # superseded meanwhile: synthesise this exact listen now
+                    jid = service.submit(live.truth(), drones, exclude, seed,
+                                         gemini=live.gemini_ok() if live.gemini_ok else None)
+                    live.waiting = {"job": jid, "since": t0}
+                    r = service.wait(jid)
             finally:
                 live.waiting = None
             res, src = r["result"], f"real-live ({r.get('fed')}, {r['elapsed_s']:.0f} s)"
@@ -1014,6 +1101,7 @@ class LiveController:
         self.quick_s, self.preempt_on, self.clock = float(quick_s), bool(preempt), clock
         self.heard = {}                    # pile -> highest priority ever heard (outputs only)
         self.silent_from = {}              # pile -> closest listening distance at which it was heard silent
+        self.fresh = {}                    # pile -> new evidence not yet acted on (the gate's new-evidence rule)
         self._cand_prev = set()            # new-evidence candidates of the previous quick listen (need 2 in a row)
         self.quick = []                    # quick-listen summaries (HUD / live.json)
         self.replans = []                  # [{t, why, from, to}]
@@ -1045,7 +1133,55 @@ class LiveController:
                                "fa4e74b): update the mission before --live")
         m.set_world_sources(live.scenario, sensor_factory=lambda pw, seed: LiveRadar(pw, seed, radar, live),
                             acoustic_fn=make_acoustic_fn(live, acoustic, self.say, service=self.service))
+        self._inner_decider = getattr(m, "decider", None)  # e.g. the Gemini decider: it sees the flag and decides first
+        m.decider = self.decide                              # the gate's documented decider hook (no mission change)
         return "native"
+
+    # ------------------------------------------------------------------ the new-evidence rule (dispatch gate)
+    def decide(self, ctx, opts):
+        """RULE (applies to every gate, any pile, any trigger): a human-like lead heard where earlier listens - from
+        no further away - heard nothing is NEW EVIDENCE (a change in the situation: someone started calling or
+        regained consciousness). New evidence is ranked level with the best open lead: if its priority is within
+        NEW_EVIDENCE_TIE points of the argmax option (an older lead, possibly already searched without a ping), the
+        new lead goes first and the older one stays queued. Outside that margin, or with no new evidence, the
+        mission's argmax stands. Only acoustic OUTPUTS and listening positions are used."""
+        m = self.m
+        fresh = dict(self.fresh)
+        res = getattr(m, "last_acoustic", None)
+        if res is not None and res is not self._seen_res:     # the gate's own listen, not yet in the tables
+            for pid, pr, was in self._note_heard(res, fold=False, points=None, gate=True, commit=False):
+                fresh[pid] = {"priority": pr, "was": was, "t": round(m.t, 1), "by": "gate listen"}
+        ctx = dict(ctx, new_evidence=[{"pile_id": k, **v} for k, v in fresh.items()])
+        if self._inner_decider is not None:
+            try:
+                out = self._inner_decider(ctx, opts) or {}
+                if out.get("choice") in {o["id"] for o in opts}:
+                    return out
+            except Exception as e:                              # noqa: BLE001
+                self.say(f"inner decider failed ({type(e).__name__}: {e}); new-evidence rule / argmax")
+        # the mission's own argmax, exactly as GridMission._options picks it (first acceptable option, else stop)
+        ok = [o for o in opts if o["action"] != "stop" and "unreachable" not in o.get("flags", [])
+              and (getattr(m, "autonomous", True) or o["action"] == "dispatch")
+              and ((o.get("priority") or 0) >= m.priority_min or "tasked" in o.get("flags", []))]
+        stop = next(o["id"] for o in opts if o["action"] == "stop")
+        argmax = {"choice": ok[0]["id"] if ok else stop, "by": "argmax"}   # no rationale: the mission keeps its reason
+        if not ok:
+            return argmax
+        top = ok[0]
+        news = [o for o in ok if o["pile_id"] in fresh and (o.get("priority") or 0) >= m.priority_min]
+        if not news or top["pile_id"] in fresh:
+            return argmax                                       # no new evidence, or the argmax IS the new evidence
+        best = max(news, key=lambda o: o.get("priority") or 0)
+        tp = top.get("priority") or 0
+        if (best.get("priority") or 0) < tp - NEW_EVIDENCE_TIE:
+            return argmax
+        f = fresh[best["pile_id"]]
+        self.fresh.pop(best["pile_id"], None)
+        return {"choice": best["id"], "by": "new-evidence-rule",
+                "rationale": (f"new-evidence rule: {best['pile_id']} (priority {best.get('priority')}) was silent in "
+                              f"earlier listens from as close and is now a human-like lead ({f['by']}, t {f['t']:.0f}); "
+                              f"within {NEW_EVIDENCE_TIE} of {top['pile_id']} ({tp}), new evidence goes first and "
+                              f"{top['pile_id']} stays queued")}
 
     # ------------------------------------------------------------------ per step
     def before_step(self):
@@ -1055,8 +1191,8 @@ class LiveController:
             self._last_poll = now
             self.poll()
         hit = False
-        for kind, did in self._drain_keys():
-            hit = self.live.toggle(did, f"hotkey {kind}") or hit
+        for kind, did in self._drain_keys():               # activate-only: a nervous double press never switches it off
+            hit = self.live.set_active(did, True, f"hotkey {kind}") or hit
         for trig in list(self.test_triggers):            # tests / --dry-run rehearsals only
             if self.m.t >= trig["t"]:
                 self.test_triggers.remove(trig)
@@ -1226,6 +1362,8 @@ class LiveController:
         for d in comms.get("devices") or []:
             if d.get("status") != "trapped" or d.get("id") in self._devices or not d.get("est_xy"):
                 continue
+            if not d.get("live"):                          # simulated phones are scripted: never a take re-plan
+                continue
             self._devices.add(d.get("id"))
             self._note_input(f"phone portal: 'I'm trapped' ({d.get('id')})")
             pile = d.get("pile") or self.live.locate(*d["est_xy"])
@@ -1279,7 +1417,16 @@ class LiveController:
         self.live.refresh(m.t, "listen prefetch")
         if find_prefetch(self.live.prefetch, drones, exclude, seed, self.live.sig) is not None:
             return
-        jid = self.service.submit(self.live.truth(), drones, exclude, seed, gemini=self.gemini_ok())
+        for key, (old, pos) in list(self.live.prefetch.items()):   # the world changed since: cancel the stale run now
+            if key[1:3] == (tuple(sorted(set(exclude))), int(seed)):
+                self.service.cancel(old)
+                del self.live.prefetch[key]
+                self.say(f"real acoustic pipeline: stage changed after listen job {old} was submitted -> cancelled, "
+                         "resubmitting on the current world")
+        if self._ql_job is not None:                       # a pod-mic job must not hold the worker before the gate
+            self.service.cancel(self._ql_job[0])
+            self._ql_job = None
+        jid = self.service.submit(self.live.truth(), drones, exclude, seed, gemini=self.gemini_ok(), kind="gate")
         self.live.prefetch[listen_key(drones, exclude, seed, self.live.sig)] = (jid, dict(drones))
         self.say(f"real acoustic pipeline: listen {m.n_listen + 1} submitted at t {m.t:.0f} (landing patches known); "
                  f"it overlaps the landing, the listen window and the call-out")
@@ -1305,13 +1452,15 @@ class LiveController:
             if r is None:
                 return
             self._ql_job = None
+            if "skipped" in r:
+                return
             if "error" in r:
                 self.say(f"pod-mic listen {jid} failed: {r['error']}")
                 return
             self._handle_quick(r["result"], pts, t_sub)
             return
-        if m.stage != "pile" or m.pm is None or m.t - self._ql_t < self.quick_s:
-            return
+        if m.stage != "pile" or m.pm is None or m.pm.stage == "done" or m.t - self._ql_t < self.quick_s:
+            return                                         # (never once the radar phase is over: the gate listen is next)
         pts = self._listen_points(state)
         if len(pts) < 2:
             return
@@ -1320,7 +1469,7 @@ class LiveController:
         seed = m.seed + 5003 + 17 * self._ql_n
         if self.service is not None:
             self.live.refresh(m.t, "pod-mic listen")
-            self._ql_job = (self.service.submit(self.live.truth(), pts, exclude, seed, gemini=False), pts, m.t)
+            self._ql_job = (self.service.submit(self.live.truth(), pts, exclude, seed, gemini=False, kind="pod"), pts, m.t)
             return
         res = m.acoustic_fn(m.scenario, pts, exclude, seed)
         self._handle_quick(res, pts, m.t)
@@ -1335,6 +1484,8 @@ class LiveController:
         del self.quick[:-20]
         if not new or m.stage != "pile" or m.pm is None:
             return                                         # the pile ended meanwhile: the next gate re-ranks anyway
+        for pid, p_, w_ in new:
+            self.fresh[pid] = {"priority": p_, "was": w_, "t": round(m.t, 1), "by": "pod-mic listens"}
         pile, pr, was = max(new, key=lambda e: e[1])
         self.n_changes += 1
         m.ingest_listen(res, pts, source="pod-mic")
@@ -1346,12 +1497,17 @@ class LiveController:
         firm = any(c.get("status") == "candidate" for c in m.pm.cands)
         if not self.preempt_on:
             return
+        # new evidence -> an ORDER for the next gate (GridMission.order), plus a cut of the current radar phase after the
+        # dwell under way unless a firm ping there is being finished (vitals look): the redirect is seconds of video away
+        heard = "heard twice" if pr < STRONG_NEW else "heard"
         if firm:
-            m._say(f"Re-prioritise: {pile} ({pr}) queued; {cur} has a firm ping in progress, finishing that fix first")
-        elif pr > cp + PREEMPT_MARGIN and pr >= m.priority_min:
-            self._replan(f"new human-like call at {pile} (priority {pr}) outranks {cur} ({cp})")
+            self._replan(f"new human-like call at {pile} (priority {pr}, {heard}); {cur} has a firm ping in progress, "
+                         "finishing that fix first", to_pile=pile, cut=False)
+        elif pr >= m.priority_min:
+            self._replan(f"new human-like call at {pile} (priority {pr}, {heard}) where earlier listens heard nothing",
+                         to_pile=pile)
 
-    def _note_heard(self, res, fold, points=None):
+    def _note_heard(self, res, fold, points=None, gate=False, commit=True):
         """Track, per pile, the most it was heard at and the closest listen that heard it SILENT. Returns
         [(pile, priority, was)] that are NEW evidence: a lead now, at or above priority_min, where an earlier listen
         from no further away (+ NEW_EVIDENCE_NEAR_M) heard nothing human-like. Being closer is not new evidence;
@@ -1369,21 +1525,23 @@ class LiveController:
             lead = p.get("status") == "lead" and pr >= m.priority_min
             was = self.heard.get(pid, 0)
             quiet = self.silent_from.get(pid)
-            if fold and lead and pid not in m.visited and quiet is not None and quiet <= d + NEW_EVIDENCE_NEAR_M \
-                    and pr >= was + NEW_EVIDENCE_RISE:
+            if (fold or gate) and lead and pid not in m.visited and quiet is not None \
+                    and quiet <= d + NEW_EVIDENCE_NEAR_M and pr >= was + NEW_EVIDENCE_RISE:
                 cands.add(pid)
-                if pid in self._cand_prev:                 # confirmed by two consecutive quick listens
-                    new.append((pid, pr, was))
+                if gate or pr >= STRONG_NEW or pid in self._cand_prev:   # a weak quick-listen lead needs a confirming
+                    new.append((pid, pr, was))             # listen; a strong one or the gate listen stands on its own
+            if not commit:
+                continue
             if lead and (not fold or pid not in cands or pid in self._cand_prev):
                 self.heard[pid] = max(was, pr)
             else:
                 self.silent_from[pid] = min(quiet if quiet is not None else 1e9, d)
-        if fold:
+        if fold and commit:
             self._cand_prev = cands
         return new
 
     # ------------------------------------------------------------------ re-plan
-    def _replan(self, why, to_pile=None):
+    def _replan(self, why, to_pile=None, cut=True):
         """Native GridMission.preempt while a pile is being searched (the cut waits for the dwell under way; the
         cut pile stays not cleared). Between piles an operator order goes straight to the next dispatch gate."""
         m = self.m
@@ -1395,12 +1553,16 @@ class LiveController:
             here = m.pm.pile if m.pm is not None else (self.expect or "plan")
             if tgt and tgt != here:
                 self._set_banner(f"PLAN CHANGED: {here} → {tgt} ({_short_why(why)}, unscripted live input)")
-        if m.stage == "pile" and m.pm is not None:
+        if to_pile is not None:                             # the next gate goes there (GridMission.order, ff5a448)
+            if hasattr(m, "order"):
+                m.order(to_pile, f"live re-plan: {why}")
+            else:
+                m._order = to_pile
+        if cut and m.stage == "pile" and m.pm is not None:
             m.preempt(why, to_pile=to_pile)
-            m._say(f"RE-PLAN requested: {why}; finishing the radar dwell under way at {m.pm.pile}, then the gate")
+            m._say(f"RE-PLAN: {why}; finishing the radar dwell under way at {m.pm.pile}, then {to_pile or 'the gate'}")
         elif to_pile is not None:
-            m._order = to_pile                              # GridMission._gate honours it first (fa4e74b)
-            m._say(f"RE-PLAN queued: {why} (applies at the next dispatch gate)")
+            m._say(f"RE-PLAN: {why}; ordered for the next dispatch gate")
 
     # ------------------------------------------------------------------ output
     def to_json(self):
@@ -1432,11 +1594,11 @@ class LiveController:
 
 
 # Take pacing: sim seconds per VIDEO second, per mission phase (the HUD always shows the factor: "sped up xN").
-# Tuned on seed 7 with the smooth flight model (sim/flight_motion.py, docs/VIDEO_PLAN.md section 2): 4 s pre-roll on
-# the van, lift-off 4-8 s, LiDAR survey 8-15 s, pods 15-23 s, relocate / rescan cycles fast to the A2 ping at ~30 s,
-# the listen + call-out at a watchable pace (30-43 s), the redirect and the next pile's survey and pods to 60 s.
-DEFAULT_PACE = ("deploy=5,survey=6,recon_mapping=6,recon_listening=10,landing=5,radar=14,relocate=30,rescan=30,"
-                "acoustic=10,dispatch=6,return=12,battery_swap=40,done=8")
+# Tuned for a <= 60 s take on seed 7 (smooth flight, GPU rehearsal 1): 4 s pre-roll on the van, lift-off 4-7 s, LiDAR
+# survey 7-13 s, pods 13-19 s, relocate / rescan fast to the A2 ping at ~27 s, listen + call-out ~27-40 s (capped by the
+# real pipeline's latency over LISTEN_WINDOW_S), then the next pile's flight, survey and pods to 60 s.
+DEFAULT_PACE = ("deploy=6,survey=8,recon_mapping=8,recon_listening=10,landing=6,radar=16,relocate=32,rescan=32,"
+                "acoustic=12,dispatch=7,return=12,battery_swap=40,done=8")
 
 
 def parse_pace(spec):

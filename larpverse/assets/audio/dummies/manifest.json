@@ -4777,8 +4777,8 @@
    "activation": "live, mid-take: an operator flips larpverse:active = true on the prim (C3 is a sector nobody tasked in seed 7: no sound, no lead)",
    "idle": {
     "playlist": [
-     "voice_vi_call_tts__0.5m",
-     "voice_vi_here_tts__0.5m"
+     "voice_en_please_real__0.5m",
+     "voice_en_help_real_c__0.5m"
     ],
     "order": "cycle",
     "mode": "loop",
@@ -4788,7 +4788,7 @@
    },
    "after_callout": {
     "playlist": [
-     "voice_vi_here_tts__0.5m"
+     "voice_en_help_real_a__0.5m"
     ],
     "order": "cycle",
     "mode": "after_callout",
@@ -4799,21 +4799,22 @@
     "repeats": 2,
     "period_s": 4.0
    },
-   "story": "a Vietnamese migrant worker starts calling 'Cứu tôi với!' from C3 mid-run; the system must hear a new human source in an untasked sector and re-rank"
+   "story": "live, mid-take: an operator switches this dummy on and it starts shouting through a void opening (0.5 m of cover, the loudest real CC0 shouts: 'Please help me...', 'Help me!'); the system must hear a new human source where earlier listens heard nothing and re-rank. Id suffix kept for compatibility (the clip is English since review pass 4).",
+   "clip_note": "loudest real CC0 shouts (F. Valisalo set, Freesound CC0), rubble variant 0.5 m, as A3's"
   },
   {
    "dummy_id": "H2_A1_id",
    "pile": "A1",
    "scenario_kind": "voice",
    "physio": "distressed_tachypnea",
-   "burial_depth_m": 1.0,
+   "burial_depth_m": 0.6,
    "prim": "/World/Dummies/H2_A1_id",
    "active_at_start": false,
    "activation": "live, alternative to H1: toggle larpverse:active on the prim (A1 is silent in seed 7)",
    "idle": {
     "playlist": [
-     "voice_id_call_tts__1.0m",
-     "voice_id_here_tts__1.0m"
+     "voice_en_help_real_a__0.5m",
+     "voice_en_please_real__0.5m"
     ],
     "order": "cycle",
     "mode": "loop",
@@ -4823,7 +4824,7 @@
    },
    "after_callout": {
     "playlist": [
-     "voice_id_here_tts__1.0m"
+     "voice_en_help_real_c__0.5m"
     ],
     "order": "cycle",
     "mode": "after_callout",
@@ -4834,7 +4835,8 @@
     "repeats": 2,
     "period_s": 4.0
    },
-   "story": "an Indonesian worker calls 'Tolong!' from A1"
+   "story": "live, mid-take: an operator switches this dummy on and it starts shouting through a void opening (0.6 m of cover, the loudest real CC0 shouts: 'Please help me...', 'Help me!'); the system must hear a new human source where earlier listens heard nothing and re-rank. Id suffix kept for compatibility (the clip is English since review pass 4).",
+   "clip_note": "loudest real CC0 shouts (F. Valisalo set, Freesound CC0), rubble variant 0.5 m, as A3's"
   }
  ],
  "ambient": [

@@ -50,7 +50,8 @@ CONDITION_TEXT = {"irregular_apneic": "irregular breathing with pauses - check f
                   "distressed_tachypnea": "rapid shallow breathing - possible injury / distress",
                   "calm": "calm regular breathing - stable, waiting",
                   "unknown": "breathing pattern unclear - rescan"}
-COL = {"red": 0xFF3C3CE8, "radar_bg": 0xE0100C0B, "yellow": 0xFF33CCFF, "teal": 0xFFB4C814, "purple": 0xFFFF6B9B, "green": 0xFF5EC522,
+OVERLAY_W = 340                 # px: a right-edge column (layout B crops a 1920 stream to 1280: use --hud off there)
+COL = {"red": 0xFF3C3CE8, "radar_bg": 0xE0100C0B, "bg_light": 0x80141414, "yellow": 0xFF33CCFF, "teal": 0xFFB4C814, "purple": 0xFFFF6B9B, "green": 0xFF5EC522,
        "white": 0xFFEEEEEE, "grey": 0xFFAAAAAA, "bg": 0xB0141414, "blue": 0xFFF6823B}   # omni.ui is 0xAABBGGRR
 
 
@@ -82,6 +83,17 @@ def _why_rejected(text):
         if k in t:
             return w
     return _short(text, 60)
+
+
+def shown_transcript(clip, n=70):
+    """A transcript goes on screen only when a language was identified for the clip (Gemini audio stage, or a
+    multilingual model). Local Whisper base.en turns other languages into confident English nonsense ("Oh long, other
+    young bees..."), so without an identified language nothing is shown."""
+    lang = (clip or {}).get("language") or (clip or {}).get("lang")
+    tx = (clip or {}).get("transcript") or ""
+    if not tx or not lang or str(lang).lower() in ("und", "unknown", "-"):
+        return ""
+    return _short(tx, n)
 
 
 def causal_lines(state, lj=None, n=4):
@@ -251,10 +263,10 @@ class HudModel:
         top = max(last, key=lambda c: c.get("priority") or 0)
         lang = top.get("lang") or top.get("language") or (top.get("gemini") or {}).get("language") or "-"
         hs = (top.get("scores") or {}).get("human")
-        tx = _short(top.get("transcript"), 70)        # whatever the pipeline returned; nothing is promised
+        tx = shown_transcript(top, 70)               # only an identified-language transcript (Gemini); never Whisper
         if not tx and top.get("class") in ("voice", "shout", "speech"):
             tx = None
-            heard = "voice-like, language not identified" if lang in (None, "-", "", "und", "unknown") else f"voice-like ({lang})"
+            heard = "voice-like call (language not identified)" if lang in (None, "-", "", "und", "unknown") else f"voice-like call ({lang})"
         else:
             heard = None
         line = (f"Top clip  {top.get('class', '?')}  |  lang {lang}  |  human {hs if hs is not None else '-'}  |  "
@@ -350,7 +362,14 @@ class HudModel:
             d = dis[-1]
             dec = next((x for x in reversed(st.get("decisions") or []) if abs(float(x.get("t", -1)) - float(d.get("t", 0))) < 1e-6), None)
             by = d.get("by") or (dec or {}).get("by") or "argmax"
-            if d.get("to_pile"):
+            cs = sorted((c for c in st.get("acoustic_clips") or [] if c.get("pile_id") == d.get("to_pile")),
+                        key=lambda c: -(c.get("priority") or 0))
+            if d.get("to_pile") and cs and by != "operator":
+                c = cs[0]
+                why = (f"{c.get('class') or 'sound'} heard" + (f", {c['doa_agree']} drones agree on bearing" if c.get("doa_agree") else "")
+                       + f", priority {c.get('priority')}" + (f": \"{shown_transcript(c, 50)}\"" if shown_transcript(c) else ""))
+                line = f"Agent  dispatching d1-d3 to {d['to_pile']} [by: {by}] BECAUSE {why}"
+            elif d.get("to_pile"):
                 line = f"Agent  dispatching d1-d3 to {d['to_pile']} [by: {by}]: {_short(d.get('reason'), 110)}"
             else:
                 line = f"Agent  stop [by: {by}]: {_short(d.get('reason'), 110)}"
@@ -423,15 +442,23 @@ class OmniHud:
             frame = self.win.frame
         with frame:
             if self.kind == "overlay":
-                with ui.HStack():
+                with ui.HStack():                  # a narrow column on the right edge (<= 18% of a 1920 frame)
                     ui.Spacer()
-                    with ui.ZStack(width=ui.Pixel(470)):
-                        ui.Rectangle(style={"background_color": COL["bg"], "border_radius": 6})
-                        self._panels(ui, on_button)
+                    with ui.ZStack(width=ui.Pixel(OVERLAY_W)):
+                        ui.Rectangle(style={"background_color": COL["bg_light"], "border_radius": 6})
+                        self._panels(ui, None, compact=True)
             else:
                 with ui.ZStack():
                     ui.Rectangle(style={"background_color": COL["bg"]})
-                    self._panels(ui, on_button)
+                    self._panels(ui, None)
+        self.op = None
+        if on_button is not None:          # operator control OFF the streamed viewport: its own floating window
+            try:
+                self.op = ui.Window("Larpverse operator (not in the take)", width=320, height=70)
+                with self.op.frame:
+                    ui.Button("Unscripted: switch on a hidden dummy", height=28, clicked_fn=on_button)
+            except Exception as e:         # noqa: BLE001
+                say(f"operator button window unavailable ({type(e).__name__}: {e}); use the hotkey")
         if self.win is not None:
             try:
                 vp = ui.Workspace.get_window("Viewport")
@@ -442,9 +469,12 @@ class OmniHud:
         self.ok = True
         say(f"perception HUD up ({self.kind})")
 
-    def _panels(self, ui, on_button):
+    def _panels(self, ui, on_button, compact=False):
+        shrink = 0.8 if compact else 1.0
+
         def label(key, color, size=15, wrap=True):
-            self.lbl[key] = ui.Label("", word_wrap=wrap, height=0, style={"color": COL[color], "font_size": size})
+            self.lbl[key] = ui.Label("", word_wrap=wrap, height=0,
+                                     style={"color": COL[color], "font_size": int(round(size * shrink))})
 
         with ui.VStack(spacing=5, height=0):
             label("badge", "green", 14)

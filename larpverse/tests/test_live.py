@@ -153,7 +153,12 @@ def test_hud_noop_import():
                decisions=[{"t": 381.0, "by": "gemini"}])
     p2 = HudModel(bounds=state["site"]["bounds"]).update(st2)
     assert "deep rest or reduced consciousness" in p2["vitals"]["text"] and "possibly unconscious" not in p2["vitals"]["text"]
-    assert "voice-like, language not identified" in p2["listen"]["text"]                 # nothing promised
+    assert "voice-like call (language not identified)" in p2["listen"]["text"]           # nothing promised
+    st3 = dict(st2, acoustic_clips=[dict(st2["acoustic_clips"][0], transcript="Oh long, other young bees are better")])
+    p3 = HudModel(bounds=state["site"]["bounds"]).update(st3)                            # Whisper base.en, no language:
+    assert "young bees" not in p3["listen"]["text"] and "young bees" not in p3["decision"]["text"]   # never shown
+    st4 = dict(st2, acoustic_clips=[dict(st2["acoustic_clips"][0], transcript="Tolong!", language="id")])
+    assert "Tolong!" in HudModel(bounds=state["site"]["bounds"]).update(st4)["listen"]["text"]  # identified: shown
     assert "[by: gemini]" in p2["decision"]["text"]
     assert p["listen"]["cones"][0]["drone"] == "d1" and p["lidar"]["coverage"] > 0
     assert HudModel(speed=8).update(state)["header"]["text"].count("sped up") == 1
@@ -308,3 +313,22 @@ def test_causal_lines_and_rejection():
     assert "radar s12: not a person: machinery / generator vibration \u2192 no dig" in p["causal"]["text"]
     assert p["banner"]["active"] and HudModel().update(st, lj, now=9.0)["banner"]["text"] == ""   # ~5 s on screen
     assert not p["badge"]["live"]
+
+
+def test_new_evidence_rule(tmp_path):
+    """Gate rule: a lead heard where earlier listens (from as close) heard nothing ranks level with the best open
+    lead (within NEW_EVIDENCE_TIE); otherwise, and without new evidence, the mission's argmax stands."""
+    from isaac.live import NEW_EVIDENCE_TIE
+    m = _mission(tmp_path, tasking=False)
+    w, c = _live(m)
+    assert m.decider == c.decide
+    opts = [{"id": "o1", "action": "dispatch", "pile_id": "A3", "priority": 80, "flags": []},
+            {"id": "o2", "action": "dispatch", "pile_id": "A1", "priority": 80 - NEW_EVIDENCE_TIE + 2, "flags": []},
+            {"id": "o3", "action": "stop", "pile_id": None, "priority": None, "flags": []}]
+    assert c.decide({}, opts) == {"choice": "o1", "by": "argmax"}                     # no new evidence: argmax
+    c.fresh["A1"] = {"priority": 67, "was": 8, "t": 300.0, "by": "pod-mic listens"}
+    out = c.decide({}, opts)
+    assert out["choice"] == "o2" and out["by"] == "new-evidence-rule" and "A3 stays queued" in out["rationale"]
+    c.fresh["A1"] = {"priority": 40, "was": 8, "t": 300.0, "by": "pod-mic listens"}
+    opts[1]["priority"] = 40                                                          # far below: argmax stands
+    assert c.decide({}, opts)["choice"] == "o1"

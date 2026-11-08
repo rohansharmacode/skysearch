@@ -67,6 +67,9 @@ QUICK_LISTEN_S = 20.0            # pod-mic quick listen cadence (sim s) while po
 QUICK_LISTEN_DUR = float(os.environ.get("LARPVERSE_QUICK_LISTEN_DUR", "10"))
 NEW_EVIDENCE_RISE = 15           # a pile's priority must rise this much over the most it was ever heard at
 NEW_EVIDENCE_NEAR_M = 5.0        # ... and an earlier listen from no further than this extra must have heard it silent
+NEW_EVIDENCE_RATIO = 1.6         # ... or from no further than 1.6x today's distance (~4 dB of spreading loss: a voice
+                                 # heard at priority >= 50 from 12 m was not missed from 19 m; reh6b: idle drones landed
+                                 # nearer A1 than the first listen's pods, so A1 never counted as new)
 PREEMPT_MARGIN = 5               # ... and beat the current pile's priority by this to cut its radar phase short
 QUICK_STRONG = 50                # one quick listen is enough when the new lead is this strong AND >= 2 drones' bearings
                                  # (50 = a voice-class call, human ~1.0; reh5: A1's new voice scored 56 once and waited
@@ -806,7 +809,13 @@ ASR_CR_MAX, ASR_MARGIN, ASR_MIN_S = 2.0, 0.10, 0.5
 # Whisper's stock hallucinations on noise / music (subtitle credits, video outros); never shown as words
 ASR_JUNK = re.compile(r"thank(s| you) for watching|subscri|like and share|see you (in the )?next|subtitles?|"
                       r"captions?|amara|transcri|copyright|all rights|\bmusic\b|applause|i'?ll be back|just kidding|"
-                      r"\bvideo|\bchannel|kênh|hẹn gặp lại|留言|訂閱|订阅|下方|字幕|頻道|频道", re.I)
+                      r"\bvideo|\bchannel|kênh|hẹn gặp lại|留言|訂閱|订阅|下方|字幕|頻道|频道|"
+                      # the same outros in Malay / Indonesian, Vietnamese, Chinese (reh6: B3 "Terima kasih kerana
+                      # menonton!" = "thank you for watching" passed as Indonesian speech)
+                      r"terima ?kasih (kerana |karena |telah |sudah |untuk |udah )?(menonton|nonton)|menonton|"
+                      r"jangan lupa|sampai jumpa|selamat menonton|cảm ơn (các )?bạn đã (xem|theo dõi)|đăng ký|"
+                      r"谢谢观看|謝謝觀看|感谢观看|感謝觀看|感谢收看|感謝收看|点赞|點贊|點讚|"
+                      r"that'?s all for (today|now)|that is all,? sir", re.I)
 def _looping(text):                                # repetition loop: few distinct words / characters
     t = text.strip()
     units = t.split() if len(t.split()) >= 4 else [c for c in t if not c.isspace()]
@@ -867,6 +876,8 @@ def asr_rescue(clip, vad):
     if en is None:
         tr = _decode(wm, xn, best["lang"], vad, task="translate")
         en = tr["text"] if tr else None
+        if en is None:                   # the translation was dropped (junk / loop / unsure): so are the words
+            return dict(rec, language=None, lang_p=None, original=None, english=None, unclear=True)
     return dict(rec, language=best["lang"], lang_p=round(float(best["lp"]), 2), original=best["text"], english=en,
                 unclear=False)
 def recognise_multi(clip, whisper="base.en"):
@@ -1238,6 +1249,15 @@ class LiveController:
         if now - self._last_poll >= POLL_WALL_S:
             self._last_poll = now
             self.poll()
+        elif self.out and now - getattr(self, "_cmd_stat_t", 0.0) >= 0.2:   # the live button: no 1 s wait (at x24
+            self._cmd_stat_t = now                                           # 1 s is 24 sim s, reh6b)
+            try:
+                mt = os.stat(os.path.join(self.out, "live_cmd.json")).st_mtime
+            except OSError:
+                mt = None
+            if mt is not None and mt != getattr(self, "_cmd_mtime", None):
+                self._cmd_mtime = mt
+                self._read_cmd_file()
         hit = False
         for kind, did in self._drain_keys():
             hit = self.live.toggle(did, f"hotkey {kind}") or hit
@@ -1609,7 +1629,7 @@ class LiveController:
         from no further away (+ NEW_EVIDENCE_NEAR_M) heard nothing human-like. Being closer is not new evidence;
         something that started calling is. A candidate must be heard in two consecutive quick listens (one lead at
         the detection threshold is generator / channel noise, not news). Outputs and listening positions only."""
-        new, cands = [], set()
+        new, cands, diag = [], set(), []
         m = self.m
         pts = points or {d["id"]: tuple(d["xy"][:2]) for d in res.get("listening_drones") or []} or m._drone_xy()
         pxy = m.world.pile_xy
@@ -1628,8 +1648,12 @@ class LiveController:
             lead = p.get("status") == "lead" and pr >= m.priority_min
             was = self.heard.get(pid, 0)
             quiet = self.silent_from.get(pid)
-            if fold and lead and pid not in m.visited and quiet is not None and quiet <= d + NEW_EVIDENCE_NEAR_M \
-                    and pr >= was + NEW_EVIDENCE_RISE:
+            if fold and lead:
+                diag.append(f"{pid} {pr}" + (" visited" if pid in m.visited else
+                            f" (heard before at {was})" if quiet is None else
+                            f" (silent from {quiet:.0f} m, now {d:.0f} m, agree {agree(p)})"))
+            if fold and lead and pid not in m.visited and quiet is not None \
+                    and quiet <= max(d + NEW_EVIDENCE_NEAR_M, NEW_EVIDENCE_RATIO * d) and pr >= was + NEW_EVIDENCE_RISE:
                 cands.add(pid)
                 strong = pr >= QUICK_STRONG and agree(p) >= 2
                 if pid in self._cand_prev or strong:       # two consecutive quick listens, or one clear one
@@ -1642,6 +1666,9 @@ class LiveController:
                 self.silent_from[pid] = min(quiet if quiet is not None else 1e9, d)
         if fold:
             self._cand_prev = cands
+            self.say(f"quick listen {self._ql_n}: leads " + (", ".join(diag) or "none") +
+                     (f"; NEW {', '.join(p for p, _, _ in new)}" if new else "") +
+                     (f"; candidates {', '.join(sorted(cands))}" if cands else ""))
         return new
 
     # ------------------------------------------------------------------ re-plan

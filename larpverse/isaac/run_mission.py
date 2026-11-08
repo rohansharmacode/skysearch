@@ -953,6 +953,14 @@ def main(argv=None):
             a.speed = L.pace_for(pace, cur.get("phase"), base_speed)
             say(f"take pacing (sim s per video s): {pace}; pre-roll {preroll:g} s")
 
+    def take_speed(phase):
+        """Take pace now: the phase's pace, slowed while the prefetched listen computes (acoustic) or while the pod
+        mics have not checked a live change yet (LiveController.listen_pace / quick_pace)."""
+        s0 = L.pace_for(pace, phase, base_speed)
+        if ctrl is None:
+            return s0
+        return ctrl.listen_pace(t_render, s0) if phase == "acoustic" else ctrl.quick_pace(s0)
+
     hold_said = False
     wall0, behind_s, last_phase = None, 0.0, None      # take timing in the log: wall s since the mission clock started
     try:
@@ -975,10 +983,8 @@ def main(argv=None):
             elif (not runner.idle or t_render < track.t_last) and not (a.stop_t and t_render >= a.stop_t):
                 t_render += rdt * a.speed
                 wall0 = now if wall0 is None else wall0
-            if a.live_take and pace and ctrl is not None and cur.get("phase") == "acoustic":
-                a.speed = ctrl.listen_pace(t_render, L.pace_for(pace, "acoustic", base_speed))
-            elif a.live_take and pace and ctrl is not None:      # a live change: slower until the pod mics checked it
-                a.speed = ctrl.quick_pace(L.pace_for(pace, cur.get("phase"), base_speed))
+            if a.live_take and pace:
+                a.speed = take_speed(cur.get("phase"))
             # the mission runs ahead of the picture: >= 1 sim s, and ~0.75 s of VIDEO in the threaded take, so a slow
             # step (radar DSP, a scan signature) never catches up with the render while drones fly. A listen that
             # waits for the acoustic pipeline holds only landed drones; the camera keeps its slow orbit.
@@ -990,8 +996,8 @@ def main(argv=None):
                 if a.record and a.rec_warp > 1:     # recording: compress the long radar stretches
                     from isaac.photoreal import WARP_PHASES
                     a.speed = a.rec_speed * (a.rec_warp if cur.get("phase") in WARP_PHASES else 1.0)
-                elif a.live_take and pace:
-                    a.speed = L.pace_for(pace, cur.get("phase"), base_speed)
+                elif a.live_take and pace:      # same rule as per frame (reh6: a plain pace_for here let every
+                    a.speed = take_speed(cur.get("phase"))   # frame after a new state run at x24 despite the cap)
                 elif a.live_take and a.live_warp > 1:
                     from isaac.photoreal import WARP_PHASES
                     a.speed = base_speed * (a.live_warp if cur.get("phase") in WARP_PHASES else 1.0)

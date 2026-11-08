@@ -138,6 +138,10 @@ const pct = v => (v == null || isNaN(v)) ? '–' : `${Math.round(100 * v)}%`;
 const compass = b => { const c = ((90 - b) % 360 + 360) % 360;      // sim: deg counter-clockwise from east; map: y north
   return `${['north', 'north-east', 'east', 'south-east', 'south', 'south-west', 'west', 'north-west'][Math.round(c / 45) % 8]} (${c.toFixed(0)}°)`; };
 const pings = s => (s.pings && s.pings.length ? s.pings : (s.radar_candidates || []).filter(c => c.status === 'candidate'));
+// a scan counts as a breathing-like return only when the radar DSP reported one (range candidates or a breathing
+// frequency); its vitals block alone is computed on whatever the strongest bin held (reh6: "30.8 breaths per minute"
+// on scans the mission logged as "ranges no detection")
+const scanHit = sc => !!(sc && ((sc.ranges && sc.ranges.length) || sc.breathing_hz));
 const humanClips = s => (s.acoustic_clips || []).filter(c => ((c.scores || {}).human ?? c.human ?? 0) >= 0.4)
   .sort((a, b) => (b.priority ?? 0) - (a.priority ?? 0));
 
@@ -193,7 +197,7 @@ function caption(b, s, ev) {
   if (rp && evSeenAt !== null && vnow() - evSeenAt >= 8) {
     const nx = esc(rp.next), here = esc(rp.from || pile || 'this pile');
     return ['New voice heard', rp.next === ev.ev.sector
-      ? `The drones' microphones on the rubble just heard a voice near ${nx} that was not there before. They stop the search at ${here} early and fly to ${nx}.`
+      ? `The drones' microphones on the rubble just heard a voice near ${nx} that they had not heard before. They stop the search at ${here} early and fly to ${nx}.`
       : `The drones' microphones on the rubble just heard new sounds. ${nx} now ranks first, so they stop the search at ${here} early and fly there.`];
   }
   if (b === 4 && ev && ev.kind === 'stage')
@@ -205,8 +209,10 @@ function caption(b, s, ev) {
     // live.json banner (LiveController._track_dispatch): what the fleet would have done without the live input
     const bm = /PLAN CHANGED: (\S+) → (\S+)/.exec((LIVE && LIVE.banner && LIVE.banner.text) || '');
     const was = bm && bm[2] === (d && d.to_pile) && /^[A-Z]\d$/.test(bm[1]) && bm[1] !== bm[2] ? esc(bm[1]) : null;
+    const cut = was && d && bm[1] === d.from_pile;       // LiveController._replan: "PLAN CHANGED: <pile searched> → <to>"
     if (ev && ev.kind === 'stage' && d && d.to_pile === ev.ev.sector)
-      return ['Plan changed', was ? `Before the new voice, the drones planned to search ${was} next. They heard it themselves and now go to ${to} instead.`
+      return ['Plan changed', cut ? `The drones heard the new voice themselves. They cut the search at ${was} short and now fly to ${to}, where it came from.`
+                            : was ? `Before the new voice, the drones planned to search ${was} next. They heard it themselves and now go to ${to} instead.`
                                   : `The drones heard the new voice and decided by themselves to search ${to} next, because that is where it came from.`];
     if (ev && ev.kind === 'zone') return ['Plan changed', `The drones decided by themselves to search ${to} next.`];
     const why = /voice|acoustic|heard|priority/i.test((d || {}).reason || '') ? ', because the strongest voice came from there' : '';
@@ -279,6 +285,11 @@ function sense(b, s, ev) {
         ['Pattern', v.pattern ? String(v.pattern).replace(/_/g, ' ') : 'measuring (60 s scan)…'],
         ['Scans that agree', p.support != null ? String(p.support) : '–']], null];
     }
+    if (sc && sc.vitals && !scanHit(sc))     // the DSP found no return above its threshold: never a "rhythm" (reh6)
+      return ['RADAR', `Pod ${esc(sc.drone_id)}: nothing strong enough to count in this scan`, [
+        ['Last scan', `${esc(sc.scan_id)} · quality ${f2(sc.quality)}`],
+        ['Result', 'no breathing return above the detection threshold'],
+        ['Reach', 'about 3 m down']], null];
     if (sc && sc.vitals) {
       const v = sc.vitals;
       const npk = sc.wave && v.duration_s ? breathPeaks(sc.wave, v.duration_s / (sc.wave.length - 1), v.rate_bpm).length : null;
@@ -350,7 +361,8 @@ function breathPeaks(w, secPerSample, rateBpm) {
 
 function drawWave(sc) {
   const box = $('wavebox');
-  if (!sc || !sc.wave || !sc.wave.length) { box.classList.add('hide'); waveKey = ''; return; }
+  // no trace for a scan without a detection: a grey wiggle next to "nothing to count" confused (reh6 75 s)
+  if (!sc || !sc.wave || !sc.wave.length || !scanHit(sc)) { box.classList.add('hide'); waveKey = ''; return; }
   box.classList.remove('hide');
   const key = sc.scan_id + ':' + sc.t;
   const cv = $('wave'), g = cv.getContext('2d'), W = cv.width, H = cv.height, w = sc.wave;
@@ -359,7 +371,7 @@ function drawWave(sc) {
   const frac = Math.min(1, (vnow() - born) / 1.6);                 // draw the trace on over 1.6 s, not instantly
   const v = sc.vitals || {};
   // a scan with no breathing-like return (no rate, no range): its trace is noise, so say so and draw it grey, no dots
-  const none = !v.rate_bpm && !sc.breathing_hz && !(sc.ranges && sc.ranges.length);
+  const none = !scanHit(sc);
   const dur = +v.duration_s || null;                               // scan window (s); unknown before vitals exist
   const L = 64, R = 14, T = 24, B = 44, pw = W - L - R, ph = H - T - B;
   const amp = Math.max(...w.map(Math.abs)) || 1;                   // symmetric scale: 0 = chest at rest position
@@ -386,7 +398,7 @@ function drawWave(sc) {
   const pk = dur && !none ? breathPeaks(w, dur / (w.length - 1), v.rate_bpm || (sc.breathing_hz ? 60 * sc.breathing_hz : null)) : [];
   g.fillStyle = '#ffffff';
   pk.filter(i => i < n).forEach(i => { g.beginPath(); g.arc(X(i), Y(w[i]) - 14, 6, 0, 2 * Math.PI); g.fill(); });
-  const parts = none ? [`Radar pod ${sc.drone_id} at ${sc.pile}: no breathing rhythm in this scan (only noise)`]
+  const parts = none ? [`Radar pod ${sc.drone_id} at ${sc.pile}: no breathing return above the detection threshold in this scan`]
     : [`Measured by radar pod ${sc.drone_id} at ${sc.pile}: chest movement (relative scale)` + (dur ? ` over ${f0(dur)} s` : '')];
   if (pk.length) parts.push('white dots = breaths');
   else if (sc.breathing_hz && !v.rate_bpm) parts.push(`about ${f0(60 * sc.breathing_hz)}/min (first estimate)`);

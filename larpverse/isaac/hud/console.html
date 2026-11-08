@@ -984,7 +984,7 @@ async function pollSide() {
 // ?only=site:seed:look:Label  -> one site, no site selection: the page opens straight on its 3D LiDAR map
 const ONLY = Q.get('only');
 if (ONLY) document.documentElement.classList.add('only1');
-const SITES = (ONLY || Q.get('sites') || 'grid:7:day:Rubble street|weiguan:7:day:Collapsed tower|grid:11:dusk:Street at dusk, dust')
+const SITES = (ONLY || Q.get('sites') || 'grid:7:day:Rubble street|weiguan:7:day:Collapsed tower|collapse:7:day:Tainan collapsed building')
   .split('|').map(x => { const [site, seed, look, ...l] = x.split(':'); return { site, seed: +seed, look, label: l.join(':') }; });
 const API_SITE = new URL('../../api/site', location.href).href;
 const siteOf = S => S && SITES.find(x => x.site === S.site && (ONLY || (x.seed === +S.seed && x.look === S.look)));

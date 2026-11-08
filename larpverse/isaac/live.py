@@ -1146,6 +1146,24 @@ def _spring(x, v, goal, dt, w):
     return goal + (e + tmp) * k, (v - w * tmp) * k
 
 
+def cam_float(eye, look, t, amp=1.0):
+    """A gimbal-stabilised aerial camera never hangs perfectly still: the airframe drifts a few cm in the wind and
+    the gimbal lags a little. Smooth, non-repeating drift (sums of incommensurate sines, 0.07-0.6 Hz): position
+    ~0.25 % of the camera distance, aim ~0.05 deg, so it reads as a real drone shot, never as shake."""
+    eye, look = np.asarray(eye, float), np.asarray(look, float)
+    d = float(np.linalg.norm(eye - look)) or 1.0
+
+    def n(ph, fr):
+        return sum(math.sin(2 * math.pi * f * t + p) / (k + 1) for k, (f, p) in enumerate(zip(fr, ph))) / 1.83
+
+    a = 0.0025 * d * float(amp)
+    de = np.array([n((0.3, 2.1, 4.4), (0.071, 0.163, 0.41)), n((1.7, 3.9, 0.8), (0.089, 0.211, 0.53)),
+                   0.6 * n((2.6, 0.2, 5.1), (0.067, 0.149, 0.37))]) * a
+    dl = np.array([n((4.0, 1.1, 2.9), (0.113, 0.29, 0.61)), n((0.9, 5.3, 3.3), (0.097, 0.23, 0.57)),
+                   n((3.1, 2.4, 0.5), (0.083, 0.19, 0.47))]) * (0.0007 * d * float(amp))
+    return eye + de, look + de + dl
+
+
 class TakeCamera:
     """``--camera director-take``: one continuous camera for the single take. The shot follows the mission
     (staging -> lift-off -> survey wide -> pods mid-shot -> listen wide -> dispatch follow with look-ahead -> end
@@ -1158,6 +1176,7 @@ class TakeCamera:
     # opening shot: "van" = 9.9 m from the open door at eye height (docs/ISAAC_ASSETS.md); "wide" = an establishing
     # shot from 24 m south-west and 9 m up: van, drones on the pads and the rubble field beyond in one frame
     OPEN = "van"
+    FLOAT = 0.0                                     # --cam-float amplitude (1 = a gimbal-stabilised drone camera)
     EYE_HALFLIFE, LOOK_HALFLIFE = 0.9, 0.45     # isaac.motion.SmoothCamera springs (s to close half the gap)
     W_EYE, W_LOOK = 2 * math.log(2) / 0.9, 2 * math.log(2) / 0.45   # the same springs, built in (fallback)
 
@@ -1313,7 +1332,10 @@ class TakeCamera:
         return self._apply()
 
     def _apply(self):
-        self.dc.eye, self.dc.target = self.eye.copy(), self.look.copy()
+        eye, look = self.eye.copy(), self.look.copy()
+        if self.FLOAT > 0:                          # --cam-float: a stabilised aerial camera's slow float
+            eye, look = cam_float(eye, look, self.vt, self.FLOAT)
+        self.dc.eye, self.dc.target = eye, look
         M = self.dc._apply()
         self.updates += 1
         return M

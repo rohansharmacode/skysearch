@@ -108,6 +108,13 @@ def _base_parser():
     ap.add_argument("--take-open", choices=["van", "wide"], default="van",
                     help="director-take opening shot: van = close on the open door (team default); wide = establishing "
                          "shot from 24 m: van, drones on the pads and the rubble field in one frame")
+    ap.add_argument("--cinema", type=int, default=0,
+                    help="1 = feature-film look (isaac/cinema.py): shutter motion blur, subtle lens aberration and "
+                         "bloom, grain, dusty volumetric air, film grade. Pair with --hdri "
+                         "kloofendal_48d_partly_cloudy_4k.hdr --sun 1600 --sun-elev 32 for the disaster-film sky")
+    ap.add_argument("--cam-float", type=float, default=0.0,
+                    help="director-take: slow drift of a gimbal-stabilised drone camera (1 = real aerial footage, "
+                         "~0.25%% of the camera distance; 0 = locked tripod)")
     ap.add_argument("--camera", choices=["director", "director-take", "story", "free"], default="director",
                     help="director-take: one continuous spline camera for the single take (isaac/live.py TakeCamera); "
                          "story: state-driven framing of the active/new zone and dispatch, slow orbit, springs "
@@ -708,6 +715,7 @@ def main(argv=None):
         from isaac.live import TakeCamera
         from isaac.site import drone_pads
         TakeCamera.OPEN = a.take_open
+        TakeCamera.FLOAT = float(a.cam_float)
         from isaac.van import staging_pose
         cam = TakeCamera(stage, pile_xy, base_xy=base_xy(sc), pads=drone_pads(sc), surface=surface,
                          mirrors=[] if a.dry_run else [compat.PERSP], switch_viewport=True,
@@ -777,10 +785,16 @@ def main(argv=None):
 
     # ---- live single take: stage dummies -> generators, unscripted triggers, HUD (isaac/live.py, isaac/hud.py)
     ctrl = keys = None
+    if a.cinema and not a.dry_run and not a.live_take:
+        from isaac import cinema
+        cinema.apply(a, say)
     if a.live_take:
         from isaac import live as L
         if not a.dry_run and (a.take_render if a.take_render is not None else a.rtx != "pathtracing"):
             L.apply_take_render(say)
+        if a.cinema and not a.dry_run:          # after the take render settings, so the film look wins
+            from isaac import cinema
+            cinema.apply(a, say)
         src = L.make_source(stage, sc, surface=surface, log=say)     # stage dummies, else isaac.dummies' plan
         probe = None
         if not a.dry_run and not isinstance(lidar, HeightmapLidar):

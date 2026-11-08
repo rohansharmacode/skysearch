@@ -100,16 +100,22 @@ fetch('../../assets/audio/dummies/manifest.json').then(r => r.json()).then(m => 
   const C = m.clips || m.items || Object.values(m).find(v => Array.isArray(v)) || [];
   SAID = C.filter(c => c.transcript).map(c => ({ text: c.transcript, en: c.transcript_en, lang: c.language }));
 }).catch(() => {});
-const LANG = { en: 'English', id: 'Indonesian', vi: 'Vietnamese', 'zh-TW': 'Mandarin', zh: 'Mandarin', nan: 'Taiwanese Hokkien', 'nan-TW': 'Taiwanese Hokkien' };
+const LANG = { en: 'English', id: 'Indonesian', ms: 'Malay', vi: 'Vietnamese', tl: 'Tagalog', 'zh-TW': 'Mandarin', zh: 'Mandarin', nan: 'Taiwanese Hokkien', 'nan-TW': 'Taiwanese Hokkien' };
 function heard(c) {                                 // what was said, in English, plus the original when it differs
   const tx = String(c.transcript || '').replace(/…$/, '').trim();
   if (!tx) return null;
   const hit = SAID.find(x => x.text && (x.text === tx || x.text.startsWith(tx)));
-  const en = c.text_en || (hit && hit.en) || (/^[\x00-\x7F’']*$/.test(tx) ? c.transcript : GLOSS[c.class] || null);
+  let en = c.text_en || (hit && hit.en) || (/^[\x00-\x7F’']*$/.test(tx) ? c.transcript : GLOSS[c.class] || null);
   const lang = c.lang || c.language || (hit && hit.lang);
-  const orig = en && tx !== en.replace(/…$/, '') ? c.transcript : '';
-  return (en ? `“${esc(en)}”` : `“${esc(c.transcript)}”`) +
-         (orig ? `<small>heard${lang ? ' in ' + esc(LANG[lang] || lang) : ''}: “${esc(orig)}”</small>` : '');
+  let orig = en && tx !== en.replace(/…$/, '') ? c.transcript : '';
+  // multilingual speech-to-text (live.json "heard"): the clip transcript is Whisper's English translation; the
+  // words as spoken ride alongside. Show the meaning first, then the original language and words.
+  const H = LIVE && LIVE.heard && LIVE.heard[c.pile_id];
+  if (H && H.language && H.language !== 'en' && String(H.english || '').trim() === tx) { en = H.english; orig = H.original || ''; }
+  const nm = lang && lang !== 'en' ? esc(LANG[lang] || lang) : '';
+  const small = orig ? `<small>spoken${nm ? ' in ' + nm : ''}: “${esc(orig)}”${H && orig === H.original ? ' · machine-translated' : ''}</small>`
+                     : (nm ? `<small>spoken in ${nm} · machine-translated</small>` : '');
+  return (en ? `“${esc(en)}”` : `“${esc(c.transcript)}”`) + small;
 }
 let LIVE = null, HUD = null, firstEv = null, evSeenAt = null, opRev = null, opT = null, listenT0 = null;
 const SEEN = new Set();                            // story steps that have really been on screen

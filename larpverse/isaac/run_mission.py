@@ -154,6 +154,10 @@ def _base_parser():
                         "translucency / GI; isaac/live.py TAKE_RENDER). Default 1 with --live unless --rtx pathtracing")
     g.add_argument("--live-warp", type=float, default=1.0,
                    help="--live: multiply --speed by this during radar/rescan/relocate (time-lapse; shown on the HUD)")
+    g.add_argument("--live-asr", choices=["en", "multi"], default=None,
+                   help="--live real pipeline speech-to-text: en = the pipeline's English-only Whisper (default); multi "
+                        "= multilingual Whisper (language id + English translation; the Indonesian / Vietnamese voices "
+                        "come out as words instead of English-sounding nonsense). Env LARPVERSE_ASR also sets it")
     g.add_argument("--live-quick-s", type=float, default=None,
                    help="--live: pod-mic quick listen every N sim s while pods rest on the rubble (default 20; 0 = off)")
     g.add_argument("--no-preempt", dest="preempt", action="store_false",
@@ -811,7 +815,7 @@ def main(argv=None):
         want_real = (a.acoustic or "auto") != "stub" and (not a.dry_run or a.acoustic == "real")
         if want_real:                           # the take: the REAL pipeline on the live dummies, or nothing
             try:
-                service, info = L.preflight_acoustic(sc, world, log=say, gemini=bool(a.live_gemini))
+                service, info = L.preflight_acoustic(sc, world, log=say, gemini=bool(a.live_gemini), asr=a.live_asr)
                 a.acoustic_info = info
             except Exception as e:              # noqa: BLE001
                 msg = (f"ACOUSTIC PRE-FLIGHT FAILED: {e}. This take would use STUB acoustics (clips generated from "

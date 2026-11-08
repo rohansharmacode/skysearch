@@ -57,6 +57,9 @@ MOVE_EPS_M = 0.5                 # a dummy moved further than this is a world ch
 SIG_SNAP_M = 0.5                 # signature grid: same world within this
 LISTEN_AFTER_DOWN_S = 66.0       # sim s from "all drones down" to the dispatch gate (26 s listen + call-out, seed 7)
 QUICK_LISTEN_S = 20.0            # pod-mic quick listen cadence (sim s) while pods rest on the rubble
+# pod-mic quick listens: listening window (s) of the real pipeline. The full rotors-off listen keeps the pipeline's
+# own 26 s; a quick listen only has to catch a voice that started calling (the hidden dummies loop every ~9 s).
+QUICK_LISTEN_DUR = float(os.environ.get("LARPVERSE_QUICK_LISTEN_DUR", "10"))
 NEW_EVIDENCE_RISE = 15           # a pile's priority must rise this much over the most it was ever heard at
 NEW_EVIDENCE_NEAR_M = 5.0        # ... and an earlier listen from no further than this extra must have heard it silent
 PREEMPT_MARGIN = 5               # ... and beat the current pile's priority by this to cut its radar phase short
@@ -488,9 +491,19 @@ class LiveWorld:
         self.prefetch = {}             # listen_key -> acoustic job submitted when the drones landed (real pipeline)
         self.waiting = None            # {"job", "since"} while a listen waits for the pipeline (HUD)
         self.last_scan, self.last_listen = None, None
+        self.heard = {}                # pile -> {t, language, original, english, asr}: words heard (multilingual ASR, HUD)
         self._prev, self._victims, self._sounds, self.sig = None, [], [], None
         self.t = 0.0
         self.refresh(0.0)
+
+    def note_heard(self, res, t=None, how="listen"):
+        """Keep the original-language words of each transcribed clip (the state.json clip carries the English
+        transcript and the language only) so the panel can show both. Display only."""
+        for c in res.get("clips", []):
+            if c.get("transcript") and c.get("pile_id"):
+                self.heard[c["pile_id"]] = {"t": round(self.t if t is None else t, 1), "how": how,
+                                            "language": c.get("language"), "original": c.get("transcript_original"),
+                                            "english": c["transcript"], "asr": c.get("asr_model")}
 
     # ------------------------------------------------------------------ reading the stage
     def refresh(self, t=None, why=None):
@@ -743,6 +756,49 @@ LR = AR.listen_and_rank
 HAS_SRC = "sources" in inspect.signature(LR).parameters
 SCENE_SRC = "sources" in inspect.signature(AS.build_scene).parameters
 cache = {}
+# --- multilingual speech-to-text (request "asr": "multi"). The team's per-clip recogniser forces English
+# (base.en, language="en"), which turns the Indonesian / Vietnamese voices into English-sounding nonsense
+# (2026-11-08 rehearsal 4a: "Oh long, other young bees are better..."). "multi" swaps only the speech-to-text
+# step of acoustic.run.recognise for acoustic.gemini_audio.local_asr (multilingual Whisper: language id, the
+# original words, Whisper's own English translation). The English translation is the clip transcript the
+# judge reads (its distress keywords are English); the original words and language ride along for the panel.
+# VAD, YAMNet, the transcript gates and every score / ranking rule are the team's, unchanged.
+ORIG_RECOGNISE, ORIG_CF = AR.recognise, AR.clip_features
+ASR = {"mode": "en", "last": None, "by_clip": {}}
+def recognise_multi(clip, whisper="base.en"):
+    from acoustic import gemini_audio as GA
+    import numpy as np
+    vad = AR.models.vad_speech_ratio(clip)
+    cls, scores, heur, top = AR.models.classify(clip, vad)
+    raw, ASR["last"] = "", None
+    if AR.wants_asr(vad, cls, heur):
+        text, langs, lp, en, used = GA.local_asr(np.asarray(clip, np.float32))
+        lang = langs[0] if langs else None
+        raw = (en or text) if lang != "en" else text
+        ASR["last"] = {"language": lang, "lang_p": round(float(lp), 2), "original": text, "english": en or text,
+                       "asr": used}
+    text, why = AR.gate_transcript(raw, vad, cls, heur)
+    if not text:
+        ASR["last"] = None
+    return {"vad": vad, "cls": cls, "scores": scores, "heur": heur, "top": top, "text": text, "why": why}
+def clip_features_multi(cid, *a, **k):
+    ASR["last"] = None
+    f = ORIG_CF(cid, *a, **k)
+    if ASR["last"] and f.get("transcript"):
+        ASR["by_clip"][cid] = ASR["last"]       # analyse() keeps a fixed key list per clip: merged after the listen
+    return f
+def merge_asr(r):
+    for c in r.get("clips", []):
+        x = ASR["by_clip"].get(c.get("clip_id"))
+        if x and c.get("transcript"):
+            c.update(language=x["language"], language_p=x["lang_p"], transcript_original=x["original"],
+                     asr_model=x["asr"])
+def set_asr(mode):
+    mode = mode or "en"
+    if mode == ASR["mode"]:
+        return
+    AR.recognise, AR.clip_features = (recognise_multi, clip_features_multi) if mode == "multi" else (ORIG_RECOGNISE, ORIG_CF)
+    ASR["mode"] = mode
 def scenario(a):
     k = (a["scenario_seed"], a["start_pile"], a.get("site") or "grid")
     if k not in cache:
@@ -758,23 +814,33 @@ for line in sys.stdin:
         kw = {"gemini_audio": a.get("gemini")} if "gemini_audio" in inspect.signature(LR).parameters else {}
         src = a.get("sources")
         used = "truth"
+        set_asr(a.get("asr"))
+        ASR["by_clip"] = {}
+        dur = a.get("duration")                         # quick pod-mic listens: a shorter window than the full listen
         if src and HAS_SRC:
             kw["sources"], used = src, "sources"
         orig = AS.build_scene
+        extra = {}
         if src and not HAS_SRC and SCENE_SRC:           # listen_and_rank without sources=: feed build_scene directly
+            extra["sources"] = src
+            used = "sources(build_scene)"
+        if dur:
+            extra["duration"] = float(dur)
+        if extra:
             def bs(*x, **k):
-                return orig(*x, **{**k, "sources": src})
+                return orig(*x, **{**k, **extra})
             AS.build_scene = bs
             if hasattr(AR, "build_scene"):
                 AR.build_scene = bs
-            used = "sources(build_scene)"
         try:
             r = LR(sc, {k: tuple(v) for k, v in a["drones"].items()}, a["exclude"], a["seed"], **kw)
         finally:
             AS.build_scene = orig
             if hasattr(AR, "build_scene"):
                 AR.build_scene = orig
-        out = {"id": a["id"], "result": r, "elapsed_s": round(time.time() - t0, 2), "fed": used}
+        merge_asr(r)
+        out = {"id": a["id"], "result": r, "elapsed_s": round(time.time() - t0, 2), "fed": used,
+               "asr": ASR["mode"], "duration_s": dur}
     except Exception as e:
         out = {"id": a["id"], "error": f"{type(e).__name__}: {e}", "trace": traceback.format_exc()[-1500:]}
     sys.stdout.write(json.dumps(out) + "\n")
@@ -796,14 +862,28 @@ def _sources_payload(truth):
     return out
 
 
+def audio_env(py=AUDIO_PY):
+    """Environment for the .venv-audio worker: the pip CUDA wheels' libraries (nvidia-cublas / cudnn / nvrtc) on
+    LD_LIBRARY_PATH, so LARPVERSE_WHISPER_DEVICE=cuda finds libcublas.so.12 (2026-11-08 rehearsal 4b: it did not,
+    and Whisper fell back to the CPU)."""
+    import glob
+    env = dict(os.environ)
+    venv = os.path.dirname(os.path.dirname(py))
+    libs = sorted(glob.glob(os.path.join(venv, "lib", "python3*", "site-packages", "nvidia", "*", "lib")))
+    if libs:
+        env["LD_LIBRARY_PATH"] = os.pathsep.join(libs + [p for p in [env.get("LD_LIBRARY_PATH", "")] if p])
+    return env
+
+
 class AcousticService:
     """The REAL acoustic pipeline (acoustic.run.listen_and_rank in ``.venv-audio``) as a persistent worker process:
     models load once, listens are submitted asynchronously (prefetched as soon as the drones are down) and fed the
     live dummy sources. Same machine as Isaac: nothing crosses the network during the take."""
 
-    def __init__(self, scenario, python=AUDIO_PY, log=None, gemini=False):
+    def __init__(self, scenario, python=AUDIO_PY, log=None, gemini=False, asr=None):
         import threading
         self.sc, self.py, self.say, self.gemini = scenario, python, log or _say_default, bool(gemini)
+        self.asr = asr or os.environ.get("LARPVERSE_ASR", "en")      # "multi": multilingual speech-to-text (worker)
         self.proc, self.ready, self.info, self.err = None, False, {}, None
         self.results, self.n = {}, 0
         self._lock, self._cv = threading.Lock(), threading.Condition()
@@ -814,7 +894,8 @@ class AcousticService:
         if not os.path.exists(self.py):
             raise RuntimeError(f"{self.py} not found: run acoustic/setup.sh on this box (docs/VIDEO_PLAN.md section 6)")
         self.proc = subprocess.Popen(["nice", "-n", "5", self.py, "-u", "-c", _SERVER % REPO], cwd=REPO, text=True,
-                                     stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, bufsize=1)
+                                     stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, bufsize=1,
+                                     env=audio_env(self.py))
         threading.Thread(target=self._read, daemon=True).start()
         threading.Thread(target=self._drain_err, daemon=True).start()
         t0 = time.time()
@@ -848,7 +929,8 @@ class AcousticService:
             if "Traceback" in line or "Error" in line:
                 self.say(f"[acoustic worker] {line.rstrip()[:200]}")
 
-    def submit(self, truth, drones, exclude, seed):
+    def submit(self, truth, drones, exclude, seed, duration=None):
+        """duration: listening window in s (None = the pipeline's own, acoustic.scene.DURATION)."""
         with self._lock:
             self.n += 1
             jid = self.n
@@ -856,7 +938,7 @@ class AcousticService:
         req = {"id": jid, "scenario_seed": self.sc.seed, "start_pile": self.sc.public_dict()["start_pile"],
                "site": getattr(self.sc, "site", "grid"), "truth": truth, "sources": src,
                "drones": {k: [float(v[0]), float(v[1])] for k, v in drones.items()}, "exclude": list(exclude),
-               "seed": int(seed), "gemini": self.gemini}
+               "seed": int(seed), "gemini": self.gemini, "asr": self.asr, "duration": duration}
         self.proc.stdin.write(json.dumps(req) + "\n")
         self.proc.stdin.flush()
         return jid
@@ -886,11 +968,11 @@ class AcousticService:
                 self.proc.kill()
 
 
-def preflight_acoustic(scenario, live=None, log=None, gemini=False, timeout=900.0):
+def preflight_acoustic(scenario, live=None, log=None, gemini=False, timeout=900.0, asr=None):
     """FAIL LOUDLY unless the real pipeline runs on the live sources: starts the worker, runs one listen on the
     current stage world, checks the answer is the pipeline's (not the stub) and reports its latency."""
     say = log or _say_default
-    svc = AcousticService(scenario, log=say, gemini=gemini).start(timeout)
+    svc = AcousticService(scenario, log=say, gemini=gemini, asr=asr).start(timeout)
     truth = live.truth() if live is not None else scenario.truth
     pxy = {p.name: (float(p.x), float(p.y)) for p in scenario.piles}
     sp = scenario.public_dict()["start_pile"]
@@ -908,9 +990,11 @@ def preflight_acoustic(scenario, live=None, log=None, gemini=False, timeout=900.
         say("acoustic pre-flight WARNING: listen_and_rank has no sources= yet; the pipeline synthesises from the "
             "stage positions + transcripts (TTS), not the dummy WAVs (acoustic agent: build_scene(sources=...))")
     lat = time.time() - t0
-    say(f"acoustic pre-flight PASS: real pipeline in {AUDIO_PY} (mode {mode}, fed {fed}), warm listen "
-        f"{r['elapsed_s']:.1f} s ({lat:.1f} s with the model load), {len(res.get('clips', []))} clips")
-    return svc, {"mode": mode, "fed": fed, "latency_s": r["elapsed_s"], "first_s": round(lat, 1),
+    say(f"acoustic pre-flight PASS: real pipeline in {AUDIO_PY} (mode {mode}, fed {fed}, speech-to-text "
+        f"{r.get('asr', 'en')}), warm listen {r['elapsed_s']:.1f} s ({lat:.1f} s with the model load), "
+        f"{len(res.get('clips', []))} clips, timing {res.get('timing_s')}")
+    return svc, {"mode": mode, "fed": fed, "latency_s": r["elapsed_s"], "first_s": round(lat, 1), "asr": r.get("asr"),
+                 "timing_s": res.get("timing_s"),
                  "sources_api": svc.info.get("sources_api"), "scene_sources": svc.info.get("scene_sources")}
 
 
@@ -945,6 +1029,7 @@ def make_acoustic_fn(live, mode="auto", log=None, service=None):
             res = dict(res, live={"source": src, "fresh_uncached": True, "world": live.sig,
                                   "scenario_world": live.reference_sig})
             live.last_listen = {"t": round(live.t, 1), "source": src, "fresh": True, "n_clips": len(res.get("clips", []))}
+            live.note_heard(res)
             return res
         if mode == "stub":
             res, src = stub(live.scenario, drones, exclude, seed), "stub-live"
@@ -1220,13 +1305,15 @@ class LiveController:
         seed = m.seed + 5003 + 17 * self._ql_n
         if self.service is not None:
             self.live.refresh(m.t, "pod-mic listen")
-            self._ql_job = (self.service.submit(self.live.truth(), pts, exclude, seed), pts, m.t)
+            self._ql_job = (self.service.submit(self.live.truth(), pts, exclude, seed, duration=QUICK_LISTEN_DUR or None),
+                            pts, m.t)
             return
         res = m.acoustic_fn(m.scenario, pts, exclude, seed)
         self._handle_quick(res, pts, m.t)
 
     def _handle_quick(self, res, pts, t_sub):
         m = self.m
+        self.live.note_heard(res, t_sub, "pod-mic")
         new = self._note_heard(res, fold=True, points=pts)
         rec = {"t": round(t_sub, 1), "t_result": round(m.t, 1), "n": self._ql_n,
                "points": {k: [round(v, 1) for v in xy] for k, xy in pts.items()},
@@ -1328,7 +1415,7 @@ class LiveController:
                           "scenario_signature": self.live.reference_sig, "changed": self.live.changed,
                           "active": [v["id"] for v in self.live._victims], "reads": self.live.reads},
                 "events": self.live.events[-10:], "last_event": last, "quick_listens": self.quick[-5:],
-                "replans": self.replans[-10:], "last_listen": self.live.last_listen, "last_scan": self.live.last_scan,
+                "replans": self.replans[-10:], "last_listen": self.live.last_listen, "heard": self.live.heard, "last_scan": self.live.last_scan,
                 "acoustic": {"real_pipeline": self.service is not None,
                              "waiting": None if not self.live.waiting else
                              {"job": self.live.waiting["job"], "s": round(time.time() - self.live.waiting["since"], 1)},
@@ -1737,6 +1824,39 @@ def write_cmd(out_dir, cmd="toggle", did=None, xyz=None):
     return doc
 
 
+def profile_listen(seed, did, asrs, durs):
+    """Where a real listen's seconds go, and what each speech-to-text mode hears (rehearsal tool, prints only)."""
+    from sim.scenario import make_scenario
+    sc = make_scenario(seed)
+    hm = sc.heightmap(0.5)
+    live = LiveWorld(sc, make_source(None, sc, surface=hm.height_at), surface=hm.height_at)
+    live.set_active(did, True, "profile")
+    live.refresh(0.0)
+    pxy = {p.name: (float(p.x), float(p.y)) for p in sc.piles}
+    sp = sc.public_dict()["start_pile"]
+    cx, cy = pxy[sp]
+    pods = {"d1": (cx + 3.0, cy + 2.0), "d2": (cx - 3.0, cy + 1.5), "d3": (cx, cy - 3.5)}
+    for asr in asrs:
+        svc = AcousticService(sc, asr=asr).start()
+        try:
+            for dur in durs:
+                for rep in range(2):                     # first call warms the models
+                    t0 = time.time()
+                    r = svc.wait(svc.submit(live.truth(), pods, [sp], seed + 11 + rep, duration=dur))
+                    res = r["result"]
+                    print(f"\n=== asr {asr}  window {dur:g} s  run {rep + 1}: {time.time() - t0:.1f} s wall, worker "
+                          f"{r['elapsed_s']} s, timing {res.get('timing_s')}", flush=True)
+                    clips = {c["clip_id"]: c for c in res.get("clips", [])}
+                    for p in res.get("piles", [])[:6]:
+                        c = clips.get(p.get("top_clip")) or {}
+                        print(f"  {p['pile_id']:3} pri {p['priority']:>3} {p['status']:22} {c.get('sound_class', '-'):8} "
+                              f"hum {c.get('human', 0):.2f} urg {c.get('urgency', 0):.2f} lang {c.get('language')} "
+                              f"\"{c.get('transcript', '')}\" orig \"{c.get('transcript_original', '')}\"", flush=True)
+                    print(f"  dispatch -> {(res.get('dispatch') or {}).get('pile_id')}", flush=True)
+        finally:
+            svc.close()
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--out", default=os.path.join(REPO, "dashboard", "data"))
@@ -1749,7 +1869,15 @@ def main(argv=None):
     ap.add_argument("--preflight", action="store_true",
                     help="start the real acoustic pipeline worker (.venv-audio) and run one listen on the live dummies; "
                          "exit 1 LOUDLY if the take would fall back to stub acoustics")
+    ap.add_argument("--profile-listen", action="store_true",
+                    help="real pipeline timing: one hidden voice on (default H2_A1_id), drones at the start pile's pod "
+                         "points; listens for each --asr x --dur variant; prints per-stage timing and what each pile got")
+    ap.add_argument("--asr", default="en,multi", help="--profile-listen: comma list of en / multi")
+    ap.add_argument("--dur", default="26,10", help="--profile-listen: comma list of listening windows (s)")
     a = ap.parse_args(argv)
+    if a.profile_listen:
+        profile_listen(a.seed, a.id or "H2_A1_id", a.asr.split(","), [float(v) for v in a.dur.split(",")])
+        return
     if a.preflight:
         from sim.scenario import make_scenario
         sc = make_scenario(a.seed, site=a.site) if a.site != "grid" else make_scenario(a.seed)

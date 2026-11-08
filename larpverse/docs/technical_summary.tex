@@ -1,6 +1,6 @@
 \documentclass[10pt,a4paper]{extarticle}
 
-\usepackage[margin=1.4cm]{geometry}
+\usepackage[margin=1.3cm]{geometry}
 \usepackage{enumitem}
 \usepackage{titlesec}
 \usepackage{xcolor}
@@ -31,7 +31,7 @@ CAIRN is a team of heavy-lift drones that search a collapsed building for surviv
 
 \section*{How it works}
 \begin{itemize}
-  \item \textbf{Pick an area.} The rescue lead selects a pile on the dashboard. The drones leave the truck and fly to it.
+  \item \textbf{Pick an area.} The rescue lead selects a pile on the dashboard; the drones fly to it from the truck.
   \item \textbf{Map and land (LiDAR).} A 128-channel LiDAR builds a 3D point-cloud map of the pile. The drones use it to find flat, stable spots (low slope and roughness) and land there.
   \item \textbf{Sense breathing (micro-Doppler radar).} A downward-facing 0.4--2\,GHz radar looks through up to about 3\,m of rubble. Phase demodulation of the radar's slow-time signal recovers each person's \textbf{chest-motion waveform}, millimetres of movement in the 0.1--0.75\,Hz breathing band. Rate, depth, regularity and pauses classify the pattern, and debris shifts, machinery vibration and rotor reflections are rejected as ``not a person''.
   \item \textbf{Rank who to reach first.} Gemini reads the breathing waveform together with what the microphones heard, and scores each spot 0--100 with a plain reason, e.g.\ ``irregular breathing with a 14\,s pause: check first''. Code checks every answer, and a rule-based fallback takes over if the AI is unavailable.
@@ -47,7 +47,7 @@ of residents died in the Weiguan Jinlong collapse, Tainan 2016 (115 of 309). Nob
 of trapped people had their search area flagged by CAIRN within \textbf{one hour} of launch, on a model of the Weiguan site (simulation). \\
 \end{tabularx}
 
-At Weiguan, about \textbf{2,000 rescuers} and 23 dogs still had \textbf{84 people unaccounted for after two days}. Hand search ran for 64 hours before demolition took over for another 192. Today's tools (dogs, listening devices, hand-carried radar) check one spot at a time on an unstable pile, and in 15 major collapses we reviewed, \textbf{no drone has ever located a living person inside the rubble}.
+At Weiguan, about \textbf{2,000 rescuers} and 23 dogs still had \textbf{84 people unaccounted for after two days}. Today's tools (dogs, listening devices, hand-carried radar) check one spot at a time on an unstable pile, and \textbf{existing drones carry cameras and infrared, which only see the surface}, not people buried beneath it.
 
 \section*{Results}
 \begin{tabularx}{\linewidth}{@{}>{\raggedright\arraybackslash}X>{\raggedright\arraybackslash}X>{\raggedright\arraybackslash}X>{\raggedright\arraybackslash}X@{}}
@@ -61,7 +61,6 @@ false alarms: debris, machinery and rotors are rejected (simulation) \\
 \begin{itemize}
   \item \textbf{Fast:} the first radar ping is about \textbf{49 minutes after the quake}; national teams took up to 12 hours to arrive at Weiguan (model).
   \item \textbf{Worth it:} a city kit (3 drones with radar, plus van fit-out) costs about \$673k and \textbf{pays for itself if it saves one life every 18 years} (Taiwan's value of a statistical life; model). In a Weiguan-style collapse it could mean \textbf{about 6 more survivors} if the radar performs as designed (range 0.6--14; model).
-  \item \textbf{Real system:} running in NVIDIA Isaac Sim, operated live from a dashboard, with an unscripted change during the recorded take.
 \end{itemize}
 
 {\small\textbf{Limits.} Radar results come from a simulated sensor; it hasn't been tested on real rubble yet, and the radar's frequency band needs a licence. CAIRN finds people faster; digging them out still takes as long. Every result is a place for rescuers to check, not a confirmed person.}

@@ -63,7 +63,7 @@ sequenceDiagram
 
 ```mermaid
 flowchart LR
-  VAN["Van base node<br/>on a 9-12 m mast"] --- DROP["Drop node<br/>tripod at the pile edge"]
+  VAN["Van base node<br/>telescopic mast, 10.5 m extended"] --- DROP["Drop node<br/>tripod at the pile edge"]
   VAN ---|"line of sight"| D1["d1"]
   DROP --- D2["d2"]
   D1 ---|"relay hop"| D3["d3 (in the rubble canyon)"]

@@ -267,8 +267,8 @@ HEAVY_SAR = PlatformSpec(
                "the drone; docs/HARDWARE.md)",
                "endurance_min 23.9: linear between the spec's 29 min (empty) and 18 min (30 kg) at 14 kg",
                "cruise 10 m/s (spec max 20 m/s), climb 3 / descend 2 m/s, cruise_alt 12 m",
-               "idle_power_w 250 (radar ~40 W, LiDAR ~20 W, compute ~60 W, avionics/links ~130 W)",
-               "gear_footprint 1.6 x 1.4 m", "radar panel 0.6 x 0.5 m, 4 kg", "mic ring 8 x MEMS, 1.0 m, 1 kg",
+               "idle_power_w 250 (LiDAR ~20 W, compute ~60 W, avionics/links ~130 W, margin ~40 W; the pod radar runs on its own 99 Wh battery)",
+               "gear_footprint 1.6 x 1.4 m", "radar in the winch pod: 0.48 x 0.48 m face, pod 4.9 kg, winch 3.1 kg (no drone radar panel)", "mic ring 8 x MEMS, 1.0 m, 1 kg",
                "OS1 range sigma 3 cm, mount tilt 45 deg (density study, docs/PLATFORM.md)"),
     notes=("Downwash ~2x the disk value lifts dust and loose fragments: approach and land at the pile edge, never "
            "hover low over a suspected void.",

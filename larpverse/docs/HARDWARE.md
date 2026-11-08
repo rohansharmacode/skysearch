@@ -277,7 +277,7 @@ there.
 
 | Item | Part | Key figure | Price est. |
 |---|---|---|---|
-| Mesh base station | Doodle Mesh Rider (same band) + 2 × 8 dBi omni on a **9–12 m pneumatic mast**; a second battery "drop node" on a tripod at the pile edge | line of sight over the rubble; the drop node relays into the canyon between collapsed blocks | ~$12k |
+| Mesh base station | Doodle Mesh Rider (same band) + 2 × 8 dBi omni on a **telescopic mast, 10.5 m extended** (comms model, `sim/comms.py GCS_MAST_M`; Isaac draws it as a 6 m model, `isaac/van.py MAST_H`); a second battery "drop node" on a tripod at the pile edge | line of sight over the rubble; the drop node relays into the canyon between collapsed blocks | ~$12k |
 | Internet | **Starlink Mini**: 1.1 kg, 25–40 W, 100+ Mbps down, about $300 ([TechSpot](https://www.techspot.com/news/103471-starlink-mini-299-dish-provides-100mbps-wifi-6.html)). **Tainan:** Starlink was **not commercially available in Taiwan** when we searched (lawmakers lifted the barrier in July 2026, [AFP via Citizen Digital](https://citizen.digital/article/taiwan-lawmakers-remove-legal-hurdles-for-starlink-to-operate-n386806)); **Chunghwa Telecom's OneWeb** service covers the island and was used in the 2024 Hualien quake ([moda.gov.tw](https://moda.gov.tw/en/press/press-releases/13056)) | | ~$0.3k + plan |
 | WAN router | **Peplink MAX BR1 Pro 5G**: 5G + satellite WAN bonding, 10–30 V DC, GPS | | ~$1.5k |
 | Ops station | **Panasonic Toughbook 40** (3.4 kg, 14-in) + 2 monitors; a small workstation runs the coordinator, map fusion, dashboard (`scripts/serve.py`) and the portal backend | ~470 W total | ~$8.6k |
@@ -288,30 +288,32 @@ there.
 
 ## 14. Mass and power budget against `sim/platform.py`
 
-| | sim `heavy_sar` | Build on FlyCart 30 | Build on H6HL |
+Since commit 6dc3a18, `heavy_sar` in `sim/platform.py` uses this build's numbers: radar in the pod, 14 kg payload,
+23.9 min.
+
+| | sim `heavy_sar` (after 6dc3a18) | Build on FlyCart 30 | Build on H6HL |
 |---|---|---|---|
 | Empty incl. batteries | 65.0 kg | 65.1 kg | 55.0 kg |
-| SAR payload | **12.0 kg** (OS1 0.45 + **radar panel 4** + mics 1 + V1 0.69 + H30T 0.92 + compute 1.5 + mounts 3.4) | **14.0 kg** (airframe-side 6.0 + winch 3.1 + pod 4.9) | 13.4 kg (2.5 kg winch, est.) |
-| Takeoff mass | 77.0 kg | 79.1 kg | 68.4 kg |
-| Endurance to 0% (est.) | 24.6 min | **23.9 min** (25.0 if DJI's winch-mode payload excludes the winch) | ~37 min (chart, includes a 2-min reserve) |
+| SAR payload | **14.0 kg** in pod mode: 6 kg airframe sensors, compute and mounts + 3.1 kg winch + 4.9 kg pod; no radar on the drone body | **14.0 kg** (airframe-side 6.0 + winch 3.1 + pod 4.9) | 13.4 kg (2.5 kg winch, est.) |
+| Radar | in the pod: **0.48 × 0.48 m** face on the rubble, **+7.6 dB** receive gain at 0.6 GHz (13.7 dBi at 1.2 GHz) | same | same |
+| Takeoff mass | 79.0 kg (775 N once landed) | 79.1 kg | 68.4 kg |
+| Endurance to 0% (est.) | **23.9 min** (17.9 min usable with the 25% reserve) | **23.9 min** (25.0 if DJI's winch-mode payload excludes the winch) | ~37 min (chart, includes a 2-min reserve) |
 | Payload power | `idle_power_w` 250 W (rotors off, everything on) | 82 W typ / 139 W peak + autopilot idle (verify) | same |
 | Span (prop tips) | 3.085 m | 3.085 m | 3.213 m |
 
-**Mismatches to flag:**
+**Remaining differences to flag:**
 
-1. **Payload composition.** The sim puts a 4 kg radar panel on the drone and doesn't count the 5 kg pod or the 3.1 kg
-   winch. The build carries no radar on the airframe. The total is +2.0 kg, about −0.7 min on the FlyCart 30,
-   which is small.
-2. **Radar aperture.** `heavy_sar.radar.aperture_m = (0.60, 0.50)`, but the pod footprint is 0.50 m
-   (`PodSpec.footprint_m`). A 0.48 × 0.48 m face is 0.23 m² instead of 0.30 m², about **−1.1 dB** of receive gain
-   and roughly −0.1 m of modelled reach. docs/RADAR_PENETRATION.md credits the pod with heavy_sar's +8.8 dB.
-3. **Speaker and thermal mounts.** The Zenmuse V1 and H30T need DJI SKYPORT or gimbal ports that neither airframe
+1. **Speaker and thermal mounts.** The Zenmuse V1 and H30T need DJI SKYPORT or gimbal ports that neither airframe
    has. The V1's 129 dB stays a fair acoustic proxy. The MP130's SPL needs checking.
-4. **Idle power.** `idle_power_w = 250` is about 2× our payload estimate. It's conservative and harmless: 10 min
-   perched is about 1% of the pack.
-5. **Winch minimum load.** The FlyCart 30 winch is rated 5–30 kg, and `PodSpec.mass_kg = 5.0` gives no margin.
-6. **H6HL geometry.** The clearance radius would be 2.01 m instead of 1.94 m, and the hexacopter's six 40-in disks
-   (about 4.9 m²) give about 7.7 m/s downwash at 68 kg, against 7.2 m/s for heavy_sar.
+2. **Idle power.** `idle_power_w = 250` is about 2× our payload estimate (its comment still budgets about 40 W for a
+   drone-body radar). It's conservative and harmless: 10 min perched is about 1% of the pack.
+3. **Winch minimum load.** The FlyCart 30 winch is rated 5–30 kg, and the 4.9 kg pod sits at that limit, so
+   ballast keeps it there.
+4. **H6HL geometry.** The clearance radius would be 2.01 m instead of 1.94 m, and the hexacopter's six 40-in disks
+   (about 4.9 m²) give about 7.7 m/s downwash at 68 kg, against 7.3 m/s for heavy_sar at 79 kg.
+
+Before 6dc3a18, the sim carried a 0.60 × 0.50 m, 4 kg radar panel on the drone (+8.8 dB), a 12 kg payload and
+24.6 min of endurance. Those numbers are superseded.
 
 ## 15. Isaac drone model: parts and mount positions
 
@@ -337,7 +339,6 @@ nose, +y left, +z up, origin at the skid bottom under the hub. The fuselage unde
 
 ## Open items (for the orchestrator)
 
-- `sim/platform.py`: decide whether `heavy_sar.payload_kg` becomes 14.0, with the radar moved to the pod, and
-  whether the pod radar aperture becomes 0.48 × 0.48 m (−1.1 dB). That isn't my file; it's listed in Requests.
-- `isaac/drone_viz.py`: add the new parts above and drop the RadarPanel when `--delivery pod`.
+- `sim/platform.py`: the `estimates` tuple still lists "radar panel 0.6 x 0.5 m, 4 kg", and the `idle_power_w`
+  note still counts "radar ~40 W" on the drone. These are stale text only; the values are current.
 - Contract: the pod commands (`lower_pod`, `raise_pod`) and link-status fields are proposed in COMMS_ARCHITECTURE.md §4.

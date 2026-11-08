@@ -82,6 +82,7 @@ GEAR_H = 0.60          # heavy: skid bottom to fuselage underside (m, estimate)
 WINCH_BOTTOM = 0.445   # underside of the winch (cable exit), BOM Winch pos z 0.52 - 0.15 / 2
 POD_STOW_Z = 0.175     # stowed pod base (BOM "Pod (stowed)": centre 0.30, height 0.25)
 HOVER_RPM = 1000.0     # 54-in props on a ~80 kg X8 (sim/flight_motion.py estimate, docs/MOTION.md): visual only
+RPM_DIV = max(1, int(os.environ.get("LV_RPM_DIV", "1")))
 BLUR_RPM = 450.0
 SLOW_RPM = 120.0
 ROTOR_ORDER = [f"Rotor{i}_{lvl}" for i in range(4) for lvl in (0, 1)]
@@ -872,6 +873,13 @@ class DroneViz:
         if isinstance(rotor_rpm, (int, float)):
             rotor_rpm = [float(rotor_rpm)] * len(self.rotors)
         rpm = list(rotor_rpm) or [0.0]
+        div = RPM_DIV                    # fps opt-in LV_RPM_DIV=N: rotor angles written every Nth frame
+        if div > 1:
+            self._rpm_dt = getattr(self, "_rpm_dt", 0.0) + dt
+            self._rpm_k = getattr(self, "_rpm_k", 0) + 1
+            if self._rpm_k % div:
+                return
+            dt, self._rpm_dt = self._rpm_dt, 0.0
         UsdGeom = self.UsdGeom
         for k, r in enumerate(self.rotors):
             w = abs(float(rpm[k % len(rpm)]))

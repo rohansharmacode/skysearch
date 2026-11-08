@@ -55,6 +55,17 @@ def _base_parser():
                     help="check every risky Isaac call in order, print PASS/WARN/FAIL per step, save a frame, exit")
     ap.add_argument("--seed", type=int, default=7)
     ap.add_argument("--start-pile", default=None, help="pile to begin at, e.g. B2 (default: scenario's)")
+    ap.add_argument("--launch-pile", default=None,
+                    help="pile the fleet flies to first, WITHOUT changing the scenario (start-pile also places V1)")
+    ap.add_argument("--interactive", action="store_true",
+                    help="operator console (isaac/hud/console.html): render the scene with the drones on the pads until "
+                         "the first POST /api/goto writes <out>/goto.json, then launch to that pile; later clicks re-task "
+                         "through tasking.json. Status in <out>/console.json")
+    ap.add_argument("--decider", choices=["none", "gemini"], default="none",
+                    help="next-pile choice at the dispatch gate: gemini = agents.gemini_decider (Gemini decides, code "
+                         "validates, argmax fallback with by='fallback' when no key / over budget / invalid)")
+    ap.add_argument("--decider-budget", type=int, default=6,
+                    help="--decider gemini: max LLM decisions this run; later gates use the deterministic fallback")
     ap.add_argument("--site", default="grid",
                     help="grid (synthetic 3x3) | collapse (the 3d_model map, isaac/collapse_site.py) | weiguan "
                          "(procedural stand-in) | mesh:<path>[?sectors=weiguan]")
@@ -351,6 +362,10 @@ def load_mission(a, log):
             log(f"operator tasking: {extra['tasking']}")
         if getattr(a, "acoustic", None):
             extra["acoustic"] = a.acoustic
+        if getattr(a, "launch_pile", None):
+            extra["launch_pile"] = a.launch_pile
+        if getattr(a, "decider", "none") == "gemini":
+            extra["decider"] = budgeted_decider(int(getattr(a, "decider_budget", 6)), log)
         return mission_for_site(a.site, seed=a.seed, start_pile=a.start_pile, radar=a.radar, out_dir=a.out,
                                 frames=a.frames, verbose=not a.quiet, log=log, **extra)
     except Exception:
@@ -583,6 +598,23 @@ def is_surveying(drone_state, phase, airborne):
 def nearest_pile(pile_xy, x, y, max_d=22.0):
     best = min(pile_xy, key=lambda k: math.hypot(pile_xy[k][0] - x, pile_xy[k][1] - y))
     return best if math.hypot(pile_xy[best][0] - x, pile_xy[best][1] - y) <= max_d else None
+
+
+def budgeted_decider(budget, log):
+    """agents.gemini_decider.make_decider with a hard cap on LLM calls. No key (checked per call, so a key added to
+    .env mid-run is used from the next gate), or the cap reached: the same module's deterministic fallback, by='fallback'."""
+    from agents import gemini_decider as gd, llm
+    live, off, used = gd.make_decider(), gd.make_decider(provider="none"), [0]
+
+    def decide(context, options):
+        if used[0] < budget and llm.available():
+            used[0] += 1
+            out = live(context, options)
+            log(f"[decider] gemini decision {used[0]}/{budget}: {out.get('choice')} by {out.get('by')}")
+            return out
+        return off(context, options)
+    decide.constraints = getattr(live, "constraints", None)
+    return decide
 
 
 def call_ingest(mission, pts, pile, log):
@@ -836,6 +868,67 @@ def main(argv=None):
                 say("!" * 78)
                 if not a.allow_stub_acoustic:
                     raise SystemExit(msg)
+        if a.interactive:                       # operator console: hold on the pads until the first click
+            gp, cp = os.path.join(a.out, "goto.json"), os.path.join(a.out, "console.json")
+
+            def console_status(**kw):
+                try:
+                    with open(cp + ".tmp", "w") as f:
+                        json.dump(dict(kw, wall=time.time()), f)
+                    os.replace(cp + ".tmp", cp)
+                    sp = os.path.join(a.out, "site.json")       # console_run.sh / POST /api/site: loading -> ready
+                    if os.path.exists(sp):
+                        with open(sp) as f:
+                            site_doc = json.load(f)
+                        site_doc["status"] = {"waiting_for_goto": "ready"}.get(kw.get("status"), kw.get("status"))
+                        site_doc["status_wall"] = time.time()
+                        with open(sp + ".tmp", "w") as f:
+                            json.dump(site_doc, f)
+                        os.replace(sp + ".tmp", sp)
+                except (OSError, ValueError):
+                    pass
+            console_status(status="waiting_for_goto")
+            if hasattr(mission, "_write_state"):  # the console map draws state.piles while the drones wait
+                try:
+                    mission._write_state()
+                except Exception as e:          # noqa: BLE001
+                    say(f"INTERACTIVE: initial state.json not written ({type(e).__name__}: {e})")
+            say(f"INTERACTIVE: drones on the pads; waiting for the operator's first click (POST /api/goto -> {gp})")
+            g = None
+            cam_warned, cam_t = False, time.monotonic()
+            while g is None:
+                try:                                # the opening shot, as the take's hold-file branch frames it
+                    now_h = time.monotonic()
+                    dt_h, cam_t = max(now_h - cam_t, 1e-3), now_h
+                    poses_h = {d["id"]: (float(d["pose"][0]), float(d["pose"][1]), float(d["pose"][2]),
+                                         float(d["pose"][3]) if len(d["pose"]) > 3 else 0.0, d.get("state", "idle"),
+                                         0.0, 0.0) for d in cur.get("drones", []) if d.get("pose")}
+                    focus_h, spread_h = focus_from_state(cur, pile_xy, active, list(poses_h.values()))
+                    if take:
+                        cam.observe(cur, poses_h, active)
+                    cam.update(dt_h, focus_h, spread_h)
+                except Exception as e:              # noqa: BLE001
+                    if not cam_warned:
+                        cam_warned = True
+                        say(f"INTERACTIVE: hold camera update failed ({type(e).__name__}: {e})")
+                try:
+                    with open(gp) as f:
+                        g = (json.load(f) or {}).get("last_goto")
+                except (OSError, ValueError):
+                    g = None
+                if g is None:
+                    if rt is not None:
+                        if not rt.is_running():
+                            raise SystemExit("app closed while waiting for the first click")
+                        rt.step()
+                    else:
+                        time.sleep(0.2)
+            a.launch_pile = g.get("pile")
+            say(f"INTERACTIVE: first click -> launch pile {a.launch_pile}; rebuilding the mission (same scenario)")
+            mission = load_mission(a, say)
+            cur = prev = as_dict(mission.build_state())
+            active = overlay.update(cur)
+            console_status(status="running", launch_pile=a.launch_pile, goto_seq=g.get("seq"))
         ctrl = L.LiveController(mission, world, out_dir=a.out, quick_s=L.QUICK_LISTEN_S if a.live_quick_s is None
                                 else (a.live_quick_s or 1e12), preempt=a.preempt, acoustic=a.acoustic or "auto",
                                 radar=a.radar, keys=a.live_keys or L.DEFAULT_KEYS, log=say, clock=lambda: clock(),
@@ -962,6 +1055,9 @@ def main(argv=None):
         return ctrl.listen_pace(t_render, s0) if phase == "acoustic" else ctrl.quick_pace(s0)
 
     hold_said = False
+    OV_ONCE = os.environ.get("LV_OVERLAY_ONCE") == "1"          # fps opt-in: one overlay rebuild per frame, not per drained state
+    PHYSX_DIV = max(1, int(os.environ.get("LV_PHYSX_DIV", "1")))  # fps opt-in: step PhysX every Nth frame, render-only otherwise
+    ov_dirty, fps_t0, fps_n, fps_now = False, clock(), 0, 0.0
     wall0, behind_s, last_phase = None, 0.0, None      # take timing in the log: wall s since the mission clock started
     try:
         while True:
@@ -1001,14 +1097,20 @@ def main(argv=None):
                 elif a.live_take and a.live_warp > 1:
                     from isaac.photoreal import WARP_PHASES
                     a.speed = base_speed * (a.live_warp if cur.get("phase") in WARP_PHASES else 1.0)
-                active = overlay.update(cur)
+                if OV_ONCE:
+                    ov_dirty = True
+                else:
+                    active = overlay.update(cur)
                 wall = f" wall={now - wall0:.1f}s x{a.speed:g} behind={behind_s:.1f}s" if wall0 is not None else ""
                 if steps % 20 == 0:
                     say(f"step {steps} t={cur.get('t')} phase={cur.get('phase')} pile={active} "
-                        f"lidar={accum.total} pts{wall}")
+                        f"lidar={accum.total} pts{wall} fps={fps_now:.1f}")
                 if cur.get("phase") != last_phase:
                     say(f"phase {cur.get('phase')} at t={cur.get('t')}{wall}")
                     last_phase = cur.get("phase")
+            if OV_ONCE and ov_dirty:
+                active = overlay.update(cur)
+                ov_dirty = False
             if t_render > track.t_last:         # the mission fell behind: slow the picture down, never jump
                 if wall0 is not None and not runner.idle:
                     behind_s += rdt * max(0.0, 1.0 - (track.t_last - (t_render - rdt * a.speed)) / max(rdt * a.speed, 1e-6))
@@ -1087,12 +1189,18 @@ def main(argv=None):
                 rigs.update(poses, focus, rdt)
             overlay.tick(now)
             frame += 1
+            fps_n += 1
+            if now - fps_t0 >= 2.0:
+                fps_now, fps_n, fps_t0 = fps_n / (now - fps_t0), 0, now
             if rt is not None:
                 if not rt.is_running():
                     break
                 if rec is not None:
                     rec.prepare(rec_i())
-                rt.step()
+                if PHYSX_DIV > 1 and frame % PHYSX_DIV and hasattr(rt, "render"):
+                    rt.render()
+                else:
+                    rt.step()
                 if rec is not None and frame % max(1, a.rec_every) == 0:
                     rec.capture(rec_i())
                     rec.note(rec_i(), cur, active)

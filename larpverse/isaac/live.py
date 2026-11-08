@@ -2116,7 +2116,7 @@ TAKE_RENDER = [
     ("bool", "/rtx/indirectDiffuse/enabled", False),            # dusk dome + sun read fine without GI bounces
     ("int", "/rtx/directLighting/sampledLighting/samplesPerPixel", 1),
     ("bool", "/app/asyncRendering", False),                     # pose writes land in the frame they belong to
-    ("int", "/app/runLoops/main/rateLimitFrequency", 60),
+    ("int", "/app/runLoops/main/rateLimitFrequency", int(os.environ.get("LV_RATE", "60"))),   # fps opt-in: LV_RATE=30
     ("bool", "/app/runLoops/main/rateLimitEnabled", True),
 ]
 

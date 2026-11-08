@@ -48,9 +48,12 @@ def load_dotenv(path=None):
     global _env_loaded
     path = path or os.path.join(ROOT, ".env")
     if path == os.path.join(ROOT, ".env"):
-        if _env_loaded:
+        # no key yet: look again at most every 10 s, so a key added mid-run (scripts/set_gemini_key.sh) is
+        # picked up without restarting Isaac or the audio worker
+        has_key = os.environ.get("GEMINI_API_KEY") or os.environ.get("ANTHROPIC_API_KEY")
+        if _env_loaded and (has_key or time.time() - _env_loaded < 10.0):
             return
-        _env_loaded = True
+        _env_loaded = time.time()
     try:
         with open(path) as fh:
             lines = fh.read().splitlines()

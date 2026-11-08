@@ -172,7 +172,7 @@ def wall_run(rng, length, thick, top_cells, step=0.08, notch=0.22):
     xc = (np.arange(n) + 0.5) * length / n - length / 2
     top = np.interp(xs, xc, top_cells) + rng.normal(0, 0.035, len(xs))
     for _ in range(int(length / 1.0) + 1):                         # V-notches where chunks broke off
-        c = rng.uniform(-length / 2, length / 2); w = rng.uniform(0.12, 0.35); dpt = rng.uniform(0.08, notch)
+        c = rng.uniform(-length / 2, length / 2); w = rng.uniform(0.12, 0.35); dpt = rng.uniform(0.08, max(notch, 0.09))   # short walls (weiguan): notch < 0.08 made high < low
         top -= dpt * np.clip(1 - np.abs(xs - c) / w, 0, None)
     top = np.clip(top, 0.6, None)
     tf = top + rng.normal(0, 0.025, len(xs))                        # front and back tops differ a little

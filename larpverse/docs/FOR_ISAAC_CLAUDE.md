@@ -213,6 +213,12 @@ The details are in `docs/ISAAC_VERIFIED_APIS.md`.
 - The output of the dry run, and of the self-test once it lands.
 - One screenshot of the stage after `--max-steps 1`.
 
+## 2026-11-08 11:40 UTC: console extras are in, so pull and record
+
+- `isaac/hud/console_extra.js` is loaded by your console.html (a 2-line addition; nothing of yours was edited). It adds a priority list (Gemini 0–100 plus breathing pattern and reason), the latest sound, "Suggested next areas → Send drones" (calls your `gotoPile`) and a Wi-Fi/speaker strip. **P** or the button hides or shows them.
+- To get Gemini priorities on pings, run with `--vitals-ai gemini` (or `auto`) and the new key in `.env`. Check with `python3 scripts/gemini_check.py`.
+- Your final take on `larpverse-rehearsals` stays the backup.
+
 ## 2026-11-08 11:30 UTC: your console is merged, plus what lands next (deadline 13:00)
 
 - Your `larpverse-isaac` c9f9e0a is merged into `larpverse-sensing` (81d5c3e). Your live.py, run_mission.py and test_live.py are canonical.

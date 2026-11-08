@@ -64,11 +64,20 @@ PLACEHOLDERS = {
     "p_camera": _P(0.3, 0.5, 0.7, "probability", "a search camera finds a victim, any state"),
     "debris_removal_start_h": _P(36, 64, 96, "h after collapse", "Weiguan heavy machinery from 64 h [S]"),
     "debris_removal_end_h": _P(144, 192, 240, "h after collapse", "Weiguan demolition done at 192 h [S]"),
-    "pinpoint_h": _P(0.25, 0.75, 2.0, "h", "from an alert to a known dig spot (both arms)"),
-    "extrication_h": _P(1.0, 4.0, 12.0, "h", "dig-out once the spot is known; same for both arms"),
+    "pinpoint_h": _P(0.25, 0.75, 2.0, "h", "alert (dog, call-out, camera or radar ping) -> dig start, every arm"),
+    # extrication by entrapment type (IMPACT_EVIDENCE 7e); the simulation only places TRAPPED people, so the 50%
+    # "surface, not trapped" row (carried out by bystanders, no search) is not used
+    "victim_share_lightly_trapped": _P(0.3, 0.3, 0.3, "share"),
+    "victim_share_void_space": _P(0.15, 0.15, 0.15, "share"),
+    "victim_share_entombed": _P(0.05, 0.05, 0.05, "share"),
+    "extrication_h_lightly_trapped": _P(0.25, 0.75, 2.0, "h"),
+    "extrication_h_void": _P(2.0, 6.0, 9.0, "h"),
+    "extrication_h_entombed_deep_pancake": _P(12.0, 20.0, 32.0, "h"),
+    "radar_only_deep_share": _P(0.6, 0.8, 0.95, "share of radar-only people in void / entombed",
+                                "radar-only = cannot answer a call-out or > 3 m deep; IMPACT_EVIDENCE 7e: they sit "
+                                "mostly in the void and entombed rows (direction sourced, size assumed)"),
     # our system
-    "drone_deploy_h": _P(0.5, 1.0, 2.0, "h after collapse", "van on scene, drones up"),
-    "ping_confirm_h": _P(0.1, 0.25, 0.5, "h", "a firm radar ping -> dig spot (camera / call-out check)"),
+    "drone_deploy_h": _P(0.25, 0.75, 2.0, "h after collapse", "first drone airborne"),
     # costs
     "cost_per_rescuer_h_usd": _P(40, 75, 150, "USD per rescuer-hour", "loaded cost incl. deployment"),
     "drone_price_usd": _P(50000, 61000, 87000, "USD per drone", "docs/HARDWARE.md"),
@@ -111,7 +120,10 @@ ALIASES = {
     "p_callout_unresponsive": "p_detect_acoustic_unconscious",
     "p_canine": "p_detect_canine_live",
     "p_camera": "p_detect_camera_given_void_access",
-    "extrication_h": "extrication_h_per_live_victim_rc",
+    "canine_start_h": "canine_start_h_local",                  # Taiwan declined foreign teams (IMPACT_EVIDENCE 7a)
+    "extrication_teams": "parallel_dig_worksites_per_building",
+    "drone_deploy_h": "drone_airborne_after_quake_h",
+    "pinpoint_h": "alert_to_dig_start_h",
     "cost_per_rescuer_h_usd": "cost_per_rescuer_hour_taiwan_usd",
     "flight_power_kw_flycart30_loaded": "flight_power_kw_loaded",
     "c8000_kw": "c8000_charger_kw",
@@ -280,7 +292,7 @@ PLACEHOLDERS.update({
                              "the acoustic stub is built from hidden truth, cleaner than the real pipeline"),
     "ping_keep": _P(0.5, 0.8, 1.0, "share of simulated firm pings kept",
                     "through-rubble radar is a model; validated only line-of-sight on real data"),
-    "extrication_teams": _P(3, 6, 12, "crews digging at once on the site"),
+    "extrication_teams": _P(2, 4, 8, "dig worksites at once", "parallel_dig_worksites_per_building"),
     "deep_detect_factor": _P(0.3, 0.5, 0.8, "x detection probability",
                              "call-out, dog and camera for people > 3 m inside the rubble"),
     "hazard_multiplier_unconscious_or_severe": _P(1.0, 1.5, 3.0, "x death hazard"),
@@ -319,6 +331,9 @@ class Scenario:
         self.sec = np.array([self.idx.get(v["pile"], 0) for v in V])
         self.responsive = np.array([bool(v["responsive"]) for v in V])
         self.deep = np.array([float(v["depth_m"]) > 3.0 for v in V])
+        self.radar_only = (~self.responsive) | self.deep           # what call-out / listening cannot reach
+        resp = self.responsive
+        self.deep_resp_share = float(self.deep[resp].mean()) if resp.any() else 0.0
         self.t_ping = np.array([np.nan if v["t_ping_s"] is None else v["t_ping_s"] / 3600 for v in V])
         lead = row.get("sector_first_lead_s", {})
         self.sec_lead = np.array([np.nan if lead.get(n) is None else lead[n] / 3600 for n in self.order])
@@ -405,7 +420,43 @@ def _extricate(t_loc, ext_h, n_crews):
 
 def victim_uniforms(n, rng):
     return {k: rng.uniform(size=n) for k in ("pos_h", "det_h", "pos_c", "det_c", "pos_k", "det_k", "rem", "ping",
-                                             "lead")} | {"ext": rng.lognormal(0.0, 0.5, size=n)}
+                                             "lead", "type")} | {"ext": rng.lognormal(0.0, 0.4, size=n)}
+
+
+ENTRAPMENT = ("lightly trapped", "void space", "entombed")
+_EXT_KEYS = ("extrication_h_lightly_trapped", "extrication_h_void", "extrication_h_entombed_deep_pancake")
+
+
+def entrapment_mix(p):
+    """Shares of TRAPPED people by type (the 30/15/5 rows renormalised: 60/30/10)."""
+    m = np.array([p["victim_share_lightly_trapped"], p["victim_share_void_space"], p["victim_share_entombed"]], float)
+    return m / m.sum()
+
+
+def type_probs(p, w_radar_only):
+    """(P_A, P_B): entrapment-type probabilities for people call-out / listening can reach (A) and radar-only people
+    (B: unresponsive or > 3 m deep). B puts ``radar_only_deep_share`` in void / entombed (split like the overall
+    void:entombed ratio); A takes whatever keeps the overall trapped mix at 60/30/10 for a population with a share
+    ``w_radar_only`` of B. If that is infeasible, A is clipped at 0 and renormalised (the mix then skews deeper)."""
+    mix = entrapment_mix(p)
+    s = float(p["radar_only_deep_share"])
+    r = mix[2] / (mix[1] + mix[2])
+    pb = np.array([1.0 - s, s * (1.0 - r), s * r])
+    w = min(max(float(w_radar_only), 0.0), 0.999)
+    pa = np.clip((mix - w * pb) / (1.0 - w), 0.0, None)
+    return pa / pa.sum(), pb
+
+
+def entrapment(sc, p, u):
+    """Per-victim entrapment type (0 light, 1 void, 2 entombed) and extrication hours; the same in every arm.
+    The radar-only share is weighted to the real population (sourced unconscious share, plus the simulated share
+    of responsive people > 3 m deep), not to the simulation's ~50/50 breathing-state mix."""
+    f = p["frac_trapped_unconscious_at_rescue"]
+    pa, pb = type_probs(p, f + (1.0 - f) * sc.deep_resp_share)
+    cum = np.where(sc.radar_only[:, None], np.cumsum(pb)[None, :], np.cumsum(pa)[None, :])
+    t = np.minimum((u["type"][:, None] > cum).sum(axis=1), 2)
+    hours = np.array([p[k] for k in _EXT_KEYS])[t] * u["ext"]
+    return t, hours
 
 
 def search_rates(p):
@@ -428,7 +479,7 @@ def locate(sc: Scenario, p, u, arm="base", u_sec=None):
         keep = (u_sec if u_sec is not None else np.zeros(n_sec)) < p["acoustic_lead_keep"]
         prio = np.where(keep, p["drone_deploy_h"] + sc.sec_lead, np.nan)
         kp = ((u["ping"] < p["ping_keep"]) | (arm == "ideal")) & np.isfinite(tpg)
-        t_ping = np.where(kp, p["drone_deploy_h"] + tpg + p["ping_confirm_h"], np.nan)
+        t_ping = np.where(kp, p["drone_deploy_h"] + tpg + p["pinpoint_h"], np.nan)   # a ping still needs shoring
         for i in np.where(kp)[0]:                        # a kept ping also puts its sector first
             s = sc.sec[i]
             tp = p["drone_deploy_h"] + tpg[i]
@@ -463,8 +514,9 @@ def locate(sc: Scenario, p, u, arm="base", u_sec=None):
 
 
 def outcome(sc, p, t_loc, u):
-    """Extrication time and P(alive at extrication) per victim (same crews and dig times in both arms)."""
-    t_ext = _extricate(t_loc, p["extrication_h"] * u["ext"], p["extrication_teams"])
+    """Extrication time and P(alive at extrication) per victim (same crews and dig times in every arm)."""
+    _, hours = entrapment(sc, p, u)
+    t_ext = _extricate(t_loc, hours, p["extrication_teams"])
     h = np.where(sc.responsive, 1.0, p.get("hazard_multiplier_unconscious_or_severe", 1.0))
     return t_ext, survival(t_ext, p) ** h
 
@@ -621,7 +673,9 @@ def _delta_per100(scs, p, seed, m, arm="ideal"):
 
 TORNADO_PARAMS = ["survival curve", "deep_detect_factor", "search_teams", "search_team_h_per_100m2_floor", "hasty_share",
                   "p_callout_responsive", "p_callout_unresponsive", "canine_start_h", "canine_teams", "p_canine",
-                  "p_camera", "debris_removal_start_h", "pinpoint_h", "extrication_h", "extrication_teams",
+                  "p_camera", "debris_removal_start_h", "pinpoint_h", "extrication_h_void",
+                  "extrication_h_entombed_deep_pancake", "extrication_h_lightly_trapped", "radar_only_deep_share",
+                  "extrication_teams",
                   "drone_deploy_h", "acoustic_lead_keep", "ping_keep", "search_start_h", "camera_start_h",
                   "hazard_multiplier_unconscious_or_severe", "canine_rate_m2_h"]
 

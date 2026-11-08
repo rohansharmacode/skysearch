@@ -2,6 +2,25 @@
 
 **This is a counterfactual model, not a record of what happened in 2016.** It takes 10 real runs of our autonomous mission and the sourced numbers in [IMPACT_EVIDENCE.md](IMPACT_EVIDENCE.md) / `data/impact_params.json` (v1.0), and it asks one question: if these drones had worked a building collapse like Weiguan Jinlong, how much sooner would trapped people have been located, and how much would that change who comes out alive?
 
+> **Status (8 Nov, evidence v1.1).** The model code now uses the v1.1 parameters:
+> - local-tier dog start;
+> - 2–8 parallel dig worksites;
+> - drone airborne at 0.75 h;
+> - alert → dig start of 0.75 h, which now also applies to radar pings;
+> - **extrication time drawn per person from their entrapment type** (section 2).
+>
+> **The numbers, charts and tornado in sections 0–3 and 7 are still from the v1.0 run.** They will be refreshed when the collapse-site pod-coverage fix is merged and both sites are re-run.
+>
+> A preview of v1.1 on the same cached missions (150 draws, not committed):
+>
+> | Measure | Collapse site | Grid site |
+> |---|---|---|
+> | Ours, as simulated (per 100 trapped) | +0.2 | +1.2 |
+> | Upper bound (per 100 trapped) | **+1.4 (−1.2 to +3.4)** | +3.4 |
+> | Weiguan late cohort, upper bound | **+8 (2.7–17)** | |
+>
+> In the preview, **the number of parallel dig worksites becomes the most sensitive input.** With only 2 worksites the upper-bound gain falls to about 0. With 8 it reaches about 3.4 per 100.
+
 Code: `sim/impact.py` (model), `scripts/run_impact.py` (runs, Monte Carlo, charts), `tests/test_impact.py`. Results: `data/impact_results.json`. Charts: `docs/img/impact_*.png`.
 
 Reproduce:
@@ -60,13 +79,19 @@ Every Monte Carlo draw samples all the uncertain parameters (triangular low/cent
   - The call-out finds a responsive person with p = 0.75 and an unresponsive one with p = 0.02. A dog finds anyone with p = 0.7, and a camera with p = 0.5. All three are scaled by `deep_detect_factor` for people more than 3 m deep.
   - Anyone still not found is reached by debris removal, between 64 h and 192 h (Weiguan's machinery start and demolition end).
   - Location = detection + `pinpoint_h`.
-- **Ours, as simulated.** The same crews, plus the drones, which launch at `drone_deploy_h`.
+- **Ours, as simulated.** The same crews, plus the drones, which are airborne at `drone_deploy_h` (0.75 h, v1.1).
   - Every sector lead from the run (keeping a share `acoustic_lead_keep`, 0.8) moves that sector to the front of the crews' and dogs' queue once the lead exists.
-  - Every firm ping (keeping a share `ping_keep`, 0.8) locates that person at the ping time + `ping_confirm_h`.
+  - Every firm ping (keeping a share `ping_keep`, 0.8) locates that person at the ping time + `pinpoint_h`. A ping still needs confirmation and shoring before the dig, the same alert → dig start as any other alert (v1.1).
   - Each person is located by whichever comes first.
 - **Ours, upper bound.** The same as "as simulated", but the pod also pings every silent, radar-reachable person (≤ 3 m) in a sector the drones had a lead on, by the end of the sortie. There are 32 such people in the collapse runs.
 - **Outcome.**
-  - Extrication crews (`extrication_teams`) dig people out in the order they are located, taking 9 h each (3–32, Haiti USAR average [S]) with log-normal spread. The crews are the same in every arm.
+  - Dig worksites (`extrication_teams` = `parallel_dig_worksites_per_building`, 2/4/8) dig people out in the order they are located. The worksites are the same in every arm.
+  - **Extrication time depends on each person's entrapment type** (v1.1, IMPACT_EVIDENCE.md 7e): lightly trapped 0.75 h (0.25–2), void space 6 h (2–9), entombed 20 h (12–32), with ±40% log-normal spread per person.
+  - The type is drawn once per person and is the same in every arm.
+  - The evidence gives a 50/30/15/5 split, but its "surface, not trapped" 50% are carried out by bystanders and never need a search. Our simulation only places trapped people, so we use the trapped rows renormalised: **60% light, 30% void, 10% entombed.**
+  - **Mapping, and why it is honest.** "Radar-only" people are those who cannot answer a call-out or are more than 3 m deep. The evidence says they "sit mostly in the void and entombed rows" (the direction is sourced, the size is ours). So we put a share `radar_only_deep_share` = 0.8 (0.6–0.95) of them in void / entombed. That is 60% void and 20% entombed, using the overall 3:1 void:entombed ratio.
+  - Everyone else gets whatever keeps the overall trapped mix at 60/30/10. The radar-only weight comes from the real population, not the simulation: the sourced 28% unconscious, plus the simulated share of responsive people more than 3 m deep. That gives 43% on the collapse site, where the mix is feasible, and 28% on the grid.
+  - This works **against** us: the people only our radar finds early are exactly the ones who then take 6–20 h to dig out, so finding them sooner buys less survival than it would for an average person.
   - P(alive) = S(t_out)^h, where S is the Kobe/Weiguan survival curve (91% at 30 min, 85% at 6 h, 50% at 24 h, 25% at 48 h, 14% at 72 h, 5.8% at 5 d) and h = 1.5 for unconscious people (an assumption) and 1 for everyone else.
   - Extra survivors per 100 trapped are reweighted to the sourced share of unconscious people, 28% (Bam), because the simulation's breathing-state mix is about 47% unconscious. Unweighted results are in the JSON (`*_simmix`).
 - **Rescuer-hours** = search crew size × (time each person waits to be located, capped at 72 h), averaged per person, at Taiwan's $15 per rescuer-hour (10–25, an assumption).
@@ -76,7 +101,7 @@ Every Monte Carlo draw samples all the uncertain parameters (triangular low/cent
 
 | Parameter | Range | Effect on extra survivors per 100 |
 |---|---|---|
-| dig-out time | 3–32 h | 3.8 → 0.3 |
+| dig-out time (v1.0: one 9 h average for everyone) | 3–32 h | 3.8 → 0.3 |
 | when dogs arrive | 1–8 h | 1.9 → 4.2 |
 | dig crews at once | 3–12 | 1.4 → 3.5 |
 | a dog finds a person | 0.5–0.85 | 3.9 → 2.3 |
@@ -123,7 +148,7 @@ These figures come from IMPACT_EVIDENCE.md section 6, with the rotors-on duty me
 
 `origin`:
 - **sourced / derived / assumption**: from `data/impact_params.json`, with the researcher's tags.
-- **placeholder**: our own model knob, not in the evidence file. These are order-of-magnitude USAR judgements or our honesty discounts. Several of them are in the tornado's top five: `canine_start_h`, `extrication_teams`, `drone_deploy_h`, `pinpoint_h`.
+- **placeholder**: our own model knob, not in the evidence file. These are order-of-magnitude USAR judgements or our honesty discounts. The four that were in the v1.0 tornado's top five (`canine_start_h`, `extrication_teams`, `drone_deploy_h`, `pinpoint_h`) now come from evidence v1.1.
 
 | parameter | low | central | high | unit | origin | note |
 |---|---|---|---|---|---|---|
@@ -146,16 +171,19 @@ These figures come from IMPACT_EVIDENCE.md section 6, with the rotors-on duty me
 | `rescuers_per_search_team` | 4 | 6 | 8 | people | placeholder | |
 | `search_start_h` | 0.25 | 0.5 | 1.5 | h | placeholder | Tainan FB called at +6 min, command post within 1 h [S] |
 | `canine_teams` | 2 | 4 | 8 | dog teams | placeholder | Weiguan: 23 dogs |
-| `canine_start_h` | 1 | 3 | 8 | h | placeholder | |
+| `canine_start_h` | 1 | 3 | 8 | h | derived | = canine_start_h_local (Taiwan declined foreign teams; national tier 6/12/30, international 12/24/72) |
 | `canine_rate_m2_h` | 400 | 800 | 1600 | m² per working dog-hour | placeholder | × duty 6 h per 12 h shift [D] |
 | `camera_start_h` | 2 | 6 | 12 | h | placeholder | |
-| `pinpoint_h` | 0.25 | 0.75 | 2 | h | placeholder | alert → dig spot, both arms |
+| `pinpoint_h` | 0.25 | 0.75 | 2 | h | assumption | = alert_to_dig_start_h; any alert incl. a radar ping → dig start, every arm |
 | `debris_removal_start_h` | 36 | 64 | 96 | h | placeholder | Weiguan machinery from 64 h [S] |
 | `debris_removal_end_h` | 144 | 192 | 240 | h | placeholder | Weiguan demolition done at 192 h [S] |
-| `extrication_h` | 3 | 9 | 32 | h per person | sourced | = extrication_h_per_live_victim_rc (Haiti) |
-| `extrication_teams` | 3 | 6 | 12 | crews at once | placeholder | |
-| `drone_deploy_h` | 0.5 | 1 | 2 | h | placeholder | van on scene, drones up |
-| `ping_confirm_h` | 0.1 | 0.25 | 0.5 | h | placeholder | firm ping → dig spot |
+| `victim_share_lightly_trapped` / `_void_space` / `_entombed` | | 0.30 / 0.15 / 0.05 | | share | sourced (weak) | renormalised over trapped people: 60/30/10; the 50% surface row is not searched |
+| `extrication_h_lightly_trapped` | 0.25 | 0.75 | 2 | h | derived | Kobe person-minutes / crew |
+| `extrication_h_void` | 2 | 6 | 9 | h | derived | Haiti pancake, USAR average |
+| `extrication_h_entombed_deep_pancake` | 12 | 20 | 32 | h | sourced | Weiguan 12 h and 20 h, Haiti 26 h and 32 h |
+| `radar_only_deep_share` | 0.6 | 0.8 | 0.95 | share | placeholder | radar-only people in void / entombed (direction sourced, size assumed) |
+| `extrication_teams` | 2 | 4 | 8 | worksites at once | derived | = parallel_dig_worksites_per_building (Weiguan: 4 sectors, 1–2 breaches each) |
+| `drone_deploy_h` | 0.25 | 0.75 | 2 | h | derived | = drone_airborne_after_quake_h (truck +6 min, DFR 73–181 s, + 5–15 min heavy-drone prep) |
 | `acoustic_lead_keep` | 0.5 | 0.8 | 1 | share | placeholder | discount: the acoustic stub is cleaner than the real pipeline |
 | `ping_keep` | 0.5 | 0.8 | 1 | share | placeholder | discount: through-rubble radar is a model |
 | `cost_per_rescuer_h_usd` | 10 | 15 | 25 | USD | assumption | = cost_per_rescuer_hour_taiwan_usd (international all-in: 40–250) |
@@ -210,7 +238,7 @@ These figures come from IMPACT_EVIDENCE.md section 6, with the rotors-on duty me
    No. Ten metres of rubble costs about 130 dB of signal, so nothing comes back. We claim about 3 m beneath the pod. That is why the drones winch the sensor onto the pile at many points per hour, instead of a rescuer carrying a LifeLocator onto it one spot at a time.
    Deep people stay with today's methods. In our runs 139 of 170 people were within 3 m.
 5. **"Isn't extrication the bottleneck, not search?"**
-   Yes, and the model says so. Dig-out time is the most sensitive input: at 32 h per person the gain shrinks to 0.3 per 100. Our value is in **which voids the crews open first**: silent people with a breathing signal, found in hours instead of days. We also give **negative information**, so empty sectors can be written off and the machines start sooner. We don't claim to dig faster.
+   Yes, and the model says so. Dig-out capacity is the most sensitive input. In the v1.1 preview, with 2 worksites the upper-bound gain is about 0, and with 8 it is about 3.4 per 100. The people only our radar finds are mostly void or entombed, at 6–20 h each. Our value is in **which voids the crews open first**: silent people with a breathing signal, found in hours instead of days. We also give **negative information**, so empty sectors can be written off and the machines start sooner. We don't claim to dig faster.
 6. **"What does it cost, and can you even power it at a disaster site?"**
    About **$1.7k per sortie and $20k for a 72-h deployment**, against **$0.8–0.94 M per life saved** by international USAR teams [S]. A heavy-rescue truck's 25 kW PTO generator sustains about 3–4 drones. A car can't: 74 min of flight from half a tank, and that takes 14 h of idling.
    We recommend retrofitting heavy-rescue trucks rather than relying on a city hub, because every hour of delay before launch costs about 0.9 survivors per 100.

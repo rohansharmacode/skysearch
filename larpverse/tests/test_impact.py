@@ -76,7 +76,7 @@ def test_perfect_baseline_equals_ours_when_timings_equal():
     sc = impact.Scenario(toy_row())
     u = impact.victim_uniforms(sc.n, np.random.default_rng(4))
     t_base, _ = impact.locate(sc, p, u, "base")
-    sc.t_ping = t_base - p["drone_deploy_h"] - p["ping_confirm_h"]
+    sc.t_ping = t_base - p["drone_deploy_h"] - p["pinpoint_h"]
     u_sec = np.ones(len(sc.order))                       # no acoustic lead kept (and none simulated)
     t_ours, m = impact.locate(sc, p, u, "ours", u_sec)
     assert np.allclose(t_ours, t_base)
@@ -102,3 +102,32 @@ def test_logistics_sane():
     d = lg["drones_sustained"]
     assert d["car alternator"] < 0.5 < d["fire truck, 8 kW hydraulic generator"] < d["heavy rescue truck, PTO generator"]
     assert 40 < h["car alternator"] < 120 and 150 < h["inverter / truck generator"] < 350   # IMPACT_EVIDENCE 6: 74 / 250
+
+
+def test_entrapment_mix_and_skew():
+    """Trapped mix 60/30/10 at the population's radar-only share; radar-only people skew to void / entombed."""
+    params, _ = impact.load_params()
+    p = impact.central(params)
+    for w in (0.2, 0.35, 0.5):
+        pa, pb = impact.type_probs(p, w)
+        mix = impact.entrapment_mix(p)
+        assert np.isclose(pa.sum(), 1) and np.isclose(pb.sum(), 1) and np.all(pa >= 0)
+        assert pb[1] + pb[2] > mix[1] + mix[2] > pa[1] + pa[2]          # radar-only deeper than average, A shallower
+        if w <= 0.35:                                                    # feasible: the overall mix is preserved
+            assert np.allclose((1 - w) * pa + w * pb, mix)
+    sc = impact.Scenario(toy_row())
+    u = impact.victim_uniforms(sc.n, np.random.default_rng(9))
+    t, h = impact.entrapment(sc, p, u)
+    assert set(t) <= {0, 1, 2} and np.all(h > 0)
+    keys = ("extrication_h_lightly_trapped", "extrication_h_void", "extrication_h_entombed_deep_pancake")
+    assert np.allclose(h, np.array([p[k] for k in keys])[t] * u["ext"])
+
+
+def test_v11_aliases():
+    params, meta = impact.load_params()
+    if (meta.get("version") or "") < "1.1":
+        return
+    for mine, theirs in (("canine_start_h", "canine_start_h_local"), ("extrication_teams",
+                         "parallel_dig_worksites_per_building"), ("drone_deploy_h", "drone_airborne_after_quake_h"),
+                         ("pinpoint_h", "alert_to_dig_start_h")):
+        assert params[mine]["central"] == params[theirs]["central"] and params[mine]["origin"] != "placeholder"

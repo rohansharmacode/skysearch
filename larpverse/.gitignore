@@ -18,3 +18,5 @@ agents/cache/
 .claude/
 !data/hardware_bom.json
 !data/audio_real/fleurs/SOURCE.md
+dashboard/data/portal.json
+dashboard/data/comms_replies.json

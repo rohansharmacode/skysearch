@@ -63,6 +63,7 @@ RSSI_PERIOD_S = 5.0                    # one RSSI reading per drone per 5 s for 
 LOC_N_EFF = 8.0                        # effective independent looks at a phone (likelihood tempering, est.)
 LOC_PEAK_SIGMA_M = 6.0                 # prior: the phone is within ~6 m (1 sigma) of the RSSI peak (est.)
 LOC_FLOOR_M = 1.5                      # model-error floor added to the fitted sigma
+EVIDENCE_MIN_DBM = -80.0               # ... and only if some drone heard it this strongly (it was close)
 EVIDENCE_SIGMA_M = 6.0                 # a device position is "evidence" for a sector only when this tight
 REPORT_SIGMA_M = 12.0                  # est_xy is published only below this (else null: too vague)
 FIT_PERIOD_S = 30.0                    # refit a device at most this often, and only after 3+ new readings
@@ -79,6 +80,7 @@ MESH_OBSTRUCTION_CAP_DB = 25.0         # ... capped: diffraction over a short ob
 GCS_MAST_M = 10.5                      # van base node on a 9-12 m mast
 RELAY_MAST_M = 2.0                     # optional drop node: tripod at the pile edge
 HOP_LATENCY_MS = 3.0                   # per-hop MAC / forwarding latency (est.) + 1500 B serialisation at the hop rate
+DEGRADED_MBPS = 4.0                    # link "degraded" below ~2x a drone's steady data rate (est.)
 DRONE_DATA_KBPS = 225.0                # ~1.8 Mbps per drone steady (map deltas, clips, thumbnails, RSSI; est.)
 GCS_UPLINKS = {                        # van backhaul to the internet (family messages, Gemini); config, not truth
     "oneweb": "OneWeb via Chunghwa Telecom (Taiwan)",
@@ -375,7 +377,7 @@ class RadioSim:
         """(rssi_at_ap_dbm, downlink_margin, uplink_margin) incl. static shadowing (no fast fading)."""
         from .sensor_model import rubble_path
         d = float(np.linalg.norm(np.asarray(xyz) - np.asarray(ph["xyz"])))
-        rub = ph["rubble_db_per_m"] * (rubble_path(self.grid, xyz, ph["xyz"], n=48) if ph["depth"] > 0.05 else 0.0)
+        rub = ph["rubble_db_per_m"] * rubble_path(self.grid, xyz, ph["xyz"], n=48)    # piles in the way count too
         fade = self._shadow(ph, drone_id, xyz)
         down, up = link_margins(d, rub, fade)
         return uplink_rssi(d, rub, fade), down, up
@@ -642,6 +644,7 @@ class Comms:
         self.devices = {}       # token -> contract device dict
         self._readings = {}     # token -> list of readings
         self._fit_t = {}
+        self._peak_dbm = {}     # token -> strongest RSSI heard (evidence gate: a drone must have been close)
         self._evidence = set()
         self._links, self._hot = [], []
         self.submissions = 0
@@ -706,6 +709,7 @@ class Comms:
                 continue
             first = d["est_xy"] is None
             d["est_xy"], d["est_sigma_m"] = fit["xy"], fit["sigma_m"]
+            self._peak_dbm[tok] = max(r["dbm"] for r in self._readings[tok])
             d["pile"] = sector_of(fit["xy"], self.sectors)
             if first:
                 out.append({"t": round(t, 1), "type": "located", "device": tok, "est_xy": fit["xy"],
@@ -731,23 +735,23 @@ class Comms:
         out = []
         for did in ids:
             r = routes.get(did) or {"next": None, "e2e_mbps": 0.0}
-            st = self._dlink.setdefault(did, {"link": "mesh", "last_link_t": self.t, "queued_kb": 0.0})
+            st = self._dlink.setdefault(did, {"link": "ok", "last_link_t": self.t, "queued_kb": 0.0})
             up = r["next"] is not None
             if up:
                 st["queued_kb"] = max(0.0, st["queued_kb"] + (DRONE_DATA_KBPS - r["e2e_mbps"] * 125.0) * dt)
                 st["last_link_t"] = round(self.t, 1)
             else:
                 st["queued_kb"] += DRONE_DATA_KBPS * dt
-            new = "mesh" if up else "stored"
-            if new != st["link"]:
+            new = "lost" if not up else ("degraded" if r["e2e_mbps"] < DEGRADED_MBPS else "ok")
+            if (new == "lost") != (st["link"] == "lost"):
                 out.append({"t": round(self.t, 1), "type": "link_restored" if up else "link_lost", "drone_id": did,
                             "queued_kb": round(st["queued_kb"], 1)})
-                st["link"] = new
+            st["link"] = new
         return out
 
     def drone_link(self, drone_id):
-        """drones[].link / last_link_t / queued_kb for the mission's state (contract v1.4 comms additions)."""
-        st = self._dlink.get(drone_id) or {"link": "mesh", "last_link_t": None, "queued_kb": 0.0}
+        """drones[].link (ok | degraded | lost) / last_link_t / queued_kb for the mission state (contract v1.4.2)."""
+        st = self._dlink.get(drone_id) or {"link": "ok", "last_link_t": None, "queued_kb": 0.0}
         return {"link": st["link"], "last_link_t": st["last_link_t"], "queued_kb": round(st["queued_kb"], 1)}
 
     def _portal_event(self, d, ev, t):
@@ -778,7 +782,8 @@ class Comms:
     def _maybe_evidence(self, d, t):
         """A located device inside a sector is new evidence (the sector may be re-searched). Once per (device,
         sector, status). Candidate region only, never a confirmed person."""
-        if d["est_xy"] is None or d["pile"] is None or d["status"] == "safe" or d["est_sigma_m"] > EVIDENCE_SIGMA_M:
+        if d["est_xy"] is None or d["pile"] is None or d["status"] == "safe" or d["est_sigma_m"] > EVIDENCE_SIGMA_M \
+                or self._peak_dbm.get(d["id"], -999.0) < EVIDENCE_MIN_DBM:
             return []
         key = (d["id"], d["pile"], d["status"])
         if key in self._evidence:

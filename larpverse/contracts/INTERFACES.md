@@ -472,3 +472,17 @@ when that value is higher and the task is a `lead`, then re-picks `radar_ping` a
 - `comms.backhaul.links[]`: `latency_ms`.
 - Commands from the van to the drones (MAVLink winch commands on the flight side; JSON on the ops API): `lower_pod {drone_id, xy}`, `raise_pod {drone_id}`, `relay_hold {drone_id, xy, alt}` (park a drone as a mesh relay).
 - Backhaul for Tainan: OneWeb via Chunghwa Telecom, or LTE. Starlink is the generic option where it's licensed.
+
+### Comms additions (v1.4.3, from docs/HOTSPOT.md §9)
+
+- `comms.backhaul.uplink`: `oneweb|lte|starlink|null`. Optional `backhaul.relay_xy` (a dropped relay node).
+- `devices[].live` is true for real portal phones (the live demo), which carry no RSSI position. `messages[].synthetic` is true for simulated messages, and the UI tags them "synthetic". `devices[].replies[].text` holds the template text that was sent.
+- `piles[].comms_evidence`: `{device, status, t, est_xy, sigma_m}`. Phone evidence only ever raises a **lead**, never a ping, because a phone near-but-buried and one far-but-in-the-open can look alike in RSSI.
+- Event names: `joined`, `left`, `status`, `message`, `located`, `evidence`, `link_lost`, `link_restored`.
+- Language codes use `nan-TW`, matching the speaker templates, for Taiwanese Hokkien.
+- Ops API (scripts/serve.py):
+  - POST `/api/portal`: from phones; validated, rate-limited, no IP stored.
+  - GET `/api/portal` → `{"submissions": [...]}`: localhost only.
+  - POST `/api/comms/reply`: localhost only; templates, or free text with `confirmed_by`.
+  - Captive-portal check URLs redirect to `/dashboard/portal/`.
+  - `--lan` binds 0.0.0.0. It's off by default and prints a warning.

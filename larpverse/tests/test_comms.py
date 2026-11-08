@@ -91,12 +91,13 @@ def test_store_and_forward_when_mesh_is_lost(site):
     far = [{"id": "d1", "pose": [4000.0, 0.0, 15.0], "state": "flying", "battery": 0.9}]
     comms.step(0.0, near)
     ev = comms.step(10.0, far)
-    assert ev[0]["type"] == "link_lost" and comms.drone_link("d1")["link"] == "stored"
+    assert ev[0]["type"] == "link_lost" and comms.drone_link("d1")["link"] == "lost"
     comms.step(20.0, far)
     q = comms.drone_link("d1")["queued_kb"]
     assert q == pytest.approx(2 * 10 * C.DRONE_DATA_KBPS) and comms.drone_link("d1")["last_link_t"] == 0.0
     ev = comms.step(30.0, near)
     assert ev[0]["type"] == "link_restored" and comms.drone_link("d1")["queued_kb"] < q
+    assert comms.drone_link("d1")["link"] == "ok"
     with pytest.raises(C.CommsError):
         C.Comms(sc, gw.grid, BASE_XY, gcs_uplink="satellite")
     assert C.Comms(sc, gw.grid, BASE_XY, gcs_uplink=None).state()["backhaul"]["internet"] is False
@@ -198,7 +199,7 @@ def test_state_schema_v14(site):
         assert (ln["to"] == "gcs" or ln["to"].startswith("d")) and ln["latency_ms"] >= C.HOP_LATENCY_MS
     for did in ("d1", "d2", "d3"):
         dl = comms.drone_link(did)
-        assert set(dl) == {"link", "last_link_t", "queued_kb"} and dl["link"] in ("mesh", "stored")
+        assert set(dl) == {"link", "last_link_t", "queued_kb"} and dl["link"] in ("ok", "degraded", "lost")
     assert bh["links"], "landed drones near the staging area must reach the GCS"
     for h in st["hotspots"]:
         assert set(h) == {"drone_id", "ssid", "on", "xy", "z", "clients", "radius_m_est"}

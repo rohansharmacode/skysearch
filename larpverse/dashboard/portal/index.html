@@ -58,6 +58,13 @@ summary{font-weight:700;color:var(--fg);min-height:44px;display:flex;align-items
   </select>
 </header>
 
+<div id="ok" class="ok" hidden role="status" aria-live="polite">
+  <h2 data-t="okTitle">Your message reached the rescue team.</h2>
+  <p data-t="okBody">Help is coming. Save battery: lower your screen brightness and keep the phone with you.</p>
+</div>
+<div id="err" class="err" hidden role="alert"></div>
+<div id="inbox" aria-live="polite"></div>
+
 <section id="home">
   <h1 data-t="title">Help is coming.</h1>
   <p class="lead" data-t="ask">Are you trapped? Tap one button.</p>
@@ -95,12 +102,6 @@ summary{font-weight:700;color:var(--fg);min-height:44px;display:flex;align-items
   </div>
 </section>
 
-<div id="ok" class="ok" hidden role="status" aria-live="polite">
-  <h2 data-t="okTitle">Your message reached the rescue team.</h2>
-  <p data-t="okBody">Help is coming. Save battery: lower your screen brightness and keep the phone with you.</p>
-</div>
-<div id="err" class="err" hidden role="alert"></div>
-<div id="inbox" aria-live="polite"></div>
 
 <details>
   <summary data-t="privTitle">Privacy</summary>

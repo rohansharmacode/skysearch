@@ -6,7 +6,7 @@
 // #ping=<id> opens that ping's detail view. A missing state file shows the demo state.
 import { demoState, demoCloud } from './demo.js';
 import { createTasking, reconText } from './tasking.js';
-import { createComms } from './comms.js';
+import { createComms, linkChip, evidenceChip } from './comms.js';
 import { createSpeaker, respChip } from './speaker.js';
 import { digScore, triageOf, conditionOf, conditionLabel, confMeter, rateOf, spark, caveatsOf, triageChip, drawTriageRing, ALWAYS } from './vitals.js';
 
@@ -459,13 +459,14 @@ function draw(now = performance.now()) {
       ctx.save(); ctx.strokeStyle = 'rgba(227,234,239,0.8)'; ctx.lineWidth = 1.2; ctx.beginPath(); ctx.arc(x, y, 13, -0.35 * Math.PI, 0.35 * Math.PI); ctx.stroke();
       ctx.beginPath(); ctx.arc(x, y, 13, 0.65 * Math.PI, 1.35 * Math.PI); ctx.stroke(); ctx.restore();
     } else { ctx.fillStyle = COL.fg; ctx.fill(); ctx.strokeStyle = '#0b1016'; ctx.lineWidth = 1.5; ctx.stroke(); ctx.restore(); }
-    const g = groups.find(g => g.state === d.state && Math.hypot(g.lx - x, g.ly - y) < 26);
-    if (g) { g.ids.push(d.id); g.x = Math.min(g.x, x); g.lx = x; g.ly = y; } else groups.push({ state: d.state, ids: [d.id], x, y, lx: x, ly: y });
+    const lk = d.link && d.link !== 'ok' ? `link ${d.link}${d.queued_kb ? ' · ' + Math.round(d.queued_kb) + ' kB queued' : ''}` : '';
+    const g = !lk && groups.find(g => g.state === d.state && !g.lk && Math.hypot(g.lx - x, g.ly - y) < 26);
+    if (g) { g.ids.push(d.id); g.x = Math.min(g.x, x); g.lx = x; g.ly = y; } else groups.push({ state: d.state, ids: [d.id], x, y, lx: x, ly: y, lk });
   }
   for (const g of groups) {
     const n = g.ids.map(i => +i.replace(/\D/g, '')), seq = g.ids.length > 2 && n.every((v, k) => k === 0 || v === n[k - 1] + 1);
     const ids = seq ? `${g.ids[0]}–${g.ids[g.ids.length - 1]}` : g.ids.join(' ');
-    qLabel(`${ids} · ${g.state}`, g.x + 10, g.y + 18, COL.fg, undefined, 6);
+    qLabel(`${ids} · ${g.state}${g.lk ? ' · ' + g.lk : ''}`, g.x + 10, g.y + 18, g.lk ? '#a9c8ff' : COL.fg, undefined, 6, g.lk ? 'rgba(59,130,246,0.6)' : null);
   }
   flushLabels();
   scaleBar();
@@ -666,7 +667,7 @@ function renderSide() {
     $('nAc').textContent = ac.length;
     $('acList').innerHTML = ac.length ? ac.map(a => `<div class="ac"><span>${esc(a.drone_id)} · <span class="c">${esc(a.class)}</span></span><span>${a.bearing_deg.toFixed(0)}° ±${(a.width_deg / 2).toFixed(0)} · ${f2(a.confidence)}</span></div>`).join('') : '<p class="empty">Nothing heard yet.</p>';
   }
-  $('fleet').innerHTML = (S.drones || []).map(d => { const b = Math.round((d.battery ?? 0) * 100); return `<div class="fl"><b>${esc(d.id)}</b><span class="st ${esc(d.state)}">${esc(d.state)}</span><span class="bat" title="battery ${b}%"><i style="width:${b}%"></i></span><span class="pc">${b}%</span></div>`; }).join('');
+  $('fleet').innerHTML = (S.drones || []).map(d => { const b = Math.round((d.battery ?? 0) * 100); return `<div class="fl"><b>${esc(d.id)}</b><span class="st ${esc(d.state)}">${esc(d.state)}${linkChip(d)}</span><span class="bat" title="battery ${b}%"><i style="width:${b}%"></i></span><span class="pc">${b}%</span></div>`; }).join('');
   $('next').textContent = S.next_scan ? `Next: ${S.next_scan.drone_id} → ${S.next_scan.site_id} · ${S.next_scan.reason}` : '';
   $('log').innerHTML = (S.log || []).slice(-14).reverse().map(l => `<div><span>${f1(l.t)}s</span><p style="margin:0">${esc(l.msg)}</p></div>`).join('');
 }
@@ -728,7 +729,7 @@ function renderPiles() {
   const row = p => {
     const [txt, , col] = pst(p), amb = pileAmb(p);
     return `<div class="row ${p === topUnvisited ? 'top' : ''} ${vis.includes(p.id) ? 'done' : ''} ${openRows.has(p.id) ? 'open' : ''}" data-pile="${esc(p.id)}" title="Click to expand">
-      <b>${esc(p.id)}</b><span class="why"><span class="chip" style="color:${col};border-color:${col}${amb ? ';border-style:dashed' : ''}">${esc(txt)}</span>${amb ? '<span class="chip amb" title="The drones\' bearings do not single out this pile: the sound may come from a neighbour">ambiguous direction</span>' : ''}${respChip(p.responsiveness || S.responsiveness?.[p.id], true)} ${esc(p.why)}</span>
+      <b>${esc(p.id)}</b><span class="why"><span class="chip" style="color:${col};border-color:${col}${amb ? ';border-style:dashed' : ''}">${esc(txt)}</span>${amb ? '<span class="chip amb" title="The drones\' bearings do not single out this pile: the sound may come from a neighbour">ambiguous direction</span>' : ''}${respChip(p.responsiveness || S.responsiveness?.[p.id], true)}${evidenceChip(p)} ${esc(p.why)}</span>
       <span class="s">${p.priority ?? '—'}</span></div>`;
   };
   $('piles').innerHTML = (visited.length ? `<div class="sub">Searched by the drones</div>${visited.map(row).join('')}` : '')

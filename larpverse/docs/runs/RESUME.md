@@ -73,6 +73,9 @@ Paused by the user at about 23:15 and resumed at about 23:20. All 11 agents were
 | a5aae449f969b5952 | **Isaac live single take** (isaac/run_mission.py, live.py, hud.py; docs/VIDEO_PLAN.md) | DONE e484c10 (dry rehearsal verified: Y at t400 → A1 at t471). RESUMED: pods_max_visible=0 in --live; real acoustics on Brev plus a pre-flight check. A1-A6 → mission, D1 → dashboard, AC1 → acoustic |
 | a801f2e8f270d6911 | **Impact evidence** (docs/IMPACT_EVIDENCE.md, data/impact_params.json) | NEW 01:10: survival curves, USAR time split, Weiguan facts, costs, vehicle charging (half tank → flight minutes) |
 | a8d6180530c841baa | **Impact model** (sim/impact.py, scripts/run_impact.py, docs/IMPACT_MODEL.md, docs/img/impact_*.png) | NEW 01:10: 10 sims vs a baseline Monte Carlo, survival/lives/cost, tornado, logistics; prepared judge Q&A |
+| afc247a518e345e0f | **Case studies** (docs/CASE_STUDIES.md, data/case_studies.json) | NEW 01:55: Taiwan + global collapses, trapped/rescued timelines, drone use, stat cards |
+| ab80ccad5a18358ef | **Economics** (docs/ECONOMICS.md, data/economics_params.json) | NEW 01:55: USAR costs, VSL, system TCO, ROI/break-even, market, business model |
+| aa07d11497b4507ee | **Deployment** (docs/DEPLOYMENT.md, data/deployment_params.json) | NEW 01:55: Taiwan hazard/buildings/fire service, timeline to first ping, kits per city, 72 h ops, regulation |
 | a5e7bdb232aa15f7b | **Speaker** (sim/callout.py, sim/guidance.py, acoustic/speaker_assets.py, docs/SPEAKER.md, tests/test_callout) | DONE (4d46fb4, a8eff22, c8cf446). serve.py /api/broadcast applied b90217d; mission patch §6 → mission (3 langs default); panel → dashboard. Hokkien voice needs native recording |
 
 Paused: a946c57cc57fd5b2b (video cut, `scripts/cut_video.py`). Resume it when the Isaac re-record exists.
@@ -82,6 +85,7 @@ Done: tech report a56b6a6dcfe7aacab (`docs/TECHNICAL_REPORT.md`, about 11k words
 ## Integration queue (orchestrator does or forwards these)
 
 0. TODO after the mission eval finishes: widen drone pads to 4.5 m spacing (heavy drone span 3.1 m; currently 2.6 m, rotors overlap). Grid (-6,-49),(-1.5,-49),(3,-49); collapse (-62,-150),(-57.5,-150),(-53,-150). Clear of the van cones at base+5.4 m. Then regenerate scenario_seed7.js.
+0. USER 01:50: as many REAL stats as possible (cases, logistics, economics), and keep the product, code and animations going. Visual agent resumed: grid animation updated to the current story (pod, van, speaker, Wi-Fi, smooth motion, real-stat captions). Full test suite at 01:50: 230 passed (core venv). Pad spacing deferred until the impact sims finish.
 0. REVIEW PASS 3 launched 01:40: ab92aa57d0a83f61a (demo path → docs/review/PASS3_DEMO.md) and ac6ef5ffe9e455c48 (claims/licences → docs/review/PASS3_CLAIMS.md). Then fix the P0s, post READY TO RE-RECORD, and fill the report placeholders.
 0. Mission DONE 01:35: smooth flight default, A1-A6, comms; seed 7 with physio = A2 + B1 ping, A3/B2 open leads; eval 17/60 vs 6/60, 5/60. Impact research DONE (IMPACT_EVIDENCE.md, impact_params.json): locating ≈ 18% of time, extrication 64%.
 0. USER 01:05: defend the idea with real-world comparison (time split in 72 h, survival, unconscious finds, Taiwan case, 10 sims, cost, retrofit on emergency vehicles, half-tank flight minutes). Impact agents running; then build a judge-facing 'Impact' artifact plus slides.

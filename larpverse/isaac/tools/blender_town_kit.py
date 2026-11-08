@@ -18,6 +18,10 @@ Module frames (metres, Z-up, the same in Blender and USD; isaac/town.py places t
     light_*   steel pole on z, the arm reaching +x.          tree_*   trunk base at the origin.
     wall_*, gate_*   3.0 / 3.6 m segment along x, centred, thickness along y.    stub_*  ground-storey wall stub.
     debris_*, sheet_*, litter_*, manhole_*, post_*   base centre at the origin.
+Buildings: RC frame + recessed infill, framed windows (transoms, mullions, cracked / knocked-out panes, curtains),
+iron window cages, AC units, balconies (railings, cages), shop boards and vertical lightboxes with plain blocks (no
+text), cracks / spalls / column damage, partial collapses. Vehicles: lofted bodies (see the vehicles section);
+the paint is a dust / scratch mask that town.py colours per prototype. Neither has colliders or physics APIs.
 Textures are tileable (4D torus-mapped noise): one tile = TILE[name] metres. Licence-clean: everything procedural.
 """
 from __future__ import annotations
@@ -37,8 +41,9 @@ from isaac import town as TW                                    # noqa: E402  (s
 
 # texture sets: (pixels, tile metres)
 TEX = {"asphalt": (1024, 8.0), "lot": (1024, 8.0), "bed": (512, 4.0), "plaster": (512, 4.0), "dust": (512, 6.0),
-       "paving": (512, 2.0), "concrete": (512, 3.0), "brick": (512, 2.0), "tile": (512, 2.0), "roof": (512, 6.0),
-       "metal": (512, 2.0), "shutter": (512, 2.0), "interior": (256, 3.0), "fracture": (512, 2.0)}
+       "paving": (512, 2.0), "concrete": (512, 3.0), "brick": (512, 2.0), "tile": (512, 2.0), "roof": (256, 6.0),
+       "metal": (512, 2.0), "shutter": (512, 2.0), "interior": (256, 3.0), "fracture": (512, 2.0),
+       "paint": (512, 2.0), "paint_top": (256, 2.0)}
 TILE = {k: v[1] for k, v in TEX.items()}
 # albedo multiplier per material in the USD (UsdUVTexture scale); retune without re-baking (--stage usd)
 SCALE = {"kerb": (0.95, 0.95, 0.93), "patch": (0.72, 0.72, 0.72), "far": (0.92, 0.9, 0.88),
@@ -50,8 +55,10 @@ CONST = {
     "frame": ((0.42, 0.42, 0.40), 0.55, 0.0), "frame_dark": ((0.07, 0.07, 0.07), 0.5, 0.2),
     "paint": ((0.40, 0.40, 0.39), 0.42, 0.0), "paint_top": ((0.33, 0.31, 0.28), 0.8, 0.0),
     "tyre": ((0.025, 0.025, 0.025), 0.9, 0.0), "trim": ((0.04, 0.04, 0.042), 0.65, 0.0),
-    "chrome": ((0.40, 0.40, 0.40), 0.35, 0.8), "lamp": ((0.55, 0.52, 0.45), 0.2, 0.0),
-    "taillamp": ((0.16, 0.07, 0.04), 0.3, 0.0), "rail": ((0.06, 0.06, 0.065), 0.55, 0.6),
+    "chrome": ((0.40, 0.40, 0.40), 0.35, 0.8), "lamp": ((0.30, 0.31, 0.31), 0.08, 0.0),
+    "taillamp": ((0.22, 0.035, 0.025), 0.15, 0.0), "rim": ((0.42, 0.42, 0.41), 0.4, 0.8),
+    "rim_dark": ((0.06, 0.06, 0.06), 0.45, 0.5), "plate": ((0.52, 0.52, 0.48), 0.5, 0.0),
+    "glass_broken": ((0.20, 0.21, 0.21), 0.55, 0.0), "rail": ((0.06, 0.06, 0.065), 0.55, 0.6),
     "steel": ((0.30, 0.30, 0.29), 0.5, 0.7), "wire": ((0.02, 0.02, 0.02), 0.6, 0.0),
     "tank_w": ((0.45, 0.44, 0.41), 0.6, 0.0), "tank_b": ((0.035, 0.035, 0.035), 0.55, 0.0),
     "tank_s": ((0.40, 0.40, 0.39), 0.35, 0.85), "dish": ((0.48, 0.47, 0.45), 0.5, 0.0),
@@ -67,6 +74,13 @@ CONST = {
     "tape": ((0.55, 0.45, 0.04), 0.5, 0.0), "post": ((0.45, 0.40, 0.10), 0.6, 0.0),
     "marking": ((0.36, 0.355, 0.33), 0.8, 0.0), "crack": ((0.035, 0.032, 0.03), 0.95, 0.0),
     "rust": ((0.15, 0.075, 0.045), 0.8, 0.3), "mattress": ((0.38, 0.36, 0.32), 0.95, 0.0),
+    # facade details: window frames (aluminium / bronze), iron window cages, curtains, shop boards (no text)
+    "frame_alu": ((0.48, 0.49, 0.49), 0.35, 0.7), "frame_bronze": ((0.09, 0.065, 0.045), 0.45, 0.4),
+    "grille_w": ((0.46, 0.46, 0.44), 0.55, 0.2), "grille_g": ((0.10, 0.16, 0.13), 0.55, 0.2),
+    "curtain0": ((0.42, 0.39, 0.33), 0.9, 0.0), "curtain1": ((0.30, 0.10, 0.07), 0.9, 0.0),
+    "curtain2": ((0.13, 0.20, 0.27), 0.9, 0.0), "curtain3": ((0.48, 0.46, 0.40), 0.9, 0.0),
+    "sign5": ((0.40, 0.05, 0.035), 0.45, 0.0), "sign6": ((0.04, 0.11, 0.30), 0.45, 0.0),
+    "sign7": ((0.50, 0.36, 0.03), 0.45, 0.0), "sign_w": ((0.66, 0.66, 0.63), 0.35, 0.0),
 }
 GROUND_LOOKS = {"asphalt": "asphalt", "patch": "asphalt", "sidewalk": "paving", "kerb": "concrete", "lot": "lot",
                 "bed": "bed", "dust": "dust", "far": "lot", "marking": None, "crack": None, "wire": None, "tape": None}
@@ -393,8 +407,10 @@ def mat_plaster(T):
     # grime streaks down the wall (along v)
     fs, _ = T.noise(T.torus(9.0, 0.5), 1.0, 5, 0.6, seed=73)
     fc, _ = T.noise(tc, 0.6, 2, 0.5, seed=74)
-    st = T.mul(T.band(fs, 0.5, 0.7), T.band(fc, 0.4, 0.62))
-    base = T.mix(T.mul(st, 0.5), base, (0.20, 0.19, 0.17), "MULTIPLY")
+    st = T.mul(T.band(fs, 0.46, 0.7), T.band(fc, 0.36, 0.6))
+    base = T.mix(T.mul(st, 0.75), base, (0.17, 0.16, 0.14), "MULTIPLY")
+    fr, _ = T.noise(T.torus(16.0, 0.7), 1.0, 4, 0.6, seed=81)            # thin rain-wash runs
+    base = T.mix(T.mul(T.mul(T.band(fr, 0.6, 0.7), T.band(fc, 0.3, 0.5)), 0.45), base, (0.30, 0.27, 0.22), "MULTIPLY")
     # repaired patches (slightly different paint)
     pv = T.vor(tc, 0.6, seed=75)
     patch = T.mul(T.band(T.sep(pv.outputs["Color"])[0], 0.86, 0.88), T.band(pv.outputs["Distance"], 0.4, 0.35))
@@ -428,8 +444,8 @@ def mat_concrete(T):
     base = T.mix(0.3, base, T.ramp(f1, [(0.3, (0.65, 0.65, 0.65)), (0.7, (1, 1, 1))]), "MULTIPLY")
     fs, _ = T.noise(T.torus(9.0, 0.4), 1.0, 4, 0.55, seed=93)
     fc, _ = T.noise(tc, 0.7, 2, 0.5, seed=94)
-    st = T.mul(T.band(fs, 0.52, 0.72), T.band(fc, 0.42, 0.62))
-    base = T.mix(T.mul(st, 0.5), base, (0.12, 0.115, 0.105))
+    st = T.mul(T.band(fs, 0.48, 0.72), T.band(fc, 0.38, 0.62))
+    base = T.mix(T.mul(st, 0.65), base, (0.11, 0.105, 0.095))
     pore = T.m("SUBTRACT", 1.0, T.band(T.vor(tc, 50.0, seed=95).outputs["Distance"], 0.05, 0.16))
     pore = T.mul(pore, T.band(T.noise(tc, 3.0, 2, 0.5, seed=96)[0], 0.45, 0.65))
     base = T.mix(T.mul(pore, 0.55), base, (0.12, 0.115, 0.105))
@@ -482,8 +498,8 @@ def mat_tile(T):
     col = T.mix(grout, col, (0.36, 0.34, 0.31))
     fs, _ = T.noise(T.torus(9.0, 0.6), 1.0, 5, 0.6, seed=121)
     fc, _ = T.noise(tc, 0.8, 2, 0.5, seed=122)
-    st = T.mul(T.band(fs, 0.56, 0.74), T.band(fc, 0.45, 0.66))
-    col = T.mix(T.mul(st, 0.5), col, (0.20, 0.18, 0.15), "MULTIPLY")
+    st = T.mul(T.band(fs, 0.5, 0.74), T.band(fc, 0.38, 0.64))
+    col = T.mix(T.mul(st, 0.75), col, (0.16, 0.145, 0.12), "MULTIPLY")
     fm, _ = T.noise(tc, 2.0, 3, 0.6, seed=123)
     miss = T.mul(T.m("GREATER_THAN", T.m("FRACT", T.mul(r, 7.31)), 0.4), T.band(fm, 0.66, 0.70))
     col = T.mix(miss, col, (0.17, 0.165, 0.155))
@@ -560,9 +576,58 @@ def mat_interior(T):
     return base, T.add(0.85, T.mul(f0, 0.1)), h, 0.01
 
 
+def mat_paint(T):
+    """Car paint wear mask (grey, stored linear): 0 = clean paint, 1 = settled dust. town.py turns it into
+    colour + mask x (dust - colour) per car (UsdUVTexture scale / bias): mottled dust, vertical run marks, fine
+    grit, scratches and chips."""
+    tc = T.torus()
+    f0, _ = T.noise(tc, 0.7, 5, 0.6, seed=171)
+    m = T.mul(T.band(f0, 0.38, 0.78), 0.32)
+    fs, _ = T.noise(T.torus(10.0, 0.6), 1.0, 4, 0.6, seed=172)
+    m = T.add(m, T.mul(T.mul(T.band(fs, 0.55, 0.75), T.band(T.noise(tc, 0.8, 2, 0.5, seed=173)[0], 0.4, 0.6)), 0.3))
+    g = T.vor(tc, 70.0, seed=174)
+    m = T.add(m, T.mul(T.m("SUBTRACT", 1.0, T.band(g.outputs["Distance"], 0.05, 0.25)), 0.18))
+    sv = T.vor(tc, 1.6, "DISTANCE_TO_EDGE", seed=175)
+    scr = T.mul(T.m("SUBTRACT", 1.0, T.band(sv.outputs["Distance"], 0.002, 0.006)),
+                T.band(T.noise(tc, 1.2, 3, 0.6, seed=176)[0], 0.58, 0.66))
+    m = T.add(m, T.mul(scr, 0.55))
+    ch = T.vor(tc, 9.0, seed=177)
+    chip = T.mul(T.band(T.sep(ch.outputs["Color"])[0], 0.965, 0.97), T.band(ch.outputs["Distance"], 0.25, 0.15))
+    m = T.m("MINIMUM", T.add(m, T.mul(chip, 0.6)), 1.0)
+    col = T.ramp(m, [(0.0, (0, 0, 0)), (1.0, (1, 1, 1))])
+    rough = T.add(0.28, T.mul(m, 0.62))
+    h = T.m("SUBTRACT", T.mul(f0, 0.1), T.add(T.mul(scr, 0.5), T.mul(chip, 0.8)))
+    return col, rough, h, 0.002
+
+
+def mat_paint_top(T):
+    """Roof / bonnet / boot: thick settled dust (0.45-0.9) with wiped and rain-spotted patches, grit."""
+    tc = T.torus()
+    f0, _ = T.noise(tc, 0.5, 5, 0.6, seed=181)
+    m = T.add(0.45, T.mul(T.band(f0, 0.3, 0.75), 0.4))
+    wv = T.vor(tc, 0.9, seed=182)
+    wipe = T.mul(T.band(T.sep(wv.outputs["Color"])[0], 0.86, 0.88), T.band(wv.outputs["Distance"], 0.45, 0.3))
+    m = T.m("SUBTRACT", m, T.mul(wipe, 0.35))
+    sp = T.vor(tc, 14.0, seed=183)
+    spot = T.mul(T.band(sp.outputs["Distance"], 0.32, 0.26), T.band(T.sep(sp.outputs["Color"])[1], 0.7, 0.72))
+    m = T.m("SUBTRACT", m, T.mul(spot, 0.25))
+    g = T.vor(tc, 60.0, seed=184)
+    m = T.add(m, T.mul(T.m("SUBTRACT", 1.0, T.band(g.outputs["Distance"], 0.05, 0.3)), 0.12))
+    m = T.m("MINIMUM", T.m("MAXIMUM", m, 0.0), 1.0)
+    col = T.ramp(m, [(0.0, (0, 0, 0)), (1.0, (1, 1, 1))])
+    rough = T.add(0.3, T.mul(m, 0.62))
+    return col, rough, T.mul(f0, 0.2), 0.002
+
+
+MASKS = ("paint", "paint_top")                           # stored linear; + an inverted copy (albedoinv)
+# settled dust colour the masks blend toward (car colour -> dust), per material
+PAINT_DUST = {"paint": (0.30, 0.285, 0.255), "paint_top": (0.34, 0.32, 0.29)}
+
+
 MATS = {"asphalt": mat_asphalt, "lot": mat_lot, "bed": mat_bed, "plaster": mat_plaster, "dust": mat_dust,
         "paving": mat_paving, "concrete": mat_concrete, "brick": mat_brick, "tile": mat_tile, "roof": mat_roof,
-        "metal": mat_metal, "shutter": mat_shutter, "interior": mat_interior, "fracture": mat_fracture}
+        "metal": mat_metal, "shutter": mat_shutter, "interior": mat_interior, "fracture": mat_fracture,
+        "paint": mat_paint, "paint_top": mat_paint_top}
 
 
 def bake_textures(out, log=print, only=None):
@@ -579,6 +644,8 @@ def bake_textures(out, log=print, only=None):
     for name, fn in MATS.items():
         n, tile = TEX[name]
         files = {k: f"textures/{name}_{k}.png" for k in ("albedo", "rough", "normal")}
+        if name in MASKS:
+            files["albedoinv"] = f"textures/{name}_albedoinv.png"
         res[name] = files
         if only and name not in only:
             continue
@@ -624,6 +691,14 @@ def bake_textures(out, log=print, only=None):
             A = np.empty(n * n * 4, np.float32)
             img.pixels.foreach_get(A)
             A = A.reshape(n, n, 4)[::-1, :, :3]
+            if kind == "albedo" and name in MASKS:
+                lin = np.clip(A, 0, 1)
+                log(f"[town-kit] {name}: {n}px / {tile:g} m, mask mean {lin.mean():.3f} (linear, + inverted copy)")
+                Image.fromarray((lin * 255 + 0.5).astype(np.uint8), "RGB").save(os.path.join(out, files["albedoinv"].replace("inv", "")), optimize=True)
+                im = Image.fromarray(((1.0 - lin) * 255 + 0.5).astype(np.uint8), "RGB")
+                im.save(os.path.join(out, files["albedoinv"]), optimize=True)
+                bpy.data.images.remove(img)
+                continue
             if kind == "albedo":
                 lin = np.clip(A, 0, 1)
                 log(f"[town-kit] {name}: {n}px / {tile:g} m, albedo mean (linear) {lin.reshape(-1, 3).mean(0).round(3)}")
@@ -670,19 +745,45 @@ class MB:
         o = self._uvo(mat)
         return np.c_[u / t + o[0], v / t + o[1]]
 
-    def mesh(self, P, F, mat, smooth=False, mats=None):
-        """Append a triangle mesh; flat or smooth (area-weighted vertex) normals."""
+    def mesh(self, P, F, mat, smooth=False, mats=None, out=None):
+        """Append a triangle mesh; flat or smooth (area-weighted vertex) normals. out: callable centroids (N,3) ->
+        outward directions (N,3); faces facing the other way are flipped."""
         P = np.asarray(P, float).reshape(-1, 3)
-        F = np.asarray(F, np.int64).reshape(-1, 3)
+        F = np.asarray(F, np.int64).reshape(-1, 3).copy()
         if not len(F):
             return self
+        if out is not None:
+            a, b, c = P[F[:, 0]], P[F[:, 1]], P[F[:, 2]]
+            flip = np.einsum("ij,ij->i", np.cross(b - a, c - a), out((a + b + c) / 3)) < 0
+            F[flip] = F[flip][:, ::-1]
         a, b, c = P[F[:, 0]], P[F[:, 1]], P[F[:, 2]]
         fn = np.cross(b - a, c - a)
         ln = np.linalg.norm(fn, axis=1)
         keep = ln > 1e-10
         F, fn, ln = F[keep], fn[keep], ln[keep]
         fn = fn / ln[:, None]
-        if smooth:
+        if smooth is not False and smooth is not True and smooth:      # auto-smooth: angle threshold (deg)
+            # weld coincident points so the loft's seams smooth too, then average the face normals within the angle
+            key = np.round(P * 1e4).astype(np.int64)
+            _, vid = np.unique(key, axis=0, return_inverse=True)
+            vid = vid.ravel()
+            Fv = vid[F]
+            cos_t = math.cos(math.radians(float(smooth)))
+            nv = vid.max() + 1
+            vf = [[] for _ in range(nv)]
+            for fi in range(len(F)):
+                for k in range(3):
+                    vf[Fv[fi, k]].append(fi)
+            cn = np.zeros((len(F), 3, 3))
+            wn = fn * ln[:, None]
+            for fi in range(len(F)):
+                for k in range(3):
+                    adj = vf[Fv[fi, k]]
+                    nn = fn[adj]
+                    ok = nn @ fn[fi] > cos_t
+                    v = wn[adj][ok].sum(0)
+                    cn[fi, k] = v / (np.linalg.norm(v) + 1e-12)
+        elif smooth:
             vn = np.zeros_like(P)
             for k in range(3):
                 np.add.at(vn, F[:, k], fn * ln[:, None])
@@ -702,8 +803,16 @@ class MB:
         self.n += len(P)
         return self
 
-    def poly(self, pts, mat, smooth=False):
+    def poly(self, pts, mat, smooth=False, d=None):
+        """Convex polygon (fan); d: outward direction (3,) - the polygon is flipped to face it."""
         pts = np.asarray(pts, float)
+        if d is not None:
+            nrm = np.zeros(3)
+            for i in range(len(pts)):
+                a, b = pts[i], pts[(i + 1) % len(pts)]
+                nrm += np.cross(a, b)
+            if nrm @ np.asarray(d, float) < 0:
+                pts = pts[::-1]
         F = [(0, i, i + 1) for i in range(1, len(pts) - 1)]
         return self.mesh(pts, F, mat, smooth)
 
@@ -894,7 +1003,12 @@ class Bldg:
         self.frame = "concrete" if spec["facade"] == "brick" else "plaster"
         self.infill = {"plaster": "plaster", "tile": "tile", "brick": "brick"}[spec["facade"]]
         self.missing = set()                          # (face, bay, storey) infill panels left open (damage)
-        self.cut = None                               # corner collapse: (bay index from, storey from)
+        self.cut = None                               # corner collapse: (bay index from, storey from, depth)
+        self.blank = []                               # (face, u0, u1, z0, z1) plain infill bays (cracks / spalls)
+        # per building: window frame finish, how many windows have iron cages and in what paint
+        self.wframe = str(rng.choice(["frame_alu", "frame_alu", "frame", "frame_bronze", "frame_dark"]))
+        self.grille_p = float(rng.choice([0.0, 0.25, 0.5, 0.75]))
+        self.grille_mat = str(rng.choice(["grille_w", "rail", "rust", "grille_g"]))
 
     # --- facade grid (front y=0 facing -y, back y=D facing +y, sides x=+-W/2): u along the face, z up
     def face_frame(self, face):
@@ -971,24 +1085,87 @@ class Bldg:
             self.fquad(face, u0 + 0.05, u1 - 0.05, z0, z1 - 0.05, -self.REC - 0.1, "door")
             return
         r = rng.random()
-        if r < 0.12:                                                   # blown out: dark hole
-            return
         dd = -self.REC - 0.10
-        fw = 0.06
-        # window frame (thin boxes) + glass, sometimes a roller blind half down
-        self.fbox(face, u0, u1, z0, z0 + fw, dd - 0.05, dd, "frame", skip=("-z",))
-        self.fbox(face, u0, u1, z1 - fw, z1, dd - 0.05, dd, "frame", skip=("+z",))
-        self.fbox(face, u0, u0 + fw, z0 + fw, z1 - fw, dd - 0.05, dd, "frame")
-        self.fbox(face, u1 - fw, u1, z0 + fw, z1 - fw, dd - 0.05, dd, "frame")
-        if u1 - u0 > 1.0:
-            um = (u0 + u1) / 2
-            self.fbox(face, um - fw / 2, um + fw / 2, z0 + fw, z1 - fw, dd - 0.05, dd, "frame")
-        g = "glass" if r < 0.8 else "glass_dusty"
-        self.fquad(face, u0 + fw, u1 - fw, z0 + fw, z1 - fw, dd - 0.025, g)
-        if rng.random() < 0.35:                                        # external roller blind (common)
+        fw, fd, fm = 0.07, 0.07, self.wframe
+        # frame: sill / head / jambs, a transom on tall windows, mullions between the sliding panes
+        self.fbox(face, u0, u1, z0, z0 + fw, dd - fd, dd, fm, skip=("-z",))
+        self.fbox(face, u0, u1, z1 - fw, z1, dd - fd, dd, fm, skip=("+z",))
+        self.fbox(face, u0, u0 + fw, z0 + fw, z1 - fw, dd - fd, dd, fm)
+        self.fbox(face, u1 - fw, u1, z0 + fw, z1 - fw, dd - fd, dd, fm)
+        zt = z1 - min(0.42, (z1 - z0) * 0.27) if z1 - z0 > 1.1 else z1 - fw
+        if zt < z1 - fw:
+            self.fbox(face, u0 + fw, u1 - fw, zt - 0.03, zt + 0.03, dd - fd, dd, fm)
+        nm = 2 if u1 - u0 > 1.55 else (1 if u1 - u0 > 0.8 else 0)
+        us = [u0 + fw] + [u0 + (u1 - u0) * (i + 1) / (nm + 1) for i in range(nm)] + [u1 - fw]
+        has_t = zt < z1 - fw
+        for um in us[1:-1]:
+            self.fbox(face, um - 0.03, um + 0.03, z0 + fw, zt - 0.03 if has_t else z1 - fw, dd - fd, dd, fm)
+        # panes: glass (clean / dusty), cracked (milky), or knocked out with shards left in the frame
+        g = "glass" if rng.random() < 0.7 else "glass_dusty"
+        blown = r < 0.10
+        panes = [(ua, ub, z0 + fw, zt - 0.03 if has_t else z1 - fw) for ua, ub in zip(us[:-1], us[1:])]
+        if has_t:
+            panes.append((u0 + fw, u1 - fw, zt + 0.03, z1 - fw))
+        for ua, ub, za, zb in panes:
+            ua2 = ua + 0.03 if ua > u0 + fw + 1e-6 else ua
+            ub2 = ub - 0.03 if ub < u1 - fw - 1e-6 else ub
+            q = rng.random()
+            if blown or q < 0.07:
+                for (pu, pz, su, sz) in ((ua2, za, 1, 1), (ub2, zb, -1, -1), (ua2, zb, 1, -1)):
+                    if rng.random() < 0.55:
+                        a = self.P3(face, pu, pz, dd - 0.035)
+                        b_ = self.P3(face, pu + su * rng.uniform(0.12, 0.45) * (ub2 - ua2), pz, dd - 0.035)
+                        c = self.P3(face, pu, pz + sz * rng.uniform(0.15, 0.5) * (zb - za), dd - 0.035)
+                        mb.poly([a, b_, c], "glass_broken")
+                continue
+            self.fquad(face, ua2, ub2, za, zb, dd - 0.035, "glass_broken" if q < 0.17 else g)
+        if rng.random() < 0.55:                                        # curtains behind the glass
+            cm = f"curtain{int(rng.integers(4))}"
+            frac = rng.uniform(0.3, 1.0)
+            if rng.random() < 0.5:
+                self.fquad(face, u0 + fw, u0 + fw + (u1 - u0 - 2 * fw) * frac, z0 + fw, z1 - fw, dd - 0.1, cm)
+            else:
+                self.fquad(face, u1 - fw - (u1 - u0 - 2 * fw) * frac, u1 - fw, z0 + fw, z1 - fw, dd - 0.1, cm)
+        if rng.random() < 0.3:                                         # external roller blind (common)
             zb = z1 - (z1 - z0) * rng.uniform(0.15, 0.9)
             self.fbox(face, u0 - 0.02, u1 + 0.02, z1, z1 + 0.18, -self.REC, 0.02, "plaster")
             self.fquad(face, u0, u1, zb, z1, -self.REC - 0.03, "shutter")
+
+    def grille(self, face, u0, u1, z0, z1):
+        """Iron window cage (Taiwan): a bar box protruding from the wall around the opening, often a tin hood."""
+        rng, m, mb = self.rng, self.grille_mat, self.mb
+        dep = rng.uniform(0.22, 0.42)
+        a0, a1, b0, b1 = u0 - 0.1, u1 + 0.1, z0 - 0.12, z1 + 0.1
+        d0, d1 = -self.REC, -self.REC + dep
+        t = 0.025
+        for (ua, ub, za, zb) in ((a0, a1, b0, b0 + t), (a0, a1, b1 - t, b1), (a0, a0 + t, b0 + t, b1 - t),
+                                 (a1 - t, a1, b0 + t, b1 - t)):
+            self.fbox(face, ua, ub, za, zb, d1 - t, d1, m)
+        step = rng.uniform(0.10, 0.14)
+        for uu in np.arange(a0 + step, a1 - step * 0.5, step):                     # front bars
+            self.fquad(face, uu - 0.009, uu + 0.009, b0 + t, b1 - t, d1 - t * 0.5, m)
+        for zz in np.arange(b0 + 0.45, b1 - 0.25, 0.45):
+            self.fquad(face, a0, a1, zz - 0.01, zz + 0.01, d1 - t * 0.5 + 0.004, m)
+        for ua in (a0 + t * 0.5, a1 - t * 0.5):                                     # sides: rails across the depth
+            for zz in np.linspace(b0, b1, 5)[1:-1]:
+                mb.quad(self.P3(face, ua, zz - 0.01, d0), self.P3(face, ua, zz - 0.01, d1),
+                        self.P3(face, ua, zz + 0.01, d1), self.P3(face, ua, zz + 0.01, d0), m)
+            for zz in (b0, b1):
+                mb.quad(self.P3(face, ua, zz, d0), self.P3(face, ua, zz, d1),
+                        self.P3(face, ua, zz + (0.02 if zz == b0 else -0.02), d1),
+                        self.P3(face, ua, zz + (0.02 if zz == b0 else -0.02), d0), m)
+        for dz in np.linspace(d0, d1, 4)[1:-1]:                                     # floor bars
+            mb.quad(self.P3(face, a0, b0, dz - 0.01), self.P3(face, a1, b0, dz - 0.01),
+                    self.P3(face, a1, b0, dz + 0.01), self.P3(face, a0, b0, dz + 0.01), m)
+        if rng.random() < 0.6:                                                      # tin hood
+            mb.quad(self.P3(face, a0 - 0.05, b1 + 0.14, d0), self.P3(face, a1 + 0.05, b1 + 0.14, d0),
+                    self.P3(face, a1 + 0.05, b1 - 0.02, d1 + 0.1), self.P3(face, a0 - 0.05, b1 - 0.02, d1 + 0.1),
+                    "metal" if rng.random() < 0.7 else "tarp")
+        if rng.random() < 0.35:                                                     # pots / boxes on the cage floor
+            for _ in range(int(rng.integers(1, 4))):
+                uc = rng.uniform(a0 + 0.2, a1 - 0.2)
+                self.fbox(face, uc - 0.12, uc + 0.12, b0, b0 + rng.uniform(0.15, 0.35), d0 + 0.04, d1 - 0.04,
+                          str(rng.choice(["plastic", "wood", "leaf", "paper"])), skip=("-z",))
 
     def panel(self, face, b, k, u0, u1, kind):
         """Infill between two columns (u0..u1) for storey k with one opening of `kind` (or none)."""
@@ -1010,6 +1187,7 @@ class Bldg:
             return
         if kind is None:
             self.fquad(face, u0, u1, z0, z1, -self.REC, self.infill)
+            self.blank.append((face, u0, u1, z0, z1))
             return
         w = u1 - u0
         if kind == "shop":
@@ -1040,40 +1218,59 @@ class Bldg:
         if oz1 < z1:
             self.fquad(face, ou0, ou1, oz1, z1, -self.REC, self.infill)
         self.opening(face, ou0, ou1, oz0, oz1, {"shop": "shop", "door": "door"}.get(kind, "win"))
-        if kind == "win" and rng.random() < 0.18 and face in ("front", "back"):     # AC unit under the window
-            uc = rng.uniform(u0 + 0.5, u1 - 0.5)
-            zc = oz0 - rng.uniform(0.1, 0.4)
-            self.fbox(face, uc - 0.42, uc + 0.42, zc - 0.55, zc, 0.0, 0.32, "ac")
-            self.fquad(face, uc - 0.35, uc + 0.35, zc - 0.5, zc - 0.05, 0.325, "grille")
-        if kind == "win" and rng.random() < 0.3:                      # sill
+        caged = kind in ("win", "small") and k > 0 and rng.random() < self.grille_p * (1.0 if face in ("front", "back") else 0.5)
+        if caged or (kind == "win" and k == 0 and rng.random() < self.grille_p * 1.3):
+            self.grille(face, ou0, ou1, oz0, oz1)
+        elif kind == "win" and rng.random() < 0.45:                    # sill
             self.fbox(face, ou0 - 0.08, ou1 + 0.08, oz0 - 0.06, oz0, -self.REC, 0.04, "concrete")
+        if kind in ("win", "small") and k > 0 and rng.random() < (0.4 if face in ("front", "back") else 0.25):
+            self.ac_unit(face, rng.uniform(u0 + 0.5, u1 - 0.5), oz0 - rng.uniform(0.2, 0.32))
+
+    def ac_unit(self, face, uc, zc):
+        """Split AC outdoor unit on two brackets under an opening (zc: top of the unit)."""
+        self.fbox(face, uc - 0.42, uc + 0.42, zc - 0.55, zc, -self.REC, 0.30, "ac")
+        self.fquad(face, uc - 0.36, uc + 0.12, zc - 0.5, zc - 0.05, 0.305, "grille")              # fan grille
+        self.fquad(face, uc + 0.18, uc + 0.36, zc - 0.48, zc - 0.07, 0.305, "grille")             # louvres
+        for du in (-0.3, 0.3):                                                                    # brackets
+            self.fbox(face, uc + du - 0.02, uc + du + 0.02, zc - 0.62, zc - 0.55, -self.REC, 0.28, "rail")
+        if self.rng.random() < 0.5:                                                               # pipe up the wall
+            self.fbox(face, uc - 0.5, uc - 0.45, zc - 0.3, zc + 0.35, -self.REC, -self.REC + 0.05, "plastic")
 
     def columns_beams(self, face, nb, length, kmax, hidden_bays=()):
         """RC frame on a face: columns at bay lines, beams (slab edges) at every floor."""
         bw = length / nb
+        side = face in ("left", "right")
         for i in range(nb + 1):
+            if side and i in (0, nb):                     # corners: the front / back columns cover them (no coplanar faces)
+                continue
             u = i * bw
             u0, u1 = max(0.0, u - self.COL / 2), min(length, u + self.COL / 2)
             top = self.levels[kmax]
             if self.cut and face == "front" and i > self.cut[0]:
                 top = self.levels[self.cut[1]]
-            if self.cut and face == "right" and self.cut is not None:
-                top = self.levels[self.cut[1]] if u < self.cut[2] else top
+            if self.cut and face == "right":
+                top = self.levels[self.cut[1]] if u < self.cut[2] - 1e-6 else top
             self.fbox(face, u0, u1, -0.6, top, -self.COL / 2 - 0.1, 0.0, self.frame, skip=("-z",))
         for k in range(1, kmax + 1):
             z = self.levels[k]
-            u0, u1 = 0.0, length
+            u0, u1 = (0.3, length - 0.3) if side else (-0.015, length + 0.015)     # slab edges 15 mm proud
             if self.cut and face == "front" and k > self.cut[1]:
                 u1 = (self.cut[0]) * bw + self.COL / 2
-            self.fbox(face, u0, u1, z - self.BEAM, z + 0.15, -0.3, 0.0, self.frame)
+            if self.cut and face == "right" and k > self.cut[1]:
+                u0 = self.cut[2] - self.COL / 2
+            self.fbox(face, u0, u1, z - self.BEAM, z + 0.15, -0.3, 0.015, self.frame)
 
     def build(self):
         s, rng = self.s, self.rng
         dmg = s["damage"]
         W, D = self.W, self.D
         nst = self.n
+        bd = D / self.nd
         if dmg == "corner":
-            self.cut = (self.nb - 2 if self.nb > 2 else 1, max(1, nst - 2), D * rng.uniform(0.35, 0.6))
+            self.cut = (self.nb - 2 if self.nb > 2 else 1, max(1, nst - 2),
+                        bd * max(1, round(D * rng.uniform(0.35, 0.6) / bd)))
+        if dmg == "upper":                                         # part of the top storey come down
+            self.cut = (self.nb - int(rng.integers(1, 3)), nst - 1, bd * max(1, min(self.nd - 1, round(D * rng.uniform(0.5, 0.8) / bd))))
         if dmg == "facade":
             for _ in range(int(rng.integers(3, 6))):
                 self.missing.add(("front", int(rng.integers(self.nb)), int(rng.integers(1, nst))))
@@ -1090,6 +1287,8 @@ class Bldg:
                 for b in range(nb):
                     if self.cut and face == "front" and b > self.cut[0] - 1 and k >= self.cut[1]:
                         continue
+                    if self.cut and face == "right" and (b + 1) * bw <= self.cut[2] + 1e-6 and k >= self.cut[1]:
+                        continue
                     u0, u1 = b * bw + self.COL / 2, (b + 1) * bw - self.COL / 2
                     kind = self._kind(face, b, k, nb)
                     self.panel(face, b, k, u0, u1, kind)
@@ -1098,18 +1297,23 @@ class Bldg:
         # interior volume behind the facades (dark box per storey: floors, ceilings seen through openings)
         for k in range(nst):
             z = self.levels[k] + 0.16
+            if self.cut and k > self.cut[1]:                       # floors gone in the collapsed corner
+                xc = -W / 2 + self.cut[0] * (W / self.nb)
+                self.mb.quad((-W / 2 + 0.4, 0.4, z), (xc, 0.4, z), (xc, D - 0.4, z), (-W / 2 + 0.4, D - 0.4, z), "interior")
+                self.mb.quad((xc, self.cut[2], z), (W / 2 - 0.4, self.cut[2], z), (W / 2 - 0.4, D - 0.4, z),
+                             (xc, D - 0.4, z), "interior")
+                continue
             self.mb.quad((-W / 2 + 0.4, 0.4, z), (W / 2 - 0.4, 0.4, z), (W / 2 - 0.4, D - 0.4, z),
                          (-W / 2 + 0.4, D - 0.4, z), "interior")
         self.roof()
         if s["ground"] == "shop":
             self.signs()
         self.drainpipes()
-        if dmg == "corner":
+        if dmg in ("corner", "upper"):
             self.corner_collapse()
         if dmg == "top":
             self.pancake_top()
-        if dmg in ("cracked", "soft", "facade", "top", "corner"):
-            self.cracks()
+        self.cracks(light=dmg == "none")
         if dmg == "soft":
             self.soft_storey()
         return self.mb
@@ -1145,6 +1349,24 @@ class Bldg:
             self.fbox(face, u0, u1, z + 1.0, z + 1.05, dep - 0.06, dep - 0.01, "rail")
             for uu in np.arange(u0 + 0.06, u1, 0.16):
                 self.fbox(face, uu, uu + 0.02, z + 0.12, z + 1.0, dep - 0.05, dep - 0.03, "rail")
+        if rng.random() < self.grille_p * 0.7:                     # balcony closed in with an iron cage to the beam
+            m = self.grille_mat
+            ztop = min(lv for lv in self.levels if lv > z + 0.5) - self.BEAM
+            zb = z + 1.05
+            self.fbox(face, u0, u1, ztop - 0.04, ztop, 0.0, dep, m, skip=("+z",))
+            self.fbox(face, u0, u1, zb, zb + 0.03, dep - 0.04, dep, m)
+            for uu in np.arange(u0 + 0.06, u1, 0.12):
+                self.fquad(face, uu - 0.01, uu + 0.01, zb, ztop, dep - 0.02, m)
+            for ua in (u0 + 0.02, u1 - 0.02):
+                for zz in np.linspace(zb, ztop, 4)[:-1]:
+                    self.mb.quad(self.P3(face, ua, zz, 0.0), self.P3(face, ua, zz, dep),
+                                 self.P3(face, ua, zz + 0.02, dep), self.P3(face, ua, zz + 0.02, 0.0), m)
+            if rng.random() < 0.5:                                 # laundry pole across the cage
+                self.fbox(face, u0, u1, ztop - 0.35, ztop - 0.32, dep * 0.5, dep * 0.5 + 0.03, "steel")
+                for _ in range(int(rng.integers(1, 4))):
+                    uc = rng.uniform(u0 + 0.3, u1 - 0.5)
+                    self.fquad(face, uc, uc + rng.uniform(0.3, 0.6), ztop - 1.0, ztop - 0.33, dep * 0.5 + 0.015,
+                               str(rng.choice(["curtain0", "curtain1", "curtain2", "tarp", "paper"])))
         if rng.random() < 0.3:                                     # clutter: a tank / crate on the balcony
             uc = rng.uniform(u0 + 0.4, u1 - 0.4)
             self.fbox(face, uc - 0.3, uc + 0.3, z + 0.12, z + 0.8, 0.2, 0.7, rng.choice(["plastic", "tank_w", "wood"]))
@@ -1162,8 +1384,11 @@ class Bldg:
         else:
             mb.quad((-W / 2, 0, zr), (W / 2, 0, zr), (W / 2, D, zr), (-W / 2, D, zr), "roof")
         # parapet with a broken top in places
-        for (a, b) in (((-W / 2, 0), (W / 2, 0)), ((W / 2, 0), (W / 2, D)), ((W / 2, D), (-W / 2, D)),
-                       ((-W / 2, D), (-W / 2, 0))):
+        edges = [((-W / 2, 0), (W / 2, 0)), ((W / 2, 0), (W / 2, D)), ((W / 2, D), (-W / 2, D)), ((-W / 2, D), (-W / 2, 0))]
+        if cut:                                                    # no parapet over the collapsed corner
+            xc = -W / 2 + cut[0] * (W / self.nb)
+            edges[0], edges[1] = ((-W / 2, 0), (xc, 0)), ((W / 2, cut[2]), (W / 2, D))
+        for (a, b) in edges:
             a, b = np.array(a), np.array(b)
             L = np.linalg.norm(b - a)
             u = (b - a) / L
@@ -1225,25 +1450,86 @@ class Bldg:
             for h in (2.4, 2.9):
                 mb.box(cx - 0.6, cx + 0.6, cy - 0.01, cy + 0.01, zr + h, zr + h + 0.02, "steel")
 
+    def board(self, face, u0, u1, za, zb, d, col):
+        """A flat shop sign: dark box border, coloured face, abstract light blocks (no text)."""
+        rng = self.rng
+        self.fbox(face, u0, u1, za, zb, d, d + 0.10, "frame_dark")
+        self.fquad(face, u0 + 0.05, u1 - 0.05, za + 0.05, zb - 0.05, d + 0.103, col)
+        h, L = zb - za, u1 - u0
+        lc = "sign_w" if col != "sign_w" else str(rng.choice(["sign5", "sign6"]))
+        s0 = u0 + 0.12
+        if rng.random() < 0.7:                                     # a square "logo" block
+            q = h * 0.62
+            self.fquad(face, s0, s0 + q, za + (h - q) / 2, za + (h + q) / 2, d + 0.106,
+                       str(rng.choice([lc, "sign5", "sign7", "sign6"])))
+            s0 += q + 0.15
+        e = u1 - 0.15 - rng.uniform(0.0, 0.3) * L
+        if e > s0 + 0.3:                                           # one or two plain bars where lettering would be
+            self.fquad(face, s0, e, za + h * 0.42, za + h * 0.72, d + 0.106, lc)
+            if rng.random() < 0.6:
+                self.fquad(face, s0, s0 + (e - s0) * rng.uniform(0.4, 0.9), za + h * 0.18, za + h * 0.32,
+                           d + 0.106, lc)
+
     def signs(self):
+        """Street-level boards across the shop bays, awnings, vertical lightboxes on the columns (Taiwan)."""
         rng, W = self.rng, self.W
         bw = W / self.nb
         z0 = self.h0 - self.BEAM - 0.05
         for b in range(self.nb):
-            if rng.random() < 0.25:
+            if rng.random() < 0.2:
                 continue
             u0, u1 = b * bw + 0.3, (b + 1) * bw - 0.3
-            mat = f"sign{int(rng.integers(5))}"
+            col = f"sign{int(rng.integers(8))}" if rng.random() < 0.85 else "sign_w"
             dz = rng.uniform(-0.05, 0.05)
-            self.fbox("front", u0, u1, z0 + dz, z0 + 0.75 + dz, 0.0, 0.08, mat)
-            if rng.random() < 0.25:                                # sign hanging loose at one end
-                self.fbox("front", u0 + 0.2, u1 - 0.2, z0 - 0.8, z0 - 0.1, 0.05, 0.12, mat)
+            h = rng.uniform(0.7, 1.0)
+            if rng.random() < 0.2:                                 # board torn loose, hanging from one end
+                main, sub = self.mb, MB(rng)
+                self.mb = sub
+                self.board("front", u0, u1, z0 + dz, z0 + h + dz, 0.0, col)
+                self.mb = main
+                pu = u1 if rng.random() < 0.5 else u0
+                piv = self.P3("front", pu, z0 + h + dz, 0.0)
+                R = Ry(rng.uniform(12, 30) * (-1 if pu == u1 else 1))      # free end drops
+                main.merge(sub, R, piv - R @ piv)
+            else:
+                self.board("front", u0, u1, z0 + dz, z0 + h + dz, 0.0, col)
             if rng.random() < 0.3:                                 # faded awning
                 sub = MB(rng)
                 L = u1 - u0
                 sub.quad((0, 0, 0), (L, 0, 0), (L, -1.1, -0.45), (0, -1.1, -0.45), "awning")
                 sub.quad((0, -1.1, -0.45), (L, -1.1, -0.45), (L, 0, 0), (0, 0, 0), "awning")
                 self.mb.merge(sub, None, (-self.W / 2 + u0, 0.0, z0 - 0.15))
+        # vertical lightboxes on the inner columns, perpendicular to the facade (one or two per building)
+        cols = list(range(1, self.nb))
+        rng.shuffle(cols)
+        for i in cols[:int(rng.integers(1, 3))]:
+            if self.cut and i >= self.cut[0]:
+                continue
+            uc = i * bw
+            za = self.h0 + 0.4
+            zb = min(za + rng.uniform(2.6, 4.6), self.levels[-1] - 0.3)
+            if zb - za < 1.5:
+                continue
+            col = f"sign{int(rng.integers(8))}"
+            dA, dB = 0.25, rng.uniform(0.9, 1.15)
+            self.fbox("front", uc - 0.1, uc + 0.1, za, zb, dA, dB, "frame_dark")
+            for sgn in (-1, 1):
+                us_ = uc + sgn * 0.102
+                P = lambda z_, d_: self.P3("front", us_, z_, d_)
+                self.mb.poly([P(za + 0.06, dA + 0.05), P(za + 0.06, dB - 0.05), P(zb - 0.06, dB - 0.05),
+                              P(zb - 0.06, dA + 0.05)], col, d=(sgn, 0, 0))
+                n_ = int(rng.integers(2, 5))                       # stacked plain blocks, no glyphs
+                hh = (zb - za - 0.3) / n_
+                for j in range(n_):
+                    if rng.random() < 0.15:
+                        continue
+                    zz = za + 0.15 + j * hh
+                    us2 = uc + sgn * 0.104
+                    Q = lambda z_, d_: self.P3("front", us2, z_, d_)
+                    self.mb.poly([Q(zz + 0.08, dA + 0.15), Q(zz + 0.08, dB - 0.15), Q(zz + hh - 0.08, dB - 0.15),
+                                  Q(zz + hh - 0.08, dA + 0.15)], "sign_w" if col != "sign_w" else "sign5", d=(sgn, 0, 0))
+            for zz in (za + 0.3, zb - 0.3):                         # brackets
+                self.fbox("front", uc - 0.02, uc + 0.02, zz, zz + 0.05, 0.0, dA, "steel")
 
     def drainpipes(self):
         rng = self.rng
@@ -1253,29 +1539,97 @@ class Bldg:
                 p0 = self.P3("front", u, -0.3, 0.12)
                 self.mb.cyl(p0, 0.05, top + 0.3, 6, "plastic", caps=(False, False))
 
-    def cracks(self):
-        """X-cracks between openings and along the beams (dark strips just proud of the face) + spalls."""
+    def _crack_line(self, face, pts, w, planes):
+        """Dark strip along a polyline (u, z) on the given face planes (d)."""
+        Nn = self.face_frame(face)[2]
+        for (u0, z0_), (u1, z1_) in zip(pts[:-1], pts[1:]):
+            ww = w * self.rng.uniform(0.6, 1.3)
+            for dd in planes:
+                a2, b2 = self.P3(face, u0, z0_, dd), self.P3(face, u1, z1_, dd)
+                n2 = np.cross(b2 - a2, Nn)
+                n2 = n2 / (np.linalg.norm(n2) + 1e-9) * ww
+                self.mb.quad(a2 - n2, b2 - n2, b2 + n2, a2 + n2, "crack")
+
+    def _patch(self, face, uc, zc, ru, rz, d, mat, n=10):
+        """Ragged star-shaped patch on a face plane (spalls, exposed brick)."""
         rng = self.rng
-        for _ in range(int(rng.integers(4, 10))):
-            face = rng.choice(["front", "front", "left", "right", "back"])
-            length = self.W if face in ("front", "back") else self.D
+        t = np.linspace(0, 2 * np.pi, n, endpoint=False) + rng.uniform(0, 1)
+        r = rng.uniform(0.6, 1.0, n)
+        pts = [self.P3(face, uc, zc, d)] + [self.P3(face, uc + ru * r[i] * math.cos(t[i]), zc + rz * r[i] * math.sin(t[i]), d)
+                                            for i in range(n)]
+        F = [(0, 1 + i, 1 + (i + 1) % n) for i in range(n)]
+        Nn = self.face_frame(face)[2]
+        self.mb.mesh(pts, F, mat, out=lambda c: np.broadcast_to(Nn, c.shape))
+
+    def _length(self, face):
+        return self.W if face in ("front", "back") else self.D
+
+    def cracks(self, light=False):
+        """Quake damage on the facades: stepped cracks from the floor lines, diagonal cracks at the top corners,
+        X shear cracks across plain infill bays, plaster spalled off to the brick, column spalls with buckled bars."""
+        rng = self.rng
+        both = (0.006, -self.REC + 0.006)
+        for _ in range(int(rng.integers(2, 4)) if light else int(rng.integers(4, 9))):
+            face = str(rng.choice(["front", "front", "left", "right", "back"]))
+            length = self._length(face)
             k = int(rng.integers(0, max(1, self.n - 1)))
-            z0 = self.levels[k] + 0.3
-            u = rng.uniform(0.5, length - 0.5)
-            d = rng.choice([-1, 1])
-            pts = [(u, z0)]
+            u, d = rng.uniform(0.5, length - 0.5), rng.choice([-1, 1])
+            pts = [(u, self.levels[k] + 0.3)]
             for _s in range(int(rng.integers(4, 9))):
-                du, dz = d * rng.uniform(0.15, 0.4), rng.uniform(0.15, 0.4)
-                pts.append((float(np.clip(pts[-1][0] + du, 0.1, length - 0.1)), pts[-1][1] + dz))
-            for (u0, z0_), (u1, z1_) in zip(pts[:-1], pts[1:]):
-                w = rng.uniform(0.008, 0.02)
-                a, b = self.P3(face, u0, z0_, 0.006), self.P3(face, u1, z1_, 0.006)
-                n2 = np.cross(b - a, self.face_frame(face)[2])
-                n2 = n2 / (np.linalg.norm(n2) + 1e-9) * w
-                # on the frame plane (columns / beams) or the infill: put it just in front of both
-                for dd in (0.006, -self.REC + 0.006):
-                    a2, b2 = self.P3(face, u0, z0_, dd), self.P3(face, u1, z1_, dd)
-                    self.mb.quad(a2 - n2, b2 - n2, b2 + n2, a2 + n2, "crack")
+                pts.append((float(np.clip(pts[-1][0] + d * rng.uniform(0.15, 0.4), 0.1, length - 0.1)),
+                            pts[-1][1] + rng.uniform(0.15, 0.4)))
+            self._crack_line(face, pts, rng.uniform(0.01, 0.025), both)
+        blanks = list(self.blank)
+        order = rng.permutation(len(blanks)) if blanks else []
+        if not light:
+            for face in ("front", "back", "left", "right"):        # diagonal cracks from the top corners
+                if rng.random() < 0.55:
+                    length = self._length(face)
+                    side = int(rng.integers(2))
+                    k = int(rng.integers(max(0, self.n - 2), self.n))
+                    pts = [(0.2 if side == 0 else length - 0.2, self.levels[k + 1] - 0.1)]
+                    for _s in range(int(rng.integers(6, 11))):
+                        du = rng.uniform(0.15, 0.45) * (1 if side == 0 else -1)
+                        pts.append((float(np.clip(pts[-1][0] + du, 0.1, length - 0.1)), pts[-1][1] - rng.uniform(0.2, 0.4)))
+                    self._crack_line(face, pts, rng.uniform(0.02, 0.04), both)
+            for j in order[:int(rng.integers(2, 6))]:              # X shear cracks
+                face, u0, u1, z0, z1 = blanks[j]
+                for (ua, za, ub, zb) in ((u0 + 0.1, z0 + 0.15, u1 - 0.1, z1 - 0.1), (u1 - 0.1, z0 + 0.15, u0 + 0.1, z1 - 0.1)):
+                    pts = [(ua + (ub - ua) * t + rng.normal(0, 0.05), za + (zb - za) * t + rng.normal(0, 0.05))
+                           for t in np.linspace(0, 1, 8)]
+                    self._crack_line(face, pts, rng.uniform(0.012, 0.03), (-self.REC + 0.006,))
+        if self.infill != "brick":                                 # render / tiles spalled off, brick behind
+            for j in order[::-1][:int(rng.integers(0, 2) if light else rng.integers(1, 4))]:
+                face, u0, u1, z0, z1 = blanks[j]
+                ru, rz = rng.uniform(0.18, 0.45), rng.uniform(0.15, 0.35)
+                uc = rng.uniform(u0 + ru * 0.8, max(u0 + ru * 0.8, u1 - ru * 0.8))
+                zc = rng.uniform(z0 + rz * 0.8, max(z0 + rz * 0.8, z1 - rz * 0.8))
+                self._patch(face, uc, zc, ru, rz, -self.REC + 0.004, "concrete")
+                self._patch(face, uc + rng.normal(0, 0.05), zc + rng.normal(0, 0.05), ru * 0.7, rz * 0.7,
+                            -self.REC + 0.007, "brick")
+        if light:
+            return
+        for _ in range(int(rng.integers(1, 4))):                   # column spalls at the storey base, buckled bars
+            face = str(rng.choice(["front", "front", "left", "right"]))
+            nb = self.nb if face in ("front", "back") else self.nd
+            i = int(rng.integers(0, nb + 1))
+            uc = float(np.clip(i * self._length(face) / nb, self.COL / 2, self._length(face) - self.COL / 2))
+            k = int(rng.integers(0, min(2, self.n)))
+            if self.cut and k >= self.cut[1]:
+                continue
+            z0 = self.levels[k] + (0.15 if k else 0.0)
+            zc, rz = z0 + rng.uniform(0.35, 0.8), rng.uniform(0.3, 0.55)
+            self._patch(face, uc, zc, self.COL * 0.5, rz, 0.004, "fracture")
+            for du in (-0.13, 0.0, 0.13):
+                if rng.random() < 0.8:
+                    bulge = rng.uniform(0.04, 0.12)
+                    pts = [self.P3(face, uc + du, zc - rz * 0.9, 0.01), self.P3(face, uc + du * 1.2, zc, 0.01 + bulge),
+                           self.P3(face, uc + du, zc + rz * 0.9, 0.01)]
+                    for pa, pb in zip(pts[:-1], pts[1:]):
+                        U = self.face_frame(face)[1] * 0.011
+                        self.mb.quad(pa - U, pa + U, pb + U, pb - U, "rust")
+            self.mb.quad(self.P3(face, uc - 0.17, zc - 0.01, 0.02), self.P3(face, uc + 0.17, zc - 0.01, 0.02),
+                         self.P3(face, uc + 0.17, zc + 0.01, 0.05), self.P3(face, uc - 0.17, zc + 0.01, 0.05), "rust")    # an opened tie
 
     def corner_collapse(self):
         """Debris and hanging slabs at the collapsed corner bays."""
@@ -1283,25 +1637,41 @@ class Bldg:
         W, D = self.W, self.D
         nb, k = self.cut[0], self.cut[1]
         x0 = -W / 2 + nb * (W / self.nb)
+        yc = self.cut[2]
+        upper = self.s["damage"] == "upper"
+        if upper:                                                  # roof slab hinged at the break, fallen onto the floor
+            Lx = W / 2 - x0 + 0.2
+            zt, zl = self.levels[self.n] + 0.1, self.levels[self.n - 1] + rng.uniform(0.5, 1.0)
+            ang = math.atan2(zt - zl, Lx)
+            sub = MB(rng)
+            sub.box(0, Lx / math.cos(ang), 0.05, yc - 0.1, -0.22, 0.0, "concrete",
+                    mats={"+z": "roof", "+x": "fracture", "+y": "fracture"})
+            mb.merge(sub, Ry(math.degrees(ang)) @ Rx(rng.uniform(-3, 3)), (x0, 0.0, zt))
+            for _ in range(10):
+                t = rng.uniform(0.1, 0.9)
+                c = (x0 + t * Lx, rng.uniform(0.3, yc - 0.3), zt - t * (zt - zl) + 0.1)
+                sz = rng.uniform(0.25, 0.6)
+                mb.merge(rock_mesh(rng, sz * 1.5, sz, sz * 0.5, "fracture"), Rz(rng.uniform(0, 360)), c)
         for j in range(k, self.n + 1):
-            if rng.random() < 0.7:                                 # slab hanging from the break, hinged
+            if not upper and rng.random() < 0.7:                   # slab hanging from the break, hinged
                 L = rng.uniform(1.5, 3.0)
                 sub = MB(rng)
                 sub.box(0, L, -1.5, 1.5, -0.18, 0.0, "concrete", mats={"+x": "fracture", "-y": "fracture", "+y": "fracture"})
                 ang = rng.uniform(25, 70)
-                mb.merge(sub, Ry(ang) @ Rz(rng.normal(0, 8)), (x0 + 0.1, rng.uniform(1.5, D - 1.5),
+                mb.merge(sub, Ry(ang) @ Rz(rng.normal(0, 8)), (x0 + 0.1, rng.uniform(1.5, max(1.6, yc - 1.5)),
                                                                   self.levels[min(j, self.n)] + 0.1))
-        # exposed floor edges on the break line (interior visible)
+        # exposed rooms on the break lines (interior visible)
         for j in range(k, self.n):
             zj = self.levels[j]
-            mb.quad((x0, 0.0, zj), (x0, D, zj), (x0, D, zj + TW.STOREY - 0.2), (x0, 0.0, zj + TW.STOREY - 0.2), "interior")
+            mb.quad((x0, 0.0, zj), (x0, yc, zj), (x0, yc, zj + TW.STOREY - 0.2), (x0, 0.0, zj + TW.STOREY - 0.2), "plaster")
+            mb.quad((x0, yc, zj), (W / 2, yc, zj), (W / 2, yc, zj + TW.STOREY - 0.2), (x0, yc, zj + TW.STOREY - 0.2), "plaster")
         # rubble heap at the foot of the corner
-        hx = W / 2 - x0 + 2.5
+        hx = W / 2 - x0 + (2.5 if self.s["damage"] == "corner" else 0.6)
         n = 22
         H = np.zeros((n, n))
         g = np.linspace(-1, 1, n)
         X, Y = np.meshgrid(g, g)
-        H = np.clip(1 - (X ** 2 + Y ** 2), 0, None) * rng.uniform(1.6, 2.6)
+        H = np.clip(1 - (X ** 2 + Y ** 2), 0, None) * rng.uniform(1.6, 2.6) * (0.5 if upper else 1.0)
         H += rng.normal(0, 0.12, H.shape) * (H > 0)
         xs = np.linspace(x0 - 0.5, x0 + hx, n)
         ys = np.linspace(-3.0, D * 0.8, n)
@@ -1362,130 +1732,453 @@ def build_bldg(rng, idx):
 
 
 # ------------------------------------------------------------------------------------------------ vehicles
-def car_mb(rng, spec, crushed=False):
-    """Low-poly car: extruded side profile with a tapered greenhouse, wheels, lamps, mirrors."""
-    L, Wd, H = spec["L"], spec["W"], spec["H"]
-    name = spec["name"]
-    mb = MB(rng)
-    hw = Wd / 2
-    r = 0.31 if name in ("sedan", "hatch") else 0.35
-    zb = 0.18                                                   # body bottom
-    belt = {"sedan": 0.85, "hatch": 0.88, "suv": 1.02, "van": 1.05, "pickup": 1.0}[name]
-    xf, xr = L / 2, -L / 2
-    # lower body profile (x, z) CCW, side view
-    hood = {"sedan": 0.95, "hatch": 0.75, "suv": 0.85, "van": 0.55, "pickup": 0.95}[name]
-    trunk = {"sedan": 0.75, "hatch": 0.15, "suv": 0.2, "van": 0.12, "pickup": 1.95}[name]
-    prof = [(xr + 0.05, zb), (xf - 0.05, zb), (xf, zb + 0.18), (xf, belt - 0.12), (xf - 0.15, belt - 0.02),
-            (xf - hood, belt), (xr + trunk, belt), (xr + 0.08, belt - 0.03), (xr, belt - 0.15), (xr, zb + 0.16)]
-    prof = np.array(prof)
-    taper = 0.04
-    def side(y):
-        return np.c_[prof[:, 0], np.full(len(prof), y), prof[:, 1]]
-    S0, S1 = side(-hw), side(hw)
-    n = len(prof)
+# Car bodies: a lofted lower body (rounded cross-sections along x, plan-view rounded ends, wheel arches cut by
+# raising the section bottom over the wheels), a tapered greenhouse (side profile with tumblehome, crowned roof),
+# inset glass (side windows split at the B pillar, windscreen, rear window), lathed tyres with spoked rims,
+# lamps / grille / plates on the end faces, mirrors, door shut lines. Paint: "paint" (sides) / "paint_top" (roof,
+# bonnet, boot: heavier dust); town.py tints both per prototype (dust / scratch mask textures, scale + bias).
+SECTION = [(0.0, 0.0), (0.84, 0.0), (0.965, 0.07), (1.0, 0.33), (0.99, 0.64), (0.945, 0.87), (0.80, 0.98),
+           (0.0, 1.0)]                                  # right half of the body section (u = y / half width, v)
+CAR_FORM = {
+    # wheel r, wheelbase, front axle from the nose, sill z, bumper-bottom z, end top z (rear, front),
+    # top line [(x from rear (+) / front (-) end, z)], greenhouse: rear base / top, front top / base (x from the rear
+    # end, or negative = from the front end), roof z, tumblehome, B pillar (fraction), rear side window kind
+    "sedan": dict(r=0.31, wb=2.70, xf=0.92, sill=0.25, bump=0.32,
+                  top=[(0.0, 0.70), (0.06, 0.84), (0.25, 0.92), (0.95, 0.97), (-1.30, 0.97), (-0.40, 0.84),
+                       (-0.10, 0.78), (-0.0, 0.70)],
+                  gh=(0.95, 1.62, -2.05, -1.30), roof=1.45, tum=0.26, bp=0.52),
+    "hatch": dict(r=0.30, wb=2.50, xf=0.80, sill=0.24, bump=0.33,
+                  top=[(0.0, 0.92), (0.05, 0.97), (-1.05, 0.97), (-0.35, 0.85), (-0.08, 0.78), (-0.0, 0.70)],
+                  gh=(0.05, 0.30, -1.78, -1.05), roof=1.50, tum=0.24, bp=0.55),
+    "suv": dict(r=0.36, wb=2.68, xf=0.92, sill=0.36, bump=0.44,
+                top=[(0.0, 1.00), (0.06, 1.08), (-1.15, 1.08), (-0.35, 1.00), (-0.08, 0.92), (-0.0, 0.82)],
+                gh=(0.07, 0.22, -1.90, -1.15), roof=1.72, tum=0.18, bp=0.55),
+    "van": dict(r=0.32, wb=2.65, xf=0.78, sill=0.30, bump=0.34,
+                top=[(0.0, 1.02), (0.04, 1.05), (-0.60, 1.05), (-0.20, 0.97), (-0.05, 0.86), (-0.0, 0.76)],
+                gh=(0.03, 0.08, -1.10, -0.50), roof=1.98, tum=0.07, bp=0.66),
+    "pickup": dict(r=0.36, wb=3.10, xf=0.90, sill=0.40, bump=0.45,
+                   top=[(0.0, 0.98), (0.05, 1.00), (1.98, 1.00), (2.0, 1.05), (-1.20, 1.05), (-0.35, 1.00),
+                        (-0.08, 0.92), (-0.0, 0.82)],
+                   gh=(1.98, 2.04, -1.95, -1.20), roof=1.80, tum=0.15, bp=0.80),
+}
+
+
+def _xabs(v, L):
+    """x from a CAR_FORM value: >= 0 from the rear end, < 0 from the front end ('-0.0' = the front end)."""
+    return (-L / 2 + v) if (v > 0 or (v == 0 and math.copysign(1, v) > 0)) else (L / 2 + v)
+
+
+def _inset_convex(poly, d):
+    """Inset a CCW convex polygon (N,2) by per-edge distances d (N,) (edge i: poly[i] -> poly[i+1])."""
+    n = len(poly)
+    lines = []
     for i in range(n):
-        j = (i + 1) % n
-        a, b, c, d = S0[i], S0[j], S1[j], S1[i]
-        dz = (a[2] + b[2]) / 2
-        top = dz > belt - 0.13 and abs(a[0] - b[0]) > 0.3
-        mb.quad(a, d, c, b, "paint_top" if top else "paint")
-    mb.poly(S0, "paint")
-    mb.poly(S1[::-1], "paint")
-    # greenhouse: bottom at belt (inset), top at roof (more inset)
-    if name == "pickup":
-        cab = (xr + trunk - 0.05, xf - hood)
-    else:
-        cab = (xr + trunk + 0.02, xf - hood)
-    c0, c1 = cab
-    rt = H
-    ins_b, ins_t = 0.06, 0.16 + taper
-    lean_f = {"sedan": 0.75, "hatch": 0.6, "suv": 0.55, "van": 0.45, "pickup": 0.55}[name]
-    lean_r = {"sedan": 0.55, "hatch": 0.15, "suv": 0.1, "van": 0.05, "pickup": 0.08}[name]
-    if crushed:
-        rt = belt + (H - belt) * rng.uniform(0.25, 0.45)
-    bot = [(c1, -hw + ins_b), (c1, hw - ins_b), (c0, hw - ins_b), (c0, -hw + ins_b)]
-    top = [(c1 - lean_f, -hw + ins_t), (c1 - lean_f, hw - ins_t), (c0 + lean_r, hw - ins_t), (c0 + lean_r, -hw + ins_t)]
-    B = np.array([(x, y, belt) for x, y in bot])
-    T = np.array([(x, y, rt) for x, y in top])
-    if crushed:
-        T[:, 1] += rng.normal(0, 0.06)
-        T[:, 0] += rng.normal(0, 0.15)
-    gl = "glass" if not crushed else "interior"
-    for i in range(4):
-        j = (i + 1) % 4
-        mb.quad(B[i], B[j], T[j], T[i], gl if not (crushed and rng.random() < 0.3) else "glass_dusty")
-    mb.poly(T, "paint_top")
-    # window pillars (thin paint strips) on the sides: B-pillar
-    xm = (c0 + c1) / 2
-    for sgn in (-1, 1):
-        y = sgn * (hw - ins_b + 0.005)
-        yt = sgn * (hw - ins_t + 0.005)
-        p = [(xm - 0.06, y, belt), (xm + 0.06, y, belt), (xm + 0.06 - (lean_f - lean_r) * 0.0, yt, rt),
-             (xm - 0.06, yt, rt)]
-        p = np.array(p)
-        mb.quad(*(p if sgn < 0 else p[::-1]), "paint")
-    # wheels
-    for x in (xf - 0.85 if name != "van" else xf - 0.75, xr + 0.85):
-        for sgn in (-1, 1):
-            c = np.array([x, sgn * (hw - 0.12), r])
-            sub = MB(rng)
-            sub.cyl((0, -0.11, 0), r, 0.22, 12, "tyre", axis=1)
-            sub.cyl((0, 0.115 * 1, 0), r * 0.55, 0.005, 10, "chrome", axis=1, caps=(False, True))
-            mb.merge(sub, None if sgn > 0 else Rz(180), c)
-    # bumpers, lamps, plates, mirrors
-    mb.box(xf - 0.02, xf + 0.06, -hw + 0.05, hw - 0.05, zb + 0.08, zb + 0.32, "trim")
-    mb.box(xr - 0.06, xr + 0.02, -hw + 0.05, hw - 0.05, zb + 0.08, zb + 0.32, "trim")
-    for sgn in (-1, 1):
-        mb.quad((xf + 0.002, sgn * (hw - 0.12) - 0.15, belt - 0.22), (xf + 0.002, sgn * (hw - 0.12) + 0.15, belt - 0.22),
-                (xf + 0.002, sgn * (hw - 0.12) + 0.15, belt - 0.1), (xf + 0.002, sgn * (hw - 0.12) - 0.15, belt - 0.1),
-                "lamp")
-        mb.quad((xr - 0.002, sgn * (hw - 0.12) + 0.14, belt - 0.25), (xr - 0.002, sgn * (hw - 0.12) - 0.14, belt - 0.25),
-                (xr - 0.002, sgn * (hw - 0.12) - 0.14, belt - 0.1), (xr - 0.002, sgn * (hw - 0.12) + 0.14, belt - 0.1),
-                "taillamp")
-        mb.box(c1 - 0.1, c1 + 0.02, sgn * hw - 0.02 + (0.12 if sgn > 0 else -0.12) * 0.5, sgn * hw + (0.14 if sgn > 0 else -0.14),
-               belt + 0.05, belt + 0.18, "trim") if False else None
-    if name == "pickup":                                        # bed walls
-        mb.box(xr, xr + trunk - 0.1, -hw, -hw + 0.05, belt, belt + 0.35, "paint")
-        mb.box(xr, xr + trunk - 0.1, hw - 0.05, hw, belt, belt + 0.35, "paint")
-        mb.box(xr, xr + 0.05, -hw, hw, belt, belt + 0.35, "paint")
-        if rng.random() < 0.8:
-            mb.merge(rock_mesh(rng, 0.8, 0.6, 0.3, "fracture"), None, (xr + 0.8, 0.1, belt + 0.1))
-    if name in ("suv", "van") and rng.random() < 0.6:          # roof rails
-        for sgn in (-1, 1):
-            mb.box(c0 + lean_r + 0.1, c1 - lean_f - 0.1, sgn * (hw - ins_t - 0.04) - 0.02, sgn * (hw - ins_t - 0.04) + 0.02,
-                   rt, rt + 0.05, "trim")
+        a, b = poly[i], poly[(i + 1) % n]
+        t = (b - a) / (np.linalg.norm(b - a) + 1e-12)
+        nrm = np.array([-t[1], t[0]])                    # inward normal for CCW
+        lines.append((a + nrm * d[i], t))
+    out = []
+    for i in range(n):
+        (p1, t1), (p2, t2) = lines[i - 1], lines[i]
+        A = np.array([t1, -t2]).T
+        if abs(np.linalg.det(A)) < 1e-9:
+            out.append(p2)
+            continue
+        s = np.linalg.solve(A, p2 - p1)
+        out.append(p1 + t1 * s[0])
+    return np.array(out)
+
+
+def _clip_x(poly, x0, keep_above):
+    """Clip a convex polygon (N,2) (x, z) by the line x = x0, keeping x >= x0 (keep_above) or x <= x0."""
+    out = []
+    n = len(poly)
+    for i in range(n):
+        a, b = poly[i], poly[(i + 1) % n]
+        ia = (a[0] >= x0) == keep_above
+        ib = (b[0] >= x0) == keep_above
+        if ia:
+            out.append(a)
+        if ia != ib:
+            t = (x0 - a[0]) / (b[0] - a[0])
+            out.append(a + (b - a) * t)
+    return np.array(out)
+
+
+def wheel_mb(rng, R, tw, spokes=5, rim_mat="rim"):
+    """Tyre (lathed, rounded shoulders, outer face toward +y) with a spoked rim; centre at the origin, axle on y."""
+    mb = MB(rng)
+    seg = 18
+    rr = R * 0.64
+    a = np.linspace(0, 2 * np.pi, seg, endpoint=False)
+    # tyre profile (r, y) from the inner bead around the tread to the outer bead
+    prof = [(rr * 1.02, -tw / 2 + 0.02), (R - 0.05, -tw / 2), (R - 0.012, -tw / 2 + 0.03), (R, -tw / 2 + 0.07),
+            (R, tw / 2 - 0.07), (R - 0.012, tw / 2 - 0.03), (R - 0.05, tw / 2), (rr * 1.02, tw / 2 - 0.02)]
+    P, F = [], []
+    for (r, y) in prof:
+        for t in a:
+            P.append((r * math.cos(t), y, r * math.sin(t)))
+    for i in range(len(prof) - 1):
+        for k in range(seg):
+            j = (k + 1) % seg
+            q0, q1, q2, q3 = i * seg + k, i * seg + j, (i + 1) * seg + j, (i + 1) * seg + k
+            F += [(q0, q2, q1), (q0, q3, q2)]
+    mb.mesh(np.array(P), F, "tyre", smooth=True, out=lambda c: c)
+    # rim (outer face): lip ring, recessed spokes / holes, hub
+    seg2 = spokes * 4
+    a2 = np.linspace(0, 2 * np.pi, seg2, endpoint=False) + rng.uniform(0, 1)
+    rings = [(rr * 1.02, tw / 2 - 0.02), (rr * 0.93, tw / 2 - 0.035), (rr * 0.84, tw / 2 - 0.06),
+             (rr * 0.30, tw / 2 - 0.05), (rr * 0.18, tw / 2 - 0.035), (0.0, tw / 2 - 0.03)]
+    P, F, M = [], [], []
+    for (r, y) in rings:
+        for t in a2:
+            P.append((r * math.cos(t), y, r * math.sin(t)))
+    for i in range(len(rings) - 1):
+        for k in range(seg2):
+            j = (k + 1) % seg2
+            q0, q1, q2, q3 = i * seg2 + k, i * seg2 + j, (i + 1) * seg2 + j, (i + 1) * seg2 + k
+            F += [(q0, q1, q2), (q0, q2, q3)]
+            hole = i == 2 and (k % 4) in (2, 3)
+            M += ["trim" if hole else rim_mat] * 2
+    P = np.array(P)
+    mb.mesh(P, F, rim_mat, smooth=False, mats=M, out=lambda c: np.tile([0.0, 1.0, 0.0], (len(c), 1)))
+    # inner side: dark disc (brake / hub seen through the holes)
+    mb.cyl((0, -tw / 2 + 0.03, 0), rr * 0.95, 0.01, 12, "trim", axis=1, caps=(False, True))
+    return mb
+
+
+class CarBody:
+    def __init__(self, rng, name, L, W, H, crushed=False, damage=None):
+        self.rng, self.name, self.L, self.W, self.H = rng, name, L, W, H
+        self.f = dict(CAR_FORM[name])
+        self.f["roof"] = H
+        self.crushed, self.damage = crushed, damage or {}
+        self.mb = MB(rng)
+        f = self.f
+        self.xF = L / 2 - f["xf"]
+        self.xR = self.xF - f["wb"]
+        self.ra = f["r"] + 0.07
+        tx = [_xabs(x, L) for x, _ in f["top"]]
+        tz = [z for _, z in f["top"]]
+        o = np.argsort(tx, kind="stable")
+        self.tx, self.tz = np.array(tx)[o], np.array(tz)[o]
+        self.belt = float(np.interp((self._gh()[0][0] + self._gh()[1][0]) / 2, self.tx, self.tz))
+
+    def _gh(self):
+        f, L = self.f, self.L
+        rb, rt, ft, fb = (_xabs(v, L) for v in f["gh"])
+        return (rb, None), (fb, None), (ft, None), (rt, None)
+
+    # --- lower body
+    def hw(self, x):
+        L, W = self.L, self.W
+        t_f = np.clip((x - (L / 2 - 0.45)) / 0.45, 0, 1)
+        t_r = np.clip(((-L / 2 + 0.35) - x) / 0.35, 0, 1)
+        return W / 2 * (0.84 + 0.16 * np.sqrt(1 - t_f ** 2)) * (0.86 + 0.14 * np.sqrt(1 - t_r ** 2))
+
+    def zt(self, x):
+        return np.interp(x, self.tx, self.tz)
+
+    def zb(self, x):
+        f, L = self.f, self.L
+        z = np.interp(x, [-L / 2, -L / 2 + 0.35, L / 2 - 0.35, L / 2], [f["bump"], f["sill"], f["sill"], f["bump"]])
+        for xw in (self.xF, self.xR):
+            d = np.abs(x - xw)
+            arch = f["r"] + np.sqrt(np.clip(self.ra ** 2 - d ** 2, 0, None))
+            z = np.where(d < self.ra, np.maximum(z, arch), z)
+        return z
+
+    def side_y(self, x, z):
+        """Lower body half width at (x, z) (side surface), from the section shape."""
+        v = (z - self.zb(x)) / max(self.zt(x) - self.zb(x), 1e-3)
+        us, vs = zip(*SECTION)
+        return self.hw(x) * np.interp(np.clip(v, 0, 1), vs, us)
+
+    def lower(self):
+        L, mb = self.L, self.mb
+        xs = list(np.arange(-L / 2, L / 2 + 1e-6, 0.2)) + list(self.tx)
+        for xw in (self.xF, self.xR):
+            xs += list(xw + np.linspace(-self.ra, self.ra, 13)) + [xw - self.ra - 0.004, xw + self.ra + 0.004]
+        xs = np.unique(np.clip(np.round(np.array(xs), 4), -L / 2, L / 2))
+        half = SECTION
+        ring = [(u, v) for u, v in half] + [(-u, v) for u, v in half[::-1][1:-1]]
+        n = len(ring)
+        P = []
+        for x in xs:
+            zb, zt, hw = float(self.zb(x)), float(self.zt(x)), float(self.hw(x))
+            for u, v in ring:
+                P.append((x, u * hw, zb + v * (zt - zb)))
+        P = np.array(P)
+        if self.crushed:                                            # dents: push the top / upper sides in
+            top = (P[:, 2] > self.belt - 0.15)
+            P[top, 2] -= np.abs(self.rng.normal(0, 0.05, top.sum()))
+        F, M = [], []
+        for i in range(len(xs) - 1):
+            for k in range(n):
+                j = (k + 1) % n
+                q0, q1, q2, q3 = i * n + k, i * n + j, (i + 1) * n + j, (i + 1) * n + k
+                F += [(q0, q1, q2), (q0, q2, q3)]
+                c = (P[q0] + P[q1] + P[q2] + P[q3]) / 4
+                nz = np.cross(P[q1] - P[q0], P[q2] - P[q0]) + np.cross(P[q2] - P[q0], P[q3] - P[q0])
+                nz = nz / (np.linalg.norm(nz) + 1e-12)
+                ctr = np.array([c[0], 0.0, 0.5 * (float(self.zb(c[0])) + float(self.zt(c[0])))])
+                if nz @ (c - ctr) < 0:
+                    nz = -nz
+                if nz[2] < -0.5:
+                    m = "trim"
+                elif abs(c[0]) > L / 2 - 0.4 and c[2] < self.f["bump"] + 0.07:
+                    m = "trim"                                       # black lower valance
+                elif nz[2] > 0.72:
+                    m = "paint_top"
+                else:
+                    m = "paint"
+                M += [m, m]
+        zmid = lambda x: 0.5 * (self.zb(x) + self.zt(x))
+        mb.mesh(P, F, "paint", smooth=38.0, mats=M,
+                out=lambda c: c - np.c_[c[:, 0], np.zeros(len(c)), zmid(c[:, 0])])
+        # end faces (bumper fronts): fans
+        for i, sgn in ((0, -1), (len(xs) - 1, 1)):
+            mb.poly(P[i * n:(i + 1) * n], "paint", d=(sgn, 0, 0))
+        self.xs = xs
+        return P
+
+    # --- end details
+    def ends(self):
+        L, mb = self.L, self.mb
+        for sgn in (1, -1):
+            x = sgn * L / 2 + sgn * 0.004
+            zt, zb = float(self.zt(sgn * L / 2)), float(self.zb(sgn * L / 2))
+            hw = float(self.hw(sgn * L / 2))
+            def q(y0, y1, z0, z1, mat, dx=0.0):
+                pts = [(x + sgn * dx, y0, z0), (x + sgn * dx, y1, z0), (x + sgn * dx, y1, z1), (x + sgn * dx, y0, z1)]
+                mb.poly(pts, mat, d=(sgn, 0, 0))
+            h = zt - zb
+            if sgn > 0:                                              # front: headlamps, grille, plate, intake
+                for s in (-1, 1):
+                    y0, y1 = sorted((s * (hw * 0.92 - 0.04), s * (hw * 0.92 - 0.42)))
+                    q(y0, y1, zt - h * 0.42, zt - h * 0.12, "lamp")
+                    q(y0 - 0.01, y1 + 0.01, zt - h * 0.45, zt - h * 0.09, "chrome", dx=-0.002)
+                q(-hw * 0.92 + 0.48, hw * 0.92 - 0.48, zt - h * 0.40, zt - h * 0.14, "grille")
+                q(-0.26, 0.26, zb + h * 0.18, zb + h * 0.38, "plate")
+                q(-hw * 0.7, hw * 0.7, zb + 0.03, zb + h * 0.14, "grille")
+            else:                                                    # rear: tail lamps, plate
+                for s in (-1, 1):
+                    y0, y1 = sorted((s * (hw * 0.95 - 0.03), s * (hw * 0.95 - 0.36)))
+                    q(y0, y1, zt - h * 0.42, zt - h * 0.08, "taillamp")
+                q(-0.26, 0.26, zb + h * 0.30, zb + h * 0.52, "plate")
+
+    # --- greenhouse
+    def greenhouse(self):
+        f, L, mb, rng = self.f, self.L, self.mb, self.rng
+        rb, rt, ft, fb = (_xabs(v, L) for v in f["gh"])
+        belt = float(self.zt((rb + fb) / 2))
+        roof = f["roof"]
+        if self.crushed:
+            roof = belt + (roof - belt) * rng.uniform(0.3, 0.5)
+        zr_r, zr_f = roof - 0.03, roof - 0.02
+        prof = np.array([(rb, float(self.zt(rb))), (fb, float(self.zt(fb))), (ft, zr_f),
+                         (ft + (rt - ft) * 0.3, roof), (ft + (rt - ft) * 0.7, roof - 0.005), (rt, zr_r)])
+        wb = float(self.hw((rb + fb) / 2)) * 0.88
+        tum = f["tum"]
+        wz = lambda z: wb - tum * (z - belt)
+        crown = 0.035
+        # ribs across the car at each profile vertex: L, L', C, R', R
+        def rib(p, scale=1.0):
+            x, z = p
+            w = wz(z) * scale
+            c = crown if z > belt + 0.15 else 0.0
+            return np.array([(x, w, z), (x, 0.8 * w, z + 0.6 * c), (x, 0.0, z + c), (x, -0.8 * w, z + 0.6 * c),
+                             (x, -w, z)])
+        ribs = [rib(p) for p in prof]
+        n = len(prof)
+        tops = []
+        for i in range(1, n):                                       # skip the base (belt) edge 0 -> 1
+            a, b = ribs[i], ribs[(i + 1) % n]
+            for k in range(4):
+                quad = np.array([a[k + 1], b[k + 1], b[k], a[k]])
+                d = prof[(i + 1) % n] - prof[i]
+                steep = abs(d[1]) > 0.35 * abs(d[0])
+                cq = quad.mean(0)
+                mb.poly(quad, "paint" if steep else "paint_top", d=cq - [cq[0], 0, belt])
+            tops.append((i, steep))
+        # sides (planar with the tumblehome)
+        for s in (1, -1):
+            pts = [(x, s * wz(z), z) for x, z in prof]
+            mb.poly(pts, "paint", d=(0, s, 0))
+        # side windows: inset profile, split at the B pillar
+        d = np.array([0.05, 0.085, 0.07, 0.07, 0.11, 0.10])
+        win = _inset_convex(prof, d)
+        xb = rb + (fb - rb) * f["bp"]
+        dmg = self.damage
+        panes = []
+        for part, (x0, keep) in (("front", (xb + 0.05, True)), ("rear", (xb - 0.05, False))):
+            pw = _clip_x(win, x0, keep)
+            if len(pw) >= 3:
+                panes.append((part, pw))
+        for s in (1, -1):
+            for part, pw in panes:
+                if self.name == "van" and part == "rear" and dmg.get("panel", False):
+                    continue
+                mat = "glass"
+                if self.crushed or dmg.get(f"side{s}{part}"):
+                    mat = rng.choice(["interior", "glass_broken"])
+                pts = [(x, s * (wz(z) + 0.006), z) for x, z in pw]
+                mb.poly(pts, mat, d=(0, s, 0))
+        # windscreen and rear window: inset along the steep top strips
+        for i, steep in tops:
+            if not steep:
+                continue
+            p0, p1 = prof[i], prof[(i + 1) % n]
+            front = p0[0] > (rb + fb) / 2 or p1[0] > (rb + fb) / 2
+            mat = "glass"
+            if self.crushed or (front and dmg.get("windscreen")) or (not front and dmg.get("rear")):
+                mat = "glass_broken" if rng.random() < 0.7 else "interior"
+            s0, s1 = 0.07, 0.93
+            q0 = p0 + (p1 - p0) * s0
+            q1 = p0 + (p1 - p0) * s1
+            r0, r1 = rib(q0, 0.86), rib(q1, 0.86)
+            e = np.array([p1[0] - p0[0], 0.0, p1[1] - p0[1]])
+            nrm = np.cross(e, [0, 1.0, 0])
+            nrm = nrm / (np.linalg.norm(nrm) + 1e-12)
+            if nrm[2] < 0:
+                nrm = -nrm
+            for k in range(4):
+                quad = [r0[k + 1] + nrm * 0.006, r1[k + 1] + nrm * 0.006, r1[k] + nrm * 0.006, r0[k] + nrm * 0.006]
+                mb.poly(quad, mat, d=nrm)
+        self.gh = dict(rb=rb, rt=rt, ft=ft, fb=fb, belt=belt, wb=wb, roof=roof, xb=xb)
+
+    def details(self):
+        f, mb, rng = self.f, self.mb, self.rng
+        g = self.gh
+        # mirrors at the A pillar base
+        for s in (1, -1):
+            c = np.array([g["fb"] - 0.12, s * (g["wb"] + 0.13), g["belt"] + 0.10])
+            mb.obox(c, (0.07, 0.10, 0.065), Rz(s * 8), "paint")
+            mb.obox(c + [0.071, 0, 0], (0.002, 0.085, 0.05), np.eye(3), "chrome")
+            mb.obox(c - [0, s * 0.08, 0.02], (0.04, 0.03, 0.02), np.eye(3), "trim")
+        # door shut lines and handles (draped on the lower body side)
+        cuts = [g["fb"] - 0.04, g["xb"]]
+        if self.name in ("sedan", "suv", "hatch"):
+            cuts.append(g["rb"] + (0.12 if self.name == "sedan" else 0.45))
+        if self.name == "van":
+            cuts.append(g["rb"] + 0.9)
+        for x in cuts:
+            if not (self.xR + self.ra + 0.05 < x < self.xF - self.ra - 0.05) and x not in (g["xb"],):
+                continue
+            zb = float(self.zb(x)) + 0.06
+            zt = g["belt"] - 0.03
+            zz = np.linspace(zb, zt, 5)
+            for s in (1, -1):
+                y = np.array([float(self.side_y(x, z)) for z in zz]) + 0.003
+                pts_l = [(x - 0.006, s * yy, z) for yy, z in zip(y, zz)]
+                pts_r = [(x + 0.006, s * yy, z) for yy, z in zip(y, zz)]
+                for k in range(4):
+                    quad = [pts_l[k], pts_r[k], pts_r[k + 1], pts_l[k + 1]]
+                    mb.poly(quad, "trim", d=(0, s, 0))
+                # handle behind the cut
+                zh = g["belt"] - 0.13
+                yh = float(self.side_y(x - 0.2, zh)) + 0.012
+                mb.obox((x - 0.2, s * yh, zh), (0.08, 0.012, 0.016), np.eye(3), "trim")
+        # wheels
+        tw = 0.20 if self.name in ("sedan", "hatch") else 0.24
+        for xw in (self.xF, self.xR):
+            for s in (1, -1):
+                w = wheel_mb(rng, f["r"], tw, rim_mat=("rim" if rng.random() < 0.7 else "rim_dark"))
+                y = s * (self.W / 2 - tw / 2 - 0.035)
+                mb.merge(w, None if s > 0 else Rz(180), (xw, y, f["r"]))
+        if self.name == "pickup":                                   # bed walls and tailgate
+            x0, x1 = -self.L / 2 + 0.03, g["rb"] - 0.06
+            hw = float(self.hw(0.0)) * 0.97
+            for s in (1, -1):
+                mb.box(x0, x1, s * hw - (0.05 if s > 0 else 0), s * hw + (0 if s > 0 else 0.05), 1.0, 1.32, "paint",
+                       mats={"+z": "paint_top"})
+            mb.box(x0 - 0.02, x0 + 0.04, -hw, hw, 0.95, 1.30, "paint")
+            mb.box(x0 + 0.04, x1, -hw + 0.05, hw - 0.05, 1.0, 1.02, "metal")
+
+    def debris(self, n=6, slab=False):
+        from isaac import rubble as RB
+        rng, mb, g = self.rng, self.mb, self.gh
+        if slab:
+            P, F = RB.slab(rng, rng.uniform(1.6, 2.4), rng.uniform(1.2, 1.7), T=0.16)
+            mb.merge(MB(rng).mesh(P, F, "concrete"), Ry(rng.uniform(-12, 12)) @ Rx(rng.uniform(-8, 8)) @
+                     Rz(rng.uniform(-30, 30)), (rng.uniform(-0.4, 0.4), rng.uniform(-0.2, 0.2), g["roof"] + 0.05))
+        for _ in range(n):
+            s = rng.uniform(0.08, 0.3)
+            x = rng.uniform(g["rt"], g["ft"]) if rng.random() < 0.6 else rng.uniform(g["fb"], self.L / 2 - 0.3)
+            z = g["roof"] if x <= g["ft"] else float(self.zt(x))
+            mb.merge(rock_mesh(rng, s * 1.5, s, s * 0.5, rng.choice(["fracture", "brick", "concrete"])),
+                     Rz(rng.uniform(0, 360)), (x, rng.uniform(-0.5, 0.5), z + s * 0.1))
+
+    def build(self):
+        self.lower()
+        self.ends()
+        self.greenhouse()
+        self.details()
+        return self.mb
+
+
+CAR_VARIANTS = [                                             # car_<i>: body, damage
+    ("sedan", {}), ("hatch", {}), ("suv", {}), ("van", {"panel": True}), ("pickup", {}),
+    ("sedan", {"windscreen": True, "side1front": True, "roof_debris": 7}),
+    ("hatch", {"rear": True, "side-1rear": True, "roof_debris": 4}),
+]
+
+
+def car_mb(rng, spec, crushed=False, damage=None):
+    b = CarBody(rng, spec["name"], spec["L"], spec["W"], spec["H"], crushed=crushed, damage=damage)
+    mb = b.build()
+    if damage and damage.get("roof_debris"):
+        b.debris(int(damage["roof_debris"]))
+    car_mb.last = b
     return mb
 
 
 def car_module(rng, var):
-    spec = TW.CARS[var % len(TW.CARS)]
-    return car_mb(rng, spec)
+    body, dmg = CAR_VARIANTS[var % len(CAR_VARIANTS)]
+    spec = next(c for c in TW.CARS if c["name"] == body)
+    return car_mb(rng, spec, damage=dmg)
 
 
 def truck_module(rng, var):
-    """Small two-axle truck: cab, chassis, dropside cargo bed with some load (or a box body)."""
+    """Small two-axle truck (Taiwan / Turkey light truck): rounded cab with glass and lamps, chassis, dropside bed
+    with a load (var 0) or a box body (var 1)."""
     mb = MB(rng)
     L, Wd, H = TW.TRUCK["L"], TW.TRUCK["W"], TW.TRUCK["H"]
     hw = Wd / 2
     xf = L / 2
-    # cab
     cab0 = xf - 1.75
-    mb.box(cab0, xf, -hw + 0.05, hw - 0.05, 0.75, 2.45, "paint", mats={"+z": "paint_top"})
-    mb.quad((xf + 0.003, -hw + 0.18, 1.55), (xf + 0.003, hw - 0.18, 1.55), (xf + 0.003, hw - 0.18, 2.3),
-            (xf + 0.003, -hw + 0.18, 2.3), "glass")
-    for sgn in (-1, 1):
-        mb.quad((cab0 + 0.9, sgn * (hw - 0.05 + 0.003), 1.6), (xf - 0.15, sgn * (hw - 0.05 + 0.003), 1.6),
-                (xf - 0.15, sgn * (hw - 0.05 + 0.003), 2.25), (cab0 + 0.9, sgn * (hw - 0.05 + 0.003), 2.25), "glass")
-    mb.box(xf - 0.02, xf + 0.08, -hw, hw, 0.45, 0.75, "trim")
-    # chassis
+    # cab: chamfered box with a raked windscreen
+    prof = np.array([(cab0, 0.72), (xf, 0.72), (xf, 1.45), (xf - 0.22, 2.30), (xf - 0.35, 2.42), (cab0, 2.42)])
+    for s in (1, -1):
+        pts = [(x, s * hw, z) for x, z in prof]
+        mb.poly(pts, "paint", d=(0, s, 0))
+    pc = prof.mean(0)
+    for i in range(len(prof)):
+        a, b = prof[i], prof[(i + 1) % len(prof)]
+        quad = [(a[0], hw, a[1]), (b[0], hw, b[1]), (b[0], -hw, b[1]), (a[0], -hw, a[1])]
+        m = (a + b) / 2 - pc
+        mb.poly(quad, "paint_top" if abs(b[1] - a[1]) < 0.05 and a[1] > 2 else "paint", d=(m[0], 0, m[1]))
+    ws = [(xf - 0.03 + 0.006, -hw + 0.12, 1.50), (xf - 0.03 + 0.006, hw - 0.12, 1.50), (xf - 0.21 + 0.006, hw - 0.12, 2.24),
+          (xf - 0.21 + 0.006, -hw + 0.12, 2.24)]
+    mb.poly(ws, "glass", d=(0.97, 0, 0.25))
+    for s in (1, -1):
+        pts = [(cab0 + 0.85, s * (hw + 0.004), 1.55), (xf - 0.12, s * (hw + 0.004), 1.55),
+               (xf - 0.28, s * (hw + 0.004), 2.22), (cab0 + 0.85, s * (hw + 0.004), 2.22)]
+        mb.poly(pts, "glass", d=(0, s, 0))
+        mb.poly([(xf + 0.004, s * (hw - 0.1), 0.95), (xf + 0.004, s * (hw - 0.4), 0.95), (xf + 0.004, s * (hw - 0.4), 1.15),
+                 (xf + 0.004, s * (hw - 0.1), 1.15)], "lamp", d=(1, 0, 0))
+        mb.obox((xf - 0.3, s * (hw + 0.12), 1.95), (0.04, 0.03, 0.18), np.eye(3), "trim")
+    mb.poly([(xf + 0.005, -0.5, 1.0), (xf + 0.005, 0.5, 1.0), (xf + 0.005, 0.5, 1.35), (xf + 0.005, -0.5, 1.35)], "grille",
+            d=(1, 0, 0))
+    mb.box(xf - 0.04, xf + 0.08, -hw, hw, 0.45, 0.72, "trim")
     mb.box(-L / 2, cab0, -0.5, 0.5, 0.55, 0.8, "trim")
-    # cargo
     if var == 0:
-        mb.box(-L / 2, cab0 - 0.1, -hw, hw, 0.8, 0.95, "wood", mats={"+z": "wood"})
+        mb.box(-L / 2, cab0 - 0.1, -hw, hw, 0.8, 0.95, "wood")
         for sgn in (-1, 1):
-            mb.box(-L / 2, cab0 - 0.1, sgn * hw - (0.04 if sgn > 0 else 0), sgn * hw + (0 if sgn > 0 else 0.04), 0.95, 1.55, "paint")
+            mb.box(-L / 2, cab0 - 0.1, sgn * hw - (0.04 if sgn > 0 else 0), sgn * hw + (0 if sgn > 0 else 0.04), 0.95,
+                   1.55, "paint")
         mb.box(-L / 2, -L / 2 + 0.04, -hw, hw, 0.95, 1.55, "paint")
-        for _ in range(6):                                      # load: sacks / rubble
+        for _ in range(6):
             c = (rng.uniform(-L / 2 + 0.6, cab0 - 0.6), rng.uniform(-hw + 0.5, hw - 0.5), 1.1)
             mb.merge(rock_mesh(rng, rng.uniform(0.5, 0.9), rng.uniform(0.4, 0.7), 0.35,
                                rng.choice(["fracture", "brick"])), Rz(rng.uniform(0, 360)), c)
@@ -1493,26 +2186,17 @@ def truck_module(rng, var):
         mb.box(-L / 2, cab0 - 0.1, -hw - 0.05, hw + 0.05, 0.8, H, "metal", mats={"+z": "paint_top"})
     for x in (xf - 1.0, -L / 2 + 1.3, -L / 2 + 2.35):
         for sgn in (-1, 1):
-            sub = MB(rng)
-            sub.cyl((0, -0.13, 0), 0.47, 0.26, 12, "tyre", axis=1)
-            mb.merge(sub, None if sgn > 0 else Rz(180), (x, sgn * (hw - 0.17), 0.47))
+            w = wheel_mb(rng, 0.42, 0.24, spokes=6, rim_mat="rim")
+            mb.merge(w, None if sgn > 0 else Rz(180), (x, sgn * (hw - 0.17), 0.42))
     return mb
 
 
 def wreck_module(rng, var):
-    """A parked car crushed by facade debris: flattened roof, broken glass, a slab and chunks on top."""
-    from isaac import rubble as RB
+    """A parked car crushed by facade debris: flattened, dented roof, smashed glass, a slab and chunks on top."""
     spec = TW.CARS[[0, 1, 2][var % 3]]
     mb = car_mb(rng, spec, crushed=True)
-    P, F = RB.slab(rng, rng.uniform(2.0, 3.0), rng.uniform(1.4, 2.0), T=0.2)
-    sub = MB(rng).mesh(P, F, "concrete")
-    mb.merge(sub, Ry(rng.uniform(-18, 18)) @ Rx(rng.uniform(-12, 12)) @ Rz(rng.uniform(-30, 30)),
-             (rng.uniform(-0.6, 0.6), rng.uniform(-0.3, 0.3), spec["H"] * 0.75))
-    for _ in range(8):
-        s = rng.uniform(0.2, 0.6)
-        c = (rng.uniform(-spec["L"] / 2, spec["L"] / 2), rng.uniform(-1.3, 1.3), rng.uniform(0.0, 1.2))
-        mb.merge(rock_mesh(rng, s * 1.4, s, s * 0.6, rng.choice(["fracture", "brick", "concrete"])),
-                 Rz(rng.uniform(0, 360)), c)
+    b = car_mb.last
+    b.debris(10, slab=True)
     return mb
 
 
@@ -1813,7 +2497,7 @@ def bldg_module(rng, var):
     return A
 
 
-KIT = {"bldg": (bldg_module, len(TW.BLDG)), "car": (car_module, len(TW.CARS)), "truck": (truck_module, 2),
+KIT = {"bldg": (bldg_module, len(TW.BLDG)), "car": (car_module, len(CAR_VARIANTS)), "truck": (truck_module, 2),
        "wreck": (wreck_module, 2), "pole": (pole_module, 2), "light": (light_module, 2), "tree": (tree_module, 3),
        "wall": (wall_module, 6), "gate": (gate_module, 2), "stub": (stub_module, 3), "debris": (debris_module, 4),
        "sheet": (sheet_module, 3), "litter": (litter_module, 3), "manhole": (manhole_module, 1), "post": (post_module, 1)}
@@ -1828,11 +2512,12 @@ def _cache(out):
 
 
 def build_kit(out, seed=7, log=print):
-    rng = np.random.default_rng(seed)
+    import zlib
     mods, dims = {}, {}
     total = 0
     for kind, (fn, nvar) in KIT.items():
         for v in range(nvar):
+            rng = np.random.default_rng([seed, zlib.crc32(f"{kind}_{v}".encode())])     # per module: stable
             r = fn(rng, v)
             A = r if isinstance(r, dict) else r.arrays()
             name = f"{kind}_{v}"
@@ -1883,17 +2568,23 @@ def write_usd(out, log=print):
             rd = UsdShade.Shader.Define(st, mpath + "/st")
             rd.CreateIdAttr("UsdPrimvarReader_float2")
             rd.CreateInput("varname", Sdf.ValueTypeNames.String).Set("st")
-            for kind, inp, typ, cs in (("albedo", "diffuseColor", Sdf.ValueTypeNames.Color3f, "sRGB"),
+            mask = tex in MASKS
+            pf = paint_inputs(name, CONST[name][0], meta) if mask else None
+            for kind, inp, typ, cs in (("albedo", "diffuseColor", Sdf.ValueTypeNames.Color3f, "raw" if mask else "sRGB"),
                                        ("rough", "roughness", Sdf.ValueTypeNames.Float, "raw"),
                                        ("normal", "normal", Sdf.ValueTypeNames.Normal3f, "raw")):
                 tx = UsdShade.Shader.Define(st, f"{mpath}/{kind}")
                 tx.CreateIdAttr("UsdUVTexture")
-                tx.CreateInput("file", Sdf.ValueTypeNames.Asset).Set("./" + files[kind])
+                tx.CreateInput("file", Sdf.ValueTypeNames.Asset).Set("./" + (pf["file"] if (mask and kind == "albedo") else files[kind]))
                 tx.CreateInput("sourceColorSpace", Sdf.ValueTypeNames.Token).Set(cs)
                 tx.CreateInput("wrapS", Sdf.ValueTypeNames.Token).Set("repeat")
                 tx.CreateInput("wrapT", Sdf.ValueTypeNames.Token).Set("repeat")
                 tx.CreateInput("st", Sdf.ValueTypeNames.Float2).ConnectToSource(rd.ConnectableAPI(), "result")
-                if kind == "albedo":
+                if kind == "albedo" and mask:
+                    tx.CreateInput("scale", Sdf.ValueTypeNames.Float4).Set(Gf.Vec4f(*pf["scale"], 1.0))
+                    tx.CreateInput("bias", Sdf.ValueTypeNames.Float4).Set(Gf.Vec4f(*pf["bias"], 0.0))
+                    o = tx.CreateOutput("rgb", Sdf.ValueTypeNames.Float3)
+                elif kind == "albedo":
                     k = scale or SCALE.get(name, (1.0, 1.0, 1.0))
                     tx.CreateInput("scale", Sdf.ValueTypeNames.Float4).Set(Gf.Vec4f(*k, 1.0))
                     o = tx.CreateOutput("rgb", Sdf.ValueTypeNames.Float3)
@@ -1957,10 +2648,23 @@ def write_usd(out, log=print):
                     UsdShade.MaterialBindingAPI.Apply(sub.GetPrim()).Bind(mat)
         n_tri += len(F)
     meta["tinted"] = tinted
+    meta["paint_mask"] = {m: {"dust": list(PAINT_DUST[m]), "file": meta["textures"][m]["albedo"],
+                              "file_inv": meta["textures"][m]["albedoinv"]} for m in MASKS if m in meta["textures"]}
     json.dump(meta, open(os.path.join(out, "kit.json"), "w"), indent=1)
     st.GetRootLayer().Save()
     log(f"[town-kit] wrote {path}: {len(meta['modules'])} modules, {n_tri} triangles")
     return path
+
+
+def paint_inputs(name, rgb, meta):
+    """Albedo = colour + mask * (dust - colour) with a non-negative scale: the mask (colour darker than the dust)
+    or its inverse (colour lighter): {file, scale, bias}. Same rule in isaac/town.py (per-car colours)."""
+    d = np.array(PAINT_DUST[name])
+    c = np.array(rgb, float)
+    files = meta["textures"][name]
+    if (c <= d).sum() >= 2:
+        return {"file": files["albedo"], "scale": tuple(np.clip(d - c, 0, None)), "bias": tuple(c)}
+    return {"file": files["albedoinv"], "scale": tuple(np.clip(c - d, 0, None)), "bias": tuple(d)}
 
 
 def _tex_budget(out):
@@ -1986,7 +2690,7 @@ class Preview:
 
     # --- stage
     def stage(self):
-        from pxr import Gf, Sdf, Usd, UsdGeom, UsdShade
+        from pxr import Gf, Sdf, Usd, UsdShade
         from sim.scenario import make_scenario
         from isaac import scene, photoreal, van
         sc = make_scenario(self.seed)
@@ -2086,6 +2790,8 @@ class Preview:
             sc_ = tuple(sc_.Get()) if sc_ and sc_.Get() is not None else (1, 1, 1, 1)
             cs = sh.GetInput("sourceColorSpace")
             cs = cs.Get() if cs else "auto"
+            bi = sh.GetInput("bias")
+            bi = tuple(bi.Get()) if bi and bi.Get() is not None else (0, 0, 0, 0)
             im = bpy.data.images.load(path, check_existing=True)
             node = nt.nodes.new("ShaderNodeTexImage")
             node.image = im
@@ -2093,7 +2799,7 @@ class Preview:
                 node.projection = "BOX"
                 node.projection_blend = 0.2
             nt.links.new(coord, node.inputs[0])
-            return node, sc_, cs
+            return node, sc_, cs, bi
 
         def const(name, default):
             i = surf.GetInput(name)
@@ -2102,15 +2808,14 @@ class Preview:
             return default
         d = tex_of(surf.GetInput("diffuseColor"))
         if d:
-            node, sc_, cs = d
-            node.image.colorspace_settings.name = "sRGB"
-            mix = nt.nodes.new("ShaderNodeMix")
-            mix.data_type, mix.blend_type = "RGBA", "MULTIPLY"
-            ins = {s.identifier: s for s in mix.inputs}
-            ins["Factor_Float"].default_value = 1.0
-            nt.links.new(node.outputs[0], ins["A_Color"])
-            ins["B_Color"].default_value = (sc_[0], sc_[1], sc_[2], 1)
-            nt.links.new({s.identifier: s for s in mix.outputs}["Result_Color"], bsdf.inputs["Base Color"])
+            node, sc_, cs, bi = d
+            node.image.colorspace_settings.name = "Non-Color" if cs == "raw" else "sRGB"
+            vm = nt.nodes.new("ShaderNodeVectorMath")                  # albedo = texture * scale + bias
+            vm.operation = "MULTIPLY_ADD"
+            nt.links.new(node.outputs[0], vm.inputs[0])
+            vm.inputs[1].default_value = tuple(float(v) for v in sc_[:3])
+            vm.inputs[2].default_value = tuple(float(v) for v in bi[:3])
+            nt.links.new(vm.outputs[0], bsdf.inputs["Base Color"])
         else:
             c = const("diffuseColor", (0.18, 0.18, 0.18))
             bsdf.inputs["Base Color"].default_value = (*c, 1)
@@ -2141,7 +2846,7 @@ class Preview:
     def bl_mesh(self, prim, name):
         """bpy mesh from a UsdGeom.Mesh / Cube (local coordinates), with st, normals and material slots."""
         bpy = _bpy()
-        from pxr import Usd, UsdGeom, UsdShade
+        from pxr import UsdGeom, UsdShade
         if prim.IsA(UsdGeom.Cube):
             s = UsdGeom.Cube(prim).GetSizeAttr().Get() or 2.0
             h = s / 2
@@ -2375,6 +3080,15 @@ def shots(sc):
         ("survey_b1", (0.4 + 42 * math.cos(math.radians(130)), 22.0 + 42 * math.sin(math.radians(130)), 28.0),
          (0.4, 22.0, 3.0), 18.0),
         ("van", (2.0, -56.2, 1.7), (8.3, -48.6, 2.0), 18.0),
+        # the take's opening: ~24 m over the van and the pads, looking up the rubble field
+        ("open_van", (-8.0, -74.0, 24.0), (6.0, -36.0, 0.0), 18.0),
+        # ~30 m over pile A2 (survey-like oblique)
+        ("a2_30m", (a2.x + 22.0 * math.cos(math.radians(-50.0)), a2.y + 22.0 * math.sin(math.radians(-50.0)), pz + 30.0),
+         (a2.x, a2.y, pz + 1.0), 18.0),
+        # close look at the parked cars beside the van / cordon (the opening shot's nearest cars)
+        ("cars_close", (14.0, -60.0, 5.5), (27.0, -46.0, 0.8), 18.0),
+        # facades east of the van (corner-collapse block, shop fronts) from a low drone height
+        ("facade_close", (24.0, -44.0, 9.0), (40.5, -55.0, 6.0), 18.0),
     ]
 
 

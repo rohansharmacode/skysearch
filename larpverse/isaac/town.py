@@ -50,19 +50,19 @@ CLEAR_V, CLEAR_H, CLEAR_H_FLAT = 3.0, 3.0, 1.0
 # (W), the street facade at y = 0 facing -y, the building extends to +y (depth D), z up from the street level.
 # ground: shop = 3.6 m storey with roller shutters and sign bands; facade: plaster | tile | brick (RC frame + brick
 # infill); damage: none | cracked | corner (corner bays collapsed) | soft (ground storey crushed, leaning) |
-# facade (infill panels fallen out) | top (top storey pancaked).
+# facade (infill panels fallen out) | top (top storey pancaked) | upper (part of the top storey fallen in).
 BLDG = [
     dict(W=10.0, D=10.0, n=3, ground="shop", facade="plaster", damage="cracked", balc=1, roof="tanks"),
     dict(W=12.0, D=11.0, n=4, ground="shop", facade="plaster", damage="none", balc=2, roof="solar"),
     dict(W=8.0, D=9.0, n=2, ground="res", facade="brick", damage="cracked", balc=0, roof="tanks"),
-    dict(W=14.0, D=11.0, n=5, ground="shop", facade="tile", damage="cracked", balc=0, roof="shed"),
+    dict(W=14.0, D=11.0, n=5, ground="shop", facade="tile", damage="upper", balc=0, roof="shed"),
     dict(W=10.0, D=10.0, n=4, ground="res", facade="plaster", damage="corner", balc=1, roof="tanks"),
     dict(W=16.0, D=12.0, n=6, ground="shop", facade="plaster", damage="none", balc=2, roof="solar"),
     dict(W=12.0, D=10.0, n=3, ground="shop", facade="plaster", damage="soft", balc=1, roof="tanks"),
     dict(W=9.0, D=9.5, n=3, ground="res", facade="brick", damage="facade", balc=0, roof="tanks"),
     dict(W=13.0, D=11.0, n=5, ground="shop", facade="tile", damage="none", balc=0, roof="tanks"),
     dict(W=11.0, D=10.0, n=4, ground="res", facade="plaster", damage="top", balc=2, roof="solar"),
-    dict(W=15.0, D=11.0, n=4, ground="shop", facade="plaster", damage="cracked", balc=1, roof="shed"),
+    dict(W=15.0, D=11.0, n=4, ground="shop", facade="plaster", damage="upper", balc=1, roof="shed"),
     dict(W=8.0, D=9.0, n=2, ground="shop", facade="plaster", damage="none", balc=0, roof="tanks"),
 ]
 GROUND_STOREY, STOREY, PARAPET = 3.6, 3.0, 1.0
@@ -700,7 +700,7 @@ def _buildings(P):
                     it["fp"] = corners.tolist()
                     last_var, last_tint = var, tint
                     maxd = max(maxd, D)
-                    if sp["damage"] in ("corner", "soft", "facade", "top") and rng.random() < 0.8:
+                    if sp["damage"] in ("corner", "soft", "facade", "top", "upper") and rng.random() < 0.8:
                         _front_debris(P, fx, fy, yaw, W, nx, ny)
                 else:
                     P.dropped["bldg_height"] = P.dropped.get("bldg_height", 0) + 1
@@ -834,10 +834,10 @@ def _streets(P):
                     if P.free(q[0], q[1], Lc / 2):
                         if crushed:
                             it = P.add("wreck", int(rng.integers(_nvar("wreck", P.dims))), q[0], q[1], yaw, fp=fp,
-                                       r=Lc / 2, mat=int(rng.choice(len(CAR_COLOURS), p=_car_p())))
+                                       r=Lc / 2, mat=_car_colour(rng, 100 + var))
                         else:
                             it = P.add(knd, var, q[0], q[1], yaw, fp=fp, r=Lc / 2,
-                                       mat=int(rng.choice(len(CAR_COLOURS), p=_car_p())))
+                                       mat=_car_colour(rng, var if knd == "car" else 200 + var))
                         if it:
                             car_names.append(it)
                     s += Lc + rng.uniform(0.8, 2.5)
@@ -912,6 +912,16 @@ def _car_p():
     return p / p.sum()
 
 
+CAR_TINTS = 4                         # colours per car body (each = one more prototype copy of the painted faces)
+
+
+def _car_colour(rng, var):
+    """A colour index for car body `var`: one of CAR_TINTS colours of that body (weighted toward white / silver)."""
+    sub = sorted({(2 * var + k * 2 + (var % 2)) % len(CAR_COLOURS) for k in range(CAR_TINTS)} | {var % 2})
+    p = _car_p()[sub]
+    return int(sub[int(rng.choice(len(sub), p=p / p.sum()))])
+
+
 POLE_ARMS = (-0.62, 0.0, 0.62)                      # insulator offsets along the crossarm (module y), top z
 POLE_TOP = 7.25
 
@@ -964,7 +974,7 @@ def _square(P):
                     yy = yaw + rng.normal(0, 4) + (180 if rng.random() < 0.3 else 0)
                     R = _rot2(yy)
                     fp = np.array([[-2.3, -1.0], [2.3, -1.0], [2.3, 1.0], [-2.3, 1.0]]) @ R.T + q
-                    P.add("car", var, q[0], q[1], yy, fp=fp, r=2.3, mat=int(rng.choice(len(CAR_COLOURS), p=_car_p())))
+                    P.add("car", var, q[0], q[1], yy, fp=fp, r=2.3, mat=_car_colour(rng, var))
                 x += 2.6
     # rescue cordon: posts with tape along the corridor sides
     for xs in (-13.0, 23.0):
@@ -1492,7 +1502,7 @@ def place(stage, root, kit, pl, log=print, sc=None):
                     q = stage.DefinePrim(f"{ip}/Prototypes/{nm}/{part}", "Xform")
                     q.GetReferences().AddReference(kit.usd, Sdf.Path(f"/TownKit/{m}/{part}"))
                     q.SetInstanceable(part == "shell" or it.get("mat") is None)
-                _override_material(stage, pp, kind, it.get("mat"))
+                _override_material(stage, pp, kind, it.get("mat"), kit)
                 rel.AddTarget(pp.GetPath())
                 protos[key] = len(protos)
             idx.append(protos[key])
@@ -1510,7 +1520,7 @@ def place(stage, root, kit, pl, log=print, sc=None):
     return counts
 
 
-def _override_material(stage, proto, kind, mat):
+def _override_material(stage, proto, kind, mat, kit=None):
     """Per-prototype colour: plaster tint for buildings (albedo texture scale), paint for cars."""
     from pxr import Gf, Sdf
     if mat is None:
@@ -1522,11 +1532,22 @@ def _override_material(stage, proto, kind, mat):
         o.CreateAttribute("inputs:scale", Sdf.ValueTypeNames.Float4).Set(Gf.Vec4f(r, g, b, 1.0))
     elif kind in ("car", "truck", "wreck"):
         rgb = CAR_COLOURS[mat % len(CAR_COLOURS)]
-        o = stage.OverridePrim(f"{p}/tint/Looks/paint/PBR")
-        o.CreateAttribute("inputs:diffuseColor", Sdf.ValueTypeNames.Color3f).Set(Gf.Vec3f(*rgb))
-        top = [0.45 * c + 0.55 * d for c, d in zip(rgb, (0.34, 0.32, 0.29))]      # roof / bonnet under dust
-        o = stage.OverridePrim(f"{p}/tint/Looks/paint_top/PBR")
-        o.CreateAttribute("inputs:diffuseColor", Sdf.ValueTypeNames.Color3f).Set(Gf.Vec3f(*top))
+        pm = (kit.meta.get("paint_mask") or {}) if kit is not None else {}
+        for part in ("paint", "paint_top"):
+            if part in pm:                    # wear mask texture: colour + mask * (dust - colour), scale >= 0
+                d, c = np.array(pm[part]["dust"], float), np.array(rgb, float)
+                if (c <= d).sum() >= 2:
+                    f, sc_, bi = pm[part]["file"], np.clip(d - c, 0, None), c
+                else:
+                    f, sc_, bi = pm[part]["file_inv"], np.clip(c - d, 0, None), d
+                o = stage.OverridePrim(f"{p}/tint/Looks/{part}/albedo")
+                o.CreateAttribute("inputs:file", Sdf.ValueTypeNames.Asset).Set(os.path.join(kit.folder, f))
+                o.CreateAttribute("inputs:scale", Sdf.ValueTypeNames.Float4).Set(Gf.Vec4f(*map(float, sc_), 1.0))
+                o.CreateAttribute("inputs:bias", Sdf.ValueTypeNames.Float4).Set(Gf.Vec4f(*map(float, bi), 0.0))
+            else:                             # kits without the mask: flat colour (roof / bonnet under dust)
+                col = rgb if part == "paint" else [0.45 * c + 0.55 * d for c, d in zip(rgb, (0.34, 0.32, 0.29))]
+                o = stage.OverridePrim(f"{p}/tint/Looks/{part}/PBR")
+                o.CreateAttribute("inputs:diffuseColor", Sdf.ValueTypeNames.Color3f).Set(Gf.Vec3f(*col))
 
 
 def dress(stage, sc, folder, log=print, seed=None):

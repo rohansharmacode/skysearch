@@ -141,6 +141,9 @@ def load(folder, log=print):
     """Kit or None (logged) - never raises, so the caller can skip the town."""
     if not folder:
         return None
+    if not os.path.isabs(folder) and not os.path.isdir(folder):   # e.g. isaac/assets/town_kit from the IsaacLab cwd
+        rel = os.path.join(os.path.dirname(HERE), folder)          # (rehearsal 5): resolve against the repo
+        folder = rel if os.path.isdir(rel) else folder
     try:
         return Kit(folder)
     except Exception as e:

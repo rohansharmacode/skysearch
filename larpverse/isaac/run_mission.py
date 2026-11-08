@@ -977,6 +977,8 @@ def main(argv=None):
                 wall0 = now if wall0 is None else wall0
             if a.live_take and pace and ctrl is not None and cur.get("phase") == "acoustic":
                 a.speed = ctrl.listen_pace(t_render, L.pace_for(pace, "acoustic", base_speed))
+            elif a.live_take and pace and ctrl is not None:      # a live change: slower until the pod mics checked it
+                a.speed = ctrl.quick_pace(L.pace_for(pace, cur.get("phase"), base_speed))
             # the mission runs ahead of the picture: >= 1 sim s, and ~0.75 s of VIDEO in the threaded take, so a slow
             # step (radar DSP, a scan signature) never catches up with the render while drones fly. A listen that
             # waits for the acoustic pipeline holds only landed drones; the camera keeps its slow orbit.

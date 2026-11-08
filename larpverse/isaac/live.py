@@ -68,8 +68,12 @@ QUICK_LISTEN_DUR = float(os.environ.get("LARPVERSE_QUICK_LISTEN_DUR", "10"))
 NEW_EVIDENCE_RISE = 15           # a pile's priority must rise this much over the most it was ever heard at
 NEW_EVIDENCE_NEAR_M = 5.0        # ... and an earlier listen from no further than this extra must have heard it silent
 PREEMPT_MARGIN = 5               # ... and beat the current pile's priority by this to cut its radar phase short
-QUICK_STRONG = 60                # one quick listen is enough when the new lead is this strong AND >= 2 drones' bearings
+QUICK_STRONG = 50                # one quick listen is enough when the new lead is this strong AND >= 2 drones' bearings
+                                 # (50 = a voice-class call, human ~1.0; reh5: A1's new voice scored 56 once and waited
+                                 # for a second listen that never came, while B3 44 heard twice triggered the re-plan)
                                  # agree on it (the real pipeline needs ~6 s per quick listen: two in a row outlast a dwell)
+QUICK_PACE_CAP = 10.0            # take pace cap (sim s per video s) while the pod mics check a live change (real pipeline)
+QUICK_PACE_TRIES = 3             # ... for at most this many quick listens submitted after the change
 POLL_WALL_S = 1.0                # tasking / command-file / stage poll (wall seconds)
 DEFAULT_KEYS = "U=hidden1,Y=hidden2"   # carb key -> dummy ("hiddenN" = N-th hidden dummy, sorted by id: grid H1_C3_vi,
                                        # H2_A1_id; collapse H1_RW_vi, H2_M39_id). H is Kit's hide key: not used.
@@ -1186,6 +1190,10 @@ class LiveController:
         self.inputs = []                   # live inputs: stage events, tasking revisions, portal reports
         self.input_pending = None          # {"since", "cause", "expect"} until the next dispatch
         self.expect = None                 # the pile the fleet would go to next, as ranked before any live input
+        self.unheard = None                # {"t", "sector", "fresh"}: a live stage change the pod mics have not checked yet
+        self._ql_wall = None               # wall time the pod-mic listen in flight was submitted
+        self._lat = {"quick": None, "full": None}   # last compute seconds of each kind of real listen
+        self._pace_said = None
         self.banner = None                 # {"text", "since", "t"}: PLAN CHANGED, ~5 s on screen
         self._state, self._n_dispatch, self._n_events = None, 0, 0
         self.threaded = False              # --mission-thread: USD syncs happen on the render thread only
@@ -1258,12 +1266,15 @@ class LiveController:
         for e in evs[self._n_events:]:
             if e["what"] in ("activated", "moved", "added", "clip changed", "deactivated"):
                 self._note_input(f"dummy {e['id']} {e['what']} ({e['cause']})")
+                if e["what"] != "deactivated":
+                    self.unheard = {"t": float(e.get("t") or self.m.t), "sector": e.get("sector"), "fresh": 0}
         self._n_events = len(evs)
         if self.input_pending is None:                     # what the fleet would do next without the live input
             m = self.m
             here = m.pm.pile if m.pm is not None else None
             cand = [p for p in (state.get("piles") or []) if p["id"] not in m.visited and p["id"] != here
-                    and (m._tasked_piles() is None or p["id"] in m._tasked_piles())]
+                    and p.get("priority") is not None    # before any listen nothing is ranked: no guess (reh5 said A1
+                    and (m._tasked_piles() is None or p["id"] in m._tasked_piles())]   # by name order)
             cand.sort(key=lambda p: (-(p["priority"] if p["priority"] is not None else -1), p["id"]))
             self.expect = cand[0]["id"] if cand else None
 
@@ -1282,8 +1293,13 @@ class LiveController:
             return
         self.input_pending = None
         to, old = new.get("to_pile"), ip.get("expect")
+        if to and to == ip.get("announced"):
+            return                                         # the re-plan banner already named this pile
+        q = next((e for r in reversed(self.quick) for e in r.get("new") or [] if e["pile"] == to), None) if to else None
+        if old is None and not q and new.get("by") != "operator":
+            return              # nothing was ranked before the input and nothing new was heard at ``to``: no "plan
+                                # changed" claim (reh5b said "A1 -> B1": A1 was only the name-order guess)
         if to and to != old:
-            q = next((e for r in reversed(self.quick) for e in r.get("new") or [] if e["pile"] == to), None)
             why = (f"new human-like sound at {to}" if q else "operator order" if new.get("by") == "operator"
                    else "re-ranked on new evidence")
             self._set_banner(f"PLAN CHANGED: {old or 'next pile'} → {to} ({why}, unscripted live input)")
@@ -1444,9 +1460,14 @@ class LiveController:
         self.live.refresh(m.t, "listen prefetch")
         if find_prefetch(self.live.prefetch, drones, exclude, seed, self.live.sig) is not None:
             return
+        # the worker runs one listen at a time: a pod-mic listen still computing delays this one (rehearsal 5b: the
+        # mission clock was held 10.2 s at the gate, the pace had assumed an idle worker)
+        ahead = 0.0
+        if self._ql_job is not None and self.service.poll(self._ql_job[0]) is None and self._ql_wall is not None:
+            ahead = max(0.5, (self._lat["quick"] or 0.6 * self.listen_latency()) - (time.time() - self._ql_wall))
         jid = self.service.submit(self.live.truth(), drones, exclude, seed, gemini=self.gemini_ok())
         self.live.prefetch[listen_key(drones, exclude, seed, self.live.sig)] = (jid, dict(drones))
-        self._pf = {"jid": jid, "wall": time.time(), "t": m.t}          # listen pace (listen_pace)
+        self._pf = {"jid": jid, "wall": time.time(), "t": m.t, "ahead": ahead}   # listen pace (listen_pace)
         self.say(f"real acoustic pipeline: listen {m.n_listen + 1} submitted at t {m.t:.0f} (landing patches known); "
                  f"it overlaps the landing, the listen window and the call-out")
 
@@ -1464,9 +1485,12 @@ class LiveController:
         return True
 
     def listen_latency(self):
-        """Expected wall seconds of one full real listen: the mean of the last three, else the pre-flight's."""
-        lat = [x for x in (getattr(self.service, "latency", None) or []) if x][-3:]
-        return (sum(lat) / len(lat)) if lat else float(getattr(self, "preflight_latency", 0.0) or 15.0)
+        """Expected compute seconds of one full real listen (the gate's: passive window + call-out): the last one
+        this take, else the pre-flight's warm listen. Pod-mic quick listens (10 s window) are not counted."""
+        if self._lat["full"]:
+            return float(self._lat["full"])
+        # the pre-flight listen has no call-out: the gate's synthesises ~1.3x the audio (reh5b ~12 s vs 8.6 s)
+        return 1.3 * float(getattr(self, "preflight_latency", 0.0) or 12.0)
 
     def listen_pace(self, t_now, base, floor=2.0):
         """Take pacing while the drones listen (rotors off, nothing moves): run the phase at ``base`` and slow it only
@@ -1477,12 +1501,14 @@ class LiveController:
         need_t = getattr(self.m, "listen_end", None)       # set once every drone is down (+ the call-out)
         if self.service is None or pf is None or need_t is None:
             return base
-        if self.service.poll(pf["jid"]) is not None:
+        r = self.service.poll(pf["jid"])
+        if r is not None:
+            self._lat["full"] = r.get("elapsed_s") or self._lat["full"]
             return base
         left_sim = float(need_t) - float(t_now)
         if left_sim <= 0:
             return base
-        left_wall = max(0.75, self.listen_latency() + 0.5 - (time.time() - pf["wall"]))
+        left_wall = max(0.75, pf.get("ahead", 0.0) + self.listen_latency() + 0.5 - (time.time() - pf["wall"]))
         return max(floor, min(base, left_sim / left_wall))
 
     def _quick_listen(self, state):
@@ -1493,6 +1519,7 @@ class LiveController:
             if r is None:
                 return
             self._ql_job = None
+            self._lat["quick"] = r.get("elapsed_s") or self._lat["quick"]
             if "error" in r:
                 self.say(f"pod-mic listen {jid} failed: {r['error']}")
                 return
@@ -1510,14 +1537,34 @@ class LiveController:
             self.live.refresh(m.t, "pod-mic listen")
             self._ql_job = (self.service.submit(self.live.truth(), pts, exclude, seed, gemini=False,
                                                 duration=QUICK_LISTEN_DUR or None), pts, m.t)
+            self._ql_wall = time.time()
             return
         res = m.acoustic_fn(m.scenario, pts, exclude, seed)
         self._handle_quick(res, pts, m.t)
+
+    def quick_pace(self, base, cap=QUICK_PACE_CAP):
+        """Take pacing after a live change while a pile is searched: the real pod-mic listen takes ~5 s of wall time,
+        i.e. ~120 sim s at the x24 relocate pace, so at full pace the pile could end before a listen that includes
+        the change returns (rehearsal 5b: the voice switched on at t 265 was never checked; the full listen then
+        heard it weakly). Cap the pace until a quick listen submitted after the change reports new evidence, or
+        QUICK_PACE_TRIES of them have returned, or the pile ends. Only the picture's speed changes, not the mission."""
+        u, m = self.unheard, self.m
+        on = (self.service is not None and u is not None and m.stage == "pile" and m.pm is not None
+              and u["fresh"] < QUICK_PACE_TRIES)
+        if on != bool(self._pace_said):
+            self._pace_said = on
+            self.say(f"take pace capped at x{cap:g} while the pod mics check the live change" if on else
+                     "take pace back to normal (the pod mics have checked the live change)")
+        return min(base, cap) if on else base
 
     def _handle_quick(self, res, pts, t_sub):
         m = self.m
         self.live.note_heard(res, t_sub, "pod-mic")
         new = self._note_heard(res, fold=True, points=pts)
+        if self.unheard is not None and t_sub >= self.unheard["t"] - 1e-6:
+            self.unheard["fresh"] += 1
+            if new or self.unheard["fresh"] >= QUICK_PACE_TRIES:
+                self.unheard = None
         rec = {"t": round(t_sub, 1), "t_result": round(m.t, 1), "n": self._ql_n,
                "points": {k: [round(v, 1) for v in xy] for k, xy in pts.items()},
                "clips": len(res.get("clips", [])), "new": [{"pile": p, "priority": pr, "was": was} for p, pr, was in new]}
@@ -1541,7 +1588,9 @@ class LiveController:
         if firm:
             m._say(f"Re-prioritise: {pile} ({pr}) queued; {cur} has a firm ping in progress, finishing that fix first")
         elif pr > cp + PREEMPT_MARGIN and pr >= m.priority_min:
-            self._replan(f"new human-like call at {pile} (priority {pr}) outranks {cur} ({cp})")
+            nxt = self.gate_target()
+            top = "" if nxt in (None, pile) else f"; {nxt} ({m.piles[nxt]['priority']}) now ranks first"
+            self._replan(f"new human-like call at {pile} (priority {pr}) outranks {cur} ({cp}){top}")
 
     def _note_heard(self, res, fold, points=None):
         """Track, per pile, the most it was heard at and the closest listen that heard it SILENT. Returns
@@ -1585,18 +1634,34 @@ class LiveController:
         return new
 
     # ------------------------------------------------------------------ re-plan
+    def gate_target(self):
+        """The open pile the next dispatch gate ranks first, sorted as GridMission._gate sorts (display only: the
+        gate itself decides, incl. battery swaps and revisits). None before any listen ranked a pile."""
+        m = self.m
+        here = m.pm.pile if m.pm is not None else None
+        tasked = m._tasked_piles()
+        ranked = sorted((p for p in m.piles.values() if p["id"] not in m.visited and p["id"] != here
+                         and p.get("priority") is not None and p["priority"] >= m.priority_min
+                         and (tasked is None or p["id"] in tasked)), key=lambda p: (-p["priority"], p["id"]))
+        return ranked[0]["id"] if ranked else None
+
     def _replan(self, why, to_pile=None):
         """Native GridMission.preempt while a pile is being searched (the cut waits for the dwell under way; the
         cut pile stays not cleared). Between piles an operator order goes straight to the next dispatch gate."""
         m = self.m
         self.replans.append({"t": round(m.t, 1), "why": why, "from": m.pm.pile if m.pm is not None else None,
-                             "to": to_pile, "stage": m.stage})
+                             "to": to_pile, "next": to_pile or self.gate_target(), "stage": m.stage})
         self.n_changes += 1
         if self.input_pending is not None or to_pile is not None:
-            tgt = to_pile or next((e["pile"] for r in reversed(self.quick) for e in r.get("new") or []), None)
+            # name the pile the fleet will fly to: the gate's top-ranked open pile, not the pile whose new sound
+            # triggered the cut (reh5: B3 44 confirmed twice triggered it, A1 56 heard once ranked first and won)
+            tgt = to_pile or self.gate_target() or next((e["pile"] for r in reversed(self.quick)
+                                                        for e in sorted(r.get("new") or [], key=lambda e: -e["priority"])), None)
             here = m.pm.pile if m.pm is not None else (self.expect or "plan")
             if tgt and tgt != here:
                 self._set_banner(f"PLAN CHANGED: {here} → {tgt} ({_short_why(why)}, unscripted live input)")
+                if self.input_pending is not None:
+                    self.input_pending["announced"] = tgt
         if m.stage == "pile" and m.pm is not None:
             m.preempt(why, to_pile=to_pile)
             m._say(f"RE-PLAN requested: {why}; finishing the radar dwell under way at {m.pm.pile}, then the gate")

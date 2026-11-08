@@ -125,7 +125,7 @@ function heard(c) {                                 // what was said, in English
   }
   return (en ? `“${esc(en)}”` : `“${esc(c.transcript)}”`) + small;
 }
-let LIVE = null, HUD = null, firstEv = null, evSeenAt = null, opRev = null, opT = null, listenT0 = null;
+let LIVE = null, HUD = null, firstEv = null, evSeenAt = null, evKey = null, opRev = null, opT = null, listenT0 = null;
 const SEEN = new Set();                            // story steps that have really been on screen
 let shown = { beat: -1, at: -1e9, title: '' }, rowsAt = -1e9, sayKey = '', waveKey = '', maxBeat = -1, sayAt = -1e9, forceSense = false;
 const SAY_HOLD_S = 3;                              // the sensing line never flips faster than this (pods up/down at x24)
@@ -144,7 +144,8 @@ const humanClips = s => (s.acoustic_clips || []).filter(c => ((c.scores || {}).h
 function event(s) {
   // the live, unscripted change: a stage event (hidden voice switched on, dummy moved) or a new operator zone
   const ev = LIVE && LIVE.last_event;
-  if (ev && ['activated', 'moved', 'added'].includes(ev.what)) return { kind: 'stage', t: +ev.t, ev };
+  // ignore a change stamped after the mission clock: a live.json left over from an earlier, longer run
+  if (ev && ['activated', 'moved', 'added'].includes(ev.what) && +ev.t <= (+s.t || 0) + 5) return { kind: 'stage', t: +ev.t, ev };
   const rev = +((s.tasking || {}).revision || 0);
   if (opRev === null) opRev = rev;
   if (rev > opRev && opT === null) opT = +s.t;
@@ -152,11 +153,16 @@ function event(s) {
   return null;
 }
 
+// the pod-mic quick listen that heard the live change and asked for a re-plan (live.json replans; "next" is the
+// pile the dispatch gate ranks first), before the fleet has left: the step between the change and the new plan
+const replanAfter = ev => ev && ev.kind === 'stage' && LIVE && (LIVE.replans || []).filter(r => +r.t >= ev.t - 1e-6 && r.next).slice(-1)[0] || null;
+
 function beatOf(s, ev) {
   const ph = String(s.phase || ''), m = s.mission || {}, t = +s.t || 0;
   const visited = m.visited || [], d = (s.dispatch || []).filter(x => x.to_pile);
   const after = ev ? d.filter(x => +x.t >= ev.t - 1e-6) : [];
   if (ev && evSeenAt !== null && vnow() - evSeenAt < 8 && !after.length) return 4;      // show the change itself
+  if (replanAfter(ev) && !after.length) return 4;                                        // heard it: re-plan pending
   if (after.length) {
     if (['deploy', 'dispatch'].includes(ph) || (m.in_transit)) return 5;
     return 6;
@@ -183,6 +189,13 @@ function caption(b, s, ev) {
   if (b === 2 && here.length) return ['Breathing-like signal found', 'The radar picked up a steady breathing rhythm under the rubble. Rescuers get a place to check first. It is a lead, not a confirmed person.'];
   if (b === 2) return ['Feeling for breathing', 'Each drone lowers a radar pod onto the rubble on a cable. The radar can feel the tiny chest movement of breathing up to about 3 m down.'];
   if (b === 3) return ['Listening', 'The drones land and switch their rotors off. One calls out over its loudspeaker; then they all listen for voices and knocking from under the rubble.'];
+  const rp = b === 4 ? replanAfter(ev) : null;
+  if (rp && evSeenAt !== null && vnow() - evSeenAt >= 8) {
+    const nx = esc(rp.next), here = esc(rp.from || pile || 'this pile');
+    return ['New voice heard', rp.next === ev.ev.sector
+      ? `The drones' microphones on the rubble just heard a voice near ${nx} that was not there before. They stop the search at ${here} early and fly to ${nx}.`
+      : `The drones' microphones on the rubble just heard new sounds. ${nx} now ranks first, so they stop the search at ${here} early and fly there.`];
+  }
   if (b === 4 && ev && ev.kind === 'stage')
     return ['Live change (unscripted)', `A teammate has just switched on a hidden voice near ${esc(ev.ev.sector || 'another pile')}. Nobody tells the drones. They have to hear it themselves.`];
   if (b === 4) return ['Live change (unscripted)', 'The operator has just added a new search area. Nobody tells the drones what to do next.'];
@@ -207,6 +220,14 @@ function sense(b, s, ev) {
   // [chip, plain sentence, [[label, value], ...], quote | null]
   const m = s.mission || {}, ph = String(s.phase || ''), t = +s.t || 0, pile = m.active_pile || '';
   const drones = s.drones || [];
+  const rp = b === 4 ? replanAfter(ev) : null;
+  if (rp && evSeenAt !== null && vnow() - evSeenAt >= 8) {
+    const c = humanClips(s).filter(c => c.pile_id === rp.next)[0];
+    const rows = [['Heard by', 'microphones resting on the rubble (rotors off)']];
+    if (c) rows.push(['Voice priority', `${c.priority} / 100`], ['Drones agreeing on direction', String(c.doa_agree || '–')]);
+    rows.push(['Next', `finish the scan under way, then fly to ${esc(rp.next)}`]);
+    return ['SOUND', `New voice heard${rp.next === ev.ev.sector ? ' near ' + esc(rp.next) : ''}`, rows, c ? heard(c) : null];
+  }
   if (b === 4 && ev && ev.kind === 'stage') {
     const e = ev.ev;
     return ['CHANGE', `Hidden voice switched on near ${esc(e.sector)}`, [['When', `mission time ${f0(e.t)} s`],
@@ -387,7 +408,8 @@ function leads(s) {
 function render(s) {
   const now = vnow(), t = +s.t || 0;
   const ev = event(s);
-  if (ev && evSeenAt === null) evSeenAt = now;
+  const evK = ev ? ev.kind + ':' + ev.t : null;      // a new change gets its own 8 s (reh5b: a stale one at 0 s ate it)
+  if (ev && evK !== evKey) { evKey = evK; evSeenAt = now; }
   let b = beatOf(s, ev);
   const [title, text] = caption(b, s, ev);
   // never faster than HOLD_S: a new caption waits until the current one has been on screen long enough

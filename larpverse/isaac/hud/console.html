@@ -149,7 +149,7 @@
       <div class="hrow"><div class="h">Site map · click a rubble pile to search it</div><div class="n" id="mapn"></div></div>
       <div class="mbox" id="mbox"><canvas id="lmap" width="1176" height="620"></canvas><svg id="msvg"></svg><div class="nn">N ↑</div>
         <div class="sc" id="msc"><i></i>10 m</div></div>
-      <div class="mleg">Dashed outlines: rubble piles. White dots: LiDAR laser hits (brighter = higher). Orange: drones. Red: radar leads. Blue ring: searched, voice heard. ✕: searched, nothing found.</div>
+      <div class="mleg">Dashed outlines: rubble piles. White dots: LiDAR laser hits (brighter = higher). Orange: drones. Red: radar leads. Blue ring: searched, a voice was heard but not confirmed. ✕: searched, nothing found.</div>
       <div id="toast"></div>
     </div>
     <div class="card" id="sense">
@@ -614,7 +614,7 @@ function lmVoice(s) {
     const [cx, cy] = half(lmPx(v, p.xy[0], p.xy[1])), r = 6.5 * v.k / 2;
     const ring = document.createElement('div'); ring.className = 'vh';
     Object.assign(ring.style, { left: `${cx}px`, top: `${cy}px`, width: `${2 * r}px`, height: `${2 * r}px` });
-    const lb = document.createElement('div'); lb.className = 'vhl'; lb.textContent = 'voice heard';
+    const lb = document.createElement('div'); lb.className = 'vhl'; lb.textContent = 'voice heard · unconfirmed';
     Object.assign(lb.style, { left: `${cx}px`, top: `${cy + r + 3}px` });
     LM.box.appendChild(ring); LM.box.appendChild(lb); LM.vh[p.id] = [ring, lb];
   }

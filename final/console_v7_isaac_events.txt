@@ -1,0 +1,34 @@
+[t=   0.0] Deploy d1-d3 -> pile B at (-0.5, 23.0): operator-selected start pile, inside tasked zone B [zone B]
+[isaac] INTERACTIVE: drones on the pads; waiting for the operator's first click (POST /api/goto -> /home/ubuntu/lv/larpverse/dashboard/data/goto.json)
+[;m[isaac] INTERACTIVE: first click -> launch pile H; rebuilding the mission (same scenario)
+[t=   0.0] Deploy d1-d3 -> pile H at (-0.5, -23.0): operator-selected start pile, inside tasked zone H [zone H]
+[isaac] phase deploy at t=1.0 wall=0.0s x6 behind=0.0s
+[isaac] phase survey at t=14.0 wall=1.4s x7 behind=0.0s
+[isaac] phase landing at t=49.0 wall=6.9s x6 behind=0.0s
+[isaac] LIDAR FLASH H: 30000 points, red 26.1% yellow 1.8% (own points, slope/step)
+[isaac] phase radar at t=68.0 wall=9.4s x12 behind=0.0s
+[isaac] phase relocate at t=88.0 wall=13.1s x24 behind=1.6s
+[isaac] phase rescan at t=108.0 wall=13.5s x24 behind=1.6s
+[isaac] phase relocate at t=128.0 wall=15.6s x24 behind=2.4s
+[isaac] phase rescan at t=150.0 wall=16.1s x24 behind=2.4s
+[isaac] phase relocate at t=170.0 wall=18.0s x24 behind=3.1s
+[isaac] phase rescan at t=190.0 wall=18.4s x24 behind=3.1s
+[isaac] phase relocate at t=210.0 wall=20.2s x24 behind=3.6s
+[isaac] phase rescan at t=230.0 wall=20.6s x24 behind=3.6s
+[isaac] phase relocate at t=250.0 wall=22.4s x24 behind=4.1s
+[isaac] phase rescan at t=270.0 wall=22.8s x24 behind=4.1s
+[t= 290.0] Radar phase at H over; landed drones listen to the other piles for 26 s and stream clips to the acoustic agent
+[isaac] real acoustic pipeline: listen 1 submitted at t 290 (landing patches known); it overlaps the landing, the listen window and the call-out
+[isaac] phase acoustic at t=290.0 wall=24.1s x8.60377 behind=4.2s
+[isaac] Gemini calls: +1 (listen 3), 1 this run
+[isaac] Gemini calls: +1 (listen 4), 2 this run
+[t= 359.0] Decision (gemini, 8005 ms): dispatch I - Dispatching to pile I (priority 92, score 92) is the strongest lead, supported by a clear voice transcript asking for help (human 0.98) and a short 
+[t= 359.0] Dispatch d1-d3 -> pile I at (-13.0, -23.0): Dispatching to pile I (priority 92, score 92) is the strongest lead, supported by a clear voice transcript asking for help (human 0.98) and a sho
+[isaac] phase dispatch at t=359.0 wall=96.2s x5 behind=67.6s
+[isaac] phase survey at t=369.0 wall=97.4s x7 behind=67.6s
+[isaac] phase landing at t=402.0 wall=102.7s x6 behind=67.6s
+[isaac] LIDAR FLASH I: 30000 points, red 19.8% yellow 3.6% (own points, slope/step)
+[isaac] phase radar at t=421.0 wall=105.2s x12 behind=67.6s
+[t= 441.0] Radar phase at I over; landed drones listen to the other piles for 26 s and stream clips to the acoustic agent
+[isaac] real acoustic pipeline: listen 2 submitted at t 441 (landing patches known); it overlaps the landing, the listen window and the call-out
+[isaac] phase acoustic at t=441.0 wall=108.7s x2 behind=69.2s

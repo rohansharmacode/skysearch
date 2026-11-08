@@ -1,0 +1,9 @@
+12:19:21.602 loading weiguan 7 day (TOUCHDOWN=1, audio model gemini-3.5-flash-lite)
+12:19:21.605 site ready (held)
+12:19:32.636 recording started (start screen)
+12:19:35.664 card 1 glide+click sent
+12:19:40.192 hover I sent
+12:19:44.723 click H sent
+12:19:44.727 isaac: first click received
+12:21:27.538 first autonomous dispatch: [t= 359.0] Dispatch d1-d3 -> pile I at (-13.0, -23.0): Dispatching to pile I (priority 92, score 92) is the strongest lead, supported by a clear voice transcrip
+12:21:40.718 stopped: 127.866000 s, 115404745 B

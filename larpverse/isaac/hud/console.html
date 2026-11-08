@@ -156,7 +156,7 @@
       <div class="hrow"><div class="h">Site map · click a rubble pile to search it</div><div class="n" id="mapn"></div></div>
       <div class="mbox" id="mbox"><canvas id="lmap" width="1176" height="620"></canvas><svg id="msvg"></svg><div class="nn">N ↑</div>
         <div class="sc" id="msc"><i></i>10 m</div></div>
-      <div class="mleg">Dashed outlines: rubble piles. White dots: LiDAR laser hits (brighter = higher). Orange: drones. Red: radar leads. Green squares: flat spots the drones can land on (slope). Blue ring: searched, a voice was heard but not confirmed. ✕: searched, nothing found.</div>
+      <div class="mleg">Dashed outlines: rubble piles. Grey: the whole site map. White dots: the drones' own LiDAR hits (brighter = higher). Orange: drones. Red: radar leads. Green squares: flat spots the drones can land on (slope). Blue ring: searched, a voice was heard but not confirmed. ✕: searched, nothing found.</div>
       <div id="toast"></div>
     </div>
     <div class="card" id="sense">
@@ -565,7 +565,39 @@ function lmDraw(pts, from) {
   }
   LM.g.putImageData(LM.img, 0, 0);
 }
-function lmReset() { LM.img = null; LM.have = 0; LM.count = 0; LM.key = ''; lmClear(); $('mapn').textContent = 'nothing scanned yet'; }
+// the whole site as a dim grey base layer (the same map as the start screen: dashboard/data/sites/<kind>-<seed>.json),
+// so the full map is always visible; the drones' own LiDAR hits are drawn brighter on top
+const lmCopy = im => new ImageData(new Uint8ClampedArray(im.data), im.width, im.height);
+function lmBaseImg(hm) {
+  const v = LM.view; if (!v || !hm || !Array.isArray(hm.z) || !hm.origin) return null;
+  const W = v.W, H = v.H, img = LM.g.createImageData(W, H), d = img.data, r = +hm.res || 0.5, [x0, y0] = hm.origin;
+  for (let i = 3; i < d.length; i += 4) d[i] = 255;
+  let sd = 7; const rnd = () => (sd = (sd * 16807) % 2147483647) / 2147483647;
+  for (let j = 0; j < hm.h; j++) for (let i = 0; i < hm.w; i++) {
+    const z = hm.z[j * hm.w + i]; if (z == null) continue;
+    const c = z < 0.25 ? 48 : 78 + 60 * Math.sqrt(Math.min(1, (z - 0.25) / 4));
+    for (let n = z < 0.25 ? 1 : 4; n--;) {
+      const [px, py] = lmPx(v, x0 + (i + rnd() - 0.5) * r, y0 + (j + rnd() - 0.5) * r);
+      const x = px | 0, y = py | 0; if (x < 0 || y < 0 || x >= W || y >= H) continue;
+      const k = (y * W + x) * 4; if (d[k] < c) d[k] = d[k + 1] = d[k + 2] = c;
+    }
+  }
+  return img;
+}
+async function lmLoadBase(s) {
+  const st = s.site || {}, kind = st.kind || (SITE && SITE.site), seed = (String(st.name || '').match(/seed (\d+)/) || [])[1] || (SITE && SITE.seed);
+  const key = `${kind}-${seed}|${LM.site}`; LM.baseKey = key; LM.base = null;
+  let hm = null;
+  const ps = typeof PK !== 'undefined' && PK.sites.find(x => x.site === kind && +x.seed === +seed && x.data);
+  if (ps) hm = ps.data.heightmap;
+  if (!hm && kind && seed) { try { hm = (await getJSON(`${DIR}sites/${kind}-${seed}.json`)).heightmap; } catch (e) { } }
+  if (!hm && s.heightmap && Array.isArray(s.heightmap.z) && !s.heightmap.mask) hm = s.heightmap;
+  if (LM.baseKey !== key) return;
+  LM.base = lmBaseImg(hm);
+  if (LM.base) { LM.img = lmCopy(LM.base); LM.have = 0; LM.key = ''; LM.at = -1e9; LM.g.putImageData(LM.img, 0, 0); }
+}
+function lmReset() { LM.img = LM.base ? lmCopy(LM.base) : null; LM.have = 0; LM.count = 0; LM.key = '';
+  if (LM.img) LM.g.putImageData(LM.img, 0, 0); else lmClear(); $('mapn').textContent = 'nothing scanned yet'; }
 function lmFeed(pts) {
   if (!LM.view) return;
   const n = Math.floor(pts.length / 3);
@@ -586,8 +618,10 @@ function lmBuild(s) {                               // (re)build the static laye
   for (const el of [...LM.box.querySelectorAll('.pl,.ring,.dr,.ld,.ldl,.vh,.vhl,.lz,.lzl')]) el.remove();
   LM.lzKey = ''; LM.lz = [];
   LM.svg.innerHTML = ''; LM.labels = {}; LM.zones = {}; LM.drones = {}; LM.leads = {}; lmReset();
+  LM.base = null;
   const v = LM.view = lmView(s);
   if (!v) return;
+  lmLoadBase(s);
   LM.svg.setAttribute('viewBox', `0 0 ${v.W / 2} ${v.H / 2}`);
   $('msc').firstElementChild.style.width = `${10 * v.k / 2}px`;
   for (const p of s.piles || []) {

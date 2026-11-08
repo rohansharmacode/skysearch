@@ -1,0 +1,28 @@
+[t=   0.0] Deploy d1-d3 -> pile T1a at (-31.1, 14.3): operator-selected start pile, inside tasked zone T1a [zone T1a]
+[isaac] Gemini calls: +1 (listen 1), 1 this run
+[isaac] INTERACTIVE: drones on the pads; waiting for the operator's first click (POST /api/goto -> /home/ubuntu/lv/larpverse/dashboard/data/goto.json)
+[;m[isaac] INTERACTIVE: first click -> launch pile T1b; rebuilding the mission (same scenario)
+[t=   0.0] Deploy d1-d3 -> pile T1b at (-31.0, -1.3): operator-selected start pile, inside tasked zone T1b [zone T1b]
+[isaac] phase deploy at t=1.0 wall=0.0s x6 behind=0.0s
+[isaac] phase survey at t=14.0 wall=1.9s x7 behind=0.0s
+[isaac] phase landing at t=90.0 wall=13.6s x6 behind=0.6s
+[isaac] LIDAR FLASH T1b: 30000 points, red 66.0% yellow 4.1% (own points, slope/step)
+[isaac] phase radar at t=113.0 wall=16.9s x12 behind=0.6s
+[isaac] phase relocate at t=133.0 wall=21.6s x24 behind=3.4s
+[isaac] phase rescan at t=164.0 wall=25.0s x24 behind=5.1s
+[isaac] phase relocate at t=184.0 wall=27.8s x24 behind=7.5s
+[isaac] phase rescan at t=209.0 wall=30.6s x24 behind=8.9s
+[isaac] phase relocate at t=229.0 wall=33.7s x24 behind=11.5s
+[isaac] phase rescan at t=260.0 wall=36.7s x24 behind=12.9s
+[isaac] phase relocate at t=280.0 wall=39.6s x24 behind=15.3s
+[isaac] phase rescan at t=303.0 wall=41.9s x24 behind=16.1s
+[t= 323.0] Radar phase at T1b over; landed drones listen to the other piles for 26 s and stream clips to the acoustic agent
+[isaac] real acoustic pipeline: listen 1 submitted at t 323 (landing patches known); it overlaps the landing, the listen window and the call-out
+[isaac] phase acoustic at t=323.0 wall=44.8s x6.92229 behind=18.8s
+[isaac] Gemini calls: +1 (listen 5), 2 this run
+[t= 420.0] Decision (gemini, 11910 ms): dispatch T1c - Dispatching to T1c (score 60) as it is the highest-priority candidate lead with a reliable (0.78) double-knock response to call-out and voice det
+[t= 420.0] Dispatch d1-d3 -> pile T1c at (-31.0, -16.5): Dispatching to T1c (score 60) as it is the highest-priority candidate lead with a reliable (0.78) double-knock response to call-out and voice d
+[isaac] phase dispatch at t=420.0 wall=135.7s x5 behind=94.8s
+[isaac] phase survey at t=433.0 wall=138.2s x7 behind=95.0s
+[isaac] phase landing at t=464.0 wall=144.8s x6 behind=97.0s
+[isaac] LIDAR FLASH T1c: 15162 points, red 73.2% yellow 5.0% (own points, slope/step)

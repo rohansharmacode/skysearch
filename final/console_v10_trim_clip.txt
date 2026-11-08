@@ -1,0 +1,3 @@
+[isaac] [trim] crop r=60 m around (-8, -2) + van corridor: {'crop': 181, 'debris': 5, 'figures': 1, 'radius_m': 60.2, 'centre': (-8.3, -1.7)}
+[isaac] [trim] 3 grey dummies (display only) at ['T1b', 'T1c', 'RE']
+[isaac] [trim] DUMMY LIT at T1c (the mission's own lead there)

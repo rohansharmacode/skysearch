@@ -111,6 +111,10 @@
   .by { display:inline-block; font-size:11px; font-weight:800; letter-spacing:.1em; padding:2px 7px; border-radius:5px;
         text-transform:uppercase; vertical-align:2px; margin-left:6px; }
   .by.gem { background:var(--gem); color:#0b0f13; } .by.box { background:#3a434b; color:#dfe5ea; }
+  #hpri { margin-top:8px; display:grid; gap:3px; }
+  #hpri .pr { font-size:13.5px; color:#cdd6dc; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  #hpri .pr b { display:inline-block; min-width:118px; font-size:11px; font-weight:800; letter-spacing:.06em; text-transform:uppercase;
+                padding:1px 7px; border-radius:4px; margin-right:8px; color:#0b0f13; text-align:center; }
   .why { font-size:14px; color:#d5dde3; line-height:1.38; margin-top:6px; }
   .big { font-size:22px; font-weight:700; margin-top:6px; }
   #sense { flex:0 1 auto; min-height:0; overflow:hidden; }
@@ -156,7 +160,7 @@
       <div class="hrow"><div class="h">Site map · click a rubble pile to search it</div><div class="n" id="mapn"></div></div>
       <div class="mbox" id="mbox"><canvas id="lmap" width="1176" height="620"></canvas><svg id="msvg"></svg><div class="nn">N ↑</div>
         <div class="sc" id="msc"><i></i>10 m</div></div>
-      <div class="mleg">Dashed outlines: rubble piles. Grey: the whole site map. White dots: the drones' own LiDAR hits (brighter = higher). Orange: drones. Red: radar leads. Green squares: flat spots the drones can land on (slope). Blue ring: searched, a voice was heard but not confirmed. ✕: searched, nothing found.</div>
+      <div class="mleg">Grey: whole site · White: the drones' LiDAR hits · Orange: drones · Green: landing spots · Red: radar leads · Blue ring: voice heard, unconfirmed · ✕: searched, nothing found</div>
       <div id="toast"></div>
     </div>
     <div class="card" id="sense">
@@ -168,6 +172,7 @@
       <div class="h">What the microphones heard <span id="hby"></span></div>
       <div class="q" id="hq"></div>
       <div class="why" id="hwhy"></div>
+      <div id="hpri"></div>
     </div>
     <div class="card hide" id="next">
       <div class="h">Next pile to search <span id="nby"></span></div>
@@ -449,6 +454,27 @@ function sense(s) {
   return ['FLEET', 'Standing by', [['Drones', String(drones.length)]]];
 }
 
+// sound priority list (acoustic/priority.py tiers; older runs: a client-side guess from the class and human score):
+// trapped > check > safe person on the surface > not a person. Only trapped/check sounds pull the drones.
+const TIER = { trapped: ['Trapped', '#ff6b63'], check: ['Check', '#ffb020'], safe_surface: ['Safe, on surface', '#45d483'], ignore: ['Not a person', '#8a959e'] };
+function tierOf(c) {
+  if (c.tier && TIER[c.tier]) return c.tier;
+  const cls = String(c.class || ''), h = (c.scores || {}).human ?? 0;
+  if (/footstep|surface/.test(cls)) return 'safe_surface';
+  if (/dog|animal|generator|machin|engine|settl|debris|noise|wind/.test(cls) || h < 0.25) return 'ignore';
+  return h >= 0.6 ? 'trapped' : 'check';
+}
+function priList(cur) {                              // one row per tier (best clip of each), most urgent first, max 3
+  const seen = new Set(), rows = [];
+  for (const c of [...cur].sort((a, b) => (TIER_N[tierOf(a)] - TIER_N[tierOf(b)]) || ((b.priority ?? 0) - (a.priority ?? 0)))) {
+    const t = tierOf(c); if (seen.has(t)) continue; seen.add(t);
+    const what = c.tier_why || `${String(c.class || 'sound').replace(/_/g, ' ')} near ${pn(c.pile_id)}`;
+    rows.push(`<div class="pr"><b style="background:${TIER[t][1]}">${TIER[t][0]}</b>${esc(what)}${c.tier_why ? ` · ${esc(pn(c.pile_id))}` : ''}</div>`);
+    if (rows.length >= 3) break;
+  }
+  return rows.join('');
+}
+const TIER_N = { trapped: 0, check: 1, safe_surface: 2, ignore: 3 };
 // the most recent listen's best human sound, with who analysed it (clip.by: gemini | fallback)
 function heardCard(s) {
   const C = s.acoustic_clips || [];
@@ -462,6 +488,7 @@ function heardCard(s) {
   $('heard').classList.remove('hide');
   const gc = cur.find(c => isGem(c.by)), by = gc ? 'gemini' : (cur[0] || {}).by;
   $('hby').innerHTML = byTag(by, gc && gc.model, 'drone');
+  $('hpri').innerHTML = priList(cur);
   if (!best) { $('hq').innerHTML = 'No human voice or knocking in the last listen.'; $('hwhy').textContent = ''; return; }
   const sc = best.scores || {};
   const cls = String(best.class || 'sound').replace(/_/g, ' ');
@@ -469,7 +496,7 @@ function heardCard(s) {
   const bits = [`${esc(String(best.class || 'sound').replace(/_/g, ' '))} near ${esc(pn(best.pile_id))}`, `how sure it is a person ${f2(sc.human)}`];
   if (best.bearing_deg != null) bits.push(`from the ${compass(best.bearing_deg).split(' (')[0]} of drone ${esc(best.drone_id)}`);
   if (best.doa_agree) bits.push(`${esc(best.doa_agree)} drones agree on the direction`);
-  $('hwhy').innerHTML = bits.join(' · ') + (by === 'gemini' && best.rationale ? `<br>${esc(mName(best.model || (gc || {}).model || DRONE_M))}: ${esc(best.rationale)}` : '');
+  $('hwhy').innerHTML = bits.join(' · ');           // (the model's own rationale is in the next-pile card's reason)
 }
 
 // the latest next-pile decision: who chose it (decisions[].by: gemini | argmax | fallback) and why

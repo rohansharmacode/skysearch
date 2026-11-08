@@ -35,16 +35,18 @@ except ImportError:                       # run from acoustic/ without the repo 
     from agents import llm
 
 from . import novelty
+from . import priority as tiers
 
 FS = 16000
 MAX_CLIP_S = 15.0
-PROMPT_VERSION = "gemini-audio-v5"
+PROMPT_VERSION = "gemini-audio-v6"          # v6: setting (under_rubble | open_air | unclear), footsteps
 HERE = os.path.dirname(os.path.abspath(__file__))
 WHISPER_DIR = os.path.join(HERE, "models", "whisper")
 MULTI_WHISPER = ("small", "base", "tiny")         # preferred multilingual faster-whisper models, if on disk
 
 SOUND_TYPES = ["speech", "call_for_help", "scream", "crying", "moaning", "coughing", "knocking_tapping",
-               "animal", "machinery", "other"]
+               "footsteps", "animal", "machinery", "other"]
+SETTINGS = list(tiers.SETTINGS)
 DISTRESS = ["call_for_help", "trapped", "injured", "cant_breathe", "child", "multiple_people", "elderly",
             "water_request", "weak_or_fading", "location_hint"]
 
@@ -56,7 +58,11 @@ machinery or a radio rather than a person speaking. Speech can be in any languag
 Fields:
 - human_vocal: true only if a human voice or human body sound (speech, shouting, screaming, crying,
   moaning, coughing, breathing) is clearly audible.
-- sound_type: the dominant sound. knocking_tapping = deliberate knocks or taps.
+- sound_type: the dominant sound. knocking_tapping = deliberate knocks or taps. footsteps = someone
+  walking (on gravel, rubble or a hard surface).
+- setting: where the sound comes from, judged by its timbre. under_rubble = muffled, dull, enclosed, as
+  heard through debris (highs lost, boxy). open_air = clear, crisp, unmuffled, e.g. people talking or
+  walking in the open (a rescuer, a bystander). unclear = cannot tell.
 - languages: each language actually spoken, as BCP-47 code and English name (e.g. cmn Mandarin, nan
   Hokkien, yue Cantonese, en English, id Indonesian, vi Vietnamese, fil Filipino, th Thai, ja Japanese,
   ko Korean, es Spanish). Decide from the sounds; the code must match the language and script of your
@@ -71,6 +77,8 @@ Fields:
   Ordinary speech (news, conversation, a radio) has none: [].
 - people_count: distinct voices heard (0 if none or unclear).
 - location_hints: short English phrases the speaker says about where they are, else [].
+- A calm conversation or footsteps in the open air is a person who is safe on the surface, not a trapped
+  person: no distress cues unless they are actually said.
 - confidence: 0-1 probability that a living person is producing the sound right now (low for noise,
   animals, machinery, or speech that sounds like a broadcast or recording).
 - rationale: one line, at most 25 words, citing what you heard. Do not call anything confirmed."""
@@ -83,6 +91,7 @@ SCHEMA = {
     "properties": {
         "human_vocal": {"type": "boolean"},
         "sound_type": {"type": "string", "enum": SOUND_TYPES},
+        "setting": {"type": "string", "enum": SETTINGS},
         "languages": {"type": "array", "items": {
             "type": "object",
             "properties": {"code": {"type": "string"}, "name": {"type": "string"}},
@@ -95,7 +104,7 @@ SCHEMA = {
         "confidence": {"type": "number"},
         "rationale": {"type": "string"},
     },
-    "required": ["human_vocal", "sound_type", "languages", "transcript", "translation_en", "distress",
+    "required": ["human_vocal", "sound_type", "setting", "languages", "transcript", "translation_en", "distress",
                  "people_count", "location_hints", "confidence", "rationale"],
     "additionalProperties": False,
 }
@@ -123,7 +132,7 @@ KEYWORDS = {
                      r"廚房|厨房|房間|房间|樓|楼下|tangga|kamar|dapur|lantai|cầu thang|phòng|tầng",
 }
 SOUND_URGENCY = {"call_for_help": 0.75, "scream": 0.75, "crying": 0.6, "moaning": 0.65, "knocking_tapping": 0.55,
-                 "coughing": 0.5, "speech": 0.4, "other": 0.2, "animal": 0.05, "machinery": 0.05}
+                 "coughing": 0.5, "speech": 0.4, "other": 0.2, "footsteps": 0.05, "animal": 0.05, "machinery": 0.05}
 DISTRESS_BOOST = {"cant_breathe": 0.3, "injured": 0.2, "trapped": 0.15, "child": 0.2, "multiple_people": 0.15,
                   "elderly": 0.1, "weak_or_fading": 0.15, "call_for_help": 0.1, "water_request": 0.05,
                   "location_hint": 0.05}
@@ -177,7 +186,9 @@ def validate_analysis(o) -> dict | None:
         if not rat or any(BANNED.search(t) for t in (rat, tl)):
             return None
         pc = int(o.get("people_count") or 0)
-        return {"human_vocal": bool(o["human_vocal"]), "sound_type": st, "languages": langs[:4],
+        setting = str(o.get("setting") or "").strip().lower()
+        return {"human_vocal": bool(o["human_vocal"]), "sound_type": st,
+                "setting": setting if setting in SETTINGS else None, "languages": langs[:4],
                 "transcript": tr[:600], "translation_en": tl[:600], "distress": dist,
                 "people_count": max(0, min(pc, 20)),
                 "location_hints": [str(h).strip()[:80] for h in (o.get("location_hints") or []) if str(h).strip()][:4],
@@ -276,12 +287,29 @@ def fallback_analysis(clip, cand=None, whisper=None, asr=True) -> dict:
 
 
 # --------------------------------------------------------------------------- stage 2
-def _hint(cand):
+def _hint(cand, mf=None):
+    muf = (f"; DSP muffling: energy above 4 kHz {mf['hf_ratio_db']:.0f} dB vs 0.3-2.5 kHz "
+           f"(guess {mf['setting'].replace('_', ' ')}; buried sounds lose their highs)") if mf else ""
     if not cand:
-        return "none"
+        return "none" + muf
     top = ", ".join(f"{n} {s:.2f}" for n, s in cand.get("yamnet_top", [])[:3])
     return (f"label {cand.get('label')}, YAMNet top [{top}], speech-VAD {cand.get('vad_top', 0):.2f}, "
-            f"novelty {cand.get('novelty_peak', 0):.1f}")
+            f"novelty {cand.get('novelty_peak', 0):.1f}" + muf)
+
+
+def assign_tier(a, mf=None):
+    """Priority-list fields on one analysis (in place): setting (Gemini's by ear, else the DSP muffling guess),
+    tier and tier_why (acoustic/priority.py). Unverified distress words never let a clip be called safe."""
+    if a.get("setting") in SETTINGS:
+        a["setting_by"] = "audio_model"
+    else:
+        a["setting"], a["setting_by"] = (mf or {}).get("setting") or "unclear", "dsp"
+    words = max(tiers.n_words(a.get("transcript")), tiers.n_words(a.get("translation_en")))
+    tier, why = tiers.classify(a["sound_type"], a["setting"], a.get("distress") or [], words, a.get("confidence"))
+    if tier == "safe_surface" and a.get("distress_unverified"):
+        tier, why = "check", "unverified distress words: re-listen to check"
+    a.update(tier=tier, tier_why=why, muffling=mf)
+    return a
 
 
 def cross_check(a, cand):
@@ -389,6 +417,7 @@ def analyse_clip(clip, *, cand=None, mode="auto", whisper=None, cache_path=None,
         clip = resample_poly(clip, FS, fs)
     meta, err, busy = {}, None, False
     t0 = time.time()
+    mf = tiers.muffling(clip, FS)
     use = mode in ("live", "replay") or (mode == "auto" and llm.resolve()[0] in ("gemini", "gemma") and llm.available())
     if use and mode != "replay" and not llm.replay_only() and _breaker_open():
         use, err, busy = False, "gemini HTTP 429: circuit open for 10 min", True
@@ -398,7 +427,7 @@ def analyse_clip(clip, *, cand=None, mode="auto", whisper=None, cache_path=None,
             os.environ["LLM_REPLAY"] = "1"
         wb = wav_bytes(clip)
         try:
-            raw = llm.call_json_audio(PROMPT.format(dur=min(len(clip) / FS, MAX_CLIP_S), hint=_hint(cand)),
+            raw = llm.call_json_audio(PROMPT.format(dur=min(len(clip) / FS, MAX_CLIP_S), hint=_hint(cand, mf)),
                                       wb, SCHEMA, system=SYSTEM + f"\n[{PROMPT_VERSION}]",
                                       provider="gemini" if mode in ("live", "replay") else None,
                                       cache_path=cache_path, meta=meta, validate=validate_analysis,
@@ -422,6 +451,7 @@ def analyse_clip(clip, *, cand=None, mode="auto", whisper=None, cache_path=None,
                 finally:
                     if mode == "replay" and prev2 is None:
                         os.environ.pop("LLM_REPLAY", None)
+            assign_tier(out, mf)
             out.update(by=meta.get("provider") if meta.get("provider") == "gemma" else "gemini", model=meta.get("model"), cached=meta.get("cached", False),
                        latency_ms=meta.get("latency_ms", 0.0), throttled_ms=meta.get("throttled_ms", 0.0), usage=meta.get("usage") or {},
                        audio_s=round(min(len(clip) / FS, MAX_CLIP_S), 2), error=None)
@@ -429,6 +459,8 @@ def analyse_clip(clip, *, cand=None, mode="auto", whisper=None, cache_path=None,
         err = meta.get("error") or ("invalid Gemini answer" if raw is not None else "Gemini call failed")
         busy = bool(meta.get("busy"))
     out = fallback_analysis(clip, cand, whisper)
+    out["setting"] = None                      # no audio model: the DSP muffling feature decides
+    assign_tier(out, mf)
     note = None
     if busy or (err and "429" in err):
         note = "Gemini busy — using fallback"
@@ -471,11 +503,20 @@ def sector_priority(human, urgency, reliability) -> int:
 
 
 def _rank_sector(pid, events, reliability, association):
-    fw = [e for e in events if e["forwarded"] and e.get("analysis")]
+    fw_all = [e for e in events if e["forwarded"] and e.get("analysis")]
+    fw = [e for e in fw_all if e["analysis"].get("tier") != "safe_surface"]   # safe people on the surface: not targets
     dis = [e for e in events if not e["forwarded"]]
     rel = float(reliability)
     if association and association != "confident":
         rel = min(rel, 0.45)
+    if fw_all and not fw:
+        a = max((e["analysis"] for e in fw_all), key=lambda x: x["confidence"])
+        return {"pile_id": pid, "priority": 0, "status": "no_signal_not_cleared", "human": 0.0, "urgency": 0.0,
+                "reliability": round(rel, 2), "top_event": None, "languages": [], "distress": [],
+                "reasons": [f"{a['sound_type'].replace('_', ' ')} ({a['by']}): {a['tier_why']}",
+                            "only people safe on the surface heard; not cleared"],
+                "events": len(events), "forwarded": len(fw_all), "tier": "safe_surface",
+                "dismissed": sorted({f"dismissed: {e['dismissed']}" for e in dis}), "by": a["by"]}
     if not fw:
         status = "dismissed_nonhuman" if dis else "no_signal_not_cleared"
         tags = sorted({e["dismissed"] for e in dis})
@@ -520,7 +561,8 @@ def _rank_sector(pid, events, reliability, association):
     if dis:
         reasons.append("also " + ", ".join(sorted({'dismissed: ' + e['dismissed'] for e in dis})))
     status = "lead" if h >= HUMAN_LEAD else "uncertain_sound"
-    return {"pile_id": pid, "priority": pr, "status": status, "human": h, "urgency": u, "reliability": round(rel, 2),
+    return {"pile_id": pid, "priority": pr, "status": status, "tier": a.get("tier"), "tier_why": a.get("tier_why"),
+            "human": h, "urgency": u, "reliability": round(rel, 2),
             "top_event": top["cand_id"], "languages": langs, "distress": dist, "reasons": reasons,
             "events": len(events), "forwarded": len(fw), "dismissed": sorted({f"dismissed: {e['dismissed']}" for e in dis}),
             "by": a["by"]}
@@ -682,7 +724,8 @@ def _clip_fields(units, evs, r):
         "translation": a["translation_en"] if a else "",
         "distress": a["distress"] if a else [],
         "audio_analysis": ({**{k: a.get(k) for k in ("by", "by_note", "sound_type", "human_vocal", "confidence", "people_count",
-                                                 "location_hints", "rationale", "model", "error")},
+                                                 "location_hints", "rationale", "model", "error", "setting",
+                                                 "setting_by", "tier", "tier_why", "muffling")},
                             "cross_check": a.get("cross_check"), "verify": a.get("verify"),
                             "distress_unverified": a.get("distress_unverified", []),
                             "t0": best["t0"], "t1": best["t1"]} if a else None),

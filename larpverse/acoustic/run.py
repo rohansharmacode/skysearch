@@ -22,6 +22,7 @@ import time  # noqa: E402
 import numpy as np  # noqa: E402
 
 from . import agent, dsp, models  # noqa: E402
+from . import priority as tiers  # noqa: E402
 from .scene import DATA_DIR, build_scene  # noqa: E402
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -143,6 +144,7 @@ def clip_features(cid, det, did, snr, clip, n_drones, whisper, notes=()):
                 "association_conf": det["assoc_conf"], "ambiguous_with": det["ambiguous_with"],
                 "overlap_frac": det.get("dominated_frac", 0.0)},
         "notes": [n for n in list(notes) + [why] if n],
+        "muffling": tiers.muffling(clip),          # DSP: buried sounds lose their highs (setting hint)
     }
 
 
@@ -427,7 +429,13 @@ def analyse(scene, exclude_piles=(), mode="auto", whisper="base.en", save_clips=
         clips.append(c)
     for c, f in zip(clips, feats):
         c["notes"] = f["notes"]
+        c["muffling"] = f.get("muffling")
+        c["yamnet_top"] = f.get("yamnet_top")
     apply_association(clips, {d["pile_id"]: d for d in kept})
+    for c in clips:                 # priority list: trapped / check / safe on the surface / ignore (DSP setting)
+        tiers.tier_v1_clip(c)
+        c["tier_by"] = "dsp"
+        tiers.dampen(c)
     piles_xy = {p: v for p, v in scene.piles.items() if p not in set(exclude_piles)}
     piles, dispatch = agent.aggregate(clips, piles_xy, scene.start_pile)
     clip_by = {c["clip_id"]: c for c in clips}
@@ -450,7 +458,7 @@ def analyse(scene, exclude_piles=(), mode="auto", whisper="base.en", save_clips=
         "listening_drones": [{"id": k, "xy": [round(float(v[0]), 2), round(float(v[1]), 2)]}
                              for k, v in scene.drones.items()],
         "clips": clips, "piles": piles, "dispatch": dispatch,
-        "agent": meta, "log": log, "timing_s": {},
+        "agent": meta, "log": log, "timing_s": {}, "priority_list": tiers.PRIORITY_LIST,
     }
     if gemini_audio_enabled(gemini_audio, mode):
         t = time.time()
@@ -502,8 +510,8 @@ def add_gemini_audio(state, items, mode="auto"):
         state["gemini_audio"] = {"mode": gmode, "error": f"{type(e).__name__}: {e}"[:300]}
         state["log"].append(f"gemini audio stage failed ({type(e).__name__}); v1 ranking kept")
         return state
+    changed = retier_from_audio(state)
     amb = {c["pile_id"] for c in state["clips"] if c.get("association") != "confident"}
-    changed = False
     for p in state["piles"]:
         if p["pile_id"] in amb and p["priority"] > AMBIGUOUS_PRIORITY_CAP:
             p["priority"], changed = AMBIGUOUS_PRIORITY_CAP, True
@@ -518,7 +526,32 @@ def add_gemini_audio(state, items, mode="auto"):
                 state["dispatch"] = {"pile_id": leads[0]["pile_id"],
                                      "reason": f"Send the drones to {leads[0]['pile_id']}: highest priority "
                                                f"({leads[0]['priority']}). {leads[0]['why']}"}
+        else:
+            state["dispatch"] = {"pile_id": None, "reason": "No trapped-person acoustic lead; continue the systematic "
+                                                            "search and keep every pile marked not cleared."}
     return state
+
+
+def retier_from_audio(state) -> bool:
+    """After stage 2: a clip Gemini (or the stage-2 fallback) heard gets its tier from that analysis (setting by
+    ear, verified distress cues); safe-surface clips are damped, and a pile whose every clip is now safe on the
+    surface stops being a lead. Returns True if a pile changed. In place."""
+    by_pile, changed = {}, False
+    for c in state["clips"]:
+        by_pile.setdefault(c["pile_id"], []).append(c)
+        a = c.get("audio_analysis") or {}
+        if not a.get("tier"):
+            continue
+        c.update(setting=a.get("setting") or c.get("setting"), tier=a["tier"], tier_why=a.get("tier_why"),
+                 tier_by=a.get("by"))
+        tiers.dampen(c, priority_fn=lambda x: min(agent.clip_priority(x), AMBIGUOUS_PRIORITY_CAP)
+                     if x.get("association") != "confident" else agent.clip_priority(x))
+    for p in state["piles"]:
+        cs = by_pile.get(p["pile_id"])
+        if cs and p["status"] in ("lead", "radar_ping") and not tiers.lead_clips(cs):
+            p.update(priority=agent.SILENT_PRIORITY, status="no_signal_not_cleared", why=tiers.SAFE_PILE_WHY)
+            changed = True
+    return changed
 
 
 def listen_and_rank(scenario, drone_positions: dict | None = None, exclude_piles=(), seed: int | None = None,

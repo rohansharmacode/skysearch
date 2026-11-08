@@ -48,7 +48,11 @@ SOUND_KINDS = ["voice", "weak_voice", "knock", "dog", "generator", "settling"]
 TRANSCRIPTS = {   # what a TTS voice says for the synthetic human sources (truth; the pipeline must recover it)
     "voice": "Help! Can anyone hear me? My leg is trapped.",
     "weak_voice": "hello... is anyone there... water...",
+    "surface_voice": "Okay, team two is heading to the next block, all clear here.",
 }
+# People SAFE on the surface (a rescuer talking, someone walking on the rubble): human sounds that are NOT search
+# targets. Never victims, no breathing, not in HUMAN_SOUNDS; placed at a pile with no trapped person (add_surface_people).
+SURFACE_KINDS = ("surface_voice", "footsteps")
 
 
 @dataclass
@@ -211,9 +215,45 @@ def limit_people(sc, n, seed):
     return sc
 
 
+def add_surface_people(sc, seed):
+    """Hidden truth ``truth["surface_sounds"]``: one rescuer talking (surface_voice) and walking (footsteps) on the
+    open surface at ONE pile with no trapped person (never the start pile), so the acoustic priority list must tell
+    them from trapped people. A separate list (not truth["sounds"]): victims, roles and sounds stay byte-identical.
+    The pile already carries a non-human sound (settling > dog > generator) where possible, so the set of piles with
+    sounds is unchanged. Own RNG stream [seed, 404]: nothing else in the scenario moves. LARPVERSE_SURFACE=0 disables."""
+    t = getattr(sc, "truth", None) or {}
+    if os.environ.get("LARPVERSE_SURFACE", "1").strip().lower() in ("0", "off", "false", "no") or "sounds" not in t:
+        return sc
+    rng = np.random.default_rng([int(seed), 404])
+    trapped = {v.get("pile") for v in t.get("victims") or []}
+    kinds = {}
+    for snd in t["sounds"]:
+        kinds.setdefault(snd.get("pile"), []).append(snd.get("kind"))
+    names = [p.name for p in sc.piles if p.name not in trapped and p.name != t.get("start_pile")]
+    if not names:
+        return sc
+    pref = {"settling": 0, "dog": 1, "generator": 2}
+    order = {n: i for i, n in enumerate(names)}
+    names.sort(key=lambda n: (min([pref.get(k, 3) for k in kinds.get(n, [])] or [4]), order[n]))
+    p = sc.pile(names[0])
+    a = float(rng.uniform(0, 2 * np.pi))
+    surface = []
+    for k, kind in enumerate(SURFACE_KINDS):
+        r = float(rng.uniform(2.0, 3.0)) + 1.5 * k
+        xy = [float(p.x + r * np.cos(a + 0.9 * k)), float(p.y + r * np.sin(a + 0.9 * k))]
+        snd = {"pile": p.name, "kind": kind, "xy": xy, "level_db": float(rng.uniform(-4, -1)), "surface": True,
+               "depth": 0.0}
+        if kind in TRANSCRIPTS:
+            snd["text"] = TRANSCRIPTS[kind]
+        surface.append(snd)
+    t["surface_sounds"] = surface        # kept apart from truth["sounds"]: every existing consumer is unchanged
+    return sc
+
+
 def make_scenario(seed: int = 7, start_pile: str | None = None, site: str = "grid") -> Scenario:
-    """Scenario for ``site``. LARPVERSE_PEOPLE=N (opt-in): exactly N simulated people under N different piles."""
-    sc = _make_scenario(seed, start_pile, site)
+    """Scenario for ``site``. LARPVERSE_PEOPLE=N (opt-in): exactly N simulated people under N different piles.
+    Every site also gets the safe surface people of add_surface_people (LARPVERSE_SURFACE=0: off)."""
+    sc = add_surface_people(_make_scenario(seed, start_pile, site), seed)
     n = os.environ.get("LARPVERSE_PEOPLE")
     return limit_people(sc, int(n), seed) if n else sc
 

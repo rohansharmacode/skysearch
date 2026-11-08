@@ -37,6 +37,7 @@ import time
 import numpy as np
 
 from .acoustic_grid import STUB_SOURCE, listen as acoustic_listen
+from acoustic.priority import PRIORITY_LIST
 from .coordinator import KinematicFlight, Mission
 from .flight_motion import SmoothFlight
 from .grid_world import GridWorld
@@ -1028,7 +1029,8 @@ class GridMission:
                     "language": c.get("language") or c.get("lang"),
                     "association": c.get("association"), "association_conf": c.get("association_conf"),
                     "ambiguous_with": list(c.get("ambiguous_with") or []),
-                    "bearings": self._clip_bearings(c, drones), "notes": list(c.get("notes") or [])}
+                    "bearings": self._clip_bearings(c, drones), "notes": list(c.get("notes") or []),
+                    **{k: c[k] for k in ("tier", "tier_why", "setting", "muffling", "human_heard") if k in c}}
             self.clips.append(clip)
             said = f" \"{clip['transcript']}\"" if clip["transcript"] else ""
             self._say(f"Clip {clip['id']} ({clip['drone_id']}, bearing {clip['bearing_deg']:.0f}°): "
@@ -1613,6 +1615,7 @@ class GridMission:
             "staging": {"xy": list(self.base_xy), "pads": [list(p) for p in self.pads]},
             "piles": [dict(p) for p in self.piles.values()],
             "acoustic_clips": self.clips,
+            "acoustic_priority_list": PRIORITY_LIST,           # legend: trapped > check > safe_surface > ignore
             "acoustic_agent": (self.last_acoustic or {}).get("agent"),
             "dispatch": self.dispatch,
             "decisions": self.decisions,

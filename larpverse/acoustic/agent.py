@@ -266,13 +266,18 @@ def aggregate(clips: list[dict], piles_xy: dict, start_pile: str):
         by_pile.setdefault(c["pile_id"], []).append(c)
     piles = []
     for pid, xy in piles_xy.items():
-        cs = sorted(by_pile.get(pid, []), key=lambda c: -c["priority"])
+        heard = sorted(by_pile.get(pid, []), key=lambda c: -c["priority"])
+        cs = [c for c in heard if c.get("tier") != "safe_surface"]     # safe people on the surface never lead
         if not cs:
             why = "No sound assigned to this pile during the listen. Silence is not absence: not cleared."
             if pid == start_pile:
                 why = "Drones are landed here; nothing heard from this pile. Not cleared."
+            if heard:
+                from .priority import SAFE_PILE_WHY
+                why = SAFE_PILE_WHY
             piles.append({"pile_id": pid, "xy": list(xy), "priority": SILENT_PRIORITY,
-                          "status": "no_signal_not_cleared", "top_clip": None, "why": why})
+                          "status": "no_signal_not_cleared", "top_clip": heard[0]["clip_id"] if heard else None,
+                          "why": why})
             continue
         top = cs[0]
         pr = min(100, top["priority"] + 3 * (len(cs) - 1))

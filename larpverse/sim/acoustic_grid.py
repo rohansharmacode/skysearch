@@ -23,6 +23,8 @@ import sys
 
 import numpy as np
 
+from acoustic import priority as tiers      # numpy/scipy only (the priority list: trapped vs safe on the surface)
+
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 AUDIO_PY = os.path.join(ROOT, ".venv-audio", "bin", "python")
 # real-pipeline results are cached here (gitignored data/); extra read-only dirs (e.g. a committed demo cache)
@@ -61,8 +63,15 @@ _KIND = {
     "dog": ("dog", 0.04, 0.02, 0.80),
     "generator": ("engine", 0.10, 0.02, 0.60),
     "settling": ("debris", 0.02, 0.02, 0.55),
+    # people SAFE on the surface: human, but heard in the open air (no rubble low-pass)
+    "surface_voice": ("voice", 0.88, 0.30, 0.78),
+    "footsteps": ("footsteps", 0.55, 0.10, 0.60),
 }
 _CLASSES = ["voice", "shout", "knocking", "dog", "engine", "debris", "noise"]
+# rubble depth per kind, as acoustic/scene.KINDS synthesises it (0 = open air): the stub's stand-in for the DSP
+# muffling feature (buried sounds lose their highs)
+_DEPTH = {"voice": 0.4, "weak_voice": 1.0, "knock": 0.8, "dog": 0.0, "generator": 0.0, "settling": 0.3,
+          "surface_voice": 0.0, "footsteps": 0.0}
 
 
 def clip_priority(j) -> int:
@@ -92,7 +101,7 @@ def listen_and_rank(scenario, drone_positions: dict, exclude_piles=(), seed: int
     drones = {k: (float(v[0]), float(v[1])) for k, v in drone_positions.items()}
     pile_xy = {p.name: (float(p.x), float(p.y)) for p in scenario.piles}
     clips = []
-    for snd in scenario.truth.get("sounds", []):            # GENERATOR: truth -> observation
+    for snd in list(scenario.truth.get("sounds", [])) + list(scenario.truth.get("surface_sounds") or []):   # GENERATOR
         pid = snd["pile"]
         if pid in exclude:
             continue
@@ -105,6 +114,8 @@ def listen_and_rank(scenario, drone_positions: dict, exclude_piles=(), seed: int
         agreeing = sum(1 for v in dist.values() if v < d + 18.0 and snr > 4.0)
         if snr < 2.0 or agreeing < 2:
             continue
+        if snd["kind"] not in _KIND:
+            continue
         cls, human, urg, cscore = _KIND[snd["kind"]]
         width = float(np.clip(16.0 + 0.25 * d + max(0.0, 8.0 - snr), 18.0, 45.0))
         o = drones[did]
@@ -115,6 +126,8 @@ def listen_and_rank(scenario, drone_positions: dict, exclude_piles=(), seed: int
         rest = rng.dirichlet(np.ones(len(_CLASSES) - 1)) * (1.0 - cscore)
         for c, v in zip([c for c in _CLASSES if c != cls], rest):
             scores[c] = v
+        if cls not in _CLASSES:          # footsteps: no v1 class of their own (YAMNet "Walk, footsteps")
+            scores.pop(cls)
         scores = {c: round(float(v), 3) for c, v in scores.items()}
         text = ""
         if snd.get("text"):
@@ -124,14 +137,22 @@ def listen_and_rank(scenario, drone_positions: dict, exclude_piles=(), seed: int
         rel = round(float(np.clip(0.6 * r_doa + 0.4 * r_snr, 0, 1)), 2)
         human = round(float(np.clip(human + rng.normal(0, 0.03), 0, 1)), 2)
         urgency = round(float(np.clip(urg + rng.normal(0, 0.04), 0, 1)), 2)
-        rationale = (f"{cls} {scores[cls]:.2f}" + (f"; transcript {len(text.split())} words" if text else "")
+        rationale = (f"{cls} {scores.get(cls, cscore):.2f}" + (f"; transcript {len(text.split())} words" if text else "")
                      + f"; {agreeing}/{len(drones)} drones agree; width {width:.0f} deg, SNR {snr:.0f} dB")
-        c = {"clip_id": f"ac-{pid}", "drone_id": did, "pile_id": pid, "bearing_deg": round(bearing, 1),
+        cid = f"ac-{pid}" if not any(c["clip_id"] == f"ac-{pid}" for c in clips) else f"ac-{pid}-{snd['kind']}"
+        c = {"clip_id": cid, "drone_id": did, "pile_id": pid, "bearing_deg": round(bearing, 1),
              "width_deg": round(width, 1), "snr_db": round(float(snr), 1),
              "vad_speech_ratio": round(0.6 if text else 0.02, 2), "transcript": text, "sound_class": cls,
              "class_scores": scores, "human": human, "urgency": urgency, "reliability": rel,
              "rationale": rationale, "by": "fallback", "doa_agree": f"{agreeing}/{len(drones)}"}
         c["priority"] = clip_priority(c)
+        d = _DEPTH.get(snd["kind"], 0.0)
+        mdb = 2.0 if cls == "footsteps" else round(-16.0 - 45.0 * d, 1)      # no rng draw: other clips unchanged
+        c["muffling"] = {"hf_ratio_db": mdb, "setting": tiers.setting_from_db(mdb), "synthetic": True}
+        tiers.tier_v1_clip(c)
+        tiers.dampen(c)
+        if c["tier"] == "safe_surface":
+            c["rationale"] += f"; {c['tier_why']}"
         clips.append(c)
 
     by_pile = {}
@@ -141,11 +162,13 @@ def listen_and_rank(scenario, drone_positions: dict, exclude_piles=(), seed: int
     for pid, xy in pile_xy.items():
         if pid in exclude:
             continue
-        cs = sorted(by_pile.get(pid, []), key=lambda c: -c["priority"])
+        heard = sorted(by_pile.get(pid, []), key=lambda c: -c["priority"])
+        cs = tiers.lead_clips(heard)
         if not cs:
             piles.append({"pile_id": pid, "xy": list(xy), "priority": SILENT_PRIORITY, "status": "no_signal_not_cleared",
-                          "top_clip": None,
-                          "why": "No sound assigned to this pile during the listen. Silence is not absence: not cleared."})
+                          "top_clip": heard[0]["clip_id"] if heard else None,
+                          "why": tiers.SAFE_PILE_WHY if heard else
+                          "No sound assigned to this pile during the listen. Silence is not absence: not cleared."})
             continue
         top = cs[0]
         pr = min(100, top["priority"] + 3 * (len(cs) - 1))
@@ -171,7 +194,7 @@ def listen_and_rank(scenario, drone_positions: dict, exclude_piles=(), seed: int
                                                "every pile marked not cleared."}
     return {"schema": SCHEMA, "seed": int(seed), "synthetic": True,
             "listening_drones": [{"id": k, "xy": list(v)} for k, v in drones.items()],
-            "clips": clips, "piles": piles, "dispatch": dispatch,
+            "clips": clips, "piles": piles, "dispatch": dispatch, "priority_list": tiers.PRIORITY_LIST,
             "agent": {"mode": "stub", "model": None, "llm_calls": 0, "cache_hits": 0, "fallback": len(clips), "error": None},
             "log": []}
 

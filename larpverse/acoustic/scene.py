@@ -124,6 +124,27 @@ def debris(rng, dur=1.4) -> np.ndarray:
     return x
 
 
+def footsteps(rng, dur=9.0, rate=1.8) -> np.ndarray:
+    """Someone walking on gravel / rubble in the open air: a broadband crunch per step (heel thud + gravel
+    grit, 60-120 ms) at ~1.8 steps/s with timing jitter and a slight left/right level alternation."""
+    n = int(dur * FS)
+    x = np.zeros(n)
+    bh, ah = sps.butter(2, 900 / (FS / 2), "high")
+    bl, al = sps.butter(2, 300 / (FS / 2))
+    t, k = 0.3, 0
+    while t < dur - 0.2:
+        L = int(rng.uniform(0.06, 0.12) * FS)
+        e = np.exp(-np.arange(L) / (L / 3.5))
+        grit = sps.lfilter(bh, ah, rng.normal(0, 1, L)) * (rng.uniform(0, 1, L) < 0.35) * 2.5
+        thud = sps.lfilter(bl, al, rng.normal(0, 1, L)) * 2.0
+        s = int(t * FS)
+        if s + L < n:
+            x[s: s + L] += (grit + thud) * e * (1.0 if k % 2 else 0.8) * rng.uniform(0.8, 1.1)
+        t += 1.0 / rate + rng.normal(0, 0.04)
+        k += 1
+    return x
+
+
 def dog_bark(rng) -> np.ndarray:
     """One real dog clip (ESC-50 1-100032-A-0, Freesound 100032, CC BY-NC 3.0), else a synthetic bark."""
     if os.path.exists(DOG_WAV):
@@ -168,6 +189,9 @@ KINDS = {
     "dog":        dict(level=1.6, depth=0.0),
     "generator":  dict(level=0.3, depth=0.0),
     "settling":   dict(level=0.9, depth=0.3),
+    # people SAFE on the surface (sim.scenario.SURFACE_KINDS): open air, no rubble low-pass
+    "surface_voice": dict(level=1.3, depth=0.0),
+    "footsteps":  dict(level=0.8, depth=0.0),
 }
 
 
@@ -291,7 +315,8 @@ def build_scene(scenario, drones: dict | None = None, seed: int | None = None,
     offs = mic_offsets()
     n = int(duration * FS)
 
-    sounds = [] if sources is not None else list(scenario.truth["sounds"])
+    sounds = [] if sources is not None else (list(scenario.truth["sounds"])
+                                             + list(scenario.truth.get("surface_sounds") or []))   # + safe surface people
     slots = list(np.array([0.5, 4.5, 8.5, 12.5]) + rng.uniform(0, 1.0, 4))
     rng.shuffle(slots)
     slot = dict(zip(["voice", "weak_voice", "knock", "dog"], slots))
@@ -317,6 +342,15 @@ def build_scene(scenario, drones: dict | None = None, seed: int | None = None,
         elif kind == "settling":
             for t0 in sorted(rng.uniform(1.0, duration - 2.0, 2)):
                 _place(track, _rms_norm(debris(rng)), t0); events.append(round(float(t0), 2))
+        elif kind in ("surface_voice", "footsteps"):     # safe people on the surface (own RNG: others unchanged)
+            srng = np.random.default_rng([int(seed), 404, len(truth)])
+            if kind == "surface_voice":
+                clip = _rms_norm(tts(snd.get("text") or "All clear here.").astype(float))
+                for t0 in (2.5 + srng.uniform(0, 1.0), 15.0 + srng.uniform(0, 1.0)):
+                    _place(track, clip, t0); events.append(round(float(t0), 2))
+            else:
+                t0 = float(srng.uniform(1.0, 6.0))
+                _place(track, _rms_norm(footsteps(srng)), t0); events.append(round(t0, 2))
         else:
             continue
         p = KINDS[kind]

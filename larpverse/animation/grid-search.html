@@ -45,6 +45,19 @@ body { background: var(--ink); color: var(--fg); font-family: var(--f-display); 
 .lbl.truth { border-style: dashed; color: var(--muted); }
 .lbl.ping { margin-top: -26px; margin-left: 70px; }
 .lbl.drone b { color: #f4f8fb; font-weight: 600; }
+.lbl.blue { border-color: #3b82f6; color: #d6e6ff; background: rgba(8, 18, 40, 0.86); }
+.lbl.say { border-color: rgba(232, 238, 243, 0.7); color: #f2f6f9; }
+.lbl.quiet { border-style: dashed; border-color: var(--muted); color: #d5dde3; }
+.lbl small { color: var(--muted); font-size: 10px; }
+.ph { display: inline-block; width: 7px; height: 11px; border: 1.5px solid #9cc2ff; border-radius: 2px; margin-right: 4px; vertical-align: -1px; }
+#caption .stat { display: block; margin-top: 7px; padding-top: 6px; border-top: 1px solid var(--line); font-size: 13px; line-height: 1.35; color: #f3d9a4; }
+#caption .stat small { display: block; font: 400 10.5px/1.3 var(--f-mono); color: var(--muted); margin-top: 2px; }
+#sig { left: 272px; bottom: 74px; width: 330px; }
+#sig .panel { padding: 8px 10px; }
+#sig canvas { display: block; width: 100%; height: 70px; background: rgba(60, 8, 8, 0.25); border: 1px solid rgba(255, 69, 69, 0.35); border-radius: 2px; }
+#sigT { font: 500 10.5px/1.3 var(--f-mono); color: var(--muted); margin-bottom: 5px; } #sigT b { color: #ffd0d0; font-weight: 500; }
+#sigX { font: 500 11.5px/1.35 var(--f-mono); color: var(--fg); margin-top: 6px; } #sigX .tri { border: 1px solid #f0f4f8; border-radius: 2px; padding: 0 4px; }
+#sigF { font: 400 9.5px/1.3 var(--f-mono); color: var(--muted); margin-top: 3px; }
 
 #top { top: 16px; left: 16px; max-width: min(440px, calc(100% - 32px)); text-shadow: 0 1px 3px rgba(0, 0, 0, 0.85), 0 0 10px rgba(0, 0, 0, 0.5); }
 .brand { font: 500 11px/1 var(--f-mono); letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); display: flex; gap: 10px; align-items: center; }
@@ -134,8 +147,10 @@ body { background: var(--ink); color: var(--fg); font-family: var(--f-display); 
 
 @media (max-height: 760px) { #caption { font-size: 13.5px; } #dash canvas { width: 190px; height: 232px; } .clip q { font-size: 13px; } }
 @media (max-width: 980px) { #agent { width: 290px; } }
+@media (max-width: 1180px) { #sig { left: 16px; bottom: 420px; } }
 @media (max-width: 760px) {
   #agent { display: none; }
+  #sig { left: 16px; right: 16px; width: auto; bottom: 292px; } #sig canvas { height: 44px; } #sigX { font-size: 10.5px; } #caption .stat { font-size: 11.5px; }
   #layers { top: auto; bottom: 70px; right: 16px; left: auto; max-width: 50%; }
   #dash canvas { width: 130px; height: 159px; }
   #dash .panel { padding: 6px 8px; } #dash h3 { font-size: 9px; letter-spacing: 0.06em; flex-direction: column; gap: 2px; }
@@ -148,11 +163,11 @@ body { background: var(--ink); color: var(--fg); font-family: var(--f-display); 
 </style>
 
 <div id="app">
-  <div id="loading">Building nine rubble piles and their LiDAR scans…</div>
+  <div id="loading">Building nine rubble piles, three heavy drones and their LiDAR scans…</div>
   <button id="bigPlay" hidden>▶ Play</button>
   <div class="hud" id="top">
     <div class="brand"><i></i>Larpverse · grid search</div>
-    <div id="phaseNo">01 / 14</div>
+    <div id="phaseNo">01 / 13</div>
     <div id="phaseTitle">Recon sweep</div>
     <div id="caption"></div>
   </div>
@@ -164,6 +179,9 @@ body { background: var(--ink); color: var(--fg); font-family: var(--f-display); 
     <button class="tog" data-k="truth" aria-pressed="true" style="--c: #ffffff"><i></i>Ground truth</button>
     <button class="tog" id="reseed" title="Pick a new random start pile and new sounds">New scenario</button>
     <button class="tog" id="follow" hidden>Follow camera</button>
+  </div>
+  <div class="hud" id="sig" hidden>
+    <div class="panel"><div id="sigT"></div><canvas id="sigC" width="620" height="140"></canvas><div id="sigX"></div><div id="sigF"></div></div>
   </div>
   <div class="hud" id="dash">
     <div class="panel">
@@ -193,7 +211,7 @@ body { background: var(--ink); color: var(--fg); font-family: var(--f-display); 
   <div class="hud" id="bar">
     <button class="btn" id="play" aria-label="Pause">❚❚</button>
     <button class="btn" id="speed" aria-label="Playback speed">1×</button>
-    <span id="time">0:00 / 1:33</span>
+    <span id="time">0:00 / 1:37</span>
     <div id="chapters"></div>
   </div>
 </div>
@@ -228,20 +246,17 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 // ================= helpers =================
 const TAU = Math.PI * 2, D2R = Math.PI / 180;
 const LAYER_Y = 6.2, SP = 22;
-// Two clocks. Video time v (timeline, seek, recorder) = a recon opening [0, OPEN) + the story, played through WARP.
-// Story time s (all the per-pile choreography below) is the original 0..88 s script; WARP speeds up the transit
-// stretches and slows the tablet's LiDAR + dig-order view. Every story function takes s.
-const OPEN = 13;
-const WARP = [[0, 0], [3, 6], [41, 44], [49, 54], [54.4, 59.4], [61, 64], [69, 72], [80, 88]];   // [v - OPEN, s]
-const T_END = OPEN + WARP[WARP.length - 1][0];
-function pw(x, A, B) { for (let i = 1; i < WARP.length; i++) if (x <= WARP[i][A] || i === WARP.length - 1) { const a0 = WARP[i - 1][A], a1 = WARP[i][A], b0 = WARP[i - 1][B], b1 = WARP[i][B]; return b0 + (b1 - b0) * Math.max(0, Math.min(1, (x - a0) / (a1 - a0))); } }
-function storyT(v) { return v < OPEN ? 0 : pw(v - OPEN, 0, 1); }
-function videoT(s) { return OPEN + pw(s, 1, 0); }
-const C = { lidar: 0x9b6bff, radar: 0xff9f43, acoustic: 0x22c3d6, cone: 0xffe14a, detect: 0xff4545, coord: 0x6fd36f, drone: 0xdfe6ec, good: 0x4fd18b, bad: 0xff6464, op: 0x5aa9ff, grey: 0x7d8b96, zone: 0xe4ebf0, proposal: 0x8b9dab };
+// Two clocks. Video time v (timeline, seek, recorder) = the recon opening [0, OPEN) + story time s = v - OPEN.
+// The story (s 0..S_END) is the targeted search: A2 ping, A3 open lead, B1 ping, B2 knock reply, operator + dig.
+const OPEN = 13, S_END = 84;
+const T_END = OPEN + S_END;
+function storyT(v) { return Math.max(0, v - OPEN); }
+function videoT(s) { return OPEN + s; }
+const C = { lidar: 0x9b6bff, radar: 0xff9f43, acoustic: 0x22c3d6, cone: 0xffe14a, detect: 0xff4545, coord: 0x6fd36f, drone: 0xdfe6ec, good: 0x4fd18b, bad: 0xff6464, op: 0x5aa9ff, grey: 0x7d8b96, zone: 0xe4ebf0, proposal: 0x8b9dab, wifi: 0x3b82f6 };
 const CHAPTERS = [
   ['Recon sweep', 0, 6.6, 1], ['Perch & listen', 6.6, 10, 1], ['Accept zones', 10, OPEN, 1],
-  ['To start pile', 0, 6], ['LiDAR map', 6, 14], ['Land on flat cells', 14, 19], ['Radar ping', 19, 25], ['Ping to dashboard', 25, 28],
-  ['Audio to the agent', 28, 40], ['Priority & dispatch', 40, 44], ['Next pile', 44, 54], ['Operator on site', 54, 64], ['Dig', 64, 72], ['Whole system', 72, 88],
+  ['LiDAR map', 0, 11.8], ['Winch pods', 11.8, 20], ['Ping + call-out', 20, 26], ['Listen + Wi-Fi', 26, 34.8], ['Open lead', 34.8, 45.3],
+  ['Second ping', 45.3, 55.5], ['Knock reply', 55.5, 66], ['Dig order', 66, 72.8], ['Dig', 72.8, 77], ['Whole system', 77, S_END],
 ].map(([name, a, b, open]) => open ? { name, t0: a, t1: b } : { name, t0: videoT(a), t1: videoT(b) });
 function mulberry32(a) { return () => { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
 // Default: the seeded scenario from animation/scenario_seed7.js (same map as Isaac + dashboard).
@@ -289,7 +304,7 @@ function H(x, z) {
 const ROLE_DEFS = [
   { kind: 'voice', cls: 'voice · call for help', quote: 'Help! Can anyone hear me? My leg is trapped.', human: 0.97, urg: 0.95, base: 0.95, why: 'clear call for help, injury, conscious' },
   { kind: 'weak', cls: 'faint voice', quote: '…hello?… …water…', human: 0.85, urg: 0.9, base: 0.55, why: 'faint speech asking for water' },
-  { kind: 'knock', cls: 'patterned knocking', quote: '[knock ×3, repeats every ~20 s]', human: 0.8, urg: 0.7, base: 0.92, why: 'rhythmic knocking, likely deliberate' },
+  { kind: 'knock', cls: 'patterned knocking', quote: '[knock ×3, repeats every ~20 s]', human: 0.8, urg: 0.55, base: 0.92, why: 'rhythmic knocking, likely deliberate' },
   { kind: 'dog', cls: 'dog barking', quote: '[barking]', human: 0.04, urg: 0.3, base: 0.9, why: 'animal · dismissed as a lead, pile not cleared' },
   { kind: 'gen', cls: 'machinery', quote: '[50 Hz engine hum]', human: 0.01, urg: 0, base: 0.95, why: 'generator hum · dismissed, pile not cleared' },
   { kind: 'settle', cls: 'rubble noise', quote: '[debris settling]', human: 0.03, urg: 0, base: 0.6, why: 'collapse noise · dismissed, pile not cleared' },
@@ -322,29 +337,6 @@ if (SCN) {
 }
 silentPiles.forEach(p => p.silent = true);
 const QUEUE = [...SOURCES].sort((a, b) => b.score - a.score);
-const P2 = QUEUE[0].pile, P3 = QUEUE[1].pile;
-const T2 = { x: P2.source.x, z: P2.source.z, depth: P2.source.depth };
-// Breathing condition per victim: storyboard truth (scenario_seed7.js victims[].physio from sim/scenario.py), display only.
-// Wording = dashboard/vitals.js CONDITION / conditionLabel (condition only, no age class): an aid for rescuers ordering
-// the dig, never a diagnosis. Rank = dashboard TRIAGE rank (immediate 1.0 > immediate·check 0.85 > urgent 0.7 > delayed 0.35).
-const CONDITION = {
-  calm: { what: 'Calm, regular breathing', means: 'stable for now (breathing only)', act: 're-check later', tri: 'delayed', rank: 0.35 },
-  distressed_tachypnea: { what: 'Rapid shallow breathing', means: 'possible injury, pain or distress', act: 'check', tri: 'immediate · check', rank: 0.85 },
-  unconscious_slow: { what: 'Slow, regular breathing', means: 'deep rest or reduced consciousness', act: 'call out and check responsiveness', tri: 'urgent', rank: 0.7 },
-  irregular_apneic: { what: 'Irregular breathing with pauses', means: 'possible airway problem or reduced consciousness', act: 'check', tri: 'immediate · check', rank: 0.85 },
-};
-const DEMO_PHYSIO = { A2: ['unconscious_slow', 8.3], A3: ['distressed_tachypnea', 33.2], B1: ['irregular_apneic', 9.8], B2: ['calm', 13.1] };   // sim/scenario.py seed 7 (211f309)
-function physioOf(pile, k) {
-  const v = SCN && SCN.story.victims.find(q => q.pile === pile.name);
-  if (v && v.physio) return { state: v.physio.state, rate: v.physio.rate_bpm };
-  if (SCN && SEED === 7 && DEMO_PHYSIO[pile.name]) return { state: DEMO_PHYSIO[pile.name][0], rate: DEMO_PHYSIO[pile.name][1] };
-  return k === 0 ? { state: 'unconscious_slow', rate: 7 + 3 * rnd2() } : { state: 'distressed_tachypnea', rate: 28 + 6 * rnd2() };
-}
-const VIT = [physioOf(P1, 0), physioOf(P2, 1)].map(ph => {
-  const c = { ...(CONDITION[ph.state] || CONDITION.calm) };
-  if (ph.state === 'distressed_tachypnea' && ph.rate > 30) Object.assign(c, { tri: 'immediate', rank: 1.0 });   // START: over 30/min
-  return { ...ph, ...c, text: `${c.what}, ${Math.round(ph.rate)}/min — ${c.means} — ${c.act}` };
-});
 const DEPTH_NOM = 1.5;   // the live system's depth: nominal (depth_source "nominal"), assumed, not measured
 
 // ================= renderer / scene =================
@@ -413,21 +405,35 @@ else for (const p of PILES) {
 const spheres = rubble.map(m => { m.geometry.computeBoundingSphere(); const s = m.geometry.boundingSphere.clone().applyMatrix4(m.matrixWorld); return { m, x: s.center.x, y: s.center.y, z: s.center.z, r: s.radius }; });
 for (const p of PILES) label(p.name, 'pile', scene, [p.x, 0, p.z]).position.y = mound(p, p.x, p.z) + 3.4;
 
-// staging area: coordinator, operator dashboard table, acoustic agent box
-const BASE = { x: 0, z: 47 };
-const DASH_POS = V(-3.2, 1.7, 46.4), AGENT_POS = V(3.6, 1.5, 46.6), COORD_POS = V(7, 5.6, 49);
+// staging: the command van (simplified isaac/van.py): cab + cargo box with a generic SAR livery, open side door
+// with the operator's desk and three screens, the comms rack (acoustic agent), a telescopic mesh-radio mast with the
+// green coordinator beacon, a light bar and a generator. Drone pads stay where the scenario puts them.
+const BASE = { x: 0, z: 47 }, VAN = { x: 9.5, z: 50.4 };
+const DASH_POS = V(VAN.x - 0.4, 1.55, VAN.z - 1.2), AGENT_POS = V(VAN.x + 1.4, 1.5, VAN.z - 1.2), COORD_POS = V(VAN.x + 2.3, 8.6, VAN.z + 0.6);
 {
   const g = new THREE.Group(); scene.add(g);
-  const pad = new THREE.Mesh(new THREE.BoxGeometry(16, 0.12, 7), new THREE.MeshStandardMaterial({ color: 0x2b333b, roughness: 0.8 })); pad.position.set(0, 0.06, 48); pad.receiveShadow = true; g.add(pad);
-  const truck = new THREE.Mesh(new THREE.BoxGeometry(4.6, 2.3, 2.3), new THREE.MeshStandardMaterial({ color: 0xd9dde0, roughness: 0.6 })); truck.position.set(7, 1.15, 50.5); truck.castShadow = true; g.add(truck);
-  const mast = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 3.4), new THREE.MeshStandardMaterial({ color: 0x9aa4ad })); mast.position.set(7, 4, 49.2); g.add(mast);
-  const tip = new THREE.Mesh(new THREE.SphereGeometry(0.16), new THREE.MeshBasicMaterial({ color: C.coord })); tip.position.copy(COORD_POS); g.add(tip);
-  const table = new THREE.Mesh(new THREE.BoxGeometry(2.2, 0.08, 1), new THREE.MeshStandardMaterial({ color: 0x5b636b })); table.position.set(-3.2, 0.95, 46.6); g.add(table);
-  const screen = new THREE.Mesh(new THREE.BoxGeometry(1.3, 0.8, 0.05), new THREE.MeshBasicMaterial({ color: 0x1d4a7a })); screen.position.copy(DASH_POS); g.add(screen);
-  const srv = new THREE.Mesh(new THREE.BoxGeometry(0.9, 1.4, 0.8), new THREE.MeshStandardMaterial({ color: 0x1b2a30, emissive: C.acoustic, emissiveIntensity: 0.25 })); srv.position.set(3.6, 0.7, 46.6); g.add(srv);
-  label('Operator dashboard', 'op', scene, [-3.2, 2.6, 46.4]);
-  label('Acoustic agent', 'teal', scene, [3.6, 2.2, 46.6]);
-  label('Coordinator', 'coord', scene, [7, 6.3, 49]);
+  const std = (c, o = {}) => new THREE.MeshStandardMaterial({ color: c, roughness: 0.6, ...o });
+  const box = (w, h, d, mat, x, y, z) => { const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat); m.position.set(x, y, z); m.castShadow = m.receiveShadow = true; g.add(m); return m; };
+  const pad = new THREE.Mesh(new THREE.BoxGeometry(22, 0.12, 8), std(0x2b333b, { roughness: 0.8 })); pad.position.set(2, 0.06, 48.6); pad.receiveShadow = true; g.add(pad);
+  const white = std(0xe9ecef, { roughness: 0.45 }), glass = std(0x16202a, { roughness: 0.08, metalness: 0.5 }), dark = std(0x20262c);
+  box(4.4, 2.6, 2.3, white, VAN.x + 0.7, 1.8, VAN.z);                 // cargo box
+  box(1.7, 1.9, 2.2, white, VAN.x - 2.25, 1.45, VAN.z);               // cab
+  box(0.06, 0.85, 2.0, glass, VAN.x - 3.12, 1.95, VAN.z);              // windscreen
+  box(4.42, 0.22, 2.32, std(0xff7a1a), VAN.x + 0.7, 1.2, VAN.z);       // hi-vis livery band
+  box(4.42, 0.07, 2.32, std(0x3b82f6), VAN.x + 0.7, 1.02, VAN.z);
+  for (const [x, z] of [[-2.2, 1.0], [-2.2, -1.0], [1.6, 1.0], [1.6, -1.0], [2.4, 1.0], [2.4, -1.0]]) { const w = new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.42, 0.3, 18), dark); w.rotation.x = Math.PI / 2; w.position.set(VAN.x + x, 0.42, VAN.z + z * 1.02); g.add(w); }
+  box(1.9, 2.0, 0.04, std(0x10151a), VAN.x + 0.3, 1.6, VAN.z - 1.16);  // open side door (interior)
+  box(1.7, 0.06, 0.55, std(0x5b636b), VAN.x - 0.1, 1.1, VAN.z - 0.85); // desk
+  for (let k = 0; k < 3; k++) { const s = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.32, 0.03), new THREE.MeshBasicMaterial({ color: k === 1 ? 0x2a6bb0 : 0x1d4a7a })); s.position.set(VAN.x - 0.65 + k * 0.55, 1.55, VAN.z - 0.62); g.add(s); }
+  box(0.55, 1.7, 0.5, std(0x1b2a30, { emissive: C.acoustic, emissiveIntensity: 0.35 }), VAN.x + 1.4, 1.35, VAN.z - 0.7);   // comms rack
+  box(1.2, 0.12, 0.25, std(0xffb347, { emissive: 0xff9f43, emissiveIntensity: 0.8 }), VAN.x - 2.25, 2.48, VAN.z);        // light bar
+  const mast = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.08, 5.6, 10), std(0x9aa4ad, { metalness: 0.7 })); mast.position.set(COORD_POS.x, 3.1 + 2.8, COORD_POS.z); g.add(mast);
+  for (const a of [0, 2.1, 4.2]) { const ant = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.7), std(0xdfe4e8)); ant.position.set(COORD_POS.x + 0.22 * Math.cos(a), COORD_POS.y - 0.1, COORD_POS.z + 0.22 * Math.sin(a)); g.add(ant); }
+  const tip = new THREE.Mesh(new THREE.SphereGeometry(0.16), new THREE.MeshBasicMaterial({ color: C.coord })); tip.position.copy(COORD_POS).add(V(0, 0.4, 0)); g.add(tip);
+  box(1.0, 0.8, 0.7, std(0x8a8f45), VAN.x + 4.4, 0.4, VAN.z - 1.6);   // generator
+  label('Command van · operator dashboard', 'op', scene, [VAN.x - 0.4, 3.4, VAN.z - 1.4]);
+  label('Acoustic agent (van compute)', 'teal', scene, [VAN.x + 2.2, 2.4, VAN.z - 1.6]);
+  label('Coordinator · mesh mast', 'coord', scene, [COORD_POS.x, COORD_POS.y + 1.1, COORD_POS.z]);
 }
 
 // ================= ray casting (LiDAR + top-down height grids) =================
@@ -454,64 +460,89 @@ function heightGrid(p) {
   g.at = (x, z) => { const i = clamp(Math.round((x - g.ox) / g.res), 0, g.n - 1), j = clamp(Math.round((z - g.oz) / g.res), 0, g.n - 1); return g.z[j * g.n + i]; };
   return g;
 }
-P1.hg = heightGrid(P1); P2.hg = heightGrid(P2);
-
-// landing cells: slope / roughness / step from the height grid
-function landingCells(p) {
-  const g = p.hg, cells = [];
-  for (let cj = 0; cj < 22; cj++) for (let ci = 0; ci < 22; ci++) {
-    const cx = p.x - 10.5 + ci, cz = p.z - 10.5 + cj, r = Math.hypot(cx - p.x, cz - p.z); if (r < 5 || r > 10.6) continue;
-    let mean = 0, mn = 1e9, mx = -1e9; const hs = [];
-    for (let dj = -1; dj <= 1; dj++) for (let di = -1; di <= 1; di++) { const h = g.at(cx + di * 0.5, cz + dj * 0.5); hs.push([di * 0.5, dj * 0.5, h]); mean += h / 9; mn = Math.min(mn, h); mx = Math.max(mx, h); }
-    let sx = 0, sz = 0; for (const [x, z, h] of hs) { sx += x * (h - mean); sz += z * (h - mean); }
-    const a = sx / 1.5, b = sz / 1.5; let rs = 0; for (const [x, z, h] of hs) rs += (h - mean - a * x - b * z) ** 2;
-    const slope = Math.atan(Math.hypot(a, b)) / D2R, rough = Math.sqrt(rs / 9);
-    cells.push({ x: cx, z: cz, y: mean, r, slope, ok: slope < 7 && rough < 0.05 && mx - mn < 0.25 });
-  }
-  return cells;
+// ================= the honest seed-7 story (storyboard; matches tests/test_demo_story.py + the coordinator) =================
+// Visit order A2 (start) -> A3 -> B1 -> B2. Pings at A2 and B1; A3 (shallow rapid breather, voice) and B2 (knock) stay
+// OPEN LEADS: no firm radar fix, the acoustic / call-out / phone evidence keeps them open. Never "confirmed".
+const VISITS = (SCN && SEED === 7 ? ['A2', 'A3', 'B1', 'B2'].map(byName) : [P1, ...QUEUE.slice(0, 3).map(q => q.pile)]);
+const PINGS_AT = new Set([VISITS[0], VISITS[2]]);
+// Breathing condition (storyboard truth -> what the radar's vitals report; dashboard/vitals.js wording, no age words).
+const CONDITION = {
+  calm: { what: 'Calm, regular breathing', means: 'stable for now (breathing only)', act: 're-check later', tri: 'delayed', key: 'delayed', rank: 0.35 },
+  distressed_tachypnea: { what: 'Rapid shallow breathing', means: 'possible injury, pain or distress', act: 'check', tri: 'immediate · check', key: 'icheck', rank: 0.85 },
+  unconscious_slow: { what: 'Slow, regular breathing', means: 'deep rest or reduced consciousness', act: 'call out and check responsiveness', tri: 'urgent', key: 'urgent', rank: 0.7 },
+  irregular_apneic: { what: 'Irregular breathing with pauses', means: 'possible airway problem or reduced consciousness', act: 'check', tri: 'immediate · check', key: 'icheck', rank: 0.85 },
+};
+const DEMO_PHYSIO = { A2: ['unconscious_slow', 8.3], A3: ['distressed_tachypnea', 33.2], B1: ['irregular_apneic', 9.8], B2: ['calm', 13.1] };   // sim/scenario.py seed 7
+function condOf(pile) {
+  const v = SCN && SCN.story.victims.find(q => q.pile === pile.name);
+  let st = v && v.physio ? [v.physio.state, v.physio.rate_bpm] : SCN && SEED === 7 ? DEMO_PHYSIO[pile.name] : null;
+  if (!st) st = pile === VISITS[0] ? ['unconscious_slow', 8] : ['irregular_apneic', 10];
+  const c = { state: st[0], rate: st[1], ...(CONDITION[st[0]] || CONDITION.calm) };
+  if (c.state === 'distressed_tachypnea' && c.rate > 30) Object.assign(c, { tri: 'immediate', key: 'immediate', rank: 1.0 });
+  c.text = `${c.what}, ${Math.round(c.rate)}/min — ${c.means} — ${c.act}`;
+  c.short = `${c.what.toLowerCase()}, ${Math.round(c.rate)}/min`;
+  return c;
 }
-function pickSites(p, cells, th0) {
-  const ok = cells.filter(c => c.ok && c.r > 7), out = [];
-  for (let k = 0; k < 3; k++) {
-    const a = (th0 + k * 120) * D2R, tgt = { x: p.x + 8.6 * Math.cos(a), z: p.z + 8.6 * Math.sin(a) };
-    const c = ok.filter(c => out.every(o => d2(o, c) > 4)).reduce((b, c) => (!b || d2(c, tgt) < d2(b, tgt) ? c : b), null) || { x: tgt.x, z: tgt.z, y: H(tgt.x, tgt.z), slope: 0 };
-    c.id = 'L' + Math.round(c.x + 40) + Math.round(c.z + 40); out.push(c);
-  }
-  return out;
-}
-P1.cells = landingCells(P1); P2.cells = landingCells(P2);
-const th1 = R(0, 360), th2 = R(0, 360);
-P1.sites = pickSites(P1, P1.cells, th1); P2.sites = pickSites(P2, P2.cells, th2);
+VISITS.forEach(p => { p.hg = heightGrid(p); p.cond = condOf(p); });
+const [VA, VB, VC, VD] = VISITS;          // A2, A3, B1, B2 on seed 7
+// timings (story seconds). arrive = drones hovering over the pod points, payout -> touch -> scan -> result.
+const VT_ = [
+  { arrive: 12, pay: 12.5, touch: 15.5, scan: 16, res: 20, call: 21.5, reply: null, raise: 33.5 },
+  { arrive: 37.3, pay: 37.5, touch: 39.2, scan: 39.4, res: 41.6, call: 41.8, reply: 42.8, raise: 44.3 },
+  { arrive: 47.8, pay: 48, touch: 49.7, scan: 49.9, res: 52.1, call: null, reply: null, raise: 54.5 },
+  { arrive: 58, pay: 58.2, touch: 59.9, scan: 60.1, res: 62.3, call: 62.5, reply: 63.5, raise: 66 },
+];
+VISITS.forEach((p, k) => { p.vt = VT_[k]; p.visit = k; });
+const NEXT = PILES.filter(p => !VISITS.includes(p)).sort((a, b) => d2(a, VD) - d2(b, VD))[0];
+const T_DISPATCH = [33.2, 44.3, 54.5, 66];
 
-// ================= drones =================
-const LEG = 0.78, SCALE = 1.35;
+// ================= heavy drones: coaxial X8 (isaac/drone_viz.py look, simplified) =================
+const LEGH = 0.8, ARM = 1.1, PROP_R = 0.69;   // skid bottom below the body origin; 2.2 m wheelbase; 1.375 m props
 function makeDrone(name) {
   const g = new THREE.Group(), body = new THREE.Group(); g.add(body);
-  const dark = new THREE.MeshStandardMaterial({ color: 0x252b32, roughness: 0.5, metalness: 0.3 });
-  const shell = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.24, 0.6), dark); shell.castShadow = true; body.add(shell);
-  const cap = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.06, 0.4), new THREE.MeshStandardMaterial({ color: C.drone })); cap.position.y = 0.15; body.add(cap);
-  for (const s of [1, -1]) { const arm = new THREE.Mesh(new THREE.BoxGeometry(2.0, 0.06, 0.09), dark); arm.rotation.y = s * Math.PI / 4; body.add(arm); }
-  const rotors = [], micMat = new THREE.MeshStandardMaterial({ color: 0x0c3f46, emissive: C.acoustic, emissiveIntensity: 0.2 });
-  for (const [x, z] of [[0.7, 0.7], [0.7, -0.7], [-0.7, 0.7], [-0.7, -0.7]]) {
-    const r = new THREE.Group(); r.position.set(x, 0.16, z);
-    r.add(new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.42, 0.01, 24), new THREE.MeshBasicMaterial({ color: 0xc9d4dc, transparent: true, opacity: 0.12, depthWrite: false })));
-    r.add(new THREE.Mesh(new THREE.BoxGeometry(0.82, 0.015, 0.07), dark)); body.add(r); rotors.push(r);
-    const mic = new THREE.Mesh(new THREE.SphereGeometry(0.07, 10, 8), micMat); mic.position.set(x * 1.02, 0.02, z * 1.02); body.add(mic);
+  const M = (c, o = {}) => new THREE.MeshStandardMaterial({ color: c, roughness: 0.5, metalness: 0.2, ...o });
+  const dark = M(0x2a2e35), carbon = M(0x101214, { roughness: 0.35 }), metal = M(0x9ea2a8, { metalness: 0.8, roughness: 0.3 });
+  const add = (geo, mat, x, y, z, par = body) => { const m = new THREE.Mesh(geo, mat); m.position.set(x, y, z); m.castShadow = true; par.add(m); return m; };
+  add(new THREE.BoxGeometry(1.05, 0.36, 0.66), dark, 0, 0, 0);
+  add(new THREE.SphereGeometry(0.3, 16, 8, 0, TAU, 0, Math.PI / 2), dark, 0.08, 0.17, 0).scale.set(1.4, 0.35, 0.95);
+  const rotors = [];
+  for (let k = 0; k < 4; k++) {
+    const a = (45 + 90 * k) * D2R, cx = ARM * Math.cos(a), cz = ARM * Math.sin(a);
+    const arm = add(new THREE.BoxGeometry(ARM, 0.07, 0.09), carbon, cx / 2, 0.06, cz / 2); arm.rotation.y = -a;
+    add(new THREE.CylinderGeometry(0.09, 0.09, 0.42, 12), metal, cx, 0.14, cz);
+    for (const y of [-0.02, 0.33]) {            // coaxial pair: lower + upper
+      const r = new THREE.Group(); r.position.set(cx, y, cz); body.add(r);
+      const blades = new THREE.Mesh(new THREE.BoxGeometry(PROP_R * 2, 0.012, 0.09), carbon); r.add(blades);
+      const disc = new THREE.Mesh(new THREE.CircleGeometry(PROP_R, 32).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: 0x1a1d21, transparent: true, opacity: 0, depthWrite: false, side: THREE.DoubleSide }));
+      const rim = new THREE.Mesh(new THREE.RingGeometry(PROP_R * 0.94, PROP_R, 40).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: 0x0c0d0f, transparent: true, opacity: 0, depthWrite: false, side: THREE.DoubleSide }));
+      r.add(disc, rim); rotors.push({ r, blades, disc, rim, dir: (k + (y > 0 ? 1 : 0)) % 2 ? 1 : -1 });
+    }
   }
-  const legMat = new THREE.MeshStandardMaterial({ color: 0x3b434b });
-  for (const s of [1, -1]) { const skid = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 1.0), legMat); skid.rotation.x = Math.PI / 2; skid.position.set(s * 0.38, -LEG + 0.03, 0); body.add(skid); for (const z of [0.25, -0.25]) { const l = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.025, LEG - 0.1), legMat); l.position.set(s * 0.32, -LEG / 2 + 0.02, z); l.rotation.z = s * 0.15; body.add(l); } }
-  const lidarMat = new THREE.MeshStandardMaterial({ color: 0x1b1530, emissive: C.lidar, emissiveIntensity: 0.6 });
-  const puck = new THREE.Mesh(new THREE.CylinderGeometry(0.13, 0.13, 0.16, 20), lidarMat); puck.position.y = 0.28; body.add(puck);
-  const radarMat = new THREE.MeshStandardMaterial({ color: 0x3a2207, emissive: C.radar, emissiveIntensity: 0.35 });
-  const panel = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.34, 0.5), radarMat); panel.position.set(0.44, -0.08, 0); panel.rotation.z = -0.35; body.add(panel);
-  g.scale.setScalar(SCALE); scene.add(g);
-  const lbl = label(`<b>${name}</b> <span></span>`, 'drone', g, [0, 1.25, 0]);
-  return { g, body, rotors, lidarMat, radarMat, micMat, span: lbl.element.querySelector('span') };
+  const lidarMat = M(0x1b1530, { emissive: C.lidar, emissiveIntensity: 0.6 });
+  add(new THREE.CylinderGeometry(0.1, 0.1, 0.14, 18), lidarMat, 0.6, 0.02, 0).rotation.z = 0.75;       // nose LiDAR, 45 deg down
+  const micMat = M(0x0c3f46, { emissive: C.acoustic, emissiveIntensity: 0.2 });
+  for (let k = 0; k < 8; k++) add(new THREE.SphereGeometry(0.045, 8, 6), micMat, 0.5 * Math.cos(k * TAU / 8), -0.2, 0.5 * Math.sin(k * TAU / 8));
+  const horn = add(new THREE.ConeGeometry(0.13, 0.26, 16, 1, true), M(0xd9d9d2, { side: THREE.DoubleSide }), -0.42, -0.28, 0); horn.rotation.z = -0.5;   // speaker, mouth down-aft
+  add(new THREE.CylinderGeometry(0.015, 0.015, 0.36), M(0x3b82f6, { emissive: C.wifi, emissiveIntensity: 0.5 }), -0.2, -0.36, 0.22);  // Wi-Fi AP antenna
+  for (const s of [1, -1]) {
+    add(new THREE.CylinderGeometry(0.025, 0.025, 1.3), M(0x3b3f45), 0, -LEGH + 0.03, s * 0.42).rotation.z = Math.PI / 2;
+    for (const x of [0.32, -0.32]) add(new THREE.CylinderGeometry(0.022, 0.022, LEGH - 0.18), M(0x3b3f45), x, -LEGH / 2 + 0.05, s * 0.36);
+  }
+  add(new THREE.CylinderGeometry(0.08, 0.08, 0.16, 12), metal, 0, -0.24, 0).rotation.x = Math.PI / 2;   // winch drum
+  // pod: radar face (amber) + 4 mics (teal) + strobe; lives in world space so the cable can lower it
+  const pod = new THREE.Group(); scene.add(pod);
+  const radarMat = M(0x3a2207, { emissive: C.radar, emissiveIntensity: 0.35 });
+  add(new THREE.BoxGeometry(0.5, 0.3, 0.42), M(0xd47a1c, { roughness: 0.6 }), 0, 0, 0, pod);
+  add(new THREE.BoxGeometry(0.44, 0.02, 0.36), radarMat, 0, -0.16, 0, pod);
+  for (const [x, z] of [[0.22, 0.18], [-0.22, 0.18], [0.22, -0.18], [-0.22, -0.18]]) add(new THREE.SphereGeometry(0.035, 8, 6), micMat, x, 0.17, z, pod);
+  const cable = new THREE.Line(new THREE.BufferGeometry().setFromPoints([V(), V()]), new THREE.LineBasicMaterial({ color: 0x1a1a1a })); cable.frustumCulled = false; scene.add(cable);
+  scene.add(g);
+  const lbl = label(`<b>${name}</b> <span></span>`, 'drone', g, [0, 1.6, 0]);
+  return { g, body, rotors, lidarMat, radarMat, micMat, pod, cable, span: lbl.element.querySelector('span') };
 }
 const drones = ['d1', 'd2', 'd3'].map(makeDrone);
-const landY = s => s.y + LEG * SCALE;
 
-// ================= recon opening (video time v < OPEN): sweep, perch-and-listen, proposed zones, accept =================
+// ================= recon opening (unchanged beat, see v1.2 recon contract) =================
 // INTERFACES "Reconnaissance mode (v1.2)": no zones tasked -> coverage flight + LiDAR, perch-and-listen, the dashboard
 // proposes rubble outlines, the operator accepts them, then the targeted search (the story) starts.
 const surfAt = (x, z) => 30 - castRay({ x, y: 30, z }, { x: 0, y: -1, z: 0 }, 40);
@@ -523,10 +554,10 @@ const PERCH = (() => {
   });
   return c.reduce((b, q) => (q.bump < b.bump - 0.02 ? q : b));
 })();
-const padOf = i => SCN ? { x: SCN.drone_pads[i].x, y: 0.12 + LEG * SCALE, z: SCN.drone_pads[i].z } : { x: BASE.x - 4 + i * 2.6, y: 0.12 + LEG * SCALE, z: 50.5 };
+const padOf = i => SCN ? { x: SCN.drone_pads[i].x, y: 0.12 + LEGH, z: SCN.drone_pads[i].z } : { x: BASE.x - 4 + i * 2.6, y: 0.12 + LEGH, z: 50.5 };
 const RKEYS = [0, 1, 2].map(i => {
   const pad = padOf(i), x = LANES[i], k = [[0, pad], [1.1, { ...pad, y: 9 }], [2.4, { x, y: RECON_Y, z: 38 }], [6.6, { x, y: RECON_Y, z: -36 }]];
-  if (i === 1) { const py = PERCH.y + LEG * SCALE; k.push([7.6, { x: PERCH.x, y: py + 5, z: PERCH.z }], [8.1, { x: PERCH.x, y: py, z: PERCH.z }], [10.6, { x: PERCH.x, y: py, z: PERCH.z }], [11.8, { x: PERCH.x, y: py + 6, z: PERCH.z }]); }
+  if (i === 1) { const py = PERCH.y + LEGH; k.push([7.6, { x: PERCH.x, y: py + 5, z: PERCH.z }], [8.1, { x: PERCH.x, y: py, z: PERCH.z }], [10.6, { x: PERCH.x, y: py, z: PERCH.z }], [11.8, { x: PERCH.x, y: py + 6, z: PERCH.z }]); }
   else k.push([9, { x: x * 0.75, y: RECON_Y - 2, z: -30 }]);
   k.push([OPEN + 5, k[k.length - 1][1]]);
   return k;
@@ -562,64 +593,106 @@ PILES.forEach((p, zi) => {
   const solid = new THREE.Line(g, new THREE.LineBasicMaterial({ color: C.coord, transparent: true, opacity: 0.95 }));
   scene.add(dashed, solid); p.zoneLines = { dashed, solid };
 });
-// zone status over both clocks (v = video, s = story), same states and colours as the Isaac overlay and dashboard
+// zone status over both clocks (v = video, s = story): same states and colours as the Isaac overlay and dashboard
 function zoneStatus(p, v, s) {
   if (v < 9.4 + p.zi * 0.12) return null;
   if (v < 11.8) return 'proposed';
-  if (p === P1) return s >= 24.4 ? 'ping' : s >= 6 ? 'search' : 'tasked';
-  if (p === P2) return s >= 58.4 ? 'ping' : s >= 44 ? 'search' : s >= 40 ? 'lead' : 'tasked';
-  if (p === P3) return s >= 79 ? 'search' : s >= 40 ? 'lead' : 'tasked';
-  return s >= 40 && p.source && p.source.human > 0.5 ? 'lead' : 'tasked';
+  if (v < OPEN) return 'tasked';
+  if (p === VA) return s >= VA.vt.res ? 'ping' : s >= 5 ? 'search' : 'tasked';
+  if (VISITS.includes(p)) { const vt = p.vt; if (s >= vt.arrive - 2.5 && s < vt.res) return 'search'; if (s >= vt.res) return PINGS_AT.has(p) ? 'ping' : 'lead'; return s >= T_RANK ? 'lead' : 'tasked'; }
+  if (p === NEXT && s >= 70) return 'search';
+  return s >= T_RANK && p.source && p.source.human > 0.5 ? 'lead' : 'tasked';
 }
-const orbit = (p, deg) => ({ x: p.x + 11 * Math.cos(deg * D2R), y: 9.5, z: p.z + 11 * Math.sin(deg * D2R) });
+
+
+// ================= drone paths (story time) =================
+const orbit = (p, deg, r = 11, y = 9.5) => ({ x: p.x + r * Math.cos(deg * D2R), y, z: p.z + r * Math.sin(deg * D2R) });
+// pod points: three spots on the mound around the pile centre (no truth), seated on the LiDAR surface
+VISITS.forEach((p, k) => {
+  const th = (30 + 47 * k) * D2R;
+  p.pods = [0, 1, 2].map(i => { const a = th + i * TAU / 3, r = 3.2 + 0.4 * i, x = p.x + r * Math.cos(a), z = p.z + r * Math.sin(a); return { x, z, y: p.hg.at(x, z) }; });
+});
+const HOVER_AGL = 7;
+const hoverOver = q => ({ x: q.x, y: q.y + HOVER_AGL, z: q.z });
 function buildPath(i) {
-  const k = [], add = (t, p, ease = true) => k.push({ t, p: { ...p }, ease });
-  const r0 = RECON_END[i];   // the story starts where the recon opening leaves the drones
-  const a1 = th1 + i * 120 + 60, a2 = th2 + i * 120 + 60, a3 = R(0, 360) + i * 120;
-  add(0, r0); add(1.2, { ...r0, y: Math.max(r0.y, 10) }); add(6, orbit(P1, a1));
-  for (let t = 6.5; t <= 14; t += 0.5) add(t, orbit(P1, a1 + (t - 6) / 8 * 120), false);
-  const s1 = P1.sites[i], s2 = P2.sites[i];
-  add(15.5, orbit(P1, a1 + 120)); add(17.5, { x: s1.x, y: landY(s1) + 5, z: s1.z }); add(19, { x: s1.x, y: landY(s1), z: s1.z });
-  add(43, { x: s1.x, y: landY(s1), z: s1.z }); add(44, { x: s1.x, y: landY(s1) + 6, z: s1.z }); add(46.5, orbit(P2, a2));
-  for (let t = 47; t <= 50.5; t += 0.5) add(t, orbit(P2, a2 + (t - 46.5) / 4 * 100), false);
-  add(52, { x: s2.x, y: landY(s2) + 5, z: s2.z }); add(53.5, { x: s2.x, y: landY(s2), z: s2.z });
-  add(75, { x: s2.x, y: landY(s2), z: s2.z }); add(76, { x: s2.x, y: landY(s2) + 6, z: s2.z }); add(79, orbit(P3, a3));
-  for (let t = 79.5; t <= 87; t += 0.5) add(t, orbit(P3, a3 + (t - 79) / 8 * 120), false);
-  add(T_END + 1, k[k.length - 1].p);
+  const k = [], add = (t, p, lin) => k.push({ t, p: { ...p }, lin });
+  const r0 = RECON_END[i];
+  add(0, r0); add(1.2, { ...r0, y: Math.max(r0.y, 10) });
+  const a1 = 200 + i * 120; add(5, orbit(VA, a1));
+  for (let t = 5.5; t <= 11; t += 0.5) add(t, orbit(VA, a1 + (t - 5) / 6 * 110), true);
+  VISITS.forEach((p, v) => {
+    const vt = p.vt, h = hoverOver(p.pods[i]);
+    add(vt.arrive, h); add(vt.raise + 1.3, h);
+    if (v < VISITS.length - 1) { const n = VISITS[v + 1], mid = { x: (h.x + n.pods[i].x) / 2, y: Math.max(h.y, n.pods[i].y + HOVER_AGL) + 3, z: (h.z + n.pods[i].z) / 2 }; add((vt.raise + 1.3 + n.vt.arrive) / 2, mid); }
+  });
+  const a3 = 40 + i * 120; add(70, orbit(NEXT, a3, 12, 10));
+  for (let t = 70.5; t <= 84; t += 0.5) add(t, orbit(NEXT, a3 + (t - 70) / 14 * 160, 12, 10), true);
+  add(S_END + 1, k[k.length - 1].p);
   return k;
 }
 const paths = [0, 1, 2].map(buildPath);
+const s5 = u => u * u * u * (u * (u * 6 - 15) + 10);   // quintic smootherstep (C2), as sim/flight_motion.py
 function pathPos(i, t) {
   const k = paths[i]; let j = 0; while (j < k.length - 2 && k[j + 1].t <= t) j++;
-  const a = k[j], b = k[j + 1], u = clamp((t - a.t) / (b.t - a.t), 0, 1), e = b.ease ? u * u * (3 - 2 * u) : u;
+  const a = k[j], b = k[j + 1], u = clamp((t - a.t) / (b.t - a.t), 0, 1), e = b.lin ? u : s5(u);
   return { x: lerp(a.p.x, b.p.x, e), y: lerp(a.p.y, b.p.y, e), z: lerp(a.p.z, b.p.z, e) };
 }
-const landed = t => (t >= 19 && t < 43) || (t >= 53.5 && t < 75);
-const radarOn = t => (t >= 19.6 && t < 24.6) || (t >= 54 && t < 58.4);
-const listening = t => (t >= 19.5 && t < 43) || (t >= 54 && t < 75);
-const pileAt = t => t < 44 ? P1 : t < 76 ? P2 : P3;
+// one clock for both phases: video time v
+const rawPos = (i, v) => v < OPEN ? reconPos(i, v) : pathPos(i, v - OPEN);
+const GROUND = [[[-9, 0.45]], [[-9, 0.45], [8.1, 10.6]], [[-9, 0.45]]];   // video-time intervals with skids down
+const onGround = (i, v) => GROUND[i].some(([a, b]) => v >= a && v < b);
+// pose: smoothed path (C2-ish), tilt from thrust = accel + g + drag (clamped 25 deg), yaw leads the velocity,
+// hover drift faded near the ground, rotor rpm with spool-up / spin-down. Stateless, so the timeline can scrub.
+const GW = [0.06, 0.12, 0.2, 0.24, 0.2, 0.12, 0.06];
+function smoothPos(i, v) { let x = 0, y = 0, z = 0; for (let k = 0; k < 7; k++) { const p = rawPos(i, v + (k - 3) * 0.12); x += GW[k] * p.x; y += GW[k] * p.y; z += GW[k] * p.z; } return { x, y, z }; }
+function droneState(i, v) {
+  const h = 0.1, p = smoothPos(i, v), pa = smoothPos(i, v - h), pb = smoothPos(i, v + h);
+  const vel = { x: (pb.x - pa.x) / (2 * h), y: (pb.y - pa.y) / (2 * h), z: (pb.z - pa.z) / (2 * h) };
+  const acc = { x: (pb.x - 2 * p.x + pa.x) / (h * h), y: (pb.y - 2 * p.y + pa.y) / (h * h), z: (pb.z - 2 * p.z + pa.z) / (h * h) };
+  const ground = onGround(i, v), cd = 0.14;
+  let tx = acc.x + cd * vel.x, ty = acc.y + 9.81, tz = acc.z + cd * vel.z;
+  const hz = Math.hypot(tx, tz), lim = Math.tan(25 * D2R) * ty; if (hz > lim) { tx *= lim / hz; tz *= lim / hz; }
+  if (ground) { tx = 0; tz = 0; }
+  let yaw = null;
+  for (let back = 0; back <= 12 && yaw == null; back += 0.5) { const q0 = rawPos(i, v + 0.9 - back), q1 = rawPos(i, v + 1.1 - back), sp = Math.hypot(q1.x - q0.x, q1.z - q0.z) / 0.2; if (sp > 1.2) yaw = Math.atan2(-(q1.z - q0.z), q1.x - q0.x); }
+  if (yaw == null) yaw = -i * 0.6;
+  const agl = p.y - LEGH - H(p.x, p.z), fade = clamp((agl - 0.3) / 3, 0, 1);
+  if (!ground) { p.x += 0.07 * fade * (Math.sin(v * 0.71 + i * 2) + 0.5 * Math.sin(v * 1.93 + i)); p.y += 0.035 * fade * Math.sin(v * 1.17 + i * 3); p.z += 0.07 * fade * (Math.sin(v * 0.53 + i) + 0.5 * Math.sin(v * 2.31 + i * 5)); }
+  let rpm = 1; for (const [a, b] of GROUND[i]) if (v >= a - 2.5 && v < b + 0.01) rpm = Math.min(rpm, Math.max(1 - sstep(a, a + 2.5, v), sstep(b - 2, b, v)));
+  return { p, vel, up: new THREE.Vector3(tx, ty, tz).normalize(), yaw, rpm, speed: Math.hypot(vel.x, vel.z) };
+}
 
-// ================= LiDAR precompute (deterministic so the timeline can scrub) =================
-const MAXP = 80000, lp = new Float32Array(MAXP * 3), lt = new Float32Array(MAXP), ld = new Uint8Array(MAXP); let NP = 0;
-for (const [t0, t1] of [[6, 14], [46.5, 50.5], [79, 87]]) for (let t = t0; t < t1 && NP < MAXP - 200; t += 0.045) for (let i = 0; i < 3; i++) {
-  const p = pathPos(i, t), o = { x: p.x, y: p.y + 0.3, z: p.z }, spin = t * TAU * 1.7 + i;
+// ================= winch pod: cable payout (S-curve), damped sway, seat on the rubble, raise =================
+function podState(i, s) {
+  for (const p of VISITS) {
+    const vt = p.vt, q = p.pods[i], hang = hoverOver(q).y - LEGH * 0.3 - 0.55, Lmax = hang - (q.y + 0.16);
+    if (s < vt.pay - 0.5 || s > vt.raise + 1.6) continue;
+    let L, seated = false;
+    if (s < vt.touch) L = Lmax * s5(clamp((s - vt.pay) / (vt.touch - vt.pay), 0, 1));
+    else if (s < vt.raise) { L = Lmax; seated = true; }
+    else L = Lmax * (1 - s5(clamp((s - vt.raise) / 1.3, 0, 1)));
+    const w = Math.sqrt(9.81 / Math.max(0.5, L + 0.5)), tt = Math.max(0, s - vt.pay), amp = seated ? 0 : 0.18 * Math.exp(-0.12 * w * tt) * (s < vt.touch ? 1 - sstep(vt.touch - 0.6, vt.touch, s) : sstep(vt.raise, vt.raise + 0.4, s) * 0.5);
+    return { L, seated, sway: { x: amp * Math.sin(w * tt + i), z: amp * 0.6 * Math.cos(w * tt * 1.1 + i) }, q, p, scanning: s >= vt.scan && s < vt.res };
+  }
+  return null;
+}
+
+// ================= LiDAR (story: A2 orbit only, the recon already mapped the site) =================
+const MAXP = 30000, lp = new Float32Array(MAXP * 3), lt = new Float32Array(MAXP); let NP = 0;
+for (let t = 5; t < 11 && NP < MAXP - 200; t += 0.045) for (let i = 0; i < 3; i++) {
+  const p = pathPos(i, t), o = { x: p.x, y: p.y + 0.1, z: p.z }, spin = t * TAU * 1.7 + i;
   for (let k = 0; k < 40; k++) {
     const az = spin + k * TAU / 40 + rnd() * 0.08, el = -(10 + 70 * Math.pow(rnd(), 0.8)) * D2R;
     const d = { x: Math.cos(el) * Math.cos(az), y: Math.sin(el), z: Math.cos(el) * Math.sin(az) }, s = castRay(o, d, 28);
     if (s >= 28) continue;
-    lp[NP * 3] = o.x + d.x * s; lp[NP * 3 + 1] = o.y + d.y * s; lp[NP * 3 + 2] = o.z + d.z * s; lt[NP] = t; ld[NP] = i; NP++;
+    lp[NP * 3] = o.x + d.x * s; lp[NP * 3 + 1] = o.y + d.y * s; lp[NP * 3 + 2] = o.z + d.z * s; lt[NP] = t; NP++;
   }
 }
 const cloudGeo = new THREE.BufferGeometry(); cloudGeo.setAttribute('position', new THREE.BufferAttribute(lp, 3));
-const cc = new Float32Array(MAXP * 3);
-for (let i = 0; i < NP; i++) { const b = 0.45 + 0.55 * clamp(lp[i * 3 + 1] / 4.5, 0, 1); cc[i * 3] = 0.61 * b; cc[i * 3 + 1] = 0.42 * b; cc[i * 3 + 2] = b; }
-cloudGeo.setAttribute('color', new THREE.BufferAttribute(cc, 3));
-const cloud = new THREE.Points(cloudGeo, new THREE.PointsMaterial({ size: 0.09, vertexColors: true, transparent: true, opacity: 0.8, depthWrite: false })); cloud.frustumCulled = false; scene.add(cloud);
+{ const cc = new Float32Array(MAXP * 3); for (let i = 0; i < NP; i++) { const b = 0.45 + 0.55 * clamp(lp[i * 3 + 1] / 4.5, 0, 1); cc[i * 3] = 0.61 * b; cc[i * 3 + 1] = 0.42 * b; cc[i * 3 + 2] = b; } cloudGeo.setAttribute('color', new THREE.BufferAttribute(cc, 3)); }
+const cloud = new THREE.Points(cloudGeo, new THREE.PointsMaterial({ size: 0.09, vertexColors: true, transparent: true, opacity: 0.85, depthWrite: false })); cloud.frustumCulled = false; scene.add(cloud);
 const countAt = t => { let lo = 0, hi = NP; while (lo < hi) { const m = (lo + hi) >> 1; if (lt[m] <= t) lo = m + 1; else hi = m; } return lo; };
-const beamGeo = new THREE.BufferGeometry(); beamGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(3 * 24 * 6), 3));
-const beams = new THREE.LineSegments(beamGeo, new THREE.LineBasicMaterial({ color: C.lidar, transparent: true, opacity: 0.55, blending: THREE.AdditiveBlending, depthWrite: false })); beams.frustumCulled = false; scene.add(beams);
-
-// Recon sweep cloud (video time 2.4..6.6): coarse, whole site.
+// recon sweep cloud (video time 2.4..6.6): coarse, whole site
 const RMAX = 14000, rlp = new Float32Array(RMAX * 3), rlt = new Float32Array(RMAX); let RNP = 0;
 for (let v = 2.4; v < 6.6 && RNP < RMAX - 40; v += 0.06) for (let i = 0; i < 3; i++) {
   const p = reconPos(i, v), o = { x: p.x, y: p.y + 0.3, z: p.z }, spin = v * TAU * 1.7 + i;
@@ -634,34 +707,34 @@ const rcGeo = new THREE.BufferGeometry(); rcGeo.setAttribute('position', new THR
 { const c = new Float32Array(RMAX * 3); for (let i = 0; i < RNP; i++) { const b = 0.7 + 0.3 * clamp(rlp[i * 3 + 1] / 4.5, 0, 1); c[i * 3] = 0.61 * b; c[i * 3 + 1] = 0.42 * b; c[i * 3 + 2] = b; } rcGeo.setAttribute('color', new THREE.BufferAttribute(c, 3)); }
 const reconCloud = new THREE.Points(rcGeo, new THREE.PointsMaterial({ size: 3.5, sizeAttenuation: false, vertexColors: true, transparent: true, opacity: 1, depthWrite: false, toneMapped: false })); reconCloud.frustumCulled = false; scene.add(reconCloud);
 const rCountAt = v => { let lo = 0, hi = RNP; while (lo < hi) { const m = (lo + hi) >> 1; if (rlt[m] <= v) lo = m + 1; else hi = m; } return lo; };
-
-// Tablet copy of P1's map on layer 1 only: the same single LiDAR purple, brightness by height (no teal/yellow/red ramp).
+// tablet copy of A2's map (layer 1): single LiDAR purple, brightness by height
 {
   const pos = [], col = [];
-  for (let i = 0; i < NP; i++) { if (lt[i] > 14 || Math.hypot(lp[i * 3] - P1.x, lp[i * 3 + 2] - P1.z) > 11) continue; const y = lp[i * 3 + 1], b = 0.35 + 0.65 * clamp(y / 4.6, 0, 1); pos.push(lp[i * 3], y, lp[i * 3 + 2]); col.push(0.61 * b, 0.42 * b, b); }
+  for (let i = 0; i < NP; i++) { if (Math.hypot(lp[i * 3] - VA.x, lp[i * 3 + 2] - VA.z) > 11) continue; const y = lp[i * 3 + 1], b = 0.35 + 0.65 * clamp(y / 4.6, 0, 1); pos.push(lp[i * 3], y, lp[i * 3 + 2]); col.push(0.61 * b, 0.42 * b, b); }
   const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
   const pts = new THREE.Points(g, new THREE.PointsMaterial({ size: 0.1, vertexColors: true })); pts.layers.set(1); scene.add(pts);
 }
 
-function cellMesh(p) {
-  const m = new THREE.InstancedMesh(new THREE.PlaneGeometry(0.86, 0.86).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ transparent: true, opacity: 0.55, depthWrite: false }), p.cells.length);
-  p.cells.forEach((c, k) => m.setColorAt(k, new THREE.Color(c.ok ? C.good : C.bad))); scene.add(m); return m;
-}
-P1.cellMesh = cellMesh(P1); P2.cellMesh = cellMesh(P2);
-const _m4 = new THREE.Matrix4();
-function updateCells(p, t, t0, tOut) {
-  const sweep = sstep(t0, t0 + 1.8, t) * 400, fade = 1 - sstep(tOut, tOut + 1, t), m = p.cellMesh;
-  m.visible = ui.lidar && t >= t0 && fade > 0; m.material.opacity = 0.55 * fade; if (!m.visible) return;
-  p.cells.forEach((c, k) => { const ang = ((Math.atan2(c.z - p.z, c.x - p.x) / D2R) + 360) % 360, s = ang < sweep ? 1 : 0; _m4.makeScale(s, 1, s).setPosition(c.x, c.y + 0.07, c.z); m.setMatrixAt(k, _m4); });
-  m.instanceMatrix.needsUpdate = true;
-}
-
-// ================= radar: three ranges -> belief -> ping (per pile) =================
+// ================= radar from the seated pods: three ranges -> belief -> ping, or no firm fix (open lead) =================
 const lineMat = (color, opacity, dashed, top) => { const m = dashed ? new THREE.LineDashedMaterial({ color, transparent: true, opacity, dashSize: 0.5, gapSize: 0.35, depthWrite: false }) : new THREE.LineBasicMaterial({ color, transparent: true, opacity, depthWrite: false }); if (top) m.depthTest = false; return m; };
 function loopLine(pts, m) { const l = new THREE.LineLoop(new THREE.BufferGeometry().setFromPoints(pts.map(p => V(p.x, p.y ?? 0, p.z))), m); l.computeLineDistances(); return l; }
 const circlePts = (r, n = 96) => Array.from({ length: n }, (_, i) => ({ x: r * Math.cos(i / n * TAU), z: r * Math.sin(i / n * TAU) }));
-function buildRadar(P, T, tRing, tEst, name) {
-  const scans = P.sites.map((s, k) => ({ site: s, r: d2(s, T) + [0.09, -0.12, 0.06][k], sigma: 0.35, t: tRing[k] }));
+function targetOf(p) {
+  if (p === P1) return T1;
+  const v = SCN && SCN.story.victims.find(q => q.pile === p.name);
+  return v ? { x: v.x, z: v.z, depth: v.depth } : p.source ? { x: p.source.x, z: p.source.z, depth: p.source.depth } : { x: p.x, z: p.z, depth: 1.4 };
+}
+function buildRadar(P, ping) {
+  const vt = P.vt, T = targetOf(P), tRing = [0, 1, 2].map(k => vt.scan + 0.6 + k * 0.9), tEst = vt.res, name = `${P.name}-R1`;
+  const scans = P.pods.map((s, k) => ({ site: s, r: d2(s, T) + (ping ? [0.09, -0.12, 0.06][k] : [0.9, -1.4, 1.7][k]), sigma: ping ? 0.35 : 0.9, t: tRing[k] }));
+  const layer = new THREE.Group(); layer.position.y = LAYER_Y; scene.add(layer);
+  const rings = scans.map(s => { const g = new THREE.Group(); g.position.set(s.site.x, 0.02, s.site.z); g.add(loopLine(circlePts(1), lineMat(C.radar, ping ? 0.95 : 0.55, !ping))); layer.add(g); return { g, s }; });
+  const R0 = { name, P, ping, scans, layer, rings, tEst };
+  if (!ping) {   // no firm fix: the evidence that keeps it open is acoustic / call-out / phone
+    const tag = label(`${P.name} · no firm radar fix · open lead`, 'teal ping', scene, [P.x, P.hg.at(P.x, P.z) + 2.4, P.z]);
+    R0.update = t => { const show = ui.radar && t >= tRing[0] - 0.3 && t < tEst + 4; layer.visible = show; rings.forEach(r => { const u = sstep(r.s.t, r.s.t + 0.6, t); r.g.visible = u > 0; r.g.scale.setScalar(Math.max(0.001, u * r.s.r)); r.g.children[0].material.opacity = 0.55 * (1 - sstep(tEst + 2, tEst + 4, t)); }); tag.visible = t >= tEst && t < tEst + 7; };
+    return R0;
+  }
   const n = 64, ext = 9, res = 2 * ext / n;
   const cell = k => ({ x: P.x - ext + ((k % n) + 0.5) * res, z: P.z - ext + (Math.floor(k / n) + 0.5) * res });
   const bel = m => {
@@ -676,19 +749,16 @@ function buildRadar(P, T, tRing, tEst, name) {
   let cxx = 0, cxz = 0, czz = 0; for (let k = 0; k < n * n; k++) { const c = cell(k); if (d2(c, est) > 2.5) continue; const dx = c.x - est.x, dz = c.z - est.z; cxx += fin[k] * dx * dx; czz += fin[k] * dz * dz; cxz += fin[k] * dx * dz; } cxx /= w; czz /= w; cxz /= w;
   const tr = cxx + czz, det = cxx * czz - cxz * cxz, disc = Math.sqrt(Math.max(0, tr * tr / 4 - det));
   const ell = { a: 2.45 * Math.sqrt(tr / 2 + disc), b: 2.45 * Math.sqrt(Math.max(1e-4, tr / 2 - disc)), ang: 0.5 * Math.atan2(2 * cxz, cxx - czz) };
-  const surf = P.hg.at(est.x, est.z), depth = DEPTH_NOM, estY = surf - depth;   // nominal depth, as the live system
+  const surf = P.hg.at(est.x, est.z), depth = DEPTH_NOM, estY = surf - depth;
   const tex = beliefs.map(p => { let mx = 0; for (const v of p) mx = Math.max(mx, v); const d = new Uint8Array(n * n * 4); for (let k = 0; k < n * n; k++) { const u = Math.pow(p[k] / mx, 0.7); d[k * 4] = 255; d[k * 4 + 1] = lerp(170, 70, sstep(0.55, 1, u)); d[k * 4 + 2] = 70; d[k * 4 + 3] = 225 * u; } const tx = new THREE.DataTexture(d, n, n, THREE.RGBAFormat); tx.magFilter = tx.minFilter = THREE.LinearFilter; tx.needsUpdate = true; return tx; });
-
-  const layer = new THREE.Group(); layer.position.y = LAYER_Y; scene.add(layer);
   const plane = new THREE.Mesh(new THREE.PlaneGeometry(2 * ext, 2 * ext).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ transparent: true, depthWrite: false, side: THREE.DoubleSide }));
   { const uv = plane.geometry.attributes.uv; for (let i = 0; i < uv.count; i++) uv.setY(i, 1 - uv.getY(i)); }
   plane.position.set(P.x, 0, P.z); layer.add(plane);
-  const rings = scans.map(s => { const g = new THREE.Group(); g.position.set(s.site.x, 0.02, s.site.z); g.add(loopLine(circlePts(1), lineMat(C.radar, 0.95))); layer.add(g); return { g, s }; });
   const estG = new THREE.Group(); estG.position.set(est.x, 0.06, est.z); layer.add(estG);
   estG.add(new THREE.Mesh(new THREE.CircleGeometry(0.32, 32).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: C.detect, side: THREE.DoubleSide })));
   const pr = new THREE.Mesh(new THREE.RingGeometry(0.9, 1, 48).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: C.detect, transparent: true, side: THREE.DoubleSide, depthWrite: false })); estG.add(pr);
   { const pts = []; for (let i = 0; i < 72; i++) { const u = i / 72 * TAU, x = ell.a * Math.cos(u), z = ell.b * Math.sin(u); pts.push({ x: x * Math.cos(ell.ang) - z * Math.sin(ell.ang), z: x * Math.sin(ell.ang) + z * Math.cos(ell.ang) }); } estG.add(loopLine(pts, lineMat(C.detect, 0.95))); }
-  const estLbl = label(`${name} · candidate search region`, 'detect ping', estG, [0, 0.6, 0]);
+  const estLbl = label(`<b>${name}</b> · candidate search region<br><small>${P.cond.short} · triage ${P.cond.tri}</small>`, 'detect ping', estG, [0, 0.6, 0]);
   const beam = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.07, 40, 8, 1, true), new THREE.MeshBasicMaterial({ color: C.detect, transparent: true, opacity: 0.5, blending: THREE.AdditiveBlending, depthWrite: false }));
   beam.position.set(est.x, LAYER_Y + 20, est.z); scene.add(beam);
   const depthG = new THREE.Group(); scene.add(depthG);
@@ -697,29 +767,27 @@ function buildRadar(P, T, tRing, tEst, name) {
   const halo = new THREE.Mesh(new THREE.SphereGeometry(0.28, 20, 14), new THREE.MeshBasicMaterial({ color: C.detect, ...on, depthWrite: false })); halo.position.copy(sph.position); halo.renderOrder = 29; depthG.add(halo);
   const plumb = new THREE.Line(new THREE.BufferGeometry().setFromPoints([V(est.x, LAYER_Y, est.z), V(est.x, estY, est.z)]), new THREE.LineDashedMaterial({ color: C.detect, dashSize: 0.25, gapSize: 0.18, ...on })); plumb.computeLineDistances(); plumb.renderOrder = 30; depthG.add(plumb);
   const dig = new THREE.Mesh(new THREE.RingGeometry(0.8, 0.95, 48).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: C.detect, side: THREE.DoubleSide, ...on })); dig.position.set(est.x, surf + 0.15, est.z); dig.renderOrder = 30; depthG.add(dig);
-  // copies for the tablet view (layer 1)
   const tabG = new THREE.Group(); scene.add(tabG);
   for (const o of [sph, halo, plumb, dig]) { const c = o.clone(); c.layers.set(1); tabG.add(c); }
   const tabHalo = tabG.children[1];
-  return {
-    name, est, estY, surf, depth, ell, scans, tabG,
-    update(t) {
-      const show = ui.radar && t >= tRing[0] - 0.3;
-      layer.visible = show;
-      const stage = scans.filter(s => s.t + 0.5 <= t).length;
-      plane.visible = stage > 0 && t < tEst + 4; if (stage) plane.material.map = tex[stage - 1]; plane.material.needsUpdate = true;
-      plane.material.opacity = 1 - sstep(tEst + 2, tEst + 4, t);
-      rings.forEach(r => { const u = sstep(r.s.t, r.s.t + 0.6, t); r.g.visible = u > 0 && t < tEst + 4; r.g.scale.setScalar(Math.max(0.001, u * r.s.r)); r.g.children[0].material.opacity = 0.95 * (1 - sstep(tEst + 2, tEst + 4, t)); });
-      estG.visible = t >= tEst; estLbl.visible = t >= tEst && t < tEst + 12;
-      const pf = (t * 0.8) % 1; pr.scale.setScalar(0.4 + pf * 1.6); pr.material.opacity = 1 - pf;
-      beam.visible = show && t >= tEst; beam.material.opacity = 0.35 + 0.2 * Math.sin(t * 4);
-      depthG.visible = show && t >= tEst;
-      const hp = (t * 0.9) % 1; halo.scale.setScalar(1 + hp * 2.4); halo.material.opacity = 0.5 * (1 - hp); tabHalo.scale.copy(halo.scale); tabHalo.material.opacity = halo.material.opacity;
-    },
+  Object.assign(R0, { est, estY, surf, depth, ell, tabG });
+  R0.update = t => {
+    const show = ui.radar && t >= tRing[0] - 0.3;
+    layer.visible = show;
+    const stage = scans.filter(s => s.t + 0.5 <= t).length;
+    plane.visible = stage > 0 && t < tEst + 4; if (stage) plane.material.map = tex[stage - 1]; plane.material.needsUpdate = true;
+    plane.material.opacity = 1 - sstep(tEst + 2, tEst + 4, t);
+    rings.forEach(r => { const u = sstep(r.s.t, r.s.t + 0.6, t); r.g.visible = u > 0 && t < tEst + 4; r.g.scale.setScalar(Math.max(0.001, u * r.s.r)); r.g.children[0].material.opacity = 0.95 * (1 - sstep(tEst + 2, tEst + 4, t)); });
+    estG.visible = t >= tEst; estLbl.visible = t >= tEst && t < tEst + 9;
+    const pf = (t * 0.8) % 1; pr.scale.setScalar(0.4 + pf * 1.6); pr.material.opacity = 1 - pf;
+    beam.visible = show && t >= tEst; beam.material.opacity = 0.35 + 0.2 * Math.sin(t * 4);
+    depthG.visible = show && t >= tEst;
+    const hp = (t * 0.9) % 1; halo.scale.setScalar(1 + hp * 2.4); halo.material.opacity = 0.5 * (1 - hp); tabHalo.scale.copy(halo.scale); tabHalo.material.opacity = halo.material.opacity;
   };
+  return R0;
 }
-const RAD1 = buildRadar(P1, T1, [21.2, 22.2, 23.2], 24.4, `${P1.name}-R1`);
-const RAD2 = buildRadar(P2, T2, [55.4, 56.4, 57.4], 58.4, `${P2.name}-R1`);
+const RADS = VISITS.map(p => buildRadar(p, PINGS_AT.has(p)));
+const RAD1 = RADS[0], PINGS = RADS.filter(r => r.ping);
 
 // ================= buried people (storyboard truth, display only) =================
 const ghostMat = new THREE.MeshBasicMaterial({ color: 0xf2f5f7, transparent: true, opacity: 0.45, depthTest: false });
@@ -732,7 +800,7 @@ function figure(p, pose) {
 const ghosts = [figure(T1, 0.1), ...SOURCES.filter(s => s.human > 0.5).map(s => figure(s, 0.6))];
 const gtLbl = label('Storyboard truth · hidden from the system', 'truth', ghosts[0].g, [0, 0.7, 0]);
 
-// ================= acoustics: sound waves, direction cones =================
+// ================= acoustics: pod mics listen; sound waves, direction cones =================
 const sndGeo = new THREE.SphereGeometry(1, 20, 10);
 const waves = SOURCES.map(s => { const surf = V(s.x, H(s.x, s.z) + 0.2, s.z); return { s, surf, m: [0, 1].map(() => { const m = new THREE.Mesh(sndGeo, new THREE.MeshBasicMaterial({ color: C.acoustic, wireframe: true, transparent: true, opacity: 0.2, depthWrite: false })); scene.add(m); return m; }) }; });
 function coneMesh(from, to, half) {
@@ -741,33 +809,53 @@ function coneMesh(from, to, half) {
   const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
   const m = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.1, side: THREE.DoubleSide, depthTest: false, depthWrite: false })); m.renderOrder = 15; scene.add(m); return m;
 }
-const cones = SOURCES.map((s, k) => {
-  const src = P1.sites.reduce((b, c) => d2(c, s) < d2(b, s) ? c : b);
-  return { s, k, from: src, m: coneMesh(src, s, 12 * D2R), tIn: 21 + k * 0.9 };
+const T_LISTEN = 26, T_RANK = 32.2;
+const cones = SOURCES.map((s, k) => { const src = VA.pods.reduce((b, c) => d2(c, s) < d2(b, s) ? c : b); return { s, k, from: src, m: coneMesh(src, s, 12 * D2R), tIn: T_LISTEN + 0.5 + k * 0.6 }; });
+
+// ================= speaker call-outs and replies =================
+const ringGeo = new THREE.RingGeometry(0.96, 1, 72).rotateX(-Math.PI / 2);
+const mkRings = (color, n) => Array.from({ length: n }, () => { const m = new THREE.Mesh(ringGeo, new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0, depthWrite: false, side: THREE.DoubleSide })); m.renderOrder = 16; scene.add(m); return m; });
+const CALLOUT = '“If you can hear me, knock three times.”';
+const CALLS = VISITS.filter(p => p.vt.call != null).map(p => {
+  const rep = p.source && p.source.human > 0.5 ? (p.source.kind === 'knock' ? 'knock' : 'voice') : null;
+  const at = targetOf(p), surf = V(at.x, p.hg.at(at.x, at.z) + 0.25, at.z);
+  const o = { p, t0: p.vt.call, t1: p.vt.call + 1.8, rep, tr: p.vt.reply, surf, out: mkRings(0xe8eef3, 3), back: mkRings(C.acoustic, 3) };
+  o.say = label(`<b>d2 speaker</b> · ${CALLOUT}`, 'say', scene, [0, 0, 0]);
+  o.ans = label(rep === 'knock' ? 'reply: knock ×3 (open lead)' : rep === 'voice' ? `reply: “${(p.source.quote || '').split(/[.!?]/)[0]}…” (open lead)` : 'no response to call-out → check first', rep ? 'teal' : 'quiet', scene, [surf.x, surf.y + 1.6, surf.z]);
+  return o;
 });
+// ================= rescue Wi-Fi (blue): hotspot coverage under each drone, a phone that taps "I'm trapped" =================
+const T_WIFI = 26, T_PHONE = 30;
+const wifi = drones.map(() => { const g = new THREE.Group(); scene.add(g); const disc = new THREE.Mesh(new THREE.CircleGeometry(16, 64).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: C.wifi, transparent: true, opacity: 0.06, depthWrite: false })); const edge = new THREE.Mesh(new THREE.RingGeometry(15.8, 16, 96).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: C.wifi, transparent: true, opacity: 0.45, depthWrite: false })); g.add(disc, edge); return g; });
+const wifiLbl = label('RESCUE Wi-Fi hotspot', 'blue', wifi[0], [0, 0.6, 15.5]);
+const PHONE_PILE = VB, PHONE = (() => { const t = targetOf(PHONE_PILE); return { x: t.x + 1.2, z: t.z - 0.8, sigma: 4.5 }; })();
+const phoneG = new THREE.Group(); phoneG.position.set(PHONE.x, PHONE_PILE.hg.at(PHONE.x, PHONE.z) + 0.25, PHONE.z); scene.add(phoneG);
+phoneG.add(new THREE.Mesh(new THREE.CircleGeometry(PHONE.sigma, 48).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: C.wifi, transparent: true, opacity: 0.12, depthWrite: false })));
+phoneG.add(loopLine(circlePts(PHONE.sigma), lineMat(C.wifi, 0.9, true)));
+const phoneLbl = label(`<i class="ph"></i> phone on RESCUE Wi-Fi · tapped <b>“I'm trapped”</b> · position ±${PHONE.sigma} m (candidate region)`, 'blue', phoneG, [0, 1.2, 0]);
 
 // ================= data packets =================
 const packets = [];
-function packet(fromFn, to, t0, t1, color, size, text) {
+function packet(fromFn, to, t0, t1, color, size, text, cls) {
   const m = new THREE.Mesh(new THREE.SphereGeometry(size, 12, 8), new THREE.MeshBasicMaterial({ color })); scene.add(m);
-  const lbl = text ? label(text, color === C.detect ? 'detect' : color === C.coord ? 'coord' : 'teal', m, [0, 0.5, 0]) : null;
+  const lbl = text ? label(text, cls || (color === C.detect ? 'detect' : color === C.coord ? 'coord' : 'teal'), m, [0, 0.5, 0]) : null;
   packets.push({ m, fromFn, to, t0, t1, lbl });
 }
-const dronePos3 = (i, t) => { const p = pathPos(i, t); return V(p.x, p.y + 0.6, p.z); };
-packet(() => V(RAD1.est.x, LAYER_Y, RAD1.est.z), DASH_POS, 25, 27.2, C.detect, 0.35, `${RAD1.name} ping → dashboard`);
-for (let k = 0; k < 6; k++) packet(t => dronePos3(k % 3, 28), AGENT_POS, 28 + k * 0.35, 30.6 + k * 0.35, C.acoustic, 0.2, k === 0 ? 'audio clips → agent' : null);
-for (let i = 0; i < 3; i++) packet(() => AGENT_POS.clone(), dronePos3(i, 42), 41.6, 43, C.coord, 0.22, i === 0 ? `dispatch → ${P2.name}` : null);
-packet(() => V(RAD2.est.x, LAYER_Y, RAD2.est.z), DASH_POS, 58.6, 61, C.detect, 0.35, `${RAD2.name} ping → dashboard`);
-for (let i = 0; i < 3; i++) packet(() => AGENT_POS.clone(), dronePos3(i, 74), 73.4, 75, C.coord, 0.22, i === 0 ? `dispatch → ${P3.name}` : null);
+const dronePos3 = (i, s) => { const p = pathPos(i, s); return V(p.x, p.y + 0.6, p.z); };
+for (const r of PINGS) packet(() => V(r.est.x, LAYER_Y, r.est.z), DASH_POS, r.tEst + 0.2, r.tEst + 2.4, C.detect, 0.35, `${r.name} ping → van`);
+for (let k = 0; k < 6; k++) packet(() => V(VA.pods[k % 3].x, VA.pods[k % 3].y + 0.4, VA.pods[k % 3].z), AGENT_POS, T_LISTEN + 0.5 + k * 0.35, T_LISTEN + 3.1 + k * 0.35, C.acoustic, 0.2, k === 0 ? 'pod audio → acoustic agent' : null);
+packet(() => V(PHONE.x, 1, PHONE.z), DASH_POS, T_PHONE + 0.4, T_PHONE + 2.6, C.wifi, 0.24, 'phone message → van (mesh)', 'blue');
+VISITS.slice(1).forEach((p, v) => { for (let i = 0; i < 3; i++) packet(() => AGENT_POS.clone(), dronePos3(i, T_DISPATCH[v] + 1), T_DISPATCH[v], T_DISPATCH[v] + 1.4, C.coord, 0.22, i === 0 ? `dispatch → ${p.name}` : null); });
+for (let i = 0; i < 3; i++) packet(() => AGENT_POS.clone(), dronePos3(i, 67), 66, 67.4, C.coord, 0.22, i === 0 ? `dispatch → ${NEXT.name}` : null);
 const arc = (a, b, f) => V(lerp(a.x, b.x, f), lerp(a.y, b.y, f) + Math.sin(f * Math.PI) * Math.min(14, a.distanceTo(b) * 0.25), lerp(a.z, b.z, f));
 
-// ================= operator =================
-const vest = new THREE.MeshStandardMaterial({ color: 0xff7a1a, roughness: 0.6 }), dark = new THREE.MeshStandardMaterial({ color: 0x2c3540, roughness: 0.8 });
+// ================= operator: leaves the van, walks to A2, calls out, checks, digs =================
+const vest = new THREE.MeshStandardMaterial({ color: 0xff7a1a, roughness: 0.6 }), darkM = new THREE.MeshStandardMaterial({ color: 0x2c3540, roughness: 0.8 });
 const skin = new THREE.MeshStandardMaterial({ color: 0xc99272 }), helmetM = new THREE.MeshStandardMaterial({ color: 0xf2f2f2, roughness: 0.4 });
 const OP = { g: new THREE.Group() }; scene.add(OP.g);
 {
   const g = OP.g, up = new THREE.Group(); up.position.y = 0.95; g.add(up); OP.upper = up;
-  OP.legs = [-1, 1].map(s => { const piv = new THREE.Group(); piv.position.set(s * 0.12, 0.95, 0); const l = new THREE.Mesh(new THREE.CapsuleGeometry(0.08, 0.7, 4, 8), dark); l.position.y = -0.45; piv.add(l); g.add(piv); return piv; });
+  OP.legs = [-1, 1].map(s => { const piv = new THREE.Group(); piv.position.set(s * 0.12, 0.95, 0); const l = new THREE.Mesh(new THREE.CapsuleGeometry(0.08, 0.7, 4, 8), darkM); l.position.y = -0.45; piv.add(l); g.add(piv); return piv; });
   const torso = new THREE.Mesh(new THREE.CapsuleGeometry(0.18, 0.42, 4, 10), vest); torso.position.y = 0.35; up.add(torso);
   const stripe = new THREE.Mesh(new THREE.TorusGeometry(0.185, 0.02, 6, 20), new THREE.MeshBasicMaterial({ color: 0xe8f0d0 })); stripe.rotation.x = Math.PI / 2; stripe.position.y = 0.35; up.add(stripe);
   const head = new THREE.Mesh(new THREE.SphereGeometry(0.12, 14, 10), skin); head.position.y = 0.78; up.add(head);
@@ -780,27 +868,27 @@ const OP = { g: new THREE.Group() }; scene.add(OP.g);
   g.traverse(o => { if (o.isMesh) o.castShadow = true; });
   OP.lbl = label('Operator', 'op', g, [0, 2.3, 0]);
 }
-// route: along the corridors between piles, then up the flank to the ping
-const STAND = (() => { const dir = Math.atan2(RAD1.est.z - P1.z, RAD1.est.x - P1.x); const a = dir + 0.5; return { x: RAD1.est.x + 1.15 * Math.cos(a), z: RAD1.est.z + 1.15 * Math.sin(a) }; })();
+const T_WALK0 = 26, T_WALK1 = 44;
+const STAND = (() => { const dir = Math.atan2(RAD1.est.z - VA.z, RAD1.est.x - VA.x); const a = dir + 0.5; return { x: RAD1.est.x + 1.15 * Math.cos(a), z: RAD1.est.z + 1.15 * Math.sin(a) }; })();
 const ROUTE = (() => {
-  const xc = P1.x + (P1.x >= 0 ? -11 : 11), sg = Math.sign(xc - P1.x);
-  const pts = [{ x: -2, z: 44.5 }, { x: xc, z: 38 }, { x: xc, z: P1.z }, { x: P1.x + sg * 7.5, z: P1.z }];
+  const xc = VA.x + (VA.x >= 0 ? -11 : 11);
+  const pts = [{ x: VAN.x - 0.8, z: VAN.z - 1.9 }, { x: VAN.x - 4, z: 41 }, { x: xc, z: 38 }, { x: xc, z: VA.z }, { x: VA.x + Math.sign(xc - VA.x) * 7.5, z: VA.z }];
   let L = 0; pts.forEach((p, i) => { p.s = i ? (L += d2(p, pts[i - 1])) : 0; }); pts.L = L; return pts;
 })();
-const opSurface = (x, z) => Math.max(H(x, z), d2({ x, z }, P1) < 10 ? P1.hg.at(x, z) - 0.05 : -1);
+const opSurface = (x, z) => Math.max(H(x, z), d2({ x, z }, VA) < 10 ? VA.hg.at(x, z) - 0.05 : -1);
 function opPose(t) {
   let x, z, moving = false, dist = 0;
-  if (t < 28) { x = ROUTE[0].x; z = ROUTE[0].z; }
-  else if (t < 54) {
-    const s = sstep(28, 54, t) * 0.08 + clamp((t - 28) / 26, 0, 1) * 0.92; dist = s * ROUTE.L; moving = true;
+  if (t < T_WALK0) { x = ROUTE[0].x; z = ROUTE[0].z; }
+  else if (t < T_WALK1) {
+    dist = clamp((t - T_WALK0) / (T_WALK1 - T_WALK0), 0, 1) * ROUTE.L; moving = true;
     let k = 1; while (k < ROUTE.length - 1 && ROUTE[k].s < dist) k++;
     const a = ROUTE[k - 1], b = ROUTE[k], u = clamp((dist - a.s) / (b.s - a.s), 0, 1); x = lerp(a.x, b.x, u); z = lerp(a.z, b.z, u);
-  } else { const e = ROUTE[ROUTE.length - 1], u = sstep(54, 56.5, t); x = lerp(e.x, STAND.x, u); z = lerp(e.z, STAND.z, u); moving = t < 56.5; dist = ROUTE.L + u * d2(e, STAND); }
+  } else { const e = ROUTE[ROUTE.length - 1], u = sstep(T_WALK1, T_WALK1 + 2.5, t); x = lerp(e.x, STAND.x, u); z = lerp(e.z, STAND.z, u); moving = t < T_WALK1 + 2.5; dist = ROUTE.L + u * d2(e, STAND); }
   return { x, z, y: opSurface(x, z), moving, dist };
 }
-// dig: lift the pieces sitting above the ping on the P1 flank
-const DIGS = P1.meshes.filter(m => Math.hypot(m.position.x - RAD1.est.x, m.position.z - RAD1.est.z) < 2.2 && m.position.y > RAD1.estY + 0.3)
-  .sort((a, b) => b.position.y - a.position.y).slice(0, 4).map((m, k) => ({ m, p0: m.position.clone(), r0: m.rotation.clone(), t0: 65 + k * 1.7, dir: Math.atan2(m.position.z - RAD1.est.z, m.position.x - RAD1.est.x) + 1.2 }));
+const TAB0 = 66.2, TAP = 68.4, TAB1 = 72.5, T_DIG = 72.8;
+const DIGS = VA.meshes.filter(m => Math.hypot(m.position.x - RAD1.est.x, m.position.z - RAD1.est.z) < 2.2 && m.position.y > RAD1.estY + 0.3)
+  .sort((a, b) => b.position.y - a.position.y).slice(0, 4).map((m, k) => ({ m, p0: m.position.clone(), r0: m.rotation.clone(), t0: T_DIG + 0.3 + k * 1.1, dir: Math.atan2(m.position.z - RAD1.est.z, m.position.x - RAD1.est.x) + 1.2 }));
 { // merge static rubble per material; the pieces the operator digs out stay separate so they can move
   const dig = new Set(DIGS.map(d => d.m));
   for (const mat of [...concrete, ...brick]) {
@@ -814,15 +902,45 @@ const dustN = 90, dustGeo = new THREE.BufferGeometry(); dustGeo.setAttribute('po
 const dust = new THREE.Points(dustGeo, new THREE.PointsMaterial({ color: 0xc8b8a0, size: 0.09, transparent: true, opacity: 0.7, depthWrite: false })); dust.frustumCulled = false; scene.add(dust);
 const youMk = new THREE.Mesh(new THREE.ConeGeometry(0.25, 0.6, 12), new THREE.MeshBasicMaterial({ color: C.op })); youMk.rotation.x = Math.PI; youMk.layers.set(1); scene.add(youMk);
 
-// ================= camera keyframes =================
-const P1v = V(P1.x, 1.5, P1.z), P2v = V(P2.x, 1.5, P2.z), P3v = V(P3.x, 1.5, P3.z), B = V(BASE.x, 1, BASE.z);
-const EST1 = V(RAD1.est.x, RAD1.surf, RAD1.est.z);
+// ================= camera keyframes (story time) =================
+const pv = p => V(p.x, 1.5, p.z);
+const [Av, Bv, Cv, Dv, Nv] = [VA, VB, VC, VD, NEXT].map(pv), B = V(BASE.x, 1, BASE.z);
+const EST1 = V(RAD1.est.x, RAD1.surf, RAD1.est.z), ESTC = PINGS[1] ? V(PINGS[1].est.x, PINGS[1].surf, PINGS[1].est.z) : Cv;
+const podMid = (p, i) => V(p.pods[i].x, p.pods[i].y + 2.5, p.pods[i].z);
+const add = (a, x, y, z) => a.clone().add(V(x, y, z));
 const opAt = t => { const p = opPose(t); return V(p.x, p.y, p.z); };
-const opDir = (t) => { const a = opAt(t - 0.4), b = opAt(t); const d = b.clone().sub(a); d.y = 0; return d.lengthSq() > 1e-6 ? d.normalize() : V(0, 0, -1); };
 const STANDv = V(STAND.x, opSurface(STAND.x, STAND.z), STAND.z);
 const toPing = EST1.clone().sub(STANDv).setY(0).normalize(), side = V(-toPing.z, 0, toPing.x);
-const add = (a, x, y, z) => a.clone().add(V(x, y, z));
-const mid = lerp;
+const CAM = [
+  [0, V(-30, 50, 42), V(-14, 0, -4)],
+  [4, add(Av, -14, 18, 24), Av],
+  [7.5, add(Av, 18, 15, 16), Av],
+  [11, add(Av, 15, 15, -13), Av],
+  [13.5, add(podMid(VA, 0), -12, 5, 12), add(podMid(VA, 0), 0, 2, 0)],
+  [16.5, add(podMid(VA, 0), -13, 4, 13), podMid(VA, 0)],
+  [19, add(Av, -13, 13, 13), Av],
+  [21.5, add(EST1, -12, 17, 12), EST1],
+  [25, add(EST1, -13, 18, 14), EST1],
+  [28, V(-30, 50, 72), V(-4, 0, 14)],
+  [32.5, V(14, 56, 70), V(-4, 0, 4)],
+  [36.5, add(Bv, -15, 16, 18), Bv],
+  [39.5, add(podMid(VB, 1), -12, 5, 12), add(podMid(VB, 1), 0, 2, 0)],
+  [42.5, add(Bv, -11, 11, 13), Bv],
+  [44.5, add(Bv, -12, 12, 14), Bv],
+  [47.5, add(Cv, -15, 16, 18), Cv],
+  [50.5, add(Cv, 11, 10, 12), Cv],
+  [53, add(ESTC, -11, 17, 11), ESTC],
+  [55.5, add(ESTC, -12, 18, 12), ESTC],
+  [58, add(Dv, -15, 16, 18), Dv],
+  [61, add(Dv, 10, 10, 12), Dv],
+  [64.5, add(Dv, -11, 11, 12), Dv],
+  [66.5, STANDv.clone().addScaledVector(toPing, -6.2).addScaledVector(side, 2.6).add(V(0, 6.6, 0)), EST1],
+  [72.5, STANDv.clone().addScaledVector(side, 6.5).addScaledVector(toPing, -1.5).add(V(0, 5.6, 0)), add(EST1, 0, 0.4, 0)],
+  [77, STANDv.clone().addScaledVector(side, 7).addScaledVector(toPing, -5).add(V(0, 6.6, 0)), EST1],
+  [80, V(-20, 58, 78), V(0, 0, 4)],
+  [84, V(52, 62, 52), V(0, 0, 2)],
+  [86, V(52, 62, 52), V(0, 0, 2)],
+];
 const PERCHv = V(PERCH.x, PERCH.y + 1, PERCH.z);
 const OCAM = [
   [0, add(B, -14, 6, 12), add(B, 0, 3, -6)],
@@ -834,99 +952,123 @@ const OCAM = [
   [OPEN, V(-30, 50, 42), V(-14, 0, -4)],
   [OPEN + 1, V(-30, 50, 42), V(-14, 0, -4)],
 ];
-const CAM = [
-  [0, V(-30, 50, 42), V(-14, 0, -4)],
-  [4.5, add(P1v, -12, 20, 30), P1v],
-  [8, add(P1v, 18, 15, 16), P1v],
-  [12, add(P1v, 16, 17, -15), P1v],
-  [15, add(P1v, 0.1, 25, 9), P1v],
-  [19, add(P1v, -14, 11, 14), add(P1v, 0, 1, 0)],
-  [23.5, add(V(RAD1.est.x, 3, RAD1.est.z), -9, 12, 10), V(RAD1.est.x, 3, RAD1.est.z)],
-  [26.8, V(mid(P1.x, BASE.x, 0.5) - 26, 30, mid(P1.z, BASE.z, 0.5) + 14), V(mid(P1.x, BASE.x, 0.55), 1, mid(P1.z, BASE.z, 0.55))],
-  [31, V(-28, 52, 74), V(0, 0, 8)],
-  [40, V(18, 56, 70), V(0, 0, 4)],
-  [43, add(P1v, -14, 18, 20), P1v],
-  [47, add(P2v, -15, 17, 20), P2v],
-  [51, add(P2v, 15, 15, 15), P2v],
-  [53.4, add(P2v, -10, 9, 13), add(P2v, 0, 1.5, 0)],
-  [54.4, opAt(54.4).add(opDir(54.4).multiplyScalar(-6)).add(V(0, 3.2, 0)), opAt(54.4).add(opDir(54.4).multiplyScalar(6))],
-  [57.5, STANDv.clone().addScaledVector(toPing, -6.2).addScaledVector(side, 2.6).add(V(0, 6.6, 0)), EST1],
-  [64, STANDv.clone().addScaledVector(side, 6.5).addScaledVector(toPing, -1.5).add(V(0, 5.6, 0)), add(EST1, 0, 0.4, 0)],
-  [70, STANDv.clone().addScaledVector(side, 7).addScaledVector(toPing, -5).add(V(0, 6.6, 0)), EST1],
-  [75, V(-20, 58, 78), V(0, 0, 4)],
-  [82, V(52, 62, 52), V(0, 0, 2)],
-  [88, V(68, 56, -14), V(0, 0, 0)],
-];
 const _cp = new THREE.Vector3(), _ct = new THREE.Vector3();
-const camFloor = (x, z) => { let y = H(x, z); for (const p of [P1, P2]) if (p.hg && Math.abs(x - p.x) < 11 && Math.abs(z - p.z) < 11) y = Math.max(y, p.hg.at(x, z)); return y; };
+const camFloor = (x, z) => { let y = H(x, z); for (const p of VISITS) if (Math.abs(x - p.x) < 11 && Math.abs(z - p.z) < 11) y = Math.max(y, p.hg.at(x, z)); return y; };
 function camAt(t, K = CAM) { let j = 0; while (j < K.length - 2 && K[j + 1][0] <= t) j++; const [ta, pa, qa] = K[j], [tb, pb, qb] = K[j + 1], u = sstep(0, 1, (t - ta) / (tb - ta)); _cp.lerpVectors(pa, pb, u); _ct.lerpVectors(qa, qb, u); _cp.y = Math.max(_cp.y, camFloor(_cp.x, _cp.z) + 2.2); }
 
-// ================= captions =================
+// ================= captions: what happens, plus one real-world stake (docs/IMPACT_EVIDENCE.md, source in small text) =================
+const ST_ = {
+  kobe: ['Kobe 1995: 80.5% of the people pulled out on day 1 were alive; on day 2, 28.5%.', 'Kobe FD data via Miyagi Pref.'],
+  bam: ['In Bam (2003), 28% of injured survivors were unconscious when rescued — listening devices can’t hear them.', 'Nia 2008, via Rom & Kelman 2020'],
+  gssi: ['Radar life detectors sense breathing to ~4.5–7 m, but a rescuer has to carry one onto the pile, one spot at a time.', 'GSSI LifeLocator, Fire Engineering'],
+  teams: ['Neighbours and relatives perform 60–100% of extrications; international teams took 12–56 h to arrive.', 'Rom & Kelman 2020, BMJ Glob Health'],
+  dogs: ['Search dogs work 20–45 min, then rest for as long.', 'FEMA US&R canine'],
+  weiguan: ['Weiguan 2016: nobody was found alive after 62.3 h.', 'Chiu & Tseng 2018'],
+  odds: ['Weiguan: time to extrication was the strongest predictor of death (odds ratio 38 at a 24 h cut-off).', 'Pan et al. 2019, JFMA'],
+  toll: ['Weiguan Jinlong: 175 people rescued alive, 115 dead.', 'Tainan City Fire Bureau; Chiu & Tseng 2018'],
+};
 const OCAPS = [
-  [0, SCN ? `Seed ${SEED}: the same site as the Isaac scene and the dashboard. No search zones are tasked yet, so the drones start with a recon flight. Flight is kinematic in the sim.` : `Random scenario #s${SEED}. No search zones are tasked yet, so the drones start with a recon flight. Flight is kinematic in the sim.`],
+  [0, SCN ? `Seed ${SEED}: the same site as the Isaac scene and the dashboard. No search zones are tasked yet, so the heavy drones start with a recon flight.` : `Random scenario #s${SEED}. No search zones are tasked yet, so the heavy drones start with a recon flight.`],
   [2.4, 'Recon sweep at 14 m: the LiDAR builds a fresh map of the whole site. Satellite imagery is stale after a collapse.'],
-  [6.6, 'Perch and listen: d2 lands on a flat spot in the fresh map and listens with rotors off for about 20 s (compressed here). Rotor noise makes in-flight listening unreliable.'],
+  [6.6, 'Perch and listen: d2 sets down on a flat spot and listens with rotors off for about 20 s (compressed here). Rotor noise drowns quiet sounds in flight.'],
   [9.4, 'The dashboard segments the fresh map into rubble mounds and proposes their outlines as search zones (dashed grey).'],
-  [11.8, `The operator taps Accept: ${PILES.length} zones are tasked (dashed white). The targeted search starts at ${P1.name}.`],
+  [11.8, `The operator taps Accept: ${PILES.length} zones are tasked (dashed white). The targeted search starts at ${VA.name}.`],
 ];
 const CAPS = [
-  [0, `Targeted search. The drones fly from the recon to the first tasked zone, the start pile ${P1.name}.`],
-  [6, 'Spinning LiDAR maps the pile from 9.5 m. Every return is a point in a shared 3D map.'],
-  [14, 'Each 1 m cell around the pile is scored for slope and roughness. The drones land on flat green cells so the radar stays still.'],
-  [19.5, 'Rotors off. The radars look for a breathing-like signal under the rubble, and their three ranges cross at one spot.'],
-  [24.4, `Ping ${RAD1.name}: a candidate search region, with its position and an approximate depth (nominal ≈1.5 m, not measured yet). A candidate, not a confirmed person.`],
-  [25, 'The ping goes straight to the operator dashboard at the staging area.'],
-  [28, `The operator sets off for ${P1.name}. Meanwhile the landed drones listen to the other piles and stream audio clips to the acoustic agent.`],
-  [31, 'For each clip the agent detects voices, transcribes the speech, classifies other sounds and judges how human, how urgent and how reliable it is.'],
-  [40, `The scores become a priority list per pile. Non-human sounds are dismissed as leads. It is a priority, not proof: silent piles (${silentPiles.map(p => p.name).join(', ')}) are not cleared.`],
-  [41.6, `Top priority is ${P2.name} (${QUEUE[0].cls}), then ${QUEUE[1].pile.name} and ${QUEUE[2].pile.name}. The coordinator sends the drones to ${P2.name}.`],
-  [44, `At ${P2.name} the cycle repeats: LiDAR map, flat landing cells, radar scan.`],
-  [54, `The operator reaches ${P1.name} and taps the ping. It opens the LiDAR model of the pile with the candidate inside it, at a nominal depth of about 1.5 m (assumed, not measured yet).`],
-  [59.6, VIT[0].rank < VIT[1].rank
-    ? `Dig order puts ${RAD2.name} first (${VIT[1].what.toLowerCase()}, ${Math.round(VIT[1].rate)}/min). Here ${RAD1.name} shows ${VIT[0].what.toLowerCase()}, ${Math.round(VIT[0].rate)}/min: deep rest or reduced consciousness. No response to the call-out, so it is checked first. An aid, not a diagnosis.`
-    : `Dig order: ${RAD1.name} ranks first: ${VIT[0].text}. An aid for rescuers ordering the dig, not a diagnosis.`],
-  [64, 'The operator checks the spot on site, then digs at the candidate point.'],
-  [72, `Whole system: audio sets the order, radar pins the spot, the operator digs. The drones move on to ${P3.name}, the next priority.`],
+  [0, `Targeted search: the drones fly to the first tasked zone, ${VA.name}.`, ST_.kobe],
+  [5, `They map ${VA.name} at close range: every LiDAR return goes into the shared 3D map.`, ST_.kobe],
+  [11.8, 'Each drone hovers 7 m up and lowers a radar pod on its winch. Nobody has to stand on the pile.', ST_.gssi],
+  [16, 'Seated on the rubble, the three pods look for a breathing-like signal. Their ranges cross at one spot.', ST_.gssi],
+  [VA.vt.res, `Ping ${RAD1.name}: a candidate search region at a nominal depth of about 1.5 m. Breathing: ${VA.cond.short}.`, ST_.bam],
+  [VA.vt.call, `d2's speaker calls out: ${CALLOUT} No response. Slow breathing with no response means check this spot first.`, ST_.bam],
+  [T_LISTEN, `The pods' microphones listen to the other piles while the drones' rescue Wi-Fi comes on. The operator leaves the van for ${VA.name}.`, ST_.teams],
+  [T_PHONE, `A phone near ${PHONE_PILE.name} joins RESCUE Wi-Fi and taps “I'm trapped”. Its position is a blue candidate region, not a fix.`, ST_.teams],
+  [T_RANK, `The acoustic agent ranks the piles: ${VB.name}, then ${VC.name} and ${VD.name}. A priority, not proof: silent piles are not cleared.`, ST_.teams],
+  [VB.vt.arrive - 2, `${VB.name}: pods down, radar scan.`, ST_.dogs],
+  [VB.vt.res, `${VB.name}: no firm radar fix (very shallow, fast breathing is hard to lock), but a voice answers the call-out and the phone is here. It stays an open lead.`, ST_.dogs],
+  [VC.vt.arrive - 2, `${VC.name}: faint speech asking for water. Pods down, radar scan.`, ST_.weiguan],
+  [VC.vt.res, `Ping ${PINGS[1] ? PINGS[1].name : VC.name}: ${VC.cond.short} — ${VC.cond.means}. Triage hint: ${VC.cond.tri}.`, ST_.weiguan],
+  [VD.vt.arrive - 2, `${VD.name}: pods down, radar scan.`, ST_.weiguan],
+  [VD.vt.res, `${VD.name}: no firm fix, but the call-out gets a reply: three knocks. An open lead for the crews.`, ST_.weiguan],
+  [TAB0 - 0.2, `At ${VA.name} the operator opens ${RAD1.name} on the tablet: the LiDAR model, the ping at its nominal depth, and the dig order.`, ST_.odds],
+  [TAP + 0.6, `Dig order puts ${PINGS[1] ? PINGS[1].name : ''} first (${VC.cond.tri}). Here, ${RAD1.name} gave no response to the call-out, so it is checked on the spot. An aid, not a diagnosis.`, ST_.odds],
+  [T_DIG, 'The operator checks the spot, then digs at the candidate point.', ST_.odds],
+  [77, `Whole system: LiDAR maps, pods find breathing, the speaker and the phone add evidence, the operator digs. The drones move on to ${NEXT.name}.`, ST_.toll],
 ];
+const capHTML = c => c[2] ? `${c[1]}<span class="stat">${c[2][0]} <small>${c[2][1]}</small></span>` : c[1];
 
 // ================= HUD: agent panel =================
 const clipsEl = document.getElementById('clips'), queueEl = document.getElementById('queue'), dispEl = document.getElementById('dispatch');
-const CLIP_T = SOURCES.map((s, k) => 31 + k * 1.45);
+const CLIP_T = SOURCES.map((s, k) => T_LISTEN + 0.8 + k * 0.85);
 clipsEl.innerHTML = SOURCES.map((s, k) => {
   const bars = Array.from({ length: 34 }, (_, i) => { const env = s.kind === 'gen' ? 0.5 : s.kind === 'knock' ? (i % 8 < 2 ? 1 : 0.15) : s.kind === 'weak' ? 0.3 : 0.5 + 0.5 * Math.sin(i * 0.5); return `<i style="height:${Math.round(3 + 14 * env * hash2(i, k + 3))}px"></i>`; }).join('');
   return `<div class="clip ${s.human < 0.5 ? 'nonhuman' : ''}" data-k="${k}" hidden>
-    <div class="hd"><span><b>${s.pile.name}</b> · heard by ${['d1', 'd2', 'd3'][P1.sites.indexOf(cones[k].from)]}</span><span class="cls">${s.cls}</span></div>
+    <div class="hd"><span><b>${s.pile.name}</b> · heard by pod ${['d1', 'd2', 'd3'][VA.pods.indexOf(cones[k].from)]}</span><span class="cls">${s.cls}</span></div>
     <div class="wave">${bars}</div><q></q>
     <div class="scores"><span>human<div class="bar"><i data-v="${s.human}"></i></div></span><span>urgency<div class="bar"><i data-v="${s.urg}"></i></div></span><span>direction<div class="bar"><i data-v="${s.rel}"></i></div></span><span class="pr">${s.score}</span></div>
   </div>`;
 }).join('');
 const clipEls = [...clipsEl.children];
-queueEl.innerHTML = `<div class="row done"><b>${P1.name}</b><span class="why">radar ping ${RAD1.name} · operator en route</span><span class="s">ping</span></div>` +
-  QUEUE.map((s, i) => `<div class="row ${i === 0 ? 'top' : ''}" hidden><b>${s.pile.name}</b><span class="why">${s.why}</span><span class="s">${s.score}</span></div>`).join('') +
-  silentPiles.map(p => `<div class="row" hidden><b>${p.name}</b><span class="why">no sound heard · not cleared</span><span class="s">10</span></div>`).join('');
+const QROWS = [{ p: VA, why: s => `radar ping ${RAD1.name} · ${VA.cond.tri} · no response to call-out`, s: () => 'ping' },
+  ...QUEUE.map(q => ({ p: q.pile, q, why: s => q.pile === VB && s >= VB.vt.res + 1 ? 'open lead · voice reply + phone “I’m trapped”' : q.pile === VC && s >= VC.vt.res ? `ping ${PINGS[1] ? PINGS[1].name : ''} · ${VC.cond.tri}` : q.pile === VD && s >= VD.vt.reply ? 'open lead · knock ×3 reply' : q.why, s: s => q.pile === VC && s >= VC.vt.res ? 'ping' : String(q.score) })),
+  ...silentPiles.map(p => ({ p, why: () => 'no sound heard · not cleared', s: () => '10' }))];
+queueEl.innerHTML = QROWS.map((r, i) => `<div class="row ${i === 0 ? 'done' : i === 1 ? 'top' : ''}" hidden><b>${r.p.name}</b><span class="why"></span><span class="s"></span></div>`).join('');
 const qRows = [...queueEl.children];
-dispEl.textContent = `Dispatch d1–d3 → ${P2.name} (priority ${QUEUE[0].score})`;
 function updateAgent(t) {
-  const show = t >= 28.4; document.getElementById('agent').hidden = !show; if (!show) return;
-  const st = t < 31 ? 'receiving clips' : t < 40 ? `analysing ${Math.min(6, Math.floor((t - 31) / 1.45) + 1)}/6` : t < 41.6 ? 'ranking piles' : 'dispatched';
-  document.getElementById('agentState').textContent = st;
-  const stage = t < 31 ? -1 : t < 40 ? Math.floor(((t - 31) % 1.45) / 0.29) : 4;
-  document.querySelectorAll('.pipe span').forEach((s, i) => s.classList.toggle('on', i <= stage && t >= 31));
-  const dTxt = t >= 73.4 ? `Dispatch d1–d3 → ${P3.name} (priority ${QUEUE[1].score}) · ${P2.name} has ping ${RAD2.name}` : `Dispatch d1–d3 → ${P2.name} (priority ${QUEUE[0].score})`; if (dispEl.textContent !== dTxt) dispEl.textContent = dTxt;
-  const showQ = t >= 40; clipsEl.hidden = showQ; queueEl.hidden = !showQ; dispEl.hidden = t < 41.6;
-  clipEls.forEach((el, k) => {
-    const t0 = CLIP_T[k]; el.hidden = t < t0; if (t < t0) return;
-    const q = SOURCES[k].quote, n = Math.round(clamp((t - t0 - 0.2) / 0.9, 0, 1) * q.length), qe = el.querySelector('q');
+  const show = t >= T_LISTEN - 0.4; document.getElementById('agent').hidden = !show; if (!show) return;
+  const st = t < T_LISTEN + 0.8 ? 'receiving clips' : t < T_RANK ? `analysing ${Math.min(6, Math.floor((t - T_LISTEN - 0.8) / 0.85) + 1)}/6` : t < T_DISPATCH[0] ? 'ranking piles' : 'dispatched';
+  setTxt('agentState', st);
+  const stage = t < T_LISTEN + 0.8 ? -1 : t < T_RANK ? Math.floor(((t - T_LISTEN - 0.8) % 0.85) / 0.17) : 4;
+  document.querySelectorAll('.pipe span').forEach((s, i) => s.classList.toggle('on', i <= stage && t >= T_LISTEN + 0.8));
+  let k = T_DISPATCH.filter(d => t >= d).length - 1;
+  const dTxt = k < 0 ? '' : k < 3 ? `Dispatch d1–d3 → ${VISITS[k + 1].name}` + (k === 0 ? ` (priority ${VB.source ? VB.source.score : ''})` : '') : `Dispatch d1–d3 → ${NEXT.name} (next tasked zone)`;
+  setTxt('dispatch', dTxt);
+  const showQ = t >= T_RANK; clipsEl.hidden = showQ; queueEl.hidden = !showQ; dispEl.hidden = k < 0;
+  clipEls.forEach((el, k2) => {
+    const t0 = CLIP_T[k2]; el.hidden = t < t0; if (t < t0) return;
+    const q = SOURCES[k2].quote, n = Math.round(clamp((t - t0 - 0.2) / 0.7, 0, 1) * q.length), qe = el.querySelector('q');
     if (qe.textContent.length !== n) qe.textContent = q.slice(0, n);
-    el.querySelectorAll('.bar i').forEach(b => b.style.width = (t >= t0 + 0.8 ? b.dataset.v * 100 : 0) + '%');
+    el.querySelectorAll('.bar i').forEach(b => b.style.width = (t >= t0 + 0.6 ? b.dataset.v * 100 : 0) + '%');
   });
-  if (!showQ && t >= 31) clipsEl.scrollTop = clipsEl.scrollHeight;
-  qRows.forEach((r, i) => { if (i) r.hidden = t < 40 + i * 0.12; });
+  if (!showQ && t >= T_LISTEN) clipsEl.scrollTop = clipsEl.scrollHeight;
+  qRows.forEach((r, i) => { r.hidden = i && t < T_RANK + i * 0.12; const w = QROWS[i].why(t), sc = QROWS[i].s(t); const we = r.children[1], se = r.children[2]; if (we.textContent !== w) we.textContent = w; if (se.textContent !== sc) se.textContent = sc; r.classList.toggle('done', sc === 'ping'); });
+}
+
+// ================= HUD: radar breathing-signature inset (assets/radar_signatures/*.json, library streams) =================
+const SIG = {}, sigEl = document.getElementById('sig'), sigC = document.getElementById('sigC'), sctx = sigC.getContext('2d');
+async function loadSig(cls) {
+  for (const u of [`../assets/radar_signatures/${cls}.json`, `radar_signatures/${cls}.json`, `assets/radar_signatures/${cls}.json`]) {
+    try { const r = await fetch(u); if (!r.ok) continue; const j = await r.json(); if (Array.isArray(j.wave_mm) && j.wave_mm.length > 50) { SIG[cls] = { wave: j.wave_mm, fps: j.fps || 10, lib: true }; return; } } catch (e) { /* offline or not published: synthesise */ }
+  }
+}
+function synthSig(c) {   // fallback when the library file is not reachable: a labelled illustration from the condition
+  const fps = 10, n = 600, w = [], f = c.rate / 60; let ph = 0;
+  for (let i = 0; i < n; i++) { const pause = c.state === 'irregular_apneic' && (i % 200) > 150; ph += TAU * f / fps * (c.state === 'irregular_apneic' ? 0.8 + 0.4 * hash2(i >> 4, 1) : 1); w.push(pause ? 0 : (c.state === 'distressed_tachypnea' ? 0.6 : 1.4) * Math.sin(ph) + 0.08 * (hash2(i, 7) - 0.5)); }
+  return { wave: w, fps, lib: false };
+}
+PINGS.forEach(r => loadSig(r.P.cond.state));
+function drawSig(r, t) {
+  const c = r.P.cond, sg = SIG[c.state] || synthSig(c), W = sigC.width, Hh = sigC.height, win = 10 * sg.fps;
+  const end = Math.min(sg.wave.length - 1, win + Math.floor((t - r.tEst) * sg.fps)), seg = sg.wave.slice(Math.max(0, end - win), end + 1);
+  let lo = Infinity, hi = -Infinity; for (const v of sg.wave.slice(0, Math.min(sg.wave.length, win * 3))) { lo = Math.min(lo, v); hi = Math.max(hi, v); }
+  sctx.clearRect(0, 0, W, Hh); sctx.strokeStyle = 'rgba(150,180,200,0.15)'; sctx.lineWidth = 1;
+  for (let k = 1; k < 10; k++) { const x = k * W / 10; sctx.beginPath(); sctx.moveTo(x, 0); sctx.lineTo(x, Hh); sctx.stroke(); }
+  sctx.strokeStyle = '#ff6b6b'; sctx.lineWidth = 2.2; sctx.beginPath();
+  seg.forEach((v, k) => { const x = k / win * W, y = Hh - 6 - (v - lo) / Math.max(1e-6, hi - lo) * (Hh - 12); if (k) sctx.lineTo(x, y); else sctx.moveTo(x, y); }); sctx.stroke();
+  setTxt('sigT', `<b>${r.name}</b> · radar breathing signature (chest-wall motion, 10 s)`, true);
+  setTxt('sigX', `${c.text} · triage hint <span class="tri">${c.tri}</span>`, true);
+  setTxt('sigF', sg.lib ? 'library stream (synthetic, seed-7 storyboard) · aid for rescuers, not a diagnosis' : 'illustration (library file not loaded) · aid for rescuers, not a diagnosis');
 }
 
 // ================= HUD: operator dashboard minimap (also drawn on the tablet) =================
 const mini = document.getElementById('mini'), mctx = mini.getContext('2d');
 const tabMap = document.getElementById('tabMap'), tctx = tabMap.getContext('2d');
+function triRing(ctx, x, y, r, key) {   // dashboard/vitals.js drawTriageRing: shape, not a new hue
+  ctx.save(); ctx.strokeStyle = 'rgba(240,244,248,0.92)';
+  const ring = (rr, lw, dash) => { ctx.lineWidth = lw; ctx.setLineDash(dash); ctx.beginPath(); ctx.arc(x, y, rr, 0, TAU); ctx.stroke(); };
+  if (key === 'immediate') { ring(r + 5, 2, []); ring(r + 8.5, 2, []); } else if (key === 'icheck') ring(r + 6, 2.4, []); else if (key === 'urgent') { ring(r + 6, 1.2, []); ring(r + 3, 1.2, []); } else ring(r + 6, 1.5, [5, 4]);
+  ctx.restore();
+}
 function drawMap(ctx, W, Hh, view, t, opts = {}) {
   const sx = W / (view.x1 - view.x0), sz = Hh / (view.z1 - view.z0), s = Math.min(sx, sz);
   const ox = (W - s * (view.x1 - view.x0)) / 2, oz = (Hh - s * (view.z1 - view.z0)) / 2;
@@ -934,68 +1076,65 @@ function drawMap(ctx, W, Hh, view, t, opts = {}) {
   ctx.clearRect(0, 0, W, Hh); ctx.fillStyle = '#0b1117'; ctx.fillRect(0, 0, W, Hh);
   ctx.strokeStyle = 'rgba(150,180,200,0.10)'; ctx.lineWidth = 1;
   for (const v of [-33, -11, 11, 33]) { let [a, b] = P(v, -36), [c, d] = P(v, 52); ctx.beginPath(); ctx.moveTo(a, b); ctx.lineTo(c, d); ctx.stroke(); [a, b] = P(-36, v); [c, d] = P(36, v); ctx.beginPath(); ctx.moveTo(a, b); ctx.lineTo(c, d); ctx.stroke(); }
-  const fs = Math.max(10, s * 1.6);
+  const fs = Math.max(10, s * 1.6), mono = `500 ${fs}px "IBM Plex Mono", monospace`;
+  // rescue Wi-Fi coverage (blue)
+  if (VT >= OPEN && t >= T_WIFI) drones.forEach((d, i) => { const p = pathPos(i, t), [x, y] = P(p.x, p.z); ctx.fillStyle = 'rgba(59,130,246,0.07)'; ctx.strokeStyle = 'rgba(59,130,246,0.4)'; ctx.lineWidth = 1; ctx.beginPath(); ctx.arc(x, y, 16 * s, 0, TAU); ctx.fill(); ctx.stroke(); });
   for (const p of PILES) {
     const [x, y] = P(p.x, p.z); ctx.fillStyle = 'rgba(160,150,135,0.32)'; ctx.beginPath(); ctx.ellipse(x, y, 6.5 * s, 5.6 * s, p.rot, 0, TAU); ctx.fill();
     const zs = zoneStatus(p, VT, t);
     if (zs) { const st = ZSTY[zs]; ctx.save(); ctx.strokeStyle = st.css; ctx.lineWidth = Math.max(1.2, s * 0.22); ctx.setLineDash(st.dash ? [Math.max(3, s * 0.7), Math.max(2, s * 0.5)] : []); ctx.beginPath(); p.zone.forEach(([zx, zz], k) => { const [a, b] = P(zx, zz); if (k) ctx.lineTo(a, b); else ctx.moveTo(a, b); }); ctx.closePath(); ctx.stroke(); ctx.restore(); }
-    ctx.fillStyle = '#8b9dab'; ctx.font = `500 ${fs}px "IBM Plex Mono", monospace`; ctx.textAlign = 'center'; ctx.fillText(p.name, x, y - 6.8 * s);
+    ctx.fillStyle = '#8b9dab'; ctx.font = mono; ctx.textAlign = 'center'; ctx.fillText(p.name, x, y - 6.8 * s);
     const sc = p.source ? p.source.score : p.silent ? 10 : null;
-    if (t >= 40 && sc != null && p !== P1) {
+    if (t >= T_RANK && sc != null && p !== VA) {
       const bw = 9 * s, by = y + 5 * s; ctx.fillStyle = 'rgba(150,180,200,0.15)'; ctx.fillRect(x - bw / 2, by, bw, 3 * s / 2.2);
       ctx.fillStyle = sc >= 50 ? '#22c3d6' : 'rgba(34,195,214,0.45)'; ctx.fillRect(x - bw / 2, by, bw * sc / 100, 3 * s / 2.2);
       ctx.fillStyle = sc >= 50 ? '#c4f3f8' : '#8b9dab'; ctx.fillText(String(sc), x, by + 5.5 * s / 1.2 + fs * 0.4);
     }
   }
   ctx.textAlign = 'left';
-  // acoustic directions: white while unanalysed, yellow for human, hidden when dismissed
-  if (ui.acoustic) for (const c of cones) {
-    if (t < c.tIn) continue; const human = c.s.human > 0.5, an = t >= 40;
+  // acoustic directions: white while unanalysed, yellow for human audio, hidden when dismissed
+  if (ui.acoustic && VT >= OPEN) for (const c of cones) {
+    if (t < c.tIn || t > VB.vt.arrive) continue; const human = c.s.human > 0.5, an = t >= T_RANK;
     if (an && !human) continue;
     const [fx, fy] = P(c.from.x, c.from.z), a = Math.atan2(c.s.z - c.from.z, c.s.x - c.from.x), L = (d2(c.from, c.s) + 3) * s;
     ctx.fillStyle = an ? 'rgba(255,225,74,0.22)' : 'rgba(255,255,255,0.08)'; ctx.beginPath(); ctx.moveTo(fx, fy); ctx.arc(fx, fy, L, a - 0.21, a + 0.21); ctx.closePath(); ctx.fill();
   }
-  // base, drones, operator
-  { const [x, y] = P(BASE.x, BASE.z); ctx.strokeStyle = '#6fd36f'; ctx.lineWidth = 1.5; ctx.strokeRect(x - 7 * s / 1.5, y - 3 * s, 14 * s / 1.5, 6 * s); }
+  // van, drones, operator, phone
+  { const [x, y] = P(VAN.x, VAN.z); ctx.strokeStyle = '#6fd36f'; ctx.lineWidth = 1.5; ctx.strokeRect(x - 3.2 * s, y - 1.2 * s, 6.4 * s, 2.4 * s); }
   if (VT < OPEN) { ctx.save(); ctx.setLineDash([5, 5]); ctx.strokeStyle = 'rgba(111,211,111,0.35)'; ctx.lineWidth = 1.5; for (const lx of LANES) { const [a, b] = P(lx, 38), [c, d] = P(lx, -36); ctx.beginPath(); ctx.moveTo(a, b); ctx.lineTo(c, d); ctx.stroke(); } ctx.restore(); }
-  drones.forEach((d, i) => { const p = VT < OPEN ? reconPos(i, VT) : pathPos(i, t), [x, y] = P(p.x, p.z); ctx.fillStyle = '#e4ebf0'; ctx.beginPath(); ctx.arc(x, y, Math.max(2.5, s * 0.8), 0, TAU); ctx.fill(); });
+  drones.forEach((d, i) => { const p = rawPos(i, VT < OPEN ? VT : t + OPEN), [x, y] = P(p.x, p.z); ctx.fillStyle = '#e4ebf0'; ctx.beginPath(); ctx.arc(x, y, Math.max(2.5, s * 0.8), 0, TAU); ctx.fill(); });
   const op = opPose(t), [ox2, oy2] = P(op.x, op.z);
-  if (t >= 28 && t < 54) { ctx.setLineDash([4, 4]); ctx.strokeStyle = 'rgba(90,169,255,0.6)'; ctx.beginPath(); ctx.moveTo(ox2, oy2); let started = false; for (const r of ROUTE) { if (r.s < op.dist) continue; const [x, y] = P(r.x, r.z); ctx.lineTo(x, y); started = true; } if (!started) ctx.lineTo(...P(STAND.x, STAND.z)); ctx.stroke(); ctx.setLineDash([]); }
+  if (t >= T_WALK0 && t < T_WALK1) { ctx.setLineDash([4, 4]); ctx.strokeStyle = 'rgba(90,169,255,0.6)'; ctx.beginPath(); ctx.moveTo(ox2, oy2); for (const r of ROUTE) { if (r.s < op.dist) continue; const [x, y] = P(r.x, r.z); ctx.lineTo(x, y); } ctx.stroke(); ctx.setLineDash([]); }
   ctx.fillStyle = '#5aa9ff'; ctx.beginPath(); ctx.arc(ox2, oy2, Math.max(4, s * 1.1), 0, TAU); ctx.fill(); ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.5; ctx.stroke();
-  if (opts.you) { ctx.fillStyle = '#d2e7ff'; ctx.font = `500 ${fs}px "IBM Plex Mono", monospace`; ctx.fillText('you', ox2 + 8, oy2 + 4); }
+  if (opts.you) { ctx.fillStyle = '#d2e7ff'; ctx.font = mono; ctx.fillText('you', ox2 + 8, oy2 + 4); }
+  if (VT >= OPEN && t >= T_PHONE) { const [x, y] = P(PHONE.x, PHONE.z); ctx.strokeStyle = 'rgba(59,130,246,0.9)'; ctx.setLineDash([3, 3]); ctx.beginPath(); ctx.arc(x, y, PHONE.sigma * s, 0, TAU); ctx.stroke(); ctx.setLineDash([]); ctx.fillStyle = '#3b82f6'; ctx.fillRect(x - 3, y - 5, 6, 10); ctx.fillStyle = '#d6e6ff'; ctx.font = mono; ctx.fillText('phone', x + 6, y + 4); }
   // dispatch arrows
-  if (t >= 41.6 && t < 47) { const [a, b] = P(P1.x, P1.z), [c, d] = P(P2.x, P2.z); ctx.setLineDash([5, 4]); ctx.strokeStyle = '#6fd36f'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(a, b); ctx.lineTo(c, d); ctx.stroke(); ctx.setLineDash([]); }
-  // pings
+  VISITS.slice(1).forEach((p, v) => { const t0 = T_DISPATCH[v]; if (t >= t0 && t < t0 + 3) { const a = VISITS[v], [x0, y0] = P(a.x, a.z), [x1, y1] = P(p.x, p.z); ctx.setLineDash([5, 4]); ctx.strokeStyle = '#6fd36f'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(x0, y0); ctx.lineTo(x1, y1); ctx.stroke(); ctx.setLineDash([]); } });
+  // pings + dig-order triage rings
   const pulse = (t * 0.8) % 1;
-  for (const [R2, tA, nm, k] of [[RAD1, 27.2, RAD1.name, 0], [RAD2, 61, RAD2.name, 1]]) {
-    if (t < tA || !ui.radar) continue; const [x, y] = P(R2.est.x, R2.est.z), r = Math.max(5, s * 1.4);
-    if (t >= 59.6) { // dig-order triage ring (dashboard drawTriageRing): shape, not a new hue; double = immediate, dashed = delayed
-      const tri = VIT[k].tri; ctx.save();   // immediate: double ring; urgent / immediate·check: single; delayed: dashed
- ctx.strokeStyle = 'rgba(240,244,248,0.92)'; ctx.lineWidth = 2;
-      const ring = (rr, dash) => { ctx.setLineDash(dash); ctx.beginPath(); ctx.arc(x, y, rr, 0, TAU); ctx.stroke(); };
-      if (tri === 'immediate') { ring(r + 5, []); ring(r + 8.5, []); } else if (tri !== 'delayed') ring(r + 6, []); else ring(r + 6, [5, 4]);
-      ctx.restore();
-    }
+  for (const R2 of PINGS) {
+    const tA = R2.tEst + 2.4; if (t < tA || !ui.radar) continue; const [x, y] = P(R2.est.x, R2.est.z), r = Math.max(5, s * 1.4);
+    triRing(ctx, x, y, r, R2.P.cond.key);
     ctx.strokeStyle = `rgba(255,69,69,${1 - pulse})`; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(x, y, r + pulse * r * 2.4, 0, TAU); ctx.stroke();
     ctx.fillStyle = '#ff4545'; ctx.beginPath(); ctx.arc(x, y, r, 0, TAU); ctx.fill(); ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.5; ctx.stroke();
-    if (t < tA + 3) { ctx.fillStyle = 'rgba(60,8,8,0.9)'; ctx.font = `500 ${fs}px "IBM Plex Mono", monospace`; const txt = `new ping ${nm}`, w = ctx.measureText(txt).width; ctx.fillRect(x + r + 4, y - fs, w + 8, fs * 1.4); ctx.fillStyle = '#ffd0d0'; ctx.fillText(txt, x + r + 8, y + fs * 0.1); }
+    if (t < tA + 3) { ctx.fillStyle = 'rgba(60,8,8,0.9)'; ctx.font = mono; const txt = `new ping ${R2.name}`, w = ctx.measureText(txt).width; ctx.fillRect(x + r + 4, y - fs, w + 8, fs * 1.4); ctx.fillStyle = '#ffd0d0'; ctx.fillText(txt, x + r + 8, y + fs * 0.1); }
   }
   return P;
 }
-const VIEW_ALL = { x0: -36, x1: 36, z0: -36, z1: 52 };
+const VIEW_ALL = { x0: -36, x1: 36, z0: -36, z1: 54 };
 
 // ================= tablet =================
 const tabletEl = document.getElementById('tablet'), tabGL = document.getElementById('tabGL'), fingerEl = document.getElementById('finger');
 const tabPing = document.getElementById('tabPing'), tabYou = document.getElementById('tabYou');
 const TAB_TITLE = RAD1.name;
-const compass = (() => { const a = Math.atan2(-(RAD1.est.z - P1.z), RAD1.est.x - P1.x) / D2R; return ['east', 'north-east', 'north', 'north-west', 'west', 'south-west', 'south', 'south-east'][((Math.round(a / 45) % 8) + 8) % 8]; })();
+const compass = (() => { const a = Math.atan2(-(RAD1.est.z - VA.z), RAD1.est.x - VA.x) / D2R; return ['east', 'north-east', 'north', 'north-west', 'west', 'south-west', 'south', 'south-east'][((Math.round(a / 45) % 8) + 8) % 8]; })();
 const TAB_FACTS = `<span>depth (nominal)<b>≈${RAD1.depth.toFixed(1)} m</b></span><span>flank<b>${compass}</b></span><span>95% region<b>${(2 * RAD1.ell.a).toFixed(1)}×${(2 * RAD1.ell.b).toFixed(1)} m</b></span><span>from you<b>${d2(STAND, RAD1.est).toFixed(1)} m</b></span>`;
 const RECON_FACTS = ok => `<span>mapped<b>whole site</b></span><span>proposed zones<b>${PILES.length}</b></span><span>perch listens<b>1 · d2</b></span><span>status<b>${ok ? 'tasked' : 'awaiting you'}</b></span>`;
-const DIG_ORDER = [[0, RAD1.name], [1, RAD2.name]].sort((a, b) => VIT[b[0]].rank - VIT[a[0]].rank);
+const DIG_ORDER = [...PINGS].sort((a, b) => b.P.cond.rank - a.P.cond.rank);
 document.getElementById('tabVital').innerHTML = `<h4><span>Dig order · breathing (radar)</span><span>aid, not a diagnosis</span></h4>` +
-  DIG_ORDER.map(([k, nm], i) => `<div class="${k === 0 ? 'r1' : 'r2'}"><b>#${i + 1}</b> ${nm} · ${VIT[k].text} · triage: <span class="tri">${VIT[k].tri}</span>${k === 0 ? ' · <span class="here">here: no response to call-out → check first</span>' : ''}</div>`).join('');
-const setTxt = (id, txt, html) => { const e = document.getElementById(id); if (html ? e.innerHTML !== txt : e.textContent !== txt) html ? (e.innerHTML = txt) : (e.textContent = txt); };
-const TAB0 = 56.6, TAP = 59.2, TAB1 = 64;
+  DIG_ORDER.map((r, i) => `<div class="${r === RAD1 ? 'r1' : 'r2'}"><b>#${i + 1}</b> ${r.name} · ${r.P.cond.short} · <span class="tri">${r.P.cond.tri}</span>${r === RAD1 ? ' · <span class="here">here: no response → check first</span>' : ''}</div>`).join('') +
+  `<div class="r2">open leads (no firm radar fix): ${VB.name} voice + phone · ${VD.name} knock ×3</div>`;
+const setTxt = (id, txt, html) => { const e = document.getElementById(id); if (html ? e.dataset.h !== txt : e.textContent !== txt) { if (html) { e.innerHTML = txt; e.dataset.h = txt; } else e.textContent = txt; } };
 const tabletOn = t => t >= TAB0 && t < TAB1;
 const tab3D = t => t >= TAP + 0.25 && t < TAB1;
 
@@ -1021,96 +1160,94 @@ const $ = id => document.getElementById(id);
 const fmt = t => `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, '0')}`;
 
 // ================= per-frame update =================
-const _v = new THREE.Vector3(), _up = new THREE.Vector3(0, 1, 0), _q = new THREE.Quaternion();
-const waveGeo = new THREE.SphereGeometry(1, 30, 10, 0, TAU, 0, 0.6);
+const _up = new THREE.Vector3(0, 1, 0), _q = new THREE.Quaternion(), _qy = new THREE.Quaternion();
+const waveGeo = new THREE.SphereGeometry(1, 30, 10, 0, TAU, Math.PI - 0.7, 0.7);   // downward cap: radar from the pod into the rubble
 const rwaves = drones.map(() => [0, 1, 2].map(() => { const m = new THREE.Mesh(waveGeo, new THREE.MeshBasicMaterial({ color: C.radar, transparent: true, opacity: 0.2, side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending })); scene.add(m); return m; }));
-
-let VT = 0, tabMode0 = '';   // VT = current video time (drawMap and the zones read it)
+let VT = 0, tabMode0 = '';
 function update(v) {
-  VT = v; const t = storyT(v), open = v < OPEN;   // t = story time for everything below
+  VT = v; const t = storyT(v), open = v < OPEN;
   const ci = Math.max(0, CHAPTERS.findIndex(c => v < c.t1)); const ch = CHAPTERS[v >= T_END ? CHAPTERS.length - 1 : ci];
   $('phaseNo').textContent = `${String(CHAPTERS.indexOf(ch) + 1).padStart(2, '0')} / ${CHAPTERS.length}`; $('phaseTitle').textContent = ch.name;
-  const cap = open ? OCAPS.filter(c => c[0] <= v).pop()[1] : CAPS.filter(c => c[0] <= t).pop()[1]; if ($('caption').textContent !== cap) $('caption').textContent = cap;
+  setTxt('caption', open ? OCAPS.filter(c => c[0] <= v).pop()[1] : capHTML(CAPS.filter(c => c[0] <= t).pop()), true);
   $('time').textContent = `${fmt(v)} / ${fmt(T_END)}`;
   chapBtns.forEach((b, i) => { const c = CHAPTERS[i], f = clamp((v - c.t0) / (c.t1 - c.t0), 0, 1); b.firstChild.style.width = f * 100 + '%'; b.classList.toggle('on', c === ch); b.classList.toggle('done', f >= 1); });
 
-  // drones
+  // drones: smooth flight, tilt, rotors, pods
   drones.forEach((d, i) => {
-    const p = pathPos(i, t), p2 = pathPos(i, t + 0.08), vx = (p2.x - p.x) / 0.08, vz = (p2.z - p.z) / 0.08, hs = Math.hypot(vx, vz), pile = pileAt(t);
-    d.g.position.set(p.x, p.y, p.z);
-    const yawC = Math.atan2(p.z - pile.z, -(p.x - pile.x)), yawV = Math.atan2(-vz, vx), k = clamp(hs / 3, 0, 1), dy = Math.atan2(Math.sin(yawV - yawC), Math.cos(yawV - yawC));
-    d.g.rotation.set(0, yawC + dy * k, 0); d.body.rotation.set(0, 0, -clamp(hs * 0.02, 0, 0.28));
-    const ld = landed(t), air = t > 0.3 && !ld; d.rotors.forEach((r, j) => r.rotation.y = air ? t * 50 + j : j * 0.7);
-    const surveying = (t >= 6 && t < 14) || (t >= 46.5 && t < 50.5) || t >= 79;
-    d.lidarMat.emissiveIntensity = surveying ? 1.6 : 0.4;
-    const rad = radarOn(t); d.radarMat.emissiveIntensity = rad ? 1.2 + 0.6 * Math.sin(t * 8) : 0.25;
-    d.micMat.emissiveIntensity = listening(t) ? 0.8 + 1.6 * Math.max(0, Math.sin(t * 5 + i)) : 0.2;
-    const st = t < 6 ? `to ${P1.name}` : surveying ? 'LiDAR sweep' : !ld ? (t < 19 ? 'landing' : t < 54 ? `to ${P2.name}` : `to ${P3.name}`) : rad ? 'radar dwell' : listening(t) ? 'listening' : 'landed';
+    const S = droneState(i, v); d.g.position.set(S.p.x, S.p.y, S.p.z);
+    _qy.setFromAxisAngle(_up, S.yaw); _q.setFromUnitVectors(_up, S.up); d.g.quaternion.copy(_q).multiply(_qy);
+    const blur = sstep(0.35, 0.8, S.rpm);
+    d.rotors.forEach((r, j) => { r.r.rotation.y = r.dir * (v * 6 * S.rpm * (S.rpm < 0.5 ? 1 : 0) + j); r.blades.visible = blur < 0.9; r.disc.material.opacity = 0.3 * blur; r.rim.material.opacity = 0.5 * blur; });
+    const pod = open ? null : podState(i, t), sweep = open ? v >= 2.4 && v < 6.6 : t >= 5 && t < 11;
+    d.lidarMat.emissiveIntensity = sweep ? 1.6 : 0.4;
+    const listen = open ? i === 1 && perched(v) : pod && pod.seated && t >= T_LISTEN && t < T_RANK;
+    d.micMat.emissiveIntensity = listen ? 0.8 + 1.6 * Math.max(0, Math.sin(v * 5 + i)) : 0.2;
+    // pod on the cable
+    const anchor = V(0, -0.3, 0).applyQuaternion(d.g.quaternion).add(d.g.position);
+    if (pod) {
+      const pp = pod.seated ? V(pod.q.x, pod.q.y + 0.16, pod.q.z) : V(anchor.x + pod.sway.x, anchor.y - 0.25 - pod.L, anchor.z + pod.sway.z);
+      if (!pod.seated && pp.y < pod.q.y + 0.16) pp.y = pod.q.y + 0.16;
+      d.pod.position.copy(pp); d.pod.rotation.set(pod.sway.z * 0.5, S.yaw, -pod.sway.x * 0.5);
+    } else { d.pod.position.copy(V(0, -LEGH + 0.32, 0).applyQuaternion(d.g.quaternion).add(d.g.position)); d.pod.quaternion.copy(d.g.quaternion); }
+    const cp = d.cable.geometry.attributes.position; cp.setXYZ(0, anchor.x, anchor.y, anchor.z); cp.setXYZ(1, d.pod.position.x, d.pod.position.y + 0.15, d.pod.position.z); cp.needsUpdate = true; d.cable.visible = !!pod && pod.L > 0.05;
+    const scanning = pod && pod.scanning; d.radarMat.emissiveIntensity = scanning ? 1.2 + 0.6 * Math.sin(t * 8) : 0.25;
+    rwaves[i].forEach((w, j) => { const on = scanning && ui.radar; w.visible = on; if (!on) return; const f = (t * 0.7 + j / 3) % 1; w.position.copy(d.pod.position); w.scale.setScalar(0.3 + f * 4.5); w.material.opacity = 0.32 * (1 - f); });
+    const vp = !open && VISITS.find(p => t >= p.vt.arrive - 0.5 && t < p.vt.raise + 1.3);
+    const st = open ? (v < 2.4 ? 'launch' : sweep ? 'recon sweep' : listen ? 'perch · listening' : i === 1 && v < 8.1 ? 'to perch' : 'hover')
+      : t < 5 ? `to ${VA.name}` : sweep ? 'LiDAR sweep' : vp ? (pod && !pod.seated ? (t < vp.vt.touch ? 'winch · lowering pod' : 'winch · raising pod') : scanning ? 'pod radar scan' : listen ? 'pod listening' : 'hover · pod down') : t >= 70 ? `to ${NEXT.name}` : 'transit';
     if (d.span.textContent !== st) d.span.textContent = st;
-    const dir = _v.set(pile.x - p.x, 2 - p.y, pile.z - p.z).normalize(); _q.setFromUnitVectors(_up, dir);
-    rwaves[i].forEach((w, j) => { const on = rad && ui.radar; w.visible = on; if (!on) return; const f = (t * 0.7 + j / 3) % 1; w.position.copy(d.g.position); w.quaternion.copy(_q); w.scale.setScalar(0.5 + f * 10); w.material.opacity = 0.3 * (1 - f); });
   });
 
-  if (open) drones.forEach((d, i) => {   // recon opening: drones follow the recon keys instead of the story path
-    const p = reconPos(i, v), p2 = reconPos(i, v + 0.08), vx = (p2.x - p.x) / 0.08, vz = (p2.z - p.z) / 0.08, hs = Math.hypot(vx, vz);
-    d.g.position.set(p.x, p.y, p.z); if (hs > 0.3) d.g.rotation.set(0, Math.atan2(-vz, vx), 0); d.body.rotation.set(0, 0, -clamp(hs * 0.02, 0, 0.28));
-    const sit = (i === 1 && perched(v)) || v < 0.15, sweep = v >= 2.4 && v < 6.6, listen = i === 1 && perched(v);
-    d.rotors.forEach((r, j) => r.rotation.y = sit ? j * 0.7 : v * 50 + j);
-    d.lidarMat.emissiveIntensity = sweep ? 1.6 : 0.4; d.radarMat.emissiveIntensity = 0.25; d.micMat.emissiveIntensity = listen ? 0.8 + 1.6 * Math.max(0, Math.sin(v * 5 + i)) : 0.2;
-    const st = v < 2.4 ? 'launch' : sweep ? 'recon sweep' : listen ? 'perch · listening' : i === 1 && v < 8.1 ? 'to perch' : 'hover';
-    if (d.span.textContent !== st) d.span.textContent = st;
-  });
+  // LiDAR
+  const n = countAt(t); cloud.visible = ui.lidar && !open && n > 0; cloudGeo.setDrawRange(0, open ? 0 : n);
   { const rn = rCountAt(v); reconCloud.visible = ui.lidar && rn > 0 && v < OPEN + 1; rcGeo.setDrawRange(0, rn); reconCloud.material.opacity = 1 - sstep(10.8, 12.8, v); }
-  for (const p of PILES) {
-    const zs = zoneStatus(p, v, t), st = zs && ZSTY[zs], zl = p.zoneLines;
-    zl.dashed.visible = !!(st && st.dash); zl.solid.visible = !!(st && !st.dash);
-    if (st) (st.dash ? zl.dashed : zl.solid).material.color.setHex(st.hex);
-  }
+  for (const p of PILES) { const zs = zoneStatus(p, v, t), st = zs && ZSTY[zs], zl = p.zoneLines; zl.dashed.visible = !!(st && st.dash); zl.solid.visible = !!(st && !st.dash); if (st) (st.dash ? zl.dashed : zl.solid).material.color.setHex(st.hex); }
 
-  // lidar
-  const n = countAt(t); cloud.visible = ui.lidar && n > 0; cloudGeo.setDrawRange(0, n);
-  const bpos = beamGeo.attributes.position; let bi = 0;
-  if (ui.lidar) for (let i = 0; i < 3; i++) { const p = pathPos(i, t); let c = 0; for (let k = n - 1; k >= 0 && c < 24; k--) { if (t - lt[k] > 0.1) break; if (ld[k] !== i) continue; bpos.setXYZ(bi++, p.x, p.y + 0.4, p.z); bpos.setXYZ(bi++, lp[k * 3], lp[k * 3 + 1], lp[k * 3 + 2]); c++; } }
-  beams.geometry.setDrawRange(0, bi); bpos.needsUpdate = true;
-  updateCells(P1, t, 14, 18.5); updateCells(P2, t, 50.5, 53);
+  RADS.forEach(r => r.update(open ? -1 : t));
 
-  RAD1.update(t); RAD2.update(t);
-
-  // acoustics
-  waves.forEach(w => w.m.forEach((m, j) => { const on = ui.acoustic && (open ? perched(v) && d2(w.s, PERCH) < 34 : t >= 19.5 && !(w.s.pile === P2 && t > 58.4)); m.visible = on; if (!on) return; const per = w.s.kind === 'knock' ? 0.9 : w.s.kind === 'gen' ? 0.5 : 1.3, f = ((t / per) + j / 2) % 1; m.position.copy(w.surf); m.scale.setScalar(0.3 + f * (w.s.human > 0.5 ? 7 : 4)); m.material.opacity = 0.3 * (1 - f); }));
-  cones.forEach(c => {
-    const human = c.s.human > 0.5, an = sstep(40, 41, t);
-    c.m.visible = ui.acoustic && t >= c.tIn && (human || an < 1);
-    c.m.material.color.setHex(an > 0.5 && human ? C.cone : 0xffffff);
-    c.m.material.opacity = sstep(c.tIn, c.tIn + 0.8, t) * (human ? lerp(0.08, 0.16, an) : 0.08 * (1 - an));
+  // acoustics: sources sound while the pods listen (or the recon perch); cones while ranking
+  waves.forEach(w => w.m.forEach((m, j) => { const on = ui.acoustic && (open ? perched(v) && d2(w.s, PERCH) < 34 : t >= T_LISTEN && t < T_RANK + 2); m.visible = on; if (!on) return; const per = w.s.kind === 'knock' ? 0.9 : w.s.kind === 'gen' ? 0.5 : 1.3, f = (((open ? v : t) / per) + j / 2) % 1; m.position.copy(w.surf); m.scale.setScalar(0.3 + f * (w.s.human > 0.5 ? 7 : 4)); m.material.opacity = 0.3 * (1 - f); }));
+  cones.forEach(c => { const human = c.s.human > 0.5, an = sstep(T_RANK, T_RANK + 1, t); c.m.visible = !open && ui.acoustic && t >= c.tIn && t < VB.vt.arrive - 2 && (human || an < 1); c.m.material.color.setHex(an > 0.5 && human ? C.cone : 0xffffff); c.m.material.opacity = sstep(c.tIn, c.tIn + 0.8, t) * (human ? lerp(0.08, 0.16, an) : 0.08 * (1 - an)); });
+  // speaker call-outs (white rings from the drone) and replies (teal rings from the source)
+  CALLS.forEach(o => {
+    const sp = pathPos(1, t), on = !open && ui.acoustic && t >= o.t0 && t < o.t1 + 0.3;
+    o.out.forEach((m, j) => { const f = ((t - o.t0) / 0.9 + j / 3) % 1; m.visible = on; if (!on) return; m.position.set(sp.x, o.p.hg.at(sp.x, sp.z) + 0.3, sp.z); m.scale.setScalar(0.5 + f * 14); m.material.opacity = 0.55 * (1 - f); });
+    o.say.position.set(sp.x, sp.y + 2.4, sp.z); o.say.visible = on;
+    const rOn = !open && ui.acoustic && o.rep && t >= o.tr && t < o.tr + 2;
+    o.back.forEach((m, j) => { const ph = o.rep === 'knock' ? ((t - o.tr) % 0.7) / 0.7 : (((t - o.tr) / 0.8) + j / 3) % 1; m.visible = rOn && (o.rep !== 'knock' || j === 0); if (!m.visible) return; m.position.copy(o.surf); m.scale.setScalar(0.3 + ph * (o.rep === 'knock' ? 4 : 7)); m.material.opacity = 0.8 * (1 - ph); });
+    o.ans.visible = !open && t >= (o.rep ? o.tr : o.t1 + 0.3) && t < (o.rep ? o.tr : o.t1) + 4.5;
   });
-
+  // Wi-Fi hotspots + the phone
+  wifi.forEach((g, i) => { const on = !open && t >= T_WIFI && t < 80; g.visible = on && ui.links; if (!on) return; const p = pathPos(i, t); g.position.set(p.x, 0.25, p.z); g.children[0].material.opacity = 0.06 * sstep(T_WIFI, T_WIFI + 1, t); });
+  wifiLbl.visible = !open && t >= T_WIFI && t < T_WIFI + 6;
+  phoneG.visible = !open && ui.links && t >= T_PHONE; phoneLbl.visible = phoneG.visible && t < T_PHONE + 6 || (t >= VB.vt.res && t < VB.vt.res + 4);
   // packets
-  for (const pk of packets) { const on = ui.links && t >= pk.t0 && t < pk.t1; pk.m.visible = on; if (!on) continue; pk.m.position.copy(arc(pk.fromFn(t), pk.to, sstep(pk.t0, pk.t1, t))); }
+  for (const pk of packets) { const on = !open && ui.links && t >= pk.t0 && t < pk.t1; pk.m.visible = on; if (!on) continue; pk.m.position.copy(arc(pk.fromFn(t), pk.to, sstep(pk.t0, pk.t1, t))); }
 
   // operator
   const op = opPose(t); OP.g.position.set(op.x, op.y, op.z);
-  const fwd = opDir(t); const yaw = t >= 56.5 ? Math.atan2(RAD1.est.x - STAND.x, RAD1.est.z - STAND.z) : Math.atan2(fwd.x, fwd.z);
-  OP.g.rotation.y = yaw;
-  const ph = op.dist * 2.4, walk = op.moving ? 1 : 0, digging = t >= 64.4, tab = tabletOn(t) || (t >= 56.3 && t < 64.2);
+  const a0 = opPose(t - 0.4), dx = op.x - a0.x, dz = op.z - a0.z;
+  OP.g.rotation.y = t >= T_WALK1 + 2.5 ? Math.atan2(RAD1.est.x - STAND.x, RAD1.est.z - STAND.z) : Math.hypot(dx, dz) > 1e-3 ? Math.atan2(dx, dz) : 0;
+  const ph = op.dist * 2.4, walk = op.moving ? 1 : 0, digging = t >= T_DIG, tab = tabletOn(t);
   OP.legs[0].rotation.x = Math.sin(ph) * 0.6 * walk; OP.legs[1].rotation.x = -Math.sin(ph) * 0.6 * walk;
   OP.shovel.visible = digging; OP.tab.visible = tab;
-  if (digging) { const st = ((t - 64.4) % 1.2) / 1.2, sw = Math.sin(st * TAU); OP.upper.rotation.x = 0.45 + 0.25 * sw; OP.arms[0].rotation.x = -0.9 - 0.5 * sw; OP.arms[1].rotation.x = -0.9 - 0.5 * sw; }
+  if (digging) { const st = ((t - T_DIG) % 1.2) / 1.2, sw = Math.sin(st * TAU); OP.upper.rotation.x = 0.45 + 0.25 * sw; OP.arms[0].rotation.x = -0.9 - 0.5 * sw; OP.arms[1].rotation.x = -0.9 - 0.5 * sw; }
   else if (tab) { OP.upper.rotation.x = 0.05; OP.arms[0].rotation.x = -1.1; OP.arms[1].rotation.x = -0.4; }
   else { OP.upper.rotation.x = 0.06 * walk; OP.arms[0].rotation.x = -Math.sin(ph) * 0.5 * walk; OP.arms[1].rotation.x = Math.sin(ph) * 0.5 * walk; }
   youMk.position.set(op.x, op.y + 2.4, op.z);
-  // dig: pieces lift away, dust
   DIGS.forEach(dg => { const u = sstep(dg.t0, dg.t0 + 1.2, t); dg.m.position.set(dg.p0.x + Math.cos(dg.dir) * 2.4 * u, dg.p0.y + Math.sin(u * Math.PI) * 0.8 - 0.4 * u, dg.p0.z + Math.sin(dg.dir) * 2.4 * u); dg.m.rotation.set(dg.r0.x + u * 0.8, dg.r0.y + u, dg.r0.z); dg.m.updateMatrixWorld(); });
-  dust.visible = t >= 64.4 && t < 73; if (dust.visible) { const a = dustGeo.attributes.position, tau = (t - 64.4) % 1.2; for (let j = 0; j < dustN; j++) { const ang = hash2(j, 1) * TAU, sp = 0.6 + hash2(j, 2) * 1.6, up = 1 + hash2(j, 3) * 2.2; a.setXYZ(j, RAD1.est.x + Math.cos(ang) * sp * tau, RAD1.surf + 0.1 + up * tau - 2.2 * tau * tau, RAD1.est.z + Math.sin(ang) * sp * tau); } a.needsUpdate = true; dust.material.opacity = 0.7 * (1 - tau / 1.2); }
+  dust.visible = t >= T_DIG && t < T_DIG + 6; if (dust.visible) { const a = dustGeo.attributes.position, tau = (t - T_DIG) % 1.2; for (let j = 0; j < dustN; j++) { const ang = hash2(j, 1) * TAU, sp = 0.6 + hash2(j, 2) * 1.6, upv = 1 + hash2(j, 3) * 2.2; a.setXYZ(j, RAD1.est.x + Math.cos(ang) * sp * tau, RAD1.surf + 0.1 + upv * tau - 2.2 * tau * tau, RAD1.est.z + Math.sin(ang) * sp * tau); } a.needsUpdate = true; dust.material.opacity = 0.7 * (1 - tau / 1.2); }
+  ghosts.forEach((g, k) => { g.g.visible = ui.truth && !open && t >= 3; if (k === 0) g.torso.scale.set(1 + 0.07 * Math.sin(t * 5), 1, 1 + 0.07 * Math.sin(t * 5)); });
+  ghostMat.opacity = 0.3 + 0.12 * Math.sin(t * 2); gtLbl.visible = !open && t >= 14 && t < 22;
 
-  ghosts.forEach((g, k) => { g.g.visible = ui.truth && t >= 3; if (k === 0) g.torso.scale.set(1 + 0.07 * Math.sin(t * 5), 1, 1 + 0.07 * Math.sin(t * 5)); });
-  ghostMat.opacity = 0.3 + 0.12 * Math.sin(t * 2); gtLbl.visible = t >= 17 && t < 28;
-
-  updateAgent(t);
+  updateAgent(open ? -1 : t);
+  // breathing-signature inset
+  const sigR = !open && PINGS.find(r => t >= r.tEst + 0.3 && t < r.tEst + 6.5);
+  sigEl.hidden = !sigR; if (sigR) { sigEl.style.opacity = sstep(sigR.tEst + 0.3, sigR.tEst + 0.8, t) * (1 - sstep(sigR.tEst + 6, sigR.tEst + 6.5, t)); drawSig(sigR, t); }
   // dashboard minimap
-  const mw = mini.width, mh = mini.height; drawMap(mctx, mw, mh, VIEW_ALL, t);
-  const flash = (t >= 27.2 && t < 29) || (t >= 61 && t < 63);
-  const dn = open ? (v < 9.4 ? 'recon' : v < 11.8 ? `${PILES.length} proposals` : `${PILES.length} zones tasked`) : flash ? '<b>new ping</b>' : t >= 61 ? '2 pings' : t >= 27.2 ? '1 ping' : '';
+  drawMap(mctx, mini.width, mini.height, VIEW_ALL, t);
+  const flash = PINGS.some(r => t >= r.tEst + 2.4 && t < r.tEst + 4.4), np = PINGS.filter(r => t >= r.tEst + 2.4).length;
+  const dn = open ? (v < 9.4 ? 'recon' : v < 11.8 ? `${PILES.length} proposals` : `${PILES.length} zones tasked`) : flash ? '<b>new ping</b>' : np ? `${np} ping${np > 1 ? 's' : ''}` : '';
   if ($('dashNote').innerHTML !== dn) $('dashNote').innerHTML = dn;
   // tablet: the opening's Accept beat, or the story's ping / LiDAR / dig-order view
   const openTab = v >= 10.35 && v < 12.9, mode = open ? (openTab ? 'recon' : '') : tabletOn(t) ? 'story' : '';
@@ -1127,12 +1264,12 @@ function update(v) {
     fingerEl.style.transform = `translate(-50%,-50%) scale(${v > 11.65 && v < 11.95 ? 0.75 : 1})`;
   } else if (!tabletEl.hidden) {
     tabletEl.style.opacity = sstep(TAB0, TAB0 + 0.4, t) * (1 - sstep(TAB1 - 0.4, TAB1, t));
-    const is3 = tab3D(t); tabGL.hidden = !is3; tabMap.hidden = is3; $('tabMode').textContent = is3 ? 'LiDAR model · pile ' + P1.name : 'map';
+    const is3 = tab3D(t); tabGL.hidden = !is3; tabMap.hidden = is3; $('tabMode').textContent = is3 ? 'LiDAR model · pile ' + VA.name : 'map';
     if (!is3) {
-      const view = { x0: P1.x - 16, x1: P1.x + 16, z0: P1.z - 10, z1: P1.z + 10 };
+      const view = { x0: VA.x - 16, x1: VA.x + 16, z0: VA.z - 10, z1: VA.z + 10 };
       const P = drawMap(tctx, tabMap.width, tabMap.height, view, t, { you: true });
       const [px, py] = P(RAD1.est.x, RAD1.est.z), r = tabMap.getBoundingClientRect(), fx = px / tabMap.width * r.width, fy = py / tabMap.height * r.height;
-      const u = sstep(57.4, TAP - 0.2, t); fingerEl.hidden = t < 57.4; fingerEl.style.left = lerp(r.width * 0.85, fx, u) + 'px'; fingerEl.style.top = lerp(r.height * 0.95, fy, u) + 'px';
+      const u = sstep(TAB0 + 0.8, TAP - 0.2, t); fingerEl.hidden = t < TAB0 + 0.8; fingerEl.style.left = lerp(r.width * 0.85, fx, u) + 'px'; fingerEl.style.top = lerp(r.height * 0.95, fy, u) + 'px';
       fingerEl.style.transform = `translate(-50%,-50%) scale(${t > TAP - 0.2 ? 0.75 : 1})`;
     } else fingerEl.hidden = true;
   }
@@ -1160,15 +1297,15 @@ function frame(now) {
     renderer.render(scene, cam2); scene.background = bg; scene.fog = fog; renderer.autoClear = true; renderer.setScissorTest(false); renderer.setViewport(0, 0, a.width, a.height);
     const proj = (p, el) => { const v = p.clone().project(cam2); el.style.left = ((v.x + 1) / 2 * r.width) + 'px'; el.style.top = ((1 - v.y) / 2 * r.height) + 'px'; };
     tabPing.textContent = `${RAD1.name} · depth ≈${RAD1.depth.toFixed(1)} m (nominal)`; proj(V(RAD1.est.x, RAD1.estY, RAD1.est.z), tabPing); proj(youMk.position, tabYou);
-    $('tabVital').hidden = ST < 59.6;
-    tabPing.style.transform = parseFloat(tabPing.style.left) + 12 + tabPing.offsetWidth > r.width ? 'translate(calc(-100% - 12px), -50%)' : '';   // flip left at the edge
+    $('tabVital').hidden = ST < TAP + 0.6;
+    tabPing.style.transform = parseFloat(tabPing.style.left) + 12 + tabPing.offsetWidth > r.width ? 'translate(calc(-100% - 12px), -50%)' : '';
   }
   const _lp = new THREE.Vector3(), yMax = 1 - 2 * 78 / Math.max(1, app.clientHeight);
-  for (const o of allLabels) { let v = true; for (let p = o.parent; p; p = p.parent) if (!p.visible) { v = false; break; } if (v) { o.getWorldPosition(_lp).project(camera); if (_lp.y < -yMax) v = false; } o.element.style.visibility = v ? '' : 'hidden'; }
+  for (const o of allLabels) { let v = o.visible !== false; for (let p = o.parent; v && p; p = p.parent) if (!p.visible) { v = false; break; } if (v) { o.getWorldPosition(_lp).project(camera); if (_lp.y < -yMax || _lp.z > 1) v = false; } o.element.style.visibility = v ? '' : 'hidden'; }
   labelR.render(scene, camera);
-  // R1-041: hide labels that would clip at the screen edge or sit under a HUD panel (caption, dashboard, agent, toggles)
-  const aw = app.clientWidth, ah = app.clientHeight;
-  const blk = ['top', 'dash', 'agent', 'layers', 'bar'].map(id => document.getElementById(id)).filter(e => e && !e.hidden).map(e => e.getBoundingClientRect()).filter(b => b.width > 0);
+  // R1-041: hide labels that would clip at the screen edge or sit under a HUD panel
+  const aw = app.clientWidth;
+  const blk = ['top', 'dash', 'agent', 'layers', 'bar', 'sig'].map(id => document.getElementById(id)).filter(e => e && !e.hidden).map(e => e.getBoundingClientRect()).filter(b => b.width > 0);
   const vis = allLabels.filter(o => o.element.style.visibility !== 'hidden'), rects = vis.map(o => o.element.getBoundingClientRect());
   vis.forEach((o, k) => { const r = rects[k]; if (r.left < 2 || r.right > aw - 2 || r.top < 2 || blk.some(b => r.left < b.right && r.right > b.left && r.top < b.bottom && r.bottom > b.top)) o.element.style.visibility = 'hidden'; });
 }
@@ -1180,8 +1317,8 @@ renderer.domElement.addEventListener('webglcontextlost', e => { e.preventDefault
 setPlay(playing);
 window.seek = v => { T = v; setPlay(false); document.getElementById('bigPlay').hidden = true; };
 window.__bench = (n = 20) => { const gl = renderer.getContext(), px = new Uint8Array(4); update(T); renderer.render(scene, camera); gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px); const t0 = performance.now(); for (let i = 0; i < n; i++) { update(T); renderer.render(scene, camera); labelR.render(scene, camera); } gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px); const r = renderer.info.render; return { msPerFrame: +((performance.now() - t0) / n).toFixed(1), calls: r.calls, tris: r.triangles, pr: renderer.getPixelRatio(), w: innerWidth }; };
-window.__cam = (p, q) => { follow = false; followBtn.hidden = false; camera.position.set(...p); controls.target.set(...q); }; // debug: fixed camera (e.g. top-down, north up)
-window.__sweep = () => { const errs = []; for (let t = 0; t <= T_END; t += 0.25) { try { update(t); } catch (e) { errs.push(t + ': ' + e.message); if (errs.length > 3) break; } } update(T); return { seed: SEED, scenario: !!SCN, T_END, reconPts: RNP, reconAt5: rCountAt(5), pings: [RAD1.name, RAD2.name], vital: $('tabVital').textContent.replace(/\s+/g, ' ').trim(), P1: P1.name, P2: P2.name, P3: P3.name, queue: QUEUE.map(q => q.pile.name + ':' + q.score), silent: silentPiles.map(p => p.name), errs }; };
+window.__cam = (p, q) => { follow = false; followBtn.hidden = false; camera.position.set(...p); controls.target.set(...q); };
+window.__sweep = () => { const errs = []; for (let t = 0; t <= T_END; t += 0.25) { try { update(t); } catch (e) { errs.push(t + ': ' + e.message); if (errs.length > 3) break; } } update(T); return { seed: SEED, scenario: !!SCN, T_END, visits: VISITS.map(p => p.name), pings: PINGS.map(r => r.name), openLeads: RADS.filter(r => !r.ping).map(r => r.P.name), conditions: VISITS.map(p => p.name + ':' + p.cond.state), sigLoaded: Object.keys(SIG), vital: $('tabVital').textContent.replace(/\s+/g, ' ').trim(), queue: QUEUE.map(q => q.pile.name + ':' + q.score), errs }; };
 document.getElementById('loading').remove();
 last = performance.now(); safeFrame(last);
 requestAnimationFrame(raf);

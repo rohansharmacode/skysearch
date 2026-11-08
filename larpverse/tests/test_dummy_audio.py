@@ -15,7 +15,7 @@ HUMAN = {"voice", "weak_voice", "knock", "groan", "cough", "cry"}
 DEPTHS = [0.5, 1.0, 1.5, 2.0]
 REQUIRED = {"id", "file", "kind", "human", "language", "transcript", "transcript_en", "source", "licence",
             "attribution", "processing", "synthetic", "sample_rate", "duration_s", "rms_dbfs", "peak_dbfs",
-            "through_rubble_depth_m", "parent", "suggested_spl_db_1m", "schedule"}
+            "through_rubble_depth_m", "parent", "suggested_spl_db_1m", "schedule", "non_commercial", "author"}
 
 pytestmark = pytest.mark.skipif(not os.path.exists(MAN), reason="library not built")
 
@@ -163,3 +163,32 @@ def test_hidden_dummies_in_silent_sectors(man, clips):
 def test_size_budget(man):
     tot = sum(os.path.getsize(os.path.join(dp, f)) for dp, _, fs in os.walk(DIR) for f in fs if f.endswith(".wav"))
     assert tot <= 60e6, tot / 1e6
+
+
+def test_licences(man):
+    """Review pass 3: no voice with an unknown or research-only licence; non-commercial sources are flagged."""
+    assert set(man["voice_licences"]) == {"espeak-ng", "piper vi_VN-vivos-x_low"}
+    for c in man["clips"]:
+        lic = c["licence"].lower()
+        assert "unknown" not in lic and "model card" not in lic and "research" not in lic, c["id"]
+        assert isinstance(c["non_commercial"], bool)
+        if c["source"].startswith("ESC-50") or "vivos" in c["source"]:
+            assert c["non_commercial"], c["id"]
+        if "vivos" in c["source"]:
+            assert "BY-NC-SA" in c["licence"]
+        if c["source"].startswith("TTS"):
+            assert c["language"] == "vi" or "eSpeak" in c["source"], c["id"]
+        if not c["synthetic"]:
+            assert c["author"] and c["origin_url"], c["id"]
+
+
+def test_attribution_file(man):
+    path = os.path.join(DIR, "ATTRIBUTION.md")
+    assert os.path.exists(path)
+    text = open(path, encoding="utf-8").read()
+    for c in man["clips"]:
+        if c["parent"] is None and not c["synthetic"]:
+            assert c["origin_url"] in text and c["author"] in text, c["id"]
+    for who in ("Robinhood76", "ErocShadow", "PickleJones", "VIVOS", "CC BY-NC-SA 4.0", "eSpeak NG"):
+        assert who in text, who
+    assert "Credit line for the video description" in text

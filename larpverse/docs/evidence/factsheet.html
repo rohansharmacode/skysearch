@@ -1,0 +1,173 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<title>Larpverse Fact Sheet</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=Public+Sans:ital,wght@0,400;0,600;0,700;1,400&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+/* Print fact sheet, A4. Section marks imitate INSARAG orange spray-paint structure boxes. */
+@page{size:A4;margin:14mm 14mm 16mm}
+:root{--ink:#1b1d20;--muted:#585c63;--rule:#d8d4cc;--mark:#d9541e;--ping:#c8202f;--wifi:#2563eb;--paper:#ffffff;--band:#f4f2ec;
+  --s:#2f6f4f;--d:#4f548a;--a:#8a5a1c;
+  --display:"Barlow Condensed","Arial Narrow",Arial,sans-serif;--body:"Public Sans",Arial,sans-serif;--mono:"JetBrains Mono",Menlo,monospace}
+*{box-sizing:border-box;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+html,body{margin:0;background:var(--paper);color:var(--ink);font:9.6pt/1.45 var(--body)}
+h1,h2,h3{font-family:var(--display);margin:0;line-height:1.05;text-wrap:balance}
+h1{font-size:30pt;letter-spacing:-.01em}
+h2{font-size:17pt;display:flex;align-items:center;gap:8px;margin:0 0 6px}
+h3{font-size:11.5pt;font-weight:600}
+p{margin:0}
+.page{break-after:page;display:grid;gap:10px;align-content:start}
+.page:last-child{break-after:auto}
+.eyebrow{font:600 7.5pt/1 var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+.mk{display:inline-grid;place-items:center;width:24px;height:24px;border:2.5px solid var(--mark);color:var(--mark);font:700 9pt/1 var(--display)}
+.thesis{font:600 13.5pt/1.25 var(--display);max-width:62ch}
+.thesis b{color:var(--mark)}
+.hero{border-bottom:2px solid var(--ink);padding-bottom:8px;display:grid;gap:6px}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:1px;background:var(--rule);border:1px solid var(--rule)}
+.grid3{grid-template-columns:1fr 1fr 1fr}
+.cell{background:var(--paper);padding:8px 9px;display:grid;gap:3px;align-content:start}
+.n{font:700 21pt/1 var(--display)}
+.n.o{color:var(--mark)} .n.r{color:var(--ping)} .n.b{color:var(--wifi)}
+.t{font-size:8.8pt}
+.src{font:6.8pt/1.35 var(--mono);color:var(--muted)}
+.tag{display:inline-block;font:600 6pt/1 var(--mono);padding:1px 3px;border:1px solid currentColor;border-radius:2px;vertical-align:1px}
+.tag.s{color:var(--s)} .tag.d{color:var(--d)} .tag.a{color:var(--a)}
+table{border-collapse:collapse;width:100%;font-size:8.4pt;font-variant-numeric:tabular-nums}
+th,td{padding:4px 6px;border-bottom:1px solid var(--rule);text-align:left;vertical-align:top}
+th{font:600 6.8pt/1.2 var(--mono);text-transform:uppercase;letter-spacing:.05em;color:var(--muted);background:var(--band)}
+td.r,th.r{text-align:right;white-space:nowrap}
+.band{background:var(--band);padding:8px 10px;border-left:3px solid var(--mark)}
+.cols{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+ul{margin:0;padding-left:14px;display:grid;gap:3px}
+.ok li::marker{color:var(--s)} .no li::marker{color:var(--ping)}
+.foot{font:6.8pt/1.4 var(--mono);color:var(--muted);border-top:1px solid var(--rule);padding-top:5px}
+</style></head><body>
+
+<!-- PAGE 1 -->
+<div class="page">
+  <div class="hero">
+    <div class="eyebrow">Larpverse · AgentVerse 2026 robotics track · fact sheet · 8 Nov 2026</div>
+    <h1>Finding the survivors who can't call for help</h1>
+    <p class="thesis">Rubble search still waits for a knock or a shout. Larpverse sends heavy drones that map the pile, call out, and <b>winch a breathing-detection radar onto the rubble</b>, so unconscious and silent people get on the dig list in the first hour.</p>
+    <p class="src"><span class="tag s">S</span> sourced &nbsp; <span class="tag d">D</span> derived from sources &nbsp; <span class="tag a">A</span> our assumption &nbsp;·&nbsp; simulation results are marked as simulation</p>
+  </div>
+
+  <h2><span class="mk">72h</span>The problem</h2>
+  <div class="grid">
+    <div class="cell"><div class="n o">≥28%</div><div class="t">of injured Bam 2003 survivors were <b>unconscious when rescued</b>. Listening devices and call-outs can't hear them. Survivors-only sample, so the true share among the trapped is likely higher.</div><div class="src"><span class="tag s">S</span> Nia, Nafissi &amp; Moharamzad 2008, Prehosp Disaster Med 23:263 · via Rom &amp; Kelman 2020</div></div>
+    <div class="cell"><div class="n">164 → 7 → 4 → 0</div><div class="t">people rescued alive at Weiguan Jinlong (Tainan 2016) on days 1, 2 and 3. <b>Nobody alive after 62.3 h.</b> 115 of 309 residents died; about 2,000 rescuers and 23 dogs worked the site.</div><div class="src"><span class="tag s">S</span> Chiu &amp; Tseng 2018 · Tainan City Fire Bureau · Pan et al. 2019, J Formos Med Assoc</div></div>
+    <div class="cell"><div class="n">&lt;0.85%</div><div class="t">International rescue teams' live rescues as a share of deaths, in all 14 earthquakes reviewed. The first team arrived <b>12–56 h</b> after the quake, at about <b>US$0.8–0.94M per life saved</b>.</div><div class="src"><span class="tag s">S</span> Rom &amp; Kelman 2020, BMJ Global Health 5:e002398</div></div>
+    <div class="cell"><div class="n">~300 of 53,537</div><div class="t">Turkey 2023: about 5,000 international rescuers in 90 teams saved about 300 lives while 53,537 died. There were 26,000 buildings to search. Crews switched off generators and asked victims to scratch with a fingernail.</div><div class="src"><span class="tag s">S</span> INSARAG after-action review · AP · NTV</div></div>
+    <div class="cell"><div class="n">77.5%</div><div class="t">of the 35,000 people dug out of rubble in Kobe 1995 were rescued by neighbours and family, not professionals. <b>Speed and local capability decide outcomes.</b></div><div class="src"><span class="tag s">S</span> Kobe City / ADRC</div></div>
+    <div class="cell"><div class="n r">0</div><div class="t">documented cases of a drone <b>locating a living person inside a collapse</b> in 15 major collapses reviewed. Drones have been used for overview, mapping and lighting only.</div><div class="src"><span class="tag d">D</span> review of 15 collapses (docs/CASE_STUDIES.md)</div></div>
+  </div>
+
+  <h2><span class="mk">T</span>Survival falls by the day</h2>
+  <table>
+    <thead><tr><th>Share of people brought out alive</th><th class="r">Day 1</th><th class="r">Day 2</th><th class="r">Day 3</th><th class="r">After 72 h</th></tr></thead>
+    <tbody>
+      <tr><td>Kobe 1995 (fire brigade rescues) <span class="tag s">S</span></td><td class="r">80.5%</td><td class="r">28.5%</td><td class="r">21.8%</td><td class="r">~6%</td></tr>
+      <tr><td>Weiguan Jinlong 2016 <span class="tag d">D</span></td><td class="r">92.7%</td><td class="r">25.9%</td><td class="r">~57% (n≈7, weak)</td><td class="r">0 alive after 62.3 h</td></tr>
+    </tbody>
+  </table>
+  <p class="band">The pattern repeats: Surfside 2021, where a woman's voice was heard on day 1 but she couldn't be reached; Rana Plaza 2013, where a woman found alive after 100 h died when a fire ended 20 h of tunnelling; Hualien 2018, where the search stopped at 106 h with the last victims under a load-bearing beam. People who can be heard get found. People who can't, often don't.</p>
+</div>
+
+<!-- PAGE 2 -->
+<div class="page">
+  <h2><span class="mk">L?</span>What Larpverse does</h2>
+  <div class="cols">
+    <div class="band" style="display:grid;gap:5px">
+      <h3>The loop, fully autonomous</h3>
+      <ul>
+        <li><b>Recon:</b> three heavy-lift drones map the ruin with 128-channel LiDAR. Satellite imagery is stale after a quake.</li>
+        <li><b>Listen and call out:</b> drones perch with rotors off. A loudspeaker asks "if you can hear me, knock three times" in Mandarin, Taiwanese Hokkien and English.</li>
+        <li><b>Breathing radar pod:</b> a radar and microphone pod is winched onto the rubble over each lead. It reads breathing and gives a condition hint, such as "irregular breathing with pauses — check first".</li>
+        <li><b>Rescue Wi-Fi:</b> every drone serves an open hotspot. A trapped person's phone can tap "I'm trapped" in six languages.</li>
+        <li><b>AI decides, code verifies:</b> an agent ranks the dig order. Rules block unsafe or overconfident wording, and a deterministic fallback runs if the AI is unavailable.</li>
+      </ul>
+    </div>
+    <div style="display:grid;gap:6px;align-content:start">
+      <h3>Why a drone-lowered radar is the gap</h3>
+      <p>Breathing radar already works on rubble when a person carries it there. <b>NASA/DHS FINDER</b> found two heartbeats under each of two collapsed buildings in Nepal 2015, and 4 men were dug out. It's lab-rated through <b>9 m of rubble or 6 m of solid concrete</b>. GSSI LifeLocator units (about 270 MHz) were used at Sichuan 2008 and Haiti 2010.</p>
+      <p>Today a rescuer carries these units onto an unstable pile, one spot at a time. Larpverse <b>gives that class of radar wings and an autonomous planner</b>. The pod can carry a FINDER- or LifeLocator-class sensor.</p>
+      <div class="src"><span class="tag s">S</span> DHS 2015 · NASA JPL · GSSI · Frontiers in Earth Science 2023</div>
+    </div>
+  </div>
+
+  <h2><span class="mk">+</span>Measured so far</h2>
+  <div class="grid grid3">
+    <div class="cell"><div class="n o">53% in 30 min</div><div class="t">of trapped people inside a drone-flagged search sector within 30 minutes of launch (median 8 min), and 83% within an hour, on a Weiguan-scale site.</div><div class="src"><span class="tag d">D</span> simulation, 10 missions</div></div>
+    <div class="cell"><div class="n">~49 min</div><div class="t">from the quake to the first radar ping in a Weiguan-like Tainan scenario (range 23–94). National special teams took up to 12 h at Weiguan.</div><div class="src"><span class="tag d">D</span>/<span class="tag a">A</span> docs/DEPLOYMENT.md</div></div>
+    <div class="cell"><div class="n r">0 false pings</div><div class="t">across every evaluation run. Radar returns from debris, animals, machinery and rotors are rejected (90% of non-human signatures).</div><div class="src"><span class="tag d">D</span> simulation; signature library</div></div>
+    <div class="cell"><div class="n">6 / 6</div><div class="t">real breath-holds detected with no false alarms. Breathing rate within about 0.5 per minute of a clinical sensor on real radar recordings.</div><div class="src"><span class="tag s">S</span> Schellenberger 2020 open dataset (line of sight)</div></div>
+    <div class="cell"><div class="n">86%</div><div class="t">of breathing conditions identified correctly in synthetic 60 s scans. Rapid shallow breathing (possible distress) is caught 100% of the time.</div><div class="src"><span class="tag d">D</span> simulation, docs/VITALS.md</div></div>
+    <div class="cell"><div class="n">3×</div><div class="t">more survivors pinged than nearest-pile or lawnmower search with the same drones and budget (17/60 vs 6/60 and 5/60). This is an upper bound.</div><div class="src"><span class="tag d">D</span> 20-scenario simulation, docs/EVAL_GRID.md</div></div>
+  </div>
+  <table>
+    <thead><tr><th>Radar detection depth</th><th>Figure</th><th>Basis</th></tr></thead>
+    <tbody>
+      <tr><td>Our simulation, deliberately conservative</td><td>2.9 m beneath the pod (45 s scan)</td><td><span class="tag d">D</span> literature concrete loss (10–20 dB/m), realistic chest motion</td></tr>
+      <tr><td>Commercial rubble life detector (LifeLocator)</td><td>4.5–7 m breathing</td><td><span class="tag s">S</span> vendor and trade press</td></tr>
+      <tr><td>NASA/DHS FINDER lab rating</td><td>9 m rubble / 6 m solid concrete</td><td><span class="tag s">S</span> NASA JPL</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- PAGE 3 -->
+<div class="page">
+  <h2><span class="mk">$</span>Economics</h2>
+  <div class="cols">
+    <table>
+      <thead><tr><th>City kit: 3 drones + pods, van, training</th><th class="r">Central</th><th class="r">Range</th></tr></thead>
+      <tbody>
+        <tr><td>Up front</td><td class="r">$673k</td><td class="r">$361k–1.10M</td></tr>
+        <tr><td>Per year to run</td><td class="r">$193k</td><td class="r">$70–469k</td></tr>
+        <tr><td>10-year total cost</td><td class="r">$2.78M</td><td class="r">$1.06–6.31M</td></tr>
+      </tbody>
+    </table>
+    <table>
+      <thead><tr><th>Lives per decade to pay for itself</th><th class="r">Central</th></tr></thead>
+      <tbody>
+        <tr><td>At the US DOT value of a life ($13.7M)</td><td class="r">0.20</td></tr>
+        <tr><td>At Taiwan's benefit-transfer value ($5M)</td><td class="r">0.56</td></tr>
+        <tr><td>At international USAR spend per life saved ($0.93M)</td><td class="r">2.99</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="band">A kit costs about the yearly price of a police first-responder drone contract ($140–435k) or 8.5 dog teams over ten years. Public-safety drones were a <b>$2.6B market in 2024, projected to reach $5.8B by 2030</b>. Taiwan is the first market, because government drone tenders already exclude PRC parts, which favours our non-DJI build. <span class="src"><span class="tag s">S</span>/<span class="tag d">D</span>/<span class="tag a">A</span> 87 tagged parameters, docs/ECONOMICS.md</span></p>
+
+  <h2><span class="mk">TW</span>Deploying it in Taiwan</h2>
+  <div class="grid">
+    <div class="cell"><div class="n o">99%</div><div class="t">chance of an M≥6.5 quake somewhere in Taiwan within 50 years (54% for M≥7). About half of homes in Tainan and Kaohsiung, and 70% in Taipei, are over 30 years old.</div><div class="src"><span class="tag s">S</span> CWA figures via news report · housing statistics</div></div>
+    <div class="cell"><div class="n">47 kits</div><div class="t">cover more than 90% of Taiwan's urban land within 20 minutes: <b>US$15.5M</b> to buy, about $2.3M a year to run. The kits ride on the existing fire service: 209 rescue-equipment trucks and 10 graded USAR teams.</div><div class="src"><span class="tag d">D</span> docs/DEPLOYMENT.md</div></div>
+    <div class="cell"><div class="n b">250 min</div><div class="t">of heavy-drone flight from half a car tank through a generator. A rescue truck with a 25 kW generator keeps about 4 drones working, so <b>no city hub is required</b>: retrofit onto existing trucks.</div><div class="src"><span class="tag d">D</span> DJI generator and battery specs; docs/IMPACT_EVIDENCE.md §6</div></div>
+    <div class="cell"><div class="n">72 h</div><div class="t">of operation per kit on about 510 L of diesel, 3 battery sets per drone and a 7-person crew in two 12 h shifts.</div><div class="src"><span class="tag d">D</span> generator spec sheet; docs/DEPLOYMENT.md</div></div>
+  </div>
+
+  <h2><span class="mk">+</span>Impact model (preliminary)</h2>
+  <table>
+    <thead><tr><th>If the pod works as designed</th><th class="r">Central</th><th class="r">90% range</th></tr></thead>
+    <tbody>
+      <tr><td>Extra survivors among the 113 people brought out of Weiguan after day 1</td><td class="r">~+6</td><td class="r">0.6–14</td></tr>
+      <tr><td>Extra survivors per 100 trapped, 3×3 test site</td><td class="r">+3.0</td><td class="r">1.1–6.6</td></tr>
+      <tr><td>Rescuer-hours tied up before each person is found</td><td class="r">−15%</td><td class="r"></td></tr>
+    </tbody>
+  </table>
+  <p class="src">This is a model, not a claim about what happened. There's no time-of-death data for Weiguan, extrication remains the bottleneck, and the full-scale site is still being tuned. docs/IMPACT_MODEL.md</p>
+
+  <h2><span class="mk">!</span>What we claim, and what we don't</h2>
+  <div class="cols">
+    <ul class="ok">
+      <li>A drone-lowered breathing radar on a real pile fills a gap that no deployed system covers.</li>
+      <li>It ranks where to dig sooner, including people who make no sound.</li>
+      <li>Drone finds get the INSARAG "V" (victim suspected) mark for rescuers to confirm.</li>
+    </ul>
+    <ul class="no">
+      <li>Never "cleared": a searched zone without a ping is "searched, not cleared".</li>
+      <li>No faster digging: extrication stays with rescue crews.</li>
+      <li>The radar results are simulation; real validation so far is line-of-sight.</li>
+    </ul>
+  </div>
+  <div class="foot">Key references: Rom A, Kelman I. Search without rescue? BMJ Glob Health 2020;5:e002398, doi:10.1136/bmjgh-2020-002398 · Nia MS, Nafissi N, Moharamzad Y. Prehosp Disaster Med 2008;23:263–8, doi:10.1017/S1049023X00064979 · Pan et al. 2019, J Formos Med Assoc · Chiu &amp; Tseng 2018 · NASA JPL / DHS FINDER 2015 · INSARAG Türkiye after-action review. All other figures and their tags are in the repository docs named above.</div>
+</div>
+</body></html>

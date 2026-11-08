@@ -524,7 +524,7 @@ function lmDraw(pts, from) {
   }
   LM.g.putImageData(LM.img, 0, 0);
 }
-function lmReset() { LM.img = null; LM.have = 0; lmClear(); }
+function lmReset() { LM.img = null; LM.have = 0; LM.count = 0; LM.key = ''; lmClear(); $('mapn').textContent = 'nothing scanned yet'; }
 function lmFeed(pts) {
   if (!LM.view) return;
   const n = Math.floor(pts.length / 3);
@@ -593,7 +593,7 @@ function lmUpdate(s, b) {
     e[1].textContent = r != null ? `${pshort(p.id)} · breathing ${f0(r)}/min` : (p.breathing_hz ? `${p.id} · breathing ~${f0(60 * p.breathing_hz)}/min` : p.id);
   }
   const pc = s.pointcloud || {};
-  if (pc.full_count === 360000 || !pc.url) { if (!LM.count) $('mapn').textContent = 'nothing scanned yet'; return; }
+  if (pc.full_count === 360000 || !pc.url) { if (LM.have || LM.count) lmReset(); return; }   // fresh run: nothing scanned yet
   const key = `${pc.count}/${pc.full_count || ''}`;
   if (window.__burn || LM.busy || key === LM.key || vnow() - LM.at < 1.0) return;
   LM.key = key; LM.at = vnow();

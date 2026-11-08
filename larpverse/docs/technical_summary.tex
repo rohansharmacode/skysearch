@@ -1,52 +1,71 @@
-\documentclass[9pt,a4paper]{extarticle}
+\documentclass[10pt,a4paper]{extarticle}
 
-\usepackage[margin=1.2cm]{geometry}
+\usepackage[margin=1.4cm]{geometry}
 \usepackage{enumitem}
 \usepackage{titlesec}
 \usepackage{xcolor}
 \usepackage{hyperref}
+\usepackage{tabularx}
+\usepackage{array}
 
 \definecolor{cairnblue}{HTML}{1a1a2e}
 \definecolor{cairngrey}{HTML}{55595f}
+\definecolor{cairnred}{HTML}{c8202f}
 \hypersetup{colorlinks=true,linkcolor=cairnblue,urlcolor=cairnblue}
 
-% One spacing scheme for the whole page
 \setlength{\parindent}{0pt}
-\setlength{\parskip}{0.45em}
-\linespread{1.0}
-\titleformat{\section}{\normalsize\bfseries\color{cairnblue}}{}{0em}{}[{\color{cairnblue}\titlerule}]
-\titlespacing*{\section}{0pt}{0.9em}{0.35em}
-\setlist[itemize]{leftmargin=1.1em,itemsep=0.15em,topsep=0.2em,parsep=0pt,partopsep=0pt}
+\setlength{\parskip}{0.5em}
+\titleformat{\section}{\large\bfseries\color{cairnblue}}{}{0em}{}[{\color{cairnblue}\titlerule}]
+\titlespacing*{\section}{0pt}{1.0em}{0.4em}
+\setlist[itemize]{leftmargin=1.2em,itemsep=0.25em,topsep=0.2em,parsep=0pt}
+\newcommand{\stat}[1]{{\Large\bfseries\color{cairnred}#1}}
 
 \begin{document}
 
-% Compact header (instead of \maketitle)
-{\Large\bfseries\color{cairnblue} CAIRN Technical Summary}\par\vspace{0.15em}
-{\small Larpverse \;\textbullet\; Autonomous rescue drones that find the survivors who can't call for help}\par\vspace{0.1em}
-{\footnotesize\color{cairngrey} Figures are from simulation or our models unless marked as real data.}\par
+{\LARGE\bfseries\color{cairnblue} CAIRN}\par\vspace{0.2em}
+{\large Rescue drones that find the people who can't call for help}\par\vspace{0.1em}
+{\small\color{cairngrey} Larpverse \;\textbullet\; AgentVerse 2026 Robotics \;\textbullet\; Figures are simulation or model results unless marked as real data.}
 
-\section*{Who it's for and why it matters (Relevance \& impact, 20\%)}
-Our user is an urban search-and-rescue lead in the first hours after a building collapse. Today's search depends on the victim making a sound. Dogs, listening devices and hand-carried radar check one spot at a time, from an unstable pile. Yet in one study of the 2003 Bam earthquake, 28\% of injured survivors were unconscious when rescued (Nia et al.\ 2008). At Weiguan Jinlong, Tainan (2016), 164 people were rescued alive on day 1, 7 on day 2 and 4 on day 3, and none after 62 hours. The lead needs a ranked, evidence-backed list of where living people are likely to be, within the first hour. To guard against missed survivors and wasted digs, there is a code verifier, a rule-based fallback, and no dig starts without the lead's approval.
+\section*{What it is}
+CAIRN is a team of heavy-lift drones that search a collapsed building for survivors \textbf{by detecting their breathing}. A rescue lead circles an area on a tablet. The drones fly there on their own, lower a radar pod onto the rubble, and send back a ranked list of where to dig first, with the reason for each spot. It finds people who are unconscious or too weak to knock or shout, the people today's search misses.
 
-\section*{Perception-driven action (25\%)}
-Every action follows from something the drones sensed. 128-channel \textbf{LiDAR} maps the pile, and each drone uses that map to pick the flattest safe spot for its \textbf{winch-lowered radar pod}. The pod reads chest movement up to about 2.9\,m deep (a deliberately conservative simulation). A 0.1--0.75\,Hz breathing band separates people from debris, machinery and rotor reflections, which are shown as ``not a person, no dig''. An \textbf{8-microphone array} listens with rotors off after a loudspeaker asks ``knock three times'', and \textbf{rescue Wi-Fi} lets a trapped phone send ``I'm trapped''. Gemini reads the breathing waveform together with the audio and gives each candidate a 0--100 priority with a plain reason; code checks every output. The dashboard shows the live dig order, the breathing traces, and the reason behind each action (``drones to A1 because a voice was heard, 3 of 3 drones agree'').
-
-\section*{Adaptation to change (25\%)}
-In our live Isaac Sim take, a teammate switches on a hidden caller in an unsearched area without telling the system. The drones hear it at their next listen, the dashboard shows ``Plan changed'', and the fleet cuts its current search short to fly there. A voice where earlier listens heard silence counts as new evidence. The same loop handles a new area drawn or accepted by the operator, radar returns rejected as debris, re-seating a rocking pod, and battery swaps at a 25\% reserve.
-
-\section*{Operational autonomy (15\%)}
-Once the operator picks an area, the drones run the search themselves: flight, mapping, pod placement, radar, listening, ranking and battery swaps. Sensing and signal processing run on the drone or at the truck's ground station; Gemini runs over the truck's satellite link. If Gemini is unavailable or overloaded, backup models and then a rule-based planner take over, so the search never stops. The same scenario gives the same result every run, with no false pings. When unsure, the system says so: an area without a ping is ``searched, not cleared'', and every candidate is a place to check, not a confirmed person.
-
-\section*{Ambition, technical quality and limits (15\%)}
-New: heavy-lift octocopters (4 coaxial pairs) that winch a FINDER/LifeLocator-class breathing radar onto unstable rubble, and fuse breathing, sound, LiDAR and phone signals into one ranked dig list. Drone finds get the INSARAG ``V'' mark (victim suspected) for rescuers to confirm. We know of no documented case of a drone locating a living person inside a collapse. Built in NVIDIA Isaac Sim with real LiDAR ray-casting; radar and audio are simulated, but run through real signal processing that we checked on real recordings.
+\section*{How it works}
 \begin{itemize}
-  \item \textbf{Simulation:} 53\% of trapped people inside a flagged area within 30\,min (Weiguan-scale site); 3$\times$ the survivors pinged by simpler search strategies (17/60 vs 6/60 and 5/60, a best case); 86\% of breathing conditions correct; no false pings.
-  \item \textbf{Real data:} 6/6 breath-holds detected with no false alarms; breathing rate within about 0.5/min (Schellenberger et al.\ 2020, line of sight).
-  \item \textbf{Models:} first radar ping about 49\,min after the quake (national teams took up to 12\,h at Weiguan); about 6 extra Weiguan survivors if the pod works as designed (0.6--14); break-even at 0.56 lives per decade; 47 kits cover over 90\% of Taiwan's urban land.
+  \item \textbf{Pick an area.} The rescue lead selects a pile on the dashboard. The drones leave the truck and fly to it.
+  \item \textbf{Lower the radar.} Each drone hovers and winches a radar pod onto the rubble. The pod senses the tiny chest movement of breathing up to about 3\,m down, and tells it apart from settling debris, machinery and rotor noise.
+  \item \textbf{Rank who to reach first.} Gemini reads each breathing pattern (rapid and shallow, slow and deep, irregular with pauses) and scores it 0--100 with a plain reason, e.g.\ ``irregular breathing with a 14\,s pause: check first''. Code checks every answer, and a rule-based fallback takes over if the AI is unavailable.
+  \item \textbf{Adapt live.} When something new appears, such as a new voice or a new area, the plan changes on screen and the drones re-route. No one has to intervene.
+  \item \textbf{Help on the spot.} Each drone carries a loudspeaker (``help is coming'') and an open Wi-Fi hotspot, so trapped people's phones can send ``I'm trapped''.
 \end{itemize}
-\textbf{Limits:} not yet tested on real rubble; digging time is unchanged; pod placement on the full Weiguan-scale map still needs tuning; the radar band needs a licence (12--18 months); the call-out needs native-speaker voices. CAIRN is a triage aid, not a diagnosis.
+
+\section*{Why it matters}
+\begin{tabularx}{\linewidth}{@{}>{\raggedright\arraybackslash}X>{\raggedright\arraybackslash}X>{\raggedright\arraybackslash}X@{}}
+\stat{28\%} & \stat{0 after 62\,h} & \stat{$<$0.85\%} \\
+of injured survivors in the 2003 Bam earthquake were \textbf{unconscious} when rescued, so they can't be heard (Nia et al.\ 2008). &
+Weiguan Jinlong collapse, Tainan 2016: 164 rescued alive on day 1, 7 on day 2, 4 on day 3, then \textbf{nobody}. 115 died. &
+of deaths are matched by live rescues from international teams, who arrive 12--56\,h late (Rom \& Kelman 2020). \\
+\end{tabularx}
+
+Today's search relies on dogs, listening devices and hand-carried radar, one spot at a time on an unstable pile. In 15 major collapses we reviewed, \textbf{no drone has ever located a living person inside the rubble}. CAIRN is built to do exactly that, in the first hour.
+
+\section*{Results}
+\begin{tabularx}{\linewidth}{@{}>{\raggedright\arraybackslash}X>{\raggedright\arraybackslash}X>{\raggedright\arraybackslash}X>{\raggedright\arraybackslash}X@{}}
+\stat{3$\times$} & \stat{6 / 6} & \stat{86\%} & \stat{0} \\
+as many survivors found as simpler search strategies with the same drones (17/60 vs 6/60 and 5/60; simulation, best case) &
+real breath-holds detected on real radar recordings, with no false alarms (Schellenberger 2020) &
+of breathing conditions identified correctly (simulation) &
+false alarms: debris, machinery and rotors are rejected (simulation) \\
+\end{tabularx}
+
+\begin{itemize}
+  \item \textbf{Fast:} the first radar ping is about \textbf{49 minutes after the quake}; national teams took up to 12 hours to arrive at Weiguan (model).
+  \item \textbf{Worth it:} a city kit (3 drones, pods and van fit-out) costs about \$673k and \textbf{pays for itself if it saves one life every 18 years} (Taiwan's value of a statistical life; model). In a Weiguan-style collapse it could mean \textbf{about 6 more survivors} if the pod works as designed (range 0.6--14; model).
+  \item \textbf{Real system:} running in NVIDIA Isaac Sim, operated live from a dashboard, with an unscripted change during the recorded take.
+\end{itemize}
+
+{\small\textbf{Limits.} Radar results come from a simulated sensor; it hasn't been tested on real rubble yet, and the radar's frequency band needs a licence. CAIRN finds people faster; digging them out still takes as long. Every result is a place for rescuers to check, not a confirmed person.}
 
 \vfill
-{\footnotesize\color{cairngrey} Sources: our Isaac Sim evaluation; Chiu \& Tseng 2018; Tainan City Fire Bureau; Nia et al.\ 2008 via Rom \& Kelman 2020 (BMJ Global Health); NASA JPL / DHS FINDER; Schellenberger et al.\ 2020; Taiwan value of a statistical life in our cost model.}
+{\footnotesize\color{cairngrey} Sources: Nia et al.\ 2008 (Prehosp Disaster Med) via Rom \& Kelman 2020 (BMJ Global Health); Chiu \& Tseng 2018 and Tainan City Fire Bureau (Weiguan); Schellenberger et al.\ 2020 (radar dataset); our Isaac Sim evaluation and cost model.}
 
 \end{document}

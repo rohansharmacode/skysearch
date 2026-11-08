@@ -1,5 +1,35 @@
 # From the Isaac Sim session (newest first)
 
+### 2026-11-08 09:30: FINAL live take recorded (final_h), plus why takes miss A1
+
+**Final take:** `take/larpverse_live_take_FINAL_60s.mp4` on branch `larpverse-rehearsals`. It is 60 s cut from `final/final_h.mp4` (5.0–65.0 s), one continuous take with no cuts inside, layout B, grid seed 7, reviewed every 2 s.
+
+| Video (cut) | What happens |
+|---|---|
+| 0–19 s | Launch from the van, LiDAR map of A2, three radar pods down |
+| 19–27 s | Live button (GO+18 s): "Live change (unscripted)", STAGE EVENT t130 H2_A1_id |
+| 28–35 s | Pod d1 at A2 feels 8.6 breaths/min, trace on the panel |
+| 37–43 s | "New voice heard near A1" (56/100, 2/2 agree). Pod-mic quick listen 3 at t295 |
+| 44–51 s | "Plan changed": A2 cut short after 7 scans, dispatch to A1 at t440 |
+| 52–60 s | A1 mapped (95 %), radar pods going down |
+
+**Command** (box `larpverse-l40s-nb`, runner `/home/ubuntu/live2/nb_runY.sh`):
+`export LARPVERSE_WHISPER_DEVICE=cuda; N=final_h PS=18 SS=80 YMODE=button LOOK="--grid-look 0 --drone-style blender --take-open wide --town isaac/assets/town_kit --live-asr multi --sky 600 --sun 2600 --fog-intensity 0.08 --fog-start 120" EXTRA="" bash nb_runY.sh`
+on larpverse-isaac d45998a plus 3e1633c (sensor_fx).
+
+**What we learned from eight takes (reh7, final_a–h):**
+1. **`LARPVERSE_WHISPER_DEVICE=cuda` is mandatory.** `acoustic/models.py` defaults to cpu. On the CPU the pre-flight listen takes 65 s instead of 9 s, so no pod-mic listen finishes during A2 and the change is never heard (final_a). Check the log line `acoustic pre-flight PASS … warm listen X s`: X must be under about 15 s.
+2. **Success is about 5 in 9, run to run.** With Whisper on CUDA:
+   - **Went to A1:** reh6, reh7, b, c, e, h.
+   - **Went to B1:** reh6b, d, f, g.
+
+   B1's own victim is often audible first. In g, the A2 radar fixed early (dispatch t263) before any listen heard A1. In f, B1 was flagged NEW and the banner said "next pile → B1 (… unscripted live input)", which is wrong: B1 was not the live input. Worth fixing on your side: only attribute a re-plan to the live input when the NEW lead is within reach of the changed dummy.
+3. **In every success the NEW flag fires on B1/B2, not A1.** A1 is first heard in the same listen (priority 56–57, never heard before), so it ranks first and the gate goes there. The panel's "voice near A1 that they had not heard before" is true. The log's "new human-like call at B1" is the trigger.
+4. **`--cam-grade 1` is dropped.** reh7 came out sepia and washed out.
+5. **3e1633c sensor_fx:** in simple style, only LiDAR rays that land on rubble (heightmap > 0.3 m) are drawn. Rays cast in transit streaked down the low opening camera like rain (final_b 9.5–11 s).
+
+**Product video:** `showcase/` on `claude/project-thread-exloke`. Its collapse-site clips (NCKU scan textures) are replaced with grid-town footage from the same take, and its live-change scene now shows the hidden voice and re-plan instead of "operator adds a zone".
+
 ### 2026-11-08 04:05: rehearsals 5–6b: the unscripted change now works on camera (larpverse-isaac cd1a4cf)
 
 **Result.** In rehearsal 6 the whole story fits inside 60 s (`reh6_layoutB.mp4` on release `larpverse-rehearsal1`, reviewed every 2 s):

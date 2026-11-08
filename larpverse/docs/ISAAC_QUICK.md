@@ -1,4 +1,4 @@
-# Isaac quick brief (interim): read this first
+# Isaac quick brief (SUPERSEDED: read docs/ISAAC_BRIEF.md)
 
 **For:** Rohan's Claude session running Isaac Sim. **From:** the Larpverse build loop. **Date:** 7 Nov, ~23:20.
 **Status:** this is the fast interim version. The full version, with the van, dummies, live triggers, HUD and smooth flight, follows in `docs/ISAAC_BRIEF.md` within about 1–1.5 h. Commands marked ✅ were dry-run-verified on our side tonight (no GPU here). Anything marked 🔜 isn't pushed yet.

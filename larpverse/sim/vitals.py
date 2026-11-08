@@ -71,7 +71,8 @@ CONDITION_OF = {"regular_calm": "calm", "rapid_shallow": "distressed_tachypnea",
                 "irregular_with_pauses": "irregular_apneic", "unclear": "unknown"}
 CONDITIONS = ("calm", "distressed_tachypnea", "unconscious_slow", "irregular_apneic", "unknown")
 # rescuer-facing hint and its dig-order rank (higher = dig first); "assess" sits in the middle on purpose
-TRIAGE_RANK = {"immediate": 1.0, "immediate (check)": 0.85, "urgent": 0.7, "assess": 0.55, "delayed": 0.35}
+TRIAGE_RANK = {"immediate": 1.0, "immediate (check)": 0.85, "urgent": 0.7, "assess": 0.55, "delayed": 0.35,
+               "reject": 0.15}       # reject: the rejector says this return is not human breathing
 
 CAVEATS_ALWAYS = [
     "aid for rescuers, not a diagnosis: radar sees chest-wall motion only (no perfusion, mental status or airway)",
@@ -145,7 +146,8 @@ def demodulate(iq, wavelength=None, expected_amp=None):
 # ----------------------------------------------------------------------------- features
 def features(d, fs, units="m"):
     """Feature dict from a displacement series ``d`` (metres if units == 'm', else arbitrary)."""
-    d = signal.detrend(np.asarray(d, float), type="linear")
+    d_raw = np.asarray(d, float)
+    d = signal.detrend(d_raw, type="linear")
     n = d.size
     dur = n / fs
     out = {"duration_s": dur}
@@ -265,6 +267,44 @@ def features(d, fs, units="m"):
     out["apnea_longest_s"] = max([b - a for a, b in apneas], default=0.0)
     out["depth_pp"] = float(np.median(depths)) if depths else None
     out["units"] = units
+
+    # --- confounder features (sim/vitals.source_of): slow steps / creep, spectral lines, broadband motion
+    e = max(int(2 * fs), 1)
+    slow = _lp(d_raw - d_raw[0], fs, 0.04) if n > 4 * e else d_raw - d_raw[0]
+    out["slow_pp"] = float(np.ptp(slow[e:-e])) if n > 4 * e else float(np.ptp(slow))
+    out["noise_rms"] = float(1.4826 * np.median(np.abs(np.diff(d) - np.median(np.diff(d)))) / np.sqrt(2))
+    fa, pa = signal.periodogram(d * np.hanning(n), fs, nfft=max(16384, 4 * n))
+    band = (fa >= 0.08) & (fa <= 0.48 * fs)
+    floor = float(np.median(pa[band]))
+    pex = np.maximum(pa - floor, 0.0) * band
+    kf = int(np.argmax(pex))
+    f_line = float(fa[kf])
+    lines = np.zeros_like(band)
+    for h in range(1, 5):                                     # fundamental + harmonics (aliased into 0..fs/2)
+        fh = abs(((h * f_line + fs / 2) % fs) - fs / 2)
+        lines |= np.abs(fa - fh) <= 0.05
+    out["line_hz"] = f_line
+    out["line_db"] = float(10 * np.log10(max(pa[kf], 1e-300) / max(floor, 1e-300)))
+    out["line_frac"] = float(pex[lines].sum() / max(pex.sum(), 1e-300))
+    hi_b = band & (fa >= 1.5)
+    out["hf_frac"] = float(pa[hi_b].sum() / max(pa[band].sum(), 1e-300))
+    out["hf_rms"] = float(np.sqrt(2 * pa[hi_b].sum() * (fa[1] - fa[0]))) if hi_b.any() else 0.0
+    # level shift: largest difference between the medians of adjacent 10 s stretches (debris steps persist;
+    # breathing and knocks return to the same level)
+    wl = int(STEP_WIN_S * fs)
+    lp1 = _lp(d_raw, fs, 1.0) if n > 4 * wl // 3 else d_raw
+    out["step"] = float(max((abs(np.median(lp1[i - wl:i]) - np.median(lp1[i:i + wl]))
+                             for i in range(wl, n - wl + 1, max(int(fs), 1))), default=0.0))
+    # bursts: 1 s frames whose sample-to-sample motion is far above the scan's median frame (knocks, steps)
+    dd = np.abs(np.diff(d_raw))
+    nb = dd.size // fl
+    if nb >= 3:
+        fr = np.sqrt(np.mean(dd[:nb * fl].reshape(nb, fl) ** 2, axis=1))
+        med = max(float(np.median(fr)), 1e-30)
+        out["burst"] = float(np.max(fr) / med)
+        out["n_bursts"] = int(len(_runs(fr > BURST_FRAME_X * med)))
+    else:
+        out["burst"], out["n_bursts"] = 1.0, 0
     return out
 
 
@@ -364,7 +404,8 @@ def dig_score(v: dict | None, p_mass: float, depth_m: float | None = None) -> fl
 
 # ----------------------------------------------------------------------------- public API
 def extract(x, fs: float = 20.0, *, kind: str = "auto", wavelength=None, range_m=None, rubble_path_m=None,
-            expected_amp=None, quality=None, snr_db=None, params=None, keep_arrays: bool = False) -> dict:
+            expected_amp=None, quality=None, snr_db=None, params=None, keep_arrays: bool = False,
+            context: dict | None = None) -> dict:
     """Vital-sign pattern from one slow-time series.
 
     x     complex I/Q of the candidate's range bin (kind 'iq'), phase in radians ('phase'), displacement
@@ -456,12 +497,195 @@ def extract(x, fs: float = 20.0, *, kind: str = "auto", wavelength=None, range_m
         "triage_hint": hint, "triage_reason": hint_why,
         "caveats": caveats,
     }
+    k_mm = 1e3 if units == "m" else 1.0
+    out["signature"] = {"slow_pp_mm": r2(k_mm * fe["slow_pp"], 3), "step_mm": r2(k_mm * fe["step"], 3),
+                        "line_db": r2(fe["line_db"], 1), "noise_mm": r2(k_mm * fe["noise_rms"], 4),
+                        "line_hz": r2(fe["line_hz"], 3), "line_frac": r2(fe["line_frac"]), "hf_frac": r2(fe["hf_frac"]),
+                        "hf_rms_mm": r2(k_mm * fe["hf_rms"], 3), "burst": r2(fe["burst"], 1), "n_bursts": int(fe["n_bursts"]),
+                        "depth_pp_mm": r2(k_mm * fe["depth_pp"], 3) if fe["depth_pp"] else None,
+                        "peakiness": r2(fe["peakiness"]), "units": "mm" if units == "m" else units}
+    apply_source(out, source_of(out, context))
     out["priority_weight"] = priority_weight(out)
     if keep_arrays:
         out["_displacement"] = d
         out["_apneas_s"] = fe["apneas"]
         out["_breath_times_s"] = fe["breath_times_s"]
     return out
+
+
+# ----------------------------------------------------------------------------- confounder rejector
+SOURCES = ("human_breathing", "no_signal", "debris_shift", "small_animal", "machinery", "rotor", "moving_person")
+LINE_MIN_HZ = 0.8           # a dominant spectral line above this (outside breathing) with ...
+LINE_FRAC_MIN = 0.25        # ... this share of the excess power in the line + harmonics = machinery
+TONE_CV_MAX = 0.02          # in-band but too exact for a body: breath CV and depth variability below these ...
+TONE_AMPCV_MAX = 0.03       # ... with a strong line = machinery
+ROTOR_FLAT_MIN = 0.30       # complex-bin PSD density 2-9 Hz / 0.1-0.75 Hz above this (white, like aliased blade
+ROTOR_HF_DB = 15.0          # flashes) and 1.5-9 Hz power this far above the scan's thermal floor = rotor
+STEP_WIN_S = 10.0           # level-shift detector: medians of adjacent 10 s stretches
+DEBRIS_STEP_BREATH_X = 1.5  # a persistent level shift >= 1.5 x the breath size (and >= DEBRIS_MM) = settling debris
+LINE_DB_MIN = 15.0          # a spectral line this far above the median spectrum ...
+BURST_FRAME_X = 4.5         # a 1 s frame whose sample-to-sample motion is 6x the median frame is a burst
+MOVING_MIN_BURSTS = 3       # >= 3 separate bursts in the window = person moving / knocking
+REFLECTOR_DB_MIN_LIN = 1000.0  # a bin "holds a reflector" if its static power is 30 dB over the thermal noise
+ANIMAL_DEPTH_MAX = 0.25     # human-like rhythm but chest excursion below 0.25 x an adult's (path-loss scaled) ...
+ANIMAL_RATE_MIN = 18.0      # ... at 18+/min = possible small animal (LOW confidence: amplitude is unreliable)
+DEBRIS_OVER_HUMAN_X = 3.0   # a level shift must be 3x the breath size to overrule a breathing rhythm
+DEBRIS_MM = 1.0             # minimum level shift (mm, when calibrated) for "settling debris"
+
+SOURCE_TEXT = {
+    "no_signal": "no breathing-like motion here (noise only) -> nothing to dig for from this scan",
+    "debris_shift": "rubble shifting or settling (a step, no rhythm) -> not a breathing person; watch for collapse",
+    "small_animal": "fast, tiny breathing -> possibly a small animal; a person cannot be ruled out, re-check",
+    "machinery": "pure tone with harmonics -> machinery or generator vibration, not a person",
+    "rotor": "fast broadband flicker -> drone rotor reflection, not a person",
+    "moving_person": "large bursts of movement or knocking -> a person may be moving; breathing can't be read while they move, so listen and call out",
+}
+
+
+def source_of(v: dict, context: dict | None = None):
+    """Is this return human breathing? Returns (source, conf, reason). Transparent rules, thresholds above.
+
+    ``context`` (from ``identify``): {"dsp_candidate": the DSP's CFAR found a breathing-band candidate here,
+    "flat": complex-bin PSD density 2-9 Hz / 0.1-0.75 Hz, "hf_excess_db": bin power 1.5-9 Hz over the scan's
+    thermal floor, "dsp_nonhuman", "dsp_moving"}. Without context (a bare extract) the return is assumed to
+    be a DSP candidate and the rotor rule is skipped."""
+    sg, ctx = v.get("signature") or {}, context or {}
+    calib = sg.get("units") == "mm"
+    detected = ctx.get("dsp_candidate", True)
+    # a 45-60 s window holds >= 3 breaths even at 4/min; with a pause, 2 breaths around it are enough
+    min_breaths = 2 if v.get("apnea_events") or (v.get("duration_s") or 0) < 40 else 3
+    human_like = detected and v.get("pattern") not in (None, "unclear") and (v.get("n_breaths") or 0) >= min_breaths
+    nb = int(sg.get("n_bursts") or 0)
+    if nb >= MOVING_MIN_BURSTS:
+        return "moving_person", float(np.clip(nb / 8.0, 0.5, 0.9)), f"{nb} separate bursts of movement / knocking"
+    if ctx.get("dsp_nonhuman") and not detected:
+        return "machinery", 0.8, "the DSP flagged a strong periodic return outside the breathing band"
+    lf, lfrac, ldb = sg.get("line_hz") or 0.0, sg.get("line_frac") or 0.0, sg.get("line_db") or 0.0
+    if lf >= LINE_MIN_HZ and ldb >= LINE_DB_MIN and lfrac >= LINE_FRAC_MIN:
+        return "machinery", float(np.clip(lfrac + 0.3, 0.5, 0.9)), \
+            f"pure tone at {lf:.2f} Hz ({60 * lf:.0f}/min), {ldb:.0f} dB above the rest of the spectrum"
+    flat, hf_db = ctx.get("flat"), ctx.get("hf_excess_db")
+    if flat is not None and hf_db is not None and flat >= ROTOR_FLAT_MIN and hf_db >= ROTOR_HF_DB \
+            and ctx.get("beyond_rubble", True):           # a rotor is above the pod, never inside the rubble volume
+        return "rotor", float(np.clip(flat, 0.5, 0.9)), f"white, fast flicker {hf_db:.0f} dB over the noise floor (aliased blades)"
+    cv, acv = v.get("cv"), v.get("amp_cv")
+    if human_like and cv is not None and acv is not None and cv < TONE_CV_MAX and acv < TONE_AMPCV_MAX and lfrac >= 0.8:
+        return "machinery", 0.5, f"in-band rhythm too exact for a body (variability {cv:.3f})"
+    step = sg.get("step_mm") or 0.0
+    breath = abs(sg.get("depth_pp_mm") or 0.0) if human_like else 0.0      # no rhythm: no breath size to beat
+    debrisish = step >= DEBRIS_STEP_BREATH_X * max(breath, 3 * (sg.get("noise_mm") or 0.0)) and \
+        (not calib or step >= DEBRIS_MM)
+    # a real breathing rhythm is only overruled by a much larger level shift, and never when it has pauses
+    # (a breath hold after a deep breath is itself a level shift: real Apnea recordings showed this)
+    overrule = debrisish and step >= DEBRIS_OVER_HUMAN_X * breath and not v.get("apnea_events")
+    if human_like and not overrule:
+        d, r = v.get("depth_rel"), v.get("rate_bpm") or 0.0
+        if d is not None and (v.get("depth_rel_conf") or 0) > 0 and d < ANIMAL_DEPTH_MAX and r >= ANIMAL_RATE_MIN:
+            return "small_animal", 0.35, f"rhythm {r:.0f}/min but chest motion only {d:.2f}x an adult's (amplitude is unreliable)"
+        return "human_breathing", float(v.get("pattern_conf") or 0.0), "breathing-like rhythm in the human range"
+    if debrisish:
+        return "debris_shift", float(np.clip(step / 5.0, 0.4, 0.85)), f"step / creep of {step:.1f} mm with no breathing rhythm"
+    if ctx.get("dsp_moving"):
+        return "moving_person", 0.5, "the DSP saw bulk motion (one-sided Doppler)"
+    return "no_signal", float(np.clip(1.0 - (v.get("sqi") or 0.0) if detected else 0.8, 0.3, 0.9)), \
+        "no breathing rhythm, tone, step or burst" + ("" if detected else " (no DSP detection)")
+
+
+def apply_source(v: dict, src):
+    """Write source fields; a non-human source turns condition to 'unknown' and the hint to 'reject' / 'urgent'."""
+    source, conf, why = src
+    v["source"], v["source_conf"], v["source_reason"] = source, round(float(conf), 2), why
+    if source == "human_breathing":
+        return v
+    v["condition"], v["condition_text"] = "unknown", SOURCE_TEXT[source]
+    if source == "moving_person":
+        v["triage_hint"], v["triage_reason"] = "urgent", "movement or knocking: possibly a responsive person; listen and call out"
+    else:
+        v["triage_hint"], v["triage_reason"] = "reject", f"not human breathing ({why})"
+    v["pattern_conf"] = round(float(conf), 2)
+    return v
+
+
+def motion_compensated(iq, params=None, cfg=None):
+    """Range-slow-time cube Xc (motion-compensated, clutter NOT removed), exactly as radar_dsp.process_if builds it."""
+    from . import radar_dsp as R
+    P, cfg = params or R.RadarParams(), cfg or R.DspConfig()
+    X = R.range_fft(iq)
+    d_ref, _ = R._estimate_platform_motion(X, P, cfg)
+    Xc = X * np.exp(-1j * 4 * np.pi * d_ref / P.wavelength)[:, None]
+    A = np.column_stack([d_ref, np.linspace(-1, 1, X.shape[0])])
+    coef, *_ = np.linalg.lstsq(A, Xc - Xc.mean(axis=0, keepdims=True), rcond=None)
+    return Xc - A @ coef
+
+
+def identify(iq, params=None, *, rubble_path_m="pod", cfg=None, res=None, Xc=None, look_m=(1.2, 10.0),
+             look_near_m: float = 3.5) -> dict:
+    """Whole-scan verdict: which return is it, and is it human breathing?
+
+    Runs the real DSP chain (radar_dsp.process_if) unless ``res`` is given, picks the strongest breathing
+    candidate (else the DSP's periodic / moving flags, else the strongest respiration-band bin), runs
+    ``extract`` on it with the scan context, and returns
+    {"source", "condition", "confidence", "reason", "range_m", "vitals", "dsp": {...}}.
+    ``rubble_path_m="pod"``: the pod looks straight down through rubble, so the path = the range."""
+    from . import radar_dsp as R
+    P = params or R.RadarParams()
+    res = res if res is not None else R.process_if(iq, P, cfg, keep_debug=True)
+    Xc = Xc if Xc is not None else motion_compensated(iq, P, cfg)
+    fs = P.fs_slow
+    r0 = int(np.ceil(P.min_range / P.range_res))
+    # thermal floor: median over range bins of the 5-9 Hz slow-time power (breathing and clutter live lower)
+    Y = Xc - Xc.mean(axis=0, keepdims=True)
+    S = np.abs(np.fft.fft(Y * np.hanning(Y.shape[0])[:, None], axis=0)) ** 2
+    f = np.abs(np.fft.fftfreq(Y.shape[0], 1 / fs))
+    hb = (f >= 1.5) & (f <= 0.45 * fs)
+    floor_bin = np.median(S[(f >= 5.0) & (f <= 0.45 * fs)][:, r0:], axis=0)
+    floor = float(np.median(floor_bin))
+    lo_b, hi_b = int(np.ceil(look_m[0] / P.range_res)), int(np.floor(look_m[1] / P.range_res))
+    cands = [c for c in res.candidates if look_m[0] <= c["range_m"] <= look_m[1]]
+    nonh = [n for n in res.periodic_nonhuman if look_m[0] <= n["range_m"] <= look_m[1]]
+    if cands:
+        c = cands[0]
+        k, rng_m, snr = int(c["bin"]), float(c["range_m"]), float(c["snr_db"])
+    elif nonh:
+        k = int(round(nonh[0]["range_m"] / P.range_res)); rng_m, snr = nonh[0]["range_m"], None
+    elif res.doppler_moving and res.moving and look_m[0] <= res.moving["range_m"] <= look_m[1]:
+        k = int(round(res.moving["range_m"] / P.range_res)); rng_m, snr = res.moving["range_m"], None
+    else:
+        # no detection: (1) a rotor-like bin anywhere in the look window, else (2) in the near (rubble) window the
+        # reflector with the largest modulation index var / |mean|^2 (motion beyond the common rubble jitter)
+        W = np.arange(lo_b, hi_b + 1)
+        rb_ = (f >= 0.1) & (f <= 0.75)
+        flat_w = S[hb][:, W].mean(axis=0) / np.maximum(S[rb_][:, W].mean(axis=0), 1e-30)
+        hfdb_w = 10 * np.log10(np.maximum(S[hb][:, W].mean(axis=0), 1e-30) / max(floor, 1e-30))
+        p_mean = np.abs(Xc[:, W].mean(axis=0)) ** 2
+        noise_var = floor / float((np.hanning(Y.shape[0]) ** 2).sum())          # thermal variance per sample
+        has_refl = p_mean >= REFLECTOR_DB_MIN_LIN * noise_var
+        # a rotor sits above the pod (beyond the rubble look volume): search for it only past look_near_m
+        rot = (flat_w >= ROTOR_FLAT_MIN) & (hfdb_w >= ROTOR_HF_DB) & has_refl & (W * P.range_res > look_near_m)
+        near = has_refl & (W * P.range_res <= look_near_m)
+        if rot.any():
+            k = int(W[rot][np.argmax(hfdb_w[rot])])
+        elif near.any():
+            mi = np.maximum(np.var(Y[:, W], axis=0) - noise_var, 0.0) / np.maximum(p_mean, 1e-30)
+            k = int(W[near][np.argmax(mi[near])])
+        else:
+            k = lo_b + int(np.argmax(np.var(Y[:, W], axis=0)))
+        rng_m, snr = float(k * P.range_res), None
+    hf_db = float(10 * np.log10(max(S[hb, k].mean(), 1e-30) / max(floor, 1e-30)))
+    rb = (f >= 0.1) & (f <= 0.75)
+    flat = float(S[hb, k].mean() / max(S[rb, k].mean(), 1e-30))
+    ctx = {"hf_excess_db": hf_db, "flat": flat, "dsp_candidate": bool(cands), "dsp_nonhuman": bool(nonh),
+           "beyond_rubble": bool(rng_m > look_near_m),
+           "dsp_moving": bool(res.doppler_moving)}
+    path = rng_m if rubble_path_m == "pod" else rubble_path_m
+    v = extract(Xc[:, k], fs, kind="iq", wavelength=P.wavelength, range_m=rng_m, rubble_path_m=path,
+                quality=res.quality, snr_db=snr, params=P, context=ctx)
+    return {"source": v["source"], "condition": v["condition"], "confidence": v["source_conf"]
+            if v["source"] != "human_breathing" else v["pattern_conf"], "reason": v["source_reason"]
+            if v["source"] != "human_breathing" else v["pattern_reason"], "range_m": round(float(rng_m), 2), "bin": k,
+            "vitals": v, "dsp": {"candidates": len(res.candidates), "nonhuman": len(res.periodic_nonhuman),
+                                 "moving": bool(res.doppler_moving), "quality": round(float(res.quality), 2),
+                                 "hf_excess_db": round(hf_db, 1), "flat": round(flat, 3)}}
 
 
 def extract_from_obs(obs_debug: dict) -> dict:

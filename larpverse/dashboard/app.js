@@ -8,7 +8,7 @@ import { demoState, demoCloud } from './demo.js';
 import { createTasking, reconText } from './tasking.js';
 import { createComms, linkChip, evidenceChip } from './comms.js';
 import { createSpeaker, respChip } from './speaker.js';
-import { digScore, triageOf, conditionOf, conditionLabel, confMeter, rateOf, spark, caveatsOf, triageChip, drawTriageRing, ALWAYS } from './vitals.js';
+import { digScore, triageOf, conditionOf, conditionLabel, confMeter, rateOf, spark, caveatsOf, triageChip, drawTriageRing, ALWAYS, sourceOf, isRejected, signatureAsset } from './vitals.js';
 
 const params = new URLSearchParams(location.search);
 const STATE_URL = (() => {
@@ -50,7 +50,8 @@ const isGrid = () => (Array.isArray(S?.piles) && S.piles.length > 0) || !!S?.rec
 let selListen = null;                                  // null = follow the latest listen
 const openRows = new Set(), openWhy = new Set(), decOpen = new Map();
 let dismOpen = false, showAllPiles = false;
-let DIG = [], DIG_BY = new Map();
+let DIG = [], DIG_BY = new Map(), REJ = [];   // REJ: pings the radar rejector says are not a person (kept out of the dig order)
+let rejOpen = false;
 let TK = null, CM = null, SP = null;   // SP: loudspeaker panel + guidance overlay (speaker.js)   // CM: rescue hotspot / comms relay (comms.js)                          // operator tasking + recon overlay (tasking.js)       // dig order (ranked pings), recomputed per state
 
 // ---------------- data ----------------
@@ -443,9 +444,9 @@ function draw(now = performance.now()) {
       ctx.strokeStyle = `rgba(255,69,69,${1 - pulse})`; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(x, y, 7 + pulse * 22, 0, Math.PI * 2); ctx.stroke();
       ctx.fillStyle = COL.detect; ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill(); ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.5; ctx.stroke();
     }
-    const dg = DIG_BY.get(c.id), t = dg?.triage, rk = dg ? `#${dg.rank} ` : '';
+    const dg = DIG_BY.get(c.id), t = dg?.triage, rk = dg?.rank ? `#${dg.rank} ` : '';
     if (t) drawTriageRing(ctx, x, y, t);   // triage = ring style around the red ping (dig order), never a new hue
-    const tri = t && c.vitals ? ` · ${t.label}` : '';
+    const tri = t && c.vitals ? ` · ${t.label}${t.key === 'reject' && t.sub ? ': ' + t.sub : ''}` : '';
     const txt = small ? `${rk}${c.id}${tri}` : weak ? `${rk}${c.id}${tri} · ${supText(c)}` : `${rk}${c.id}${tri || ' · belief share ' + f2(c.p_mass)}`;
     qLabel(txt, x + 12, y - 10, weak ? '#ffd9a6' : '#ffd0d0', weak ? 'rgba(58,35,6,0.92)' : 'rgba(60,8,8,0.88)', 1, weak ? 'rgba(255,159,67,0.7)' : null);
   }
@@ -686,19 +687,21 @@ function renderBanner() {
 // Dig order: radar pings ranked by breathing-pattern triage x localisation certainty x depth (vitals.js).
 function computeDig() {
   const cands = S.radar_candidates || [];
-  DIG = cands.map(c => {
+  const all = cands.map(c => {
     const surf = S.heightmap ? hmAt(c.xy[0], c.xy[1]) : null, di = depthInfo(c, surf), e = c.cov ? ellipse(c) : null;
     return { c, di, e, ...digScore(c, di, e) };
-  }).sort((a, b) => b.score - a.score || (b.c.p_mass ?? 0) - (a.c.p_mass ?? 0) || a.c.id.localeCompare(b.c.id));
-  DIG.forEach((d, k) => { d.rank = k + 1; });
-  DIG_BY = new Map(DIG.map(d => [d.c.id, d]));
+  });
+  DIG = all.filter(d => !isRejected(d.c)).sort((a, b) => b.score - a.score || (b.c.p_mass ?? 0) - (a.c.p_mass ?? 0) || a.c.id.localeCompare(b.c.id));
+  REJ = all.filter(d => isRejected(d.c));
+  DIG.forEach((d, k) => { d.rank = k + 1; }); REJ.forEach(d => { d.rank = null; });
+  DIG_BY = new Map(all.map(d => [d.c.id, d]));
 }
 function renderCands(grid) {
   computeDig();
-  $('nCand').textContent = DIG.length;
+  $('nCand').textContent = DIG.length + (REJ.length ? ` + ${REJ.length} rejected` : '');
   $('candsTitle').textContent = 'Dig order';
   $('candsTitle').title = grid ? 'Radar pings, ranked' : 'Radar candidates, ranked';
-  if (!DIG.length) { $('cands').innerHTML = '<p class="empty">No radar pings yet. No detection is not proof of absence.</p>'; return; }
+  if (!DIG.length && !REJ.length) { $('cands').innerHTML = '<p class="empty">No radar pings yet. No detection is not proof of absence.</p>'; return; }
   const anyV = DIG.some(d => d.c.vitals);
   $('cands').innerHTML = DIG.map(d => {
     const { c, di, triage: t, weak } = d, v = c.vitals || null, mv = c.kind === 'moving';
@@ -714,8 +717,16 @@ function renderCands(grid) {
       <span class="l5">${v ? confMeter(v.pattern_conf) : '<span class="cm none">no pattern analysis</span>'}${respChip(c.responsiveness)}</span>
       <span class="l3">depth <b>${esc(di.short)}</b> · ${weak ? `<span class="sup">${esc(supText(c))}</span>` : `belief share <b>${f2(c.p_mass)}</b>`}${v?.rate_ci?.length === 2 && v.rate_ci[0] != null ? ` · rate 95% ${f0(v.rate_ci[0])}–${f0(v.rate_ci[1])}` : ''}</span>
       <span class="l4"><span class="aid">Aid, not a diagnosis</span><span class="cv">${cav.length} caveat${cav.length === 1 ? '' : 's'}</span><span class="go">3D view →</span></span></button>`;
-  }).join('') + `<p class="dignote">Ranked by ${anyV ? 'the condition read from the breathing pattern (weighted by its confidence)' : 'condition (none analysed yet: all “assess”)'} × localisation certainty × depth. ${esc(ALWAYS)} Every ping is a candidate search region, not a confirmed person.</p>`;
+  }).join('') + (REJ.length ? `<details class="rej"${rejOpen ? ' open' : ''}><summary>Not a person, says the radar · ${REJ.length} (not ranked)</summary>${REJ.map(d => {
+      const { c, triage: t } = d, src = sourceOf(c.vitals);
+      return `<button class="dig rejd" data-id="${esc(c.id)}" title="${esc(c.vitals?.source_reason || '')}"><span class="rk">–</span>
+        <span class="l1"><i class="mk"></i><b>${esc(c.id)}</b>${triageChip(t)}</span>
+        <span class="l2 none">${esc(conditionLabel(c.vitals, c) || '')}</span>
+        <span class="l3">source ${esc(src?.label || '')}${c.vitals?.source_conf != null ? ' · confidence ' + f2(c.vitals.source_conf) : ''} · still a radar return: a person cannot be fully ruled out</span>
+        <span class="l4"><span class="go">3D view →</span></span></button>`;
+    }).join('')}</details>` : '') + `<p class="dignote">Ranked by ${anyV ? 'the condition read from the breathing pattern (weighted by its confidence)' : 'condition (none analysed yet: all “assess”)'} × localisation certainty × depth. ${esc(ALWAYS)} Every ping is a candidate search region, not a confirmed person.</p>`;
 }
+$('cands').addEventListener('toggle', e => { if (e.target.matches?.('details.rej')) rejOpen = e.target.open; }, true);
 $('cands').addEventListener('click', e => { const b = e.target.closest('[data-id]'); if (b) openDetail((S.radar_candidates || []).find(c => c.id === b.dataset.id)); });
 
 function renderPiles() {
@@ -847,7 +858,10 @@ function vitalsCard(c, di) {
   if (v?.movement != null) kv.push(['Movement', `${f0(100 * v.movement)}% <small>of the window</small>`]);
   if (v?.depth_rel != null) kv.push(['Chest excursion', `${f1(v.depth_rel)}× a calm resting breath <small>LOW confidence${v.depth_rel_conf != null ? ' (' + f2(v.depth_rel_conf) + ')' : ''}</small>`]);
   if (v?.sqi != null) kv.push(['Signal quality', f2(v.sqi)]);
-  if (dg) kv.push(['Dig order', `#${dg.rank} of ${DIG.length} <small>triage ${f2(dg.tri)} × localisation ${f2(dg.loc)} × depth ${f2(dg.acc)}</small>`]);
+  if (dg) kv.push(['Dig order', dg.rank ? `#${dg.rank} of ${DIG.length} <small>triage ${f2(dg.tri)} × localisation ${f2(dg.loc)} × depth ${f2(dg.acc)}</small>` : 'not ranked <small>the radar rejector says this is not a person</small>']);
+  const src = sourceOf(v);
+  if (src) kv.unshift(['Source', `${esc(src.label)}${v.source_conf != null ? ` <small>confidence ${f2(v.source_conf)}</small>` : ''}${v.source_reason ? `<small class="sr">${esc(v.source_reason)}</small>` : ''}`]);
+  const sig = signatureAsset(v);
   return `<div class="vt">
       <div class="tile dtile"><h5>Depth</h5><b>${esc(di.short.replace(/\s*\((nominal|radar estimate)\)$/, ''))}</b><small>${esc(di.nominal ? 'nominal: assumed, not measured' : 'radar estimate, below the LiDAR surface')}</small></div>
       <div class="tile btile"><h5>Condition (breathing) ${triageChip(t)}</h5><b class="pat ${cond ? 'k-' + cond.key : ''}">${esc(pl || 'No breathing signal at this ping')}</b>
@@ -858,6 +872,7 @@ function vitalsCard(c, di) {
         ${sp ? `<div class="bsp">${sp.svg}<small title="${esc(sp.tip)}">${esc(sp.label)}${sp.measured ? '' : sp.rateOnly ? ': periodic radar return, no pattern analysis; the shape is not a pattern' : ': shape from rate, variability and pauses, not the measured waveform'}</small></div>` : '<small>no periodic signal</small>'}</div>
     </div>
     ${kv.length ? `<dl class="vkv">${kv.map(([k, x]) => `<dt>${k}</dt><dd>${x}</dd>`).join('')}</dl>` : ''}
+    ${sig ? `<figure class="sigth"><img src="/assets/radar_signatures/${esc(sig)}.png" alt="Reference radar signature: ${esc(sig.replace(/_/g, ' '))}" loading="lazy" onerror="this.closest('figure').hidden=true"><figcaption>Library signature for “${esc(sig.replace(/_/g, ' '))}” (synthetic reference, not this ping's data)</figcaption></figure>` : ''}
     ${v?.triage_reason || v?.pattern_reason ? `<p class="vwhy">${esc(v.triage_reason || '')}${v.pattern_reason ? `<small>${esc(v.pattern_reason)}</small>` : ''}</p>` : ''}
     <details class="vcav"${v ? '' : ' open'}><summary>Caveats (${cav.length})</summary><ul>${cav.map(k => `<li>${esc(k)}</li>`).join('')}</ul></details>`;
 }

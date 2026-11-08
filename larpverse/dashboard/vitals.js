@@ -11,8 +11,27 @@ export const TRIAGE = {
   icheck: { key: 'icheck', label: 'immediate', rank: 0.85, tip: 'Irregular breathing, pauses, or breathing close to the 30/min cut-off: possible airway problem, injury or distress. Check first.' },
   urgent: { key: 'urgent', label: 'urgent', rank: 0.7, tip: 'Slow, regular breathing (or fast but under the cut-off): could be deep rest or reduced consciousness; the radar cannot tell which. Call out and check responsiveness.' },
   assess: { key: 'assess', label: 'assess', rank: 0.55, tip: 'No usable breathing pattern from this scan: needs a longer or better scan.' },
+  reject: { key: 'reject', label: 'not a person', rank: 0.15, tip: 'The radar rejector says this return is not human breathing. Kept on the map, out of the dig order.' },
   delayed: { key: 'delayed', label: 'delayed', rank: 0.35, tip: 'Calm, regular breathing in the normal range (breathing only: perfusion and responsiveness are unknown). Re-check later.' },
 };
+// What the radar return is (vitals.source, sim/vitals.SOURCES) and the signature-library asset for it.
+export const SOURCE = {
+  human_breathing: { label: 'breathing', asset: null },
+  no_signal: { label: 'empty rubble', asset: 'empty' },
+  debris_shift: { label: 'settling debris', asset: 'debris' },
+  small_animal: { label: 'small animal', asset: 'small_animal', maybe: true },     // a person cannot be ruled out
+  machinery: { label: 'machinery vibration', asset: 'machinery' },
+  rotor: { label: 'drone rotor reflection', asset: 'rotor' },
+  moving_person: { label: 'person moving/knocking', asset: 'moving_person' },
+};
+const COND_ASSET = { calm: 'calm', distressed_tachypnea: 'distressed_tachypnea', unconscious_slow: 'unconscious_slow', irregular_apneic: 'irregular_apneic' };
+export const sourceOf = v => (v?.source ? { key: v.source, ...(SOURCE[v.source] || { label: String(v.source).replace(/_/g, ' '), asset: null }) } : null);
+export const isRejected = c => (c?.triage_fused?.triage_hint || c?.vitals?.triage_hint) === 'reject';
+// signature-library thumbnail for this return (synthetic reference strip, not this ping's own data)
+export function signatureAsset(v) {
+  const s = sourceOf(v); if (s && s.key !== 'human_breathing') return s.asset;
+  const k = conditionOf(v)?.key; return COND_ASSET[k] || null;
+}
 // Survivor CONDITION from the breathing pattern (no age inference). New classes from sim/vitals.py, plus the legacy
 // pattern names mapped onto them so older runs still read correctly.
 export const CONDITION = {
@@ -41,6 +60,9 @@ export function triageOf(v) {
   const k = conditionOf(v);
   let h = String(v?.triage_hint || '').toLowerCase().trim();
   if (!h && k) h = k.key === 'distressed_tachypnea' && (rateOf(v) ?? 0) > 30 ? 'immediate' : k.hint;
+  const src = sourceOf(v);
+  if (h === 'reject') return { ...TRIAGE.reject, label: src?.maybe ? 'possibly not a person' : 'not a person', sub: src?.label || 'non-human return' };
+  if (h === 'urgent' && src?.key === 'moving_person') return { ...TRIAGE.urgent, sub: 'listen and call out' };
   if (!h || h === 'assess') return { ...TRIAGE.assess, sub: v ? '' : 'no pattern yet' };
   if (/^immediate\s*\(check\)/.test(h)) return { ...TRIAGE.icheck, sub: 'check' };
   if (h === 'urgent') return { ...TRIAGE.urgent, sub: 'check responsiveness' };
@@ -131,7 +153,7 @@ export function caveatsOf(c) {
   if (!v) out.push('No breathing-pattern analysis for this ping in this run: ranked on localisation and depth only.');
   return out;
 }
-export const triageChip = (t, extra = '') => `<span class="tri t-${t.key}" title="${esc(t.tip)}">${esc(t.label)}${t.sub ? `<small> · ${esc(t.sub)}</small>` : ''}</span>${extra}`;
+export const triageChip = (t, extra = '') => `<span class="tri t-${t.key}" title="${esc(t.tip)}">${esc(t.label)}${t.sub ? `<small>${t.key === 'reject' ? ': ' : ' · '}${esc(t.sub)}</small>` : ''}</span>${extra}`;
 
 // Map ring style per triage (shape, not a new hue: red = ping, yellow = cones, teal = priority stay unambiguous).
 export function drawTriageRing(ctx, x, y, t) {
@@ -140,6 +162,7 @@ export function drawTriageRing(ctx, x, y, t) {
   ctx.shadowColor = 'rgba(0,0,0,0.7)'; ctx.shadowBlur = 3;
   if (t.key === 'immediate') { ring(12, 2, []); ring(15.5, 2, []); }
   else if (t.key === 'icheck') ring(13, 2.4, []);
+  else if (t.key === 'reject') { ctx.strokeStyle = 'rgba(138,156,170,0.9)'; ring(13, 1.2, [2, 3]); ctx.beginPath(); ctx.moveTo(x - 5, y - 5); ctx.lineTo(x + 5, y + 5); ctx.moveTo(x + 5, y - 5); ctx.lineTo(x - 5, y + 5); ctx.lineWidth = 1.6; ctx.setLineDash([]); ctx.stroke(); }
   else if (t.key === 'urgent') { ring(13, 1.2, []); ring(9.5, 1.2, []); }
   else if (t.key === 'delayed') ring(13, 1.5, [5, 4]);
   else ring(13, 1.6, [1.5, 3.5]);

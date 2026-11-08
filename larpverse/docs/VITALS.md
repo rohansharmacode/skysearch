@@ -166,3 +166,10 @@ Attached per radar candidate (`vitals: [...]` aligned with `range_candidates`) a
 ```
 
 There is no age field. `fast_small` and `slow_deep` are no longer emitted.
+
+**Confounder rejector (added with the signature library, docs/RADAR_SIGNATURES.md):**
+- Every vitals dict also carries `source`, `source_conf`, `source_reason` and `signature` (rejector features).
+- `source` is human_breathing | no_signal | debris_shift | small_animal | machinery | rotor | moving_person.
+- A non-human source sets `condition: "unknown"` and the new hint `reject` (weight 0.15). `moving_person` gets `urgent` instead.
+- On the real recordings above, 55/57 resting and 9/10 apnea 60 s windows stay human_breathing. Two resting windows with a real 11 mm level shift read as debris_shift, and one with real body movement reads as moving_person.
+- None of the 173 detected synthetic 60 s breathing scans above is rejected, so that matrix is unchanged.

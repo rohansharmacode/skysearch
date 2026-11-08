@@ -1,5 +1,46 @@
 # From the Isaac Sim session (newest first)
 
+### 2026-11-08 04:05: rehearsals 5–6b: the unscripted change now works on camera (larpverse-isaac cd1a4cf)
+
+**Result.** In rehearsal 6 the whole story fits inside 60 s (`reh6_layoutB.mp4` on release `larpverse-rehearsal1`, reviewed every 2 s):
+
+| Video | What happens |
+|---|---|
+| 24 s | The teammate presses the live button. STAGE EVENT t137 |
+| 26–34 s | Panel: "Live change (unscripted)" |
+| 34–41 s | Panel: "New voice heard near A1". The pod mics heard it at t265. Re-plan: "A1 (56) now ranks first" |
+| 42–48 s | Panel: "Plan changed / Flying to A1". Dispatch at t439 |
+| 50–57 s | The drones map A1 and lower their pods |
+
+The town kit is on for this run (streets, cars, damaged buildings). Its log says it is not the cause of the lag. "Behind" grows by about 0.8 s per rescan with or without the town, because each scan's DSP runs at ×24.
+
+**What broke on the way, and the fixes.**
+1. **The banner named the wrong pile.** reh5 said "PLAN CHANGED: A2 → B3" but flew to A1. reh5b said "A1 → B1", where A1 was only a guess by name order before any listen. Fixes:
+   - the banner names the pile the gate ranks first (`gate_target`);
+   - there is no "plan changed" claim when nothing was ranked before the input.
+2. **The change was missed.** In reh5b the voice switched on at t265 and the pile ended before a pod-mic listen with it returned. Fixes:
+   - after a live stage change the take pace is capped at ×10 until a pod-mic listen submitted after the change reports new evidence (at most 3 listens), or until the pile ends (`quick_pace`);
+   - `QUICK_STRONG` is 50 (was 60);
+   - a pile counts as new if it was silent from no further than max(d + 5 m, 1.6·d). In 6b, idle drones landed nearer A1 than the first pods, so A1 could never count as new;
+   - `live_cmd.json` is stat'ed every 0.2 s (the button used to wait up to 1 s, which is 24 sim s at ×24);
+   - the cap is applied after every state drain too. In reh6 it only averaged ×17.
+3. **The gate listen held the clock 10.2 s.** A pod-mic listen was still queued in the worker. `listen_pace` now counts it, and uses 1.3× the pre-flight latency for the first gate listen.
+4. **The panel showed a breathing rate on empty scans.** At reh6 75 s it said "Pod d1 feels a rhythm: 30.8/min" on scans the mission logged as "ranges no detection". A scan now counts only with ranges or breathing_hz. Otherwise the panel says "nothing strong enough to count in this scan" and draws no trace. (Please check: your radar vitals block is computed on empty scans too.)
+5. **"Plan changed" was worded wrong.** At reh6 42 s it said "planned to search A2 next" while the drones were searching A2. It now says "cut the search at A2 short and now fly to A1".
+6. **ASR (`--live-asr multi`) let video outros through.** The 10 s quick listens produced "Terima kasih kerana menonton!" ("thank you for watching", Malay) on B3. Fixes:
+   - Malay/Indonesian, Vietnamese and Chinese outros are now filtered;
+   - when the translation is dropped, the words are dropped too.
+   A1's Indonesian words still don't survive the filters. `LARPVERSE_ASR_DEBUG=<file.jsonl>` dumps every raw decode so they can be tuned.
+7. **The LiDAR read as rain** (10–15 s, 46 s). Simple style now draws a short downward fan: 8 rays per drone, each at most 18 m.
+8. **Stale state at the start.** A left-over live.json made the panel open with a stale "Live change" that ate the real one's 8 s. The runner now clears it. The panel also re-arms on a new event and ignores events stamped after the mission clock.
+
+**Still open.**
+- The margin is thin. 6b pressed about 1 s later than reh6 (event t178), heard nothing new before A2 converged at t366, and the full listen went to B1 (83, boosted by its call-out answer; A1 57). A1's own call-out answers read as "already making such sounds before the call-out", because its idle loop is continuous. Rehearsal 7 / 7b test the fixes above with the button at GO+18 s and GO+24 s.
+- Optional `--cam-grade 1`: contrast and saturation ×1.12, a faint warm gain, vignette and grain. Testing in reh7.
+
+**Take command (current).** ISAAC_BRIEF §4 plus:
+`--live-pace clear --comms 0 --hud off --overlay-style simple --live-asr multi --grid-look 0 --drone-style blender --take-open wide --town isaac/assets/town_kit --sky 600 --sun 2600 --fog-intensity 0.08 --fog-start 120`, env `LARPVERSE_WHISPER_DEVICE=cuda`, layout B (Isaac 1280×1080 + `isaac/hud/panel.html` 640×1080). Clear `dashboard/data/{live,hud,live_cmd,state,motion}.json` before the take. **Button: press once while A2's radar pods are down (the panel shows "Feeling for breathing"), about 18–22 s into the video.**
+
 ### 2026-11-08 03:45: rehearsals 1–4b, glitch list, fixes (larpverse-isaac 17df038, your 12577d6 merged)
 
 **Rehearsal footage.** Release `larpverse-rehearsal1`. (Code state: larpverse-isaac e1eaf4d.) The most representative is `reh4b_layoutB.mp4` (81 s, look (a) + Blender drone, layout B), which I reviewed frame by frame every 2 s. Rehearsal 5 with the fixes below is running now; its MP4 lands in the same release.

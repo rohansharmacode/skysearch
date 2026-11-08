@@ -405,7 +405,7 @@ const CAPS5 = [
   [0.6, 'Three drones take off from the command van'],
   [4.55, 'LiDAR maps rubble pile A2 in 3D'],
   [8.85, 'Each drone lowers a radar pod on a cable to feel for breathing'],
-  [11.6, 'A breathing rhythm at A2: “A2-R1 · 8/min · urgent”, a place for rescuers to check'],
+  [11.6, 'A breathing rhythm at A2: “A2-R1 · 9/min · urgent”, a place for rescuers to check'],
 ];
 const wclips5 = makeWin('s5');
 const wnum = $('#s5 .wcap .num'), wtxt = $('#s5 .wtxt'), wcap = $('#s5 .wcap');
@@ -442,7 +442,7 @@ const mA1 = MP.A1, mA2 = MP.A2;
 const leadG = el('g', {}, mmap);
 el('circle', { cx: mA2.x + 16, cy: mA2.y + 2, r: 5, fill: '#ff6b6b', stroke: '#090e18', 'stroke-width': 1.5 }, leadG);
 const leadT = el('text', { x: mA2.x + 26, y: mA2.y + 30, fill: '#ff9b9b', 'font-family': 'GeistMono', 'font-size': 12, 'font-weight': 600 }, leadG);
-leadT.textContent = 'A2-R1 · 8/min';
+leadT.textContent = 'A2-R1 · 9/min';
 // sound rings at A1
 const sRings = [0, 1, 2].map(() => el('ellipse', { cx: mA1.x, cy: mA1.y, rx: 0, ry: 0, fill: 'none', stroke: '#f0857c', 'stroke-width': 2, opacity: 0 }, mmap));
 // bearing lines from two drones toward A1

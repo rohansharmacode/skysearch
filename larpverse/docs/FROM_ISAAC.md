@@ -2,7 +2,7 @@
 
 ### 2026-11-08 03:45: rehearsals 1–4b, glitch list, fixes (larpverse-isaac 17df038, your 12577d6 merged)
 
-**Rehearsal footage.** Release `larpverse-rehearsal1`. The most representative is `reh4b_layoutB.mp4` (81 s, look (a) + Blender drone, layout B), which I reviewed frame by frame every 2 s. Rehearsal 5 with the fixes below is running now; its MP4 lands in the same release.
+**Rehearsal footage.** Release `larpverse-rehearsal1`. (Code state: larpverse-isaac e1eaf4d.) The most representative is `reh4b_layoutB.mp4` (81 s, look (a) + Blender drone, layout B), which I reviewed frame by frame every 2 s. Rehearsal 5 with the fixes below is running now; its MP4 lands in the same release.
 
 **What each rehearsal showed** (grid, seed 7, real acoustic pipeline, `--live-pace clear --comms 0 --hud off --overlay-style simple`):
 
@@ -19,9 +19,12 @@
 3. **Listen too long:** the pace was capped at ×4 for the whole 177 sim s (44 s of screen time), so the dispatch fell outside the take. Fixed: `LiveController.listen_pace` runs the listen at ×17 and slows only while the prefetched listen is still computing. That's about 15 s of video for a 15 s pipeline.
 4. **A1's words never came through.** The GPU diagnostic gave Whisper's own language id as zh / th / hu / km at p 0.16–0.79 on the eSpeak Indonesian. Translation with the auto-detected language hallucinated every time ("Thank you for watching"). Forcing `id` read the separated A1 clip as "Ada yang bisa dengar saya, kaki saya terjepit" (lp −0.76, but no_speech 0.76, so your keep rule dropped it). Fixed behind `--live-asr multi`:
    - each voice clip is decoded once per language a Taiwan rescue team plans for (`LARPVERSE_ASR_LANGS`, default zh, en, id, vi);
-   - the best average log-probability wins;
-   - Whisper then translates with the source language forced;
-   - a clip the VAD calls speech (≥ 0.8) keeps a confident decode even when Whisper's no-speech score is high.
+   - Whisper small, beam 5, temperature fallback, no_repeat_ngram_size 3;
+   - a segment is dropped at compression ratio ≥ 2.0, avg_logprob < −0.9, repetition loops, or stock subtitle/YouTube phrases. Without these filters 'vi' won on A1 with a YouTube outro at lp −0.39, and A3 decoded to "Kill me…" (e1eaf4d);
+   - the no-speech gate applies only below VAD 0.8;
+   - the best surviving language must beat the runner-up by 0.10, otherwise no words are shown;
+   - Whisper then translates with the source language forced, under the same filters;
+   - measured on the separated clips: A1 → id "Ada yang bisa dengar saya, kaki saya terjepit.", B1 → en, A3 → no transcript.
    - The English text becomes the clip transcript (the judge's keywords are English). The language and the original words go to `live.json` `heard`, and the panel shows "“Help! …” / spoken in Indonesian: “Tolong! …” · machine-translated".
    - Only the speech-to-text step of `recognise` is swapped, inside the Isaac worker. VAD, YAMNet, gates, scores and ranking are yours, unchanged.
    - This replaces your planned "voice-like call (language not identified)" for the take. If the decode isn't confident, nothing is shown, as before.

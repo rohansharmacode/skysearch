@@ -1,0 +1,8 @@
+13:05:47.801 loading collapse 7 day (TOUCHDOWN=1, audio model gemini-3.5-flash-lite)
+13:06:43.935 site ready (held)
+13:06:54.965 recording started (start screen)
+13:07:02.495 hover T1a sent
+13:07:07.024 click T1b sent
+13:07:07.028 isaac: first click received
+13:09:41.260 first autonomous dispatch: [t= 421.0] Dispatch d1-d3 -> pile T1c at (-31.0, -16.5): Dispatch to T1c (score 60, priority 60), which is the strongest and closest lead (20.4 s travel, 0.78 d
+13:09:54.435 stopped: 179.266000 s, 162217658 B

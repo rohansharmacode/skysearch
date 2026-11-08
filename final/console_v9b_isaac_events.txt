@@ -1,0 +1,29 @@
+[t=   0.0] Deploy d1-d3 -> pile T1a at (-31.1, 14.3): operator-selected start pile, inside tasked zone T1a [zone T1a]
+[isaac] INTERACTIVE: drones on the pads; waiting for the operator's first click (POST /api/goto -> /home/ubuntu/lv/larpverse/dashboard/data/goto.json)
+[;m[isaac] INTERACTIVE: first click -> launch pile T1b; rebuilding the mission (same scenario)
+[t=   0.0] Deploy d1-d3 -> pile T1b at (-31.0, -1.3): operator-selected start pile, inside tasked zone T1b [zone T1b]
+[isaac] phase deploy at t=1.0 wall=0.0s x6 behind=0.0s
+[isaac] phase survey at t=14.0 wall=1.6s x7 behind=0.0s
+[isaac] phase landing at t=90.0 wall=13.6s x6 behind=0.7s
+[isaac] LIDAR FLASH T1b: 30000 points, red 64.1% yellow 4.0% (own points, slope/step)
+[isaac] phase radar at t=113.0 wall=17.0s x12 behind=0.7s
+[isaac] phase relocate at t=133.0 wall=21.4s x24 behind=3.2s
+[isaac] phase rescan at t=164.0 wall=24.4s x24 behind=4.6s
+[isaac] phase relocate at t=184.0 wall=27.4s x24 behind=7.0s
+[isaac] phase rescan at t=209.0 wall=29.8s x24 behind=8.2s
+[isaac] phase relocate at t=229.0 wall=33.1s x24 behind=10.8s
+[isaac] phase rescan at t=260.0 wall=36.0s x24 behind=12.2s
+[isaac] phase relocate at t=280.0 wall=39.8s x24 behind=15.4s
+[isaac] phase rescan at t=304.0 wall=42.6s x24 behind=17.2s
+[t= 324.0] Radar phase at T1b over; landed drones listen to the other piles for 26 s and stream clips to the acoustic agent
+[isaac] real acoustic pipeline: listen 1 submitted at t 324 (landing patches known); it overlaps the landing, the listen window and the call-out
+[isaac] phase acoustic at t=324.0 wall=45.7s x6.56384 behind=19.5s
+[isaac] Gemini calls: +1 (listen 4), 1 this run
+[isaac] Gemini calls: +1 (listen 5), 2 this run
+[t= 421.0] Decision (gemini, 12928 ms): dispatch T1c - Dispatch to T1c (score 60, priority 60), which is the strongest and closest lead (20.4 s travel, 0.78 direction reliability) with a voice detecti
+[t= 421.0] Dispatch d1-d3 -> pile T1c at (-31.0, -16.5): Dispatch to T1c (score 60, priority 60), which is the strongest and closest lead (20.4 s travel, 0.78 direction reliability) with a voice detec
+[isaac] phase dispatch at t=421.0 wall=140.1s x5 behind=98.5s
+[isaac] phase survey at t=434.0 wall=142.8s x7 behind=98.8s
+[isaac] phase landing at t=465.0 wall=149.1s x6 behind=100.7s
+[isaac] LIDAR FLASH T1c: 15233 points, red 74.1% yellow 4.9% (own points, slope/step)
+[isaac] phase radar at t=487.0 wall=153.2s x12 behind=101.2s

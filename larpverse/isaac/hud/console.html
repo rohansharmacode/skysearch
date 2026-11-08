@@ -111,6 +111,16 @@
   .by { display:inline-block; font-size:11px; font-weight:800; letter-spacing:.1em; padding:2px 7px; border-radius:5px;
         text-transform:uppercase; vertical-align:2px; margin-left:6px; }
   .by.gem { background:var(--gem); color:#0b0f13; } .by.box { background:#3a434b; color:#dfe5ea; }
+  #pops { position:absolute; right:20px; top:20px; width:430px; display:flex; flex-direction:column; gap:10px; z-index:6; pointer-events:none; }
+  .pop { background:rgba(10,14,18,0.86); border:1px solid rgba(255,255,255,0.12); border-left:5px solid var(--pc,#5b8cff); border-radius:14px;
+         padding:11px 15px 12px; box-shadow:0 14px 40px -12px rgba(0,0,0,.7); backdrop-filter:blur(6px); animation:popin .45s cubic-bezier(.2,.9,.3,1.2) both; }
+  .pop.out { animation:popout .5s ease both; }
+  @keyframes popin { from { opacity:0; transform:translateX(40px) scale(.97); } to { opacity:1; transform:none; } }
+  @keyframes popout { to { opacity:0; transform:translateY(-8px); } }
+  .pop .pt { font-size:11.5px; font-weight:800; letter-spacing:.09em; text-transform:uppercase; color:var(--pc,#5b8cff); }
+  .pop .pm { font-size:19px; font-weight:700; color:#fff; margin-top:4px; line-height:1.28; }
+  .pop .pm small { display:block; font-size:13px; font-weight:500; color:#aab4bc; margin-top:3px; font-style:normal; }
+  .pop .ps { font-size:13.5px; color:#c9d2d8; margin-top:5px; line-height:1.35; }
   #hpri { margin-top:8px; display:grid; gap:3px; }
   #hpri .pr { font-size:13.5px; color:#cdd6dc; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   #hpri .pr b { display:inline-block; min-width:118px; font-size:11px; font-weight:800; letter-spacing:.06em; text-transform:uppercase;
@@ -150,6 +160,7 @@
     <div class="hud" id="cap"><div class="k" id="capk">Live simulation</div><div class="t" id="capt">Waiting for the mission…</div><div class="c" id="capc"></div></div>
     <div class="hud hide" id="wavebox"><canvas id="wave" width="1280" height="240"></canvas><div class="wcap" id="wcap"></div></div>
     <div id="loading" class="hide"><div><div class="lt" id="loadt">Loading a new site…</div><div class="lc" id="loadc"></div></div></div>
+    <div id="pops"></div>
     <div class="hud" id="honest">Simulation. The trapped people, their voices and the radar returns are synthetic; the drones never see where they are.</div>
   </div>
   <div class="wrap">
@@ -493,7 +504,7 @@ function heardCard(s) {
   const sc = best.scores || {};
   const cls = String(best.class || 'sound').replace(/_/g, ' ');
   $('hq').innerHTML = heard(best) || `A ${esc(cls)} near ${esc(best.pile_id)}` + (cls === 'voice' ? ' <small>no words made out</small>' : '');
-  const bits = [`${esc(String(best.class || 'sound').replace(/_/g, ' '))} near ${esc(pn(best.pile_id))}`, `how sure it is a person ${f2(sc.human)}`];
+  const bits = [`${esc(String(best.class || 'sound').replace(/_/g, ' '))} near ${esc(pn(best.pile_id))}`, `person likelihood ${sc.human != null ? Math.round(100 * sc.human) + '%' : '–'}`];
   if (best.bearing_deg != null) bits.push(`from the ${compass(best.bearing_deg).split(' (')[0]} of drone ${esc(best.drone_id)}`);
   if (best.doa_agree) bits.push(`${esc(best.doa_agree)} drones agree on the direction`);
   $('hwhy').innerHTML = bits.join(' · ');           // (the model's own rationale is in the next-pile card's reason)
@@ -510,8 +521,8 @@ function nextCard(s) {
   const alt = dec && (dec.options || []).filter(o => o.action === 'dispatch' && o.pile_id && o.pile_id !== d.to_pile && o.priority != null)
                                         .sort((x, y) => y.priority - x.priority)[0];
   // the on-box fallback says "Fallback (no LLM configured): highest valid priority: A3 (62)": keep the reason only
-  const why = op ? 'You sent the drones here.' : String((dec && dec.rationale) || d.reason || '')
-    .replace(/^fallback \([^)]*\):\s*/i, '').replace(/^highest valid priority: (\S+) \((\d+)\)/i, 'Highest sound priority: $1 ($2 of 100)');
+  const why = op ? 'You sent the drones here.' : plainWhy(String((dec && dec.rationale) || d.reason || '')
+    .replace(/^highest valid priority: (\S+) \((\d+)\)/i, 'Highest sound priority: $1 ($2 of 100)'));
   $('nwhy').innerHTML = esc(why) + (alt && !op ? `<br><span style="color:#8d98a1">Next best: ${esc(alt.pile_id)} (priority ${alt.priority})</span>` : '');
 }
 
@@ -781,6 +792,78 @@ function lmUpdate(s, b) {
 }
 
 // ---------------------------------------------------------------- render
+// ---------------------------------------------------------------- pop-ups (top right of the Isaac view)
+// One card per new event, straight from the mission state: a sound heard (meaning in English, the words as spoken,
+// its priority tier, how likely it is a person), the LiDAR risk map, the landing, a radar find, the van's decision.
+const POP = { seen: new Set(), primed: false, live: [] };
+const plainWhy = w => String(w || '').replace(/^fallback \([^)]*\):\s*/i, '').split(/(?<=[.!?])\s/)[0]
+  .replace(/\s*\([^)]*\d[^)]*\)/g, '').replace(/\s+/g, ' ').trim().slice(0, 170);
+function popPush(key, color, tag, main, sub) {
+  if (POP.seen.has(key)) return; POP.seen.add(key);
+  if (!POP.primed) return;
+  const el = document.createElement('div'); el.className = 'pop'; el.style.setProperty('--pc', color);
+  el.innerHTML = `<div class="pt">${tag}</div><div class="pm">${main}</div>${sub ? `<div class="ps">${sub}</div>` : ''}`;
+  const box = $('pops'); box.insertBefore(el, box.firstChild);
+  POP.live.unshift({ el, at: vnow() });
+  while (POP.live.length > 3) { const o = POP.live.pop(); o.el.remove(); }
+}
+function popTick() {
+  const now = vnow();
+  for (const o of [...POP.live]) {
+    if (now - o.at > 7.5 && !o.out) { o.out = true; o.el.classList.add('out'); }
+    if (now - o.at > 8.1) { o.el.remove(); POP.live.splice(POP.live.indexOf(o), 1); }
+  }
+}
+function pops(s) {
+  if (held(s)) { POP.seen.clear(); POP.live.forEach(o => o.el.remove()); POP.live = []; POP.primed = true; return; }
+  // sounds: the newest listen, most urgent first: up to two trapped/check, then one safe/not-a-person
+  const C = s.acoustic_clips || [];
+  if (C.length) {
+    const lastL = Math.max(...C.map(c => +c.listen || 0));
+    const cur = C.filter(c => (+c.listen || 0) === lastL)
+      .sort((a, b) => (TIER_N[tierOf(a)] - TIER_N[tierOf(b)]) || ((b.priority ?? 0) - (a.priority ?? 0)));
+    const urgent = cur.filter(c => TIER_N[tierOf(c)] <= 1).slice(0, 2), calm = cur.filter(c => TIER_N[tierOf(c)] >= 2).slice(0, 1);
+    for (const c of [...calm, ...urgent]) {                      // inserted on top, so the most urgent ends up first
+      const t = tierOf(c), T = TIER[t], h = (c.scores || {}).human;
+      const said = heard(c);
+      const what = said || `${esc(String(c.class || 'sound').replace(/_/g, ' '))} near ${esc(pn(c.pile_id))}`;
+      const who = isGem(c.by) ? ` · ${esc(mName(c.model || DRONE_M))}` : '';
+      const pr = t === 'trapped' ? 'Top priority' : t === 'check' ? 'Check again' : t === 'safe_surface' ? 'Not a search target' : 'Ignored';
+      popPush(`clip:${c.id}`, T[1], `Sound · ${T[0]} · ${pr}`, what,
+        `${c.tier_why ? esc(c.tier_why) + ' · ' : ''}near ${esc(pn(c.pile_id))}${h != null && t !== 'ignore' ? ` · person likelihood ${Math.round(100 * (t === 'safe_surface' && c.human_heard != null ? c.human_heard : h))}%` : ''}${who}`);
+    }
+  }
+  // LiDAR risk map (the flash over the Isaac view)
+  const fl = LIVE && LIVE.lidar_flash;
+  if (fl && fl.pile) popPush(`flash:${fl.pile}:${fl.wall || fl.t}`, '#ff6b63', 'LiDAR · Risk map', `${esc(pn(fl.pile))} mapped in 3D`,
+    `${f0(fl.red_pct)}% steep or stepped (red) · ${f0(fl.yellow_pct)}% moderate slope (yellow) · the rest is safe ground`);
+  // landing on flat spots (once per pile visit)
+  const m = s.mission || {}, ph = String(s.phase || ''), pile = m.active_pile;
+  if (pile && ['radar', 'relocate', 'rescan'].includes(ph)) {
+    const sl = landSlopes(s, pile);
+    popPush(`land:${pile}:${(m.visited || []).length}`, '#45d483', 'Landed · Safe spots from the LiDAR map', `Drones landed on ${esc(pn(pile))}`,
+      sl ? `Ground slopes${sl.replace(': ground slopes', '')}, flat enough to land` : 'On spots flat and clear enough to land');
+  }
+  // radar: breathing-like signal that became a candidate search region
+  for (const p of pings(s).filter(p => p.vitals || p.breathing_hz)) {
+    const r = p.vitals && p.vitals.rate_bpm != null ? p.vitals.rate_bpm : (p.breathing_hz ? 60 * p.breathing_hz : null);
+    popPush(`ping:${p.id}`, '#ff5a52', 'Radar · Breathing found', `Possible person under ${esc(pn(p.pile_id || pile))}`,
+      `${r != null ? `${f0(r)} breaths per minute · ` : ''}a place for rescuers to check, not a confirmed person`);
+  }
+  // radar scan with nothing above the threshold (said once per pile visit, not per scan)
+  const sc = LIVE && LIVE.last_scan;
+  if (sc && sc.vitals && !scanHit(sc) && sc.pile && !pings(s).some(p => p.pile_id === sc.pile))
+    popPush(`scan0:${sc.pile}:${(m.visited || []).length}`, '#aab4bc', 'Radar · No clear breathing', `Nothing firm under ${esc(pn(sc.pile))} yet`,
+      'Rubble can block the radar, so the drones switch off their rotors and listen for voices next');
+  // the van's decision
+  const d = lastDispatch(s), dec = d && lastDecision(s, d);
+  if (d && dec && !byOperator(s, d)) {
+    const gem = isGem(dec.by);
+    popPush(`dec:${d.t}:${d.to_pile}`, gem ? '#7aa7ff' : '#aab4bc', gem ? `${esc(mName(dec.model || VAN_M))} · Police van` : 'On-box rule · Police van',
+      `Next pile: ${esc(pn(d.to_pile))}`, esc(plainWhy(dec.rationale || d.reason)));
+  }
+  POP.primed = true;
+}
 let shown = { key: '', at: -1e9 }, SEEN = new Set(), senseKey = '', toastAt = 0;
 function render(s) {
   window._last = s;
@@ -798,6 +881,7 @@ function render(s) {
   }
   if (held(s)) SEEN.clear();
   SEEN.add(b);
+  try { pops(s); } catch (e) { }
   [...$('steps').children].forEach((el, i) => { el.className = i === b ? 'now' : (SEEN.has(i) ? 'done' : ''); });
   const [chip, say, rows] = sense(s);
   $('chip').textContent = chip === 'FOUND' ? 'RADAR' : chip; $('chip').style.background = COL[chip] || 'var(--grey)';
@@ -1003,6 +1087,7 @@ window.pickerAt = k => {                              // client px for the recor
     const r = c.getBoundingClientRect(); return [r.x + r.width / 2, r.y + r.height * 0.4]; }
   const q = window.Picker && Picker._screenOf(k); return q ? [st.x + q[0] * sc, st.y + q[1] * sc] : null;
 };
+setInterval(popTick, 250);
 if (PICK_ON) { setInterval(pkTick, 400); pkStart(); }
 if (!window.__burn) { setInterval(poll, 300); setInterval(pollSide, 500); pollSide().then(poll); }
 </script>

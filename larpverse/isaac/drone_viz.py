@@ -477,6 +477,12 @@ class DroneViz:
                 rot = build(stage, self.model, did, log=print, emissive=EMISSIVE)
                 if rot is not None:
                     self.rotors, self.rotor_ops = rot, [(r["op"], r["sign"]) for r in rot]
+                    try:                      # the team's winch pod (cable, sway, rests on the rubble) under its
+                        pod = [p for p in heavy_parts(spec, did, delivery) if p[6].get("group") == "Pod"]
+                        if pod:               # drum (underside z 0.44 = WINCH_BOTTOM), so PodViz drives it
+                            self._build_parts(pod, looks_root)
+                    except Exception as e:    # noqa: BLE001
+                        print(f"[drone_viz] blender drone: winch pod off ({type(e).__name__}: {e})", flush=True)
                     return
             if STYLE == "mesh":
                 from isaac.drone_mesh import dji_parts

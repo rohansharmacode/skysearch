@@ -1076,7 +1076,7 @@ function pkStatus() {                                 // what the 3D map's pill 
   const secs = PK.wait ? Math.round(vnow() - PK.wait) : 0, L = window._last;
   const busy = !PK.wait && siteOf(SITE) === (PK.cur && PK.cur.ref) && L && !held(L);
   Picker.setStatus(busy ? 'A run is already going on this site. Press ↺ Reset on the console, or pick it again to restart.'
-    : `Isaac Sim is loading this site${secs ? ` (${secs} s, usually about 80)` : ''}… pick your spot now`, busy ? 'bad' : 'loading');
+    : `Getting this site ready${secs > 5 ? ` (${secs} s)` : ''}… pick your spot now`, busy ? 'bad' : 'loading');
 }
 async function pkSite(ps, again) {
   PK.err = ''; if (!again) PK.retry = 0;
@@ -1093,13 +1093,14 @@ async function pkSite(ps, again) {
       r = await fetch(API_SITE, { method: 'POST', headers: { 'Content-Type': 'application/json' },
                                   body: JSON.stringify({ site: x.site, seed: x.seed, look: x.look, force: true }) });
     }
-    if (!r.ok) { let j = {}; try { j = await r.json(); } catch (e2) { } throw new Error(j.error || j.message || r.status); }
+    if (!r.ok) { let j = {}; try { j = await r.json(); } catch (e2) { } const e3 = new Error(j.error || j.message || r.status); e3.status = r.status; throw e3; }
     SITE = { site: x.site, seed: x.seed, look: x.look, status: 'loading', label: x.label }; SEEN.clear();
   } catch (err) {
     const m = String(err.message || err);
-    if ((m === '409' || /already loading/i.test(m)) && PK.cur === ps && PK.open === 'topo' && (PK.retry = (PK.retry || 0) + 1) <= 40) {
-      PK.wait = vnow(); setTimeout(() => { if (PK.cur === ps && PK.open === 'topo' && siteOf(SITE) !== x) pkSite(ps, true); }, 5000);
-      return Picker.setStatus('Another site is still loading. Yours starts right after it…', 'loading');
+    const warm = /warming up/i.test(m);              // warm pool: this site's spare copy is still being refilled (409)
+    if ((err.status === 409 || m === '409' || warm || /already loading/i.test(m)) && PK.cur === ps && PK.open === 'topo' && (PK.retry = (PK.retry || 0) + 1) <= 40) {
+      PK.wait = vnow(); setTimeout(() => { if (PK.cur === ps && PK.open === 'topo' && (siteOf(SITE) !== x || url === API_RESET)) pkSite(ps, true); }, 5000);
+      return Picker.setStatus(warm ? 'This site is warming up. It starts by itself in about a minute…' : 'Another site is still loading. Yours starts right after it…', 'loading');
     }
     PK.err = m === '429' ? 'Someone just switched sites. Wait a minute, then pick the site again.'
       : m === '423' ? 'A recording is in progress. Try again when it ends.' : `Could not load ${x.label} (${m}). Pick the site again.`;

@@ -1,0 +1,470 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="data:,">
+<title>Larpverse Live View</title>
+<style>
+/* Live 3D view of the running CPU mission (fallback for the Isaac take). Polls the run's output dir:
+   state.json + motion.json + live.json + hud.json (+ pointcloud.bin). ?data=<dir> (default ../dashboard/data/).
+   Same colour system as the dashboard / animation / Isaac overlay: red ping, yellow human-audio cone, teal acoustic
+   lead, amber radar, green coordinator, purple LiDAR, blue comms. Single dark theme by design. */
+:root {
+  color-scheme: dark;
+  --ink: #0b1117; --panel: rgba(11, 17, 23, 0.86); --line: rgba(150, 180, 200, 0.18); --fg: #e4ebf0; --muted: #8b9dab;
+  --detect: #ff4545; --coord: #6fd36f; --acoustic: #22c3d6; --cone: #ffe14a; --radar: #ff9f43; --wifi: #3b82f6;
+  --f-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+  --f-display: "IBM Plex Sans Condensed", "Arial Narrow", system-ui, sans-serif;
+}
+html, body { height: 100%; margin: 0; background: var(--ink); color: var(--fg); font-family: var(--f-display); overflow: hidden; }
+#app { position: relative; width: 100%; height: 100%; }
+#app > canvas { position: absolute; inset: 0; display: block; }
+.labels { position: absolute; inset: 0; pointer-events: none; }
+.lbl { font: 500 12px/1.25 var(--f-mono); color: var(--fg); background: rgba(8, 12, 16, 0.78); border: 1px solid var(--line); padding: 3px 6px; border-radius: 3px; white-space: nowrap; transform: translateY(-14px); }
+.lbl.pile { font-size: 13px; background: rgba(8, 12, 16, 0.55); }
+.lbl.detect { border-color: var(--detect); color: #ffd0d0; background: rgba(60, 8, 8, 0.85); }
+.lbl.detect small { display: block; color: #f3c2c2; font-size: 10.5px; }
+.lbl.event { border-color: var(--cone); color: #fff3b0; }
+.lbl.drone b { color: #f4f8fb; }
+.hud { position: absolute; pointer-events: none; text-shadow: 0 1px 3px rgba(0, 0, 0, 0.85); }
+#top { left: 16px; top: 14px; max-width: min(560px, calc(100% - 32px)); }
+.brand { font: 500 11px/1 var(--f-mono); letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); display: flex; gap: 10px; align-items: center; }
+.brand i { width: 9px; height: 9px; border-radius: 50%; background: var(--detect); box-shadow: 0 0 10px var(--detect); animation: blink 1.4s infinite; }
+@keyframes blink { 50% { opacity: 0.25; } }
+#clock { font: 500 15px/1.3 var(--f-mono); margin-top: 8px; }
+#badge { display: inline-block; margin-top: 6px; font: 500 11.5px/1 var(--f-mono); color: var(--coord); border: 1px solid rgba(111, 211, 111, 0.6); background: var(--panel); padding: 5px 8px; border-radius: 3px; text-shadow: none; }
+#banner { left: 50%; top: 18px; transform: translateX(-50%); font: 600 clamp(18px, 2.4vw, 28px)/1.15 var(--f-display); color: #1a1205; background: #ffb347; border-radius: 4px; padding: 10px 18px; box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5); text-shadow: none; max-width: calc(100% - 40px); text-align: center; }
+#event { left: 16px; bottom: 16px; max-width: min(760px, calc(100% - 32px)); font: 500 13px/1.4 var(--f-mono); background: var(--panel); border: 1px solid var(--line); border-left: 3px solid var(--cone); padding: 8px 10px; border-radius: 3px; text-shadow: none; }
+#event.causal { border-left-color: var(--coord); }
+#legend { right: 16px; bottom: 16px; font: 500 11px/1.6 var(--f-mono); background: var(--panel); border: 1px solid var(--line); padding: 6px 9px; border-radius: 3px; text-shadow: none; color: var(--muted); }
+#legend i { display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin: 0 5px 0 8px; vertical-align: -1px; }
+#loading { position: absolute; inset: 0; display: grid; place-items: center; font: 500 14px var(--f-mono); color: var(--muted); background: var(--ink); text-align: center; padding: 24px; white-space: pre-wrap; }
+[hidden] { display: none !important; }
+@media (max-width: 700px) { #legend { display: none; } #clock { font-size: 12.5px; } }
+</style>
+<div id="app">
+  <div id="loading">Waiting for the live mission…
+(polling state.json in the data dir)</div>
+  <div class="hud" id="top"><div class="brand"><i></i>Larpverse · live mission view</div><div id="clock">—</div><div id="badge" hidden></div></div>
+  <div class="hud" id="banner" hidden></div>
+  <div class="hud" id="event" hidden></div>
+  <div class="hud" id="legend"><i style="background:#ff4545"></i>ping<i style="background:#ffe14a"></i>human audio<i style="background:#22c3d6"></i>lead<i style="background:#ff9f43"></i>radar pod<i style="background:#9b6bff"></i>LiDAR<i style="background:#3b82f6"></i>Wi-Fi</div>
+</div>
+<script>
+window.__fail = msg => { let w = document.getElementById('loading'); if (!w) { w = document.body.appendChild(document.createElement('div')); w.id = 'loading'; } w.dataset.err = 1; w.style.color = '#ffd0d0'; w.textContent = 'The live view could not start.\n' + msg; };
+addEventListener('error', e => { if (e instanceof ErrorEvent && !/ResizeObserver/.test(e.message)) __fail(e.message); else if (e.target && e.target.tagName === 'SCRIPT') __fail('Could not load ' + (e.target.src || 'a module')); }, true);
+</script>
+<script type="importmap">
+{ "imports": { "three": "../dashboard/vendor/three.module.js", "three/addons/": "../dashboard/vendor/addons/" } }
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
+
+// ---------------- config ----------------
+const Q = new URLSearchParams(location.search);
+const DATA = (Q.get('data') || '../dashboard/data/').replace(/\/?$/, '/');
+const POLL_MS = +(Q.get('poll') || 500);
+// ?replay=1 replays a finished run's output dir on its own clock (t0, rate sim-s per s); window.seek(t) for frame-exact recording
+const REPLAY = Q.has('replay'), R_T0 = +(Q.get('t0') || 0), R_RATE = +(Q.get('rate') || 6);
+let seekT = null, fixedDt = null, NOW = 0;
+window.seek = t => { seekT = R_T0 + R_RATE * +t; fixedDt = 1 / 30; };   // t = video seconds (scripts/record_animation.py)
+const C = { lidar: 0x9b6bff, radar: 0xff9f43, acoustic: 0x22c3d6, cone: 0xffe14a, detect: 0xff4545, coord: 0x6fd36f, wifi: 0x3b82f6, zone: 0xe4ebf0, grey: 0x8b9dab };
+const TAU = Math.PI * 2, D2R = Math.PI / 180, G = 9.81;
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const V = (x, y, z) => new THREE.Vector3(x, y, z);
+const T3 = (x, y, z = 0) => V(x, z, -y);                 // site (x east, y north, z up) -> three (x, y up, z = -north)
+const $ = id => document.getElementById(id);
+
+// ---------------- scene ----------------
+const app = $('app');
+const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 1.25)); renderer.outputColorSpace = THREE.SRGBColorSpace;
+renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.05;
+app.prepend(renderer.domElement);
+const labelR = new CSS2DRenderer(); labelR.domElement.className = 'labels'; app.insertBefore(labelR.domElement, $('top'));
+const scene = new THREE.Scene(); scene.background = new THREE.Color(0x0e151c); scene.fog = new THREE.Fog(0x0e151c, 110, 260);
+const camera = new THREE.PerspectiveCamera(45, 1, 0.2, 600);
+scene.add(new THREE.HemisphereLight(0xa9bccc, 0x3a3128, 0.95));
+const sun = new THREE.DirectionalLight(0xffd9b0, 1.9); sun.position.set(-40, 60, 25); scene.add(sun);
+const rim = new THREE.DirectionalLight(0x6f8fb0, 0.5); rim.position.set(40, 25, -40); scene.add(rim);
+function label(html, cls, parent, pos = [0, 0, 0]) { const el = document.createElement('div'); el.className = 'lbl ' + (cls || ''); el.innerHTML = html; const o = new CSS2DObject(el); o.position.set(...pos); parent.add(o); return o; }
+
+// ---------------- motion.json sampler (port of sim/flight_motion.py: Profile1D, Brake, Trajectory.nominal, Winch) ----------------
+const S0 = u => u * u * u * (10 - 15 * u + 6 * u * u), S1 = u => 30 * u * u * (1 - u) * (1 - u), IS = u => u ** 4 * (2.5 - 3 * u + u * u);
+const sm01 = x => S0(clamp(x, 0, 1));
+function mkProf(segs) {
+  const s = segs.filter(q => q[0] > 1e-9), P = { T: s.map(q => q[0]), va: s.map(q => q[1]), vb: s.map(q => q[2]), t0: [], x0: [] };
+  let t = 0, x = 0; for (let k = 0; k < s.length; k++) { P.t0.push(t); P.x0.push(x); t += P.T[k]; x += 0.5 * (P.va[k] + P.vb[k]) * P.T[k]; }
+  P.dur = t; P.len = x; return P;
+}
+function profEval(P, t) {
+  if (!P.T.length || t < 0) return [0, 0, 0];
+  if (t > P.dur) return [P.len, 0, 0];
+  let k = 0; while (k < P.T.length - 1 && P.t0[k + 1] <= t) k++;
+  const T = P.T[k], va = P.va[k], dv = P.vb[k] - va, u = clamp((t - P.t0[k]) / T, 0, 1);
+  return [P.x0[k] + va * T * u + dv * T * IS(u), va + dv * S0(u), dv / T * S1(u)];
+}
+function brakeEval(B, t) {
+  const u = clamp(t / B.T, 0, 1), w = clamp(t / B.Ta, 0, 1);
+  const H1 = w - 6 * w ** 3 + 8 * w ** 4 - 3 * w ** 5, H1d = 1 - 18 * w * w + 32 * w ** 3 - 15 * w ** 4, IH1 = 0.5 * w * w - 1.5 * w ** 4 + 1.6 * w ** 5 - 0.5 * w ** 6;
+  const x = [], v = [], a = [];
+  for (let i = 0; i < 3; i++) { x.push(B.T * B.v0[i] * (u - IS(u)) + B.a0[i] * B.Ta * B.Ta * IH1); v.push(B.v0[i] * (1 - S0(u)) + B.a0[i] * B.Ta * H1); a.push(-B.v0[i] / B.T * S1(u) + B.a0[i] * H1d); }
+  return [x, v, a];
+}
+function loadMotion(m) {
+  const spec = m.spec || {}, out = {};
+  for (const [id, d] of Object.entries(m.drones || {})) {
+    const pieces = d.pieces.map(p => ({ ...p, moves: (p.moves || []).map(mv => ({ t: mv.t, u: mv.u, prof: mkProf(mv.segs) })) }));
+    out[id] = { pieces, winch: d.winch || [] };
+  }
+  return { spec, drones: out };
+}
+function pieceAt(tl, t) { let k = 0; for (let i = 0; i < tl.pieces.length; i++) if (tl.pieces[i].t0 <= t) k = i; return tl.pieces[k]; }
+function nominal(pc, t) {
+  const tl = t - pc.t0, p = [...pc.p0], v = [0, 0, 0], a = [0, 0, 0];
+  if (pc.brake) { const [bx, bv, ba] = brakeEval(pc.brake, Math.max(0, tl)); for (let i = 0; i < 3; i++) { p[i] += bx[i]; v[i] += bv[i]; a[i] += ba[i]; } }
+  for (const m of pc.moves) { const [x, mv, ma] = profEval(m.prof, tl - m.t); for (let i = 0; i < 3; i++) { p[i] += x * m.u[i]; v[i] += mv * m.u[i]; a[i] += ma * m.u[i]; } }
+  return { p, v, a };
+}
+function rpmFrac(pc, t, spec) {
+  if (pc.ground_start && pc.spool && t < pc.spool[1]) { const [a, b] = pc.spool; return pc.rpm0 + (1 - pc.rpm0) * sm01((t - a) / Math.max(b - a, 1e-6)); }
+  if (pc.ground_end && pc.touchdown != null && t >= pc.touchdown) return 1 - sm01((t - pc.touchdown) / (spec.spin_down_s || 3));
+  if (pc.kind === 'hold' && pc.ground_start) return (pc.rpm0 || 0) * (1 - sm01((t - pc.t0) / (spec.spin_down_s || 3)));
+  return 1;
+}
+function winchAt(w, t, dronePos, spec) {
+  let e = null; for (const ev of w) if (ev.t <= t) e = ev;
+  if (!e) return null;
+  const u = e.T > 0 ? (t - e.t) / e.T : 1, L = e.L0 + (e.L1 - e.L0) * sm01(u);
+  if (L < 0.05) return null;
+  const hang = [dronePos[0], dronePos[1], dronePos[2] - L];
+  if (!e.pod) return { L, pod: hang };
+  const ground = e.pod, wv = Math.sqrt(G / Math.max(L, 0.4)), ph = wv * Math.max(0, t - e.t), decay = Math.exp(-(spec.sway_zeta || 0.12) * ph);
+  const win = e.kind === 'lower' ? 1 - sm01(u) : sm01(u), amp = (spec.sway_m || 0.18) * decay * win * (e.kind === 'lower' ? 1 : 0.5);
+  const d = e.dir || [1, 0], pos = [hang[0] + amp * Math.sin(ph) * d[0] - 0.35 * amp * Math.cos(ph) * d[1], hang[1] + amp * Math.sin(ph) * d[1] + 0.35 * amp * Math.cos(ph) * d[0], hang[2]];
+  if (pos[2] <= ground[2] + 1e-3 || (e.kind === 'lower' && u >= 1)) return { L, pod: [...ground], seated: true };
+  const k = sm01(1 - (pos[2] - ground[2]) / 0.6); pos[0] = pos[0] * (1 - k) + ground[0] * k; pos[1] = pos[1] * (1 - k) + ground[1] * k;
+  return { L, pod: pos };
+}
+
+// ---------------- heavy coaxial X8 drone (as animation/grid-search.html) ----------------
+const LEGH = 0.8, ARM = 1.1, PROP_R = 0.69;
+function makeDrone(name) {
+  const g = new THREE.Group(); scene.add(g);
+  const M = (c, o = {}) => new THREE.MeshStandardMaterial({ color: c, roughness: 0.5, metalness: 0.2, ...o });
+  const dark = M(0x2a2e35), carbon = M(0x101214, { roughness: 0.35 }), metal = M(0x9ea2a8, { metalness: 0.8, roughness: 0.3 });
+  const add = (geo, mat, x, y, z, par = g) => { const m = new THREE.Mesh(geo, mat); m.position.set(x, y, z); par.add(m); return m; };
+  add(new THREE.BoxGeometry(1.05, 0.36, 0.66), dark, 0, 0, 0);
+  const rotors = [];
+  for (let k = 0; k < 4; k++) {
+    const a = (45 + 90 * k) * D2R, cx = ARM * Math.cos(a), cz = ARM * Math.sin(a);
+    add(new THREE.BoxGeometry(ARM, 0.07, 0.09), carbon, cx / 2, 0.06, cz / 2).rotation.y = -a;
+    add(new THREE.CylinderGeometry(0.09, 0.09, 0.42, 12), metal, cx, 0.14, cz);
+    for (const y of [-0.02, 0.33]) {
+      const r = new THREE.Group(); r.position.set(cx, y, cz); g.add(r);
+      const blades = new THREE.Mesh(new THREE.BoxGeometry(PROP_R * 2, 0.012, 0.09), carbon); r.add(blades);
+      const disc = new THREE.Mesh(new THREE.CircleGeometry(PROP_R, 32).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: 0x1a1d21, transparent: true, opacity: 0, depthWrite: false, side: THREE.DoubleSide }));
+      r.add(disc); rotors.push({ r, blades, disc, dir: (k + (y > 0 ? 1 : 0)) % 2 ? 1 : -1 });
+    }
+  }
+  const lidarMat = M(0x1b1530, { emissive: C.lidar, emissiveIntensity: 0.6 });
+  add(new THREE.CylinderGeometry(0.1, 0.1, 0.14, 18), lidarMat, 0.6, 0.02, 0).rotation.z = 0.75;
+  const micMat = M(0x0c3f46, { emissive: C.acoustic, emissiveIntensity: 0.3 });
+  for (let k = 0; k < 8; k++) add(new THREE.SphereGeometry(0.045, 8, 6), micMat, 0.5 * Math.cos(k * TAU / 8), -0.2, 0.5 * Math.sin(k * TAU / 8));
+  add(new THREE.ConeGeometry(0.13, 0.26, 16, 1, true), M(0xd9d9d2, { side: THREE.DoubleSide }), -0.42, -0.28, 0).rotation.z = -0.5;
+  for (const s of [1, -1]) {
+    add(new THREE.CylinderGeometry(0.025, 0.025, 1.3), M(0x3b3f45), 0, -LEGH + 0.03, s * 0.42).rotation.z = Math.PI / 2;
+    for (const x of [0.32, -0.32]) add(new THREE.CylinderGeometry(0.022, 0.022, LEGH - 0.18), M(0x3b3f45), x, -LEGH / 2 + 0.05, s * 0.36);
+  }
+  const pod = new THREE.Group(); scene.add(pod);
+  const radarMat = M(0x3a2207, { emissive: C.radar, emissiveIntensity: 0.4 });
+  add(new THREE.BoxGeometry(0.5, 0.3, 0.42), M(0xd47a1c, { roughness: 0.6 }), 0, 0.15, 0, pod);
+  add(new THREE.BoxGeometry(0.44, 0.02, 0.36), radarMat, 0, 0.0, 0, pod);
+  const cable = new THREE.Line(new THREE.BufferGeometry().setFromPoints([V(), V()]), new THREE.LineBasicMaterial({ color: 0x111111 })); cable.frustumCulled = false; scene.add(cable);
+  const wave = new THREE.Mesh(new THREE.SphereGeometry(1, 28, 8, 0, TAU, Math.PI - 0.7, 0.7), new THREE.MeshBasicMaterial({ color: C.radar, transparent: true, opacity: 0.25, side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending })); scene.add(wave);
+  const hot = new THREE.Group(); scene.add(hot);
+  hot.add(new THREE.Mesh(new THREE.CircleGeometry(1, 72).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: C.wifi, transparent: true, opacity: 0.05, depthWrite: false })));
+  hot.add(new THREE.Mesh(new THREE.RingGeometry(0.985, 1, 128).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: C.wifi, transparent: true, opacity: 0.4, depthWrite: false })));
+  const lbl = label(`<b>${name}</b> <span></span>`, 'drone', g, [0, 1.6, 0]);
+  return { id: name, g, rotors, lidarMat, radarMat, micMat, pod, cable, wave, hot, span: lbl.element.querySelector('span'), yaw: 0, have: false, sp: V(), sv: V() };
+}
+const drones = {};
+const droneOf = id => drones[id] || (drones[id] = makeDrone(id));
+
+// ---------------- data ----------------
+let S = null, MOT = null, LIVE = null, HUD = null, motionKey = '', hmKey = '', pcKey = '';
+const clock = { t: 0, wall: 0, rate: 0, shown: 0, seen: false };
+async function getJSON(name) { const r = await fetch(DATA + name + '?_=' + Date.now(), { cache: 'no-store' }); if (!r.ok) throw new Error(name + ' ' + r.status); return r.json(); }
+async function poll() {
+  try {
+    const s = await getJSON('state.json');
+    const now = performance.now() / 1000;
+    if (clock.seen && s.t !== S.t) { const r = (s.t - clock.t) / Math.max(0.05, now - clock.wall); if (r >= 0 && r < 60) clock.rate = clock.rate ? clock.rate * 0.6 + r * 0.4 : r; }
+    if (!clock.seen || s.t !== clock.t) { clock.t = s.t; clock.wall = now; }
+    if (s.phase === 'done') clock.rate = 0;
+    if (!clock.seen) clock.shown = s.t;
+    clock.seen = true; S = s; onState();
+  } catch (e) { /* run not started yet, or a file being replaced: keep the last frame */ }
+  try { LIVE = await getJSON('live.json'); } catch (e) { }
+  try { HUD = await getJSON('hud.json'); } catch (e) { }
+}
+async function pollMotion() {
+  try { const r = await fetch(DATA + 'motion.json?_=' + Date.now(), { cache: 'no-store' }); if (!r.ok) return; const txt = await r.text(); const key = txt.length + ':' + txt.slice(-64); if (key !== motionKey) { MOT = loadMotion(JSON.parse(txt)); motionKey = key; } } catch (e) { }
+}
+setInterval(poll, POLL_MS); setInterval(pollMotion, 2000); poll(); pollMotion();
+
+// ---------------- static-ish layers built from state ----------------
+let terrain = null, hmAt = () => 0;
+function buildTerrain(hm) {
+  const { w, h, res, z } = hm, [x0, y0] = hm.origin;
+  hmAt = (x, y) => { const i = clamp(Math.round((x - x0) / res), 0, w - 1), j = clamp(Math.round((y - y0) / res), 0, h - 1); return z[j * w + i] || 0; };
+  const pos = new Float32Array(w * h * 3), col = new Float32Array(w * h * 3), idx = [];
+  for (let j = 0; j < h; j++) for (let i = 0; i < w; i++) {
+    const k = j * w + i, x = x0 + i * res, y = y0 + j * res, zz = z[k] || 0; pos.set([x, zz, -y], k * 3);
+    const n = (Math.sin(x * 1.7) * Math.cos(y * 1.3) + 1) * 0.03, c = 0.36 + n + Math.min(zz, 4) * 0.035; col.set([c * 1.08, c, c * 0.9], k * 3);
+  }
+  for (let j = 0; j < h - 1; j++) for (let i = 0; i < w - 1; i++) { const a = j * w + i, b = a + 1, c = a + w, d = c + 1; idx.push(a, c, b, b, c, d); }
+  const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(pos, 3)); g.setAttribute('color', new THREE.BufferAttribute(col, 3)); g.setIndex(idx); g.computeVertexNormals();
+  if (terrain) { scene.remove(terrain); terrain.geometry.dispose(); }
+  terrain = new THREE.Mesh(g, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1 })); scene.add(terrain);
+  const outer = new THREE.Mesh(new THREE.PlaneGeometry(800, 800).rotateX(-Math.PI / 2), new THREE.MeshStandardMaterial({ color: 0x5a544c, roughness: 1 })); outer.position.y = -0.3; scene.add(outer);
+}
+// seed-7 grid site: draw the scenario's rubble boxes too (same pieces as Isaac and the concept animation)
+function loadRubble() {
+  const s = document.createElement('script'); s.src = 'scenario_seed7.js';
+  s.onload = () => {
+    const sc = window.LARP_SCENARIO; if (!sc) return;
+    const mats = { concrete: new THREE.MeshStandardMaterial({ color: 0x8f8b84, roughness: 0.93, flatShading: true }), brick: new THREE.MeshStandardMaterial({ color: 0x86614d, roughness: 0.93, flatShading: true }) };
+    const geos = { concrete: [], brick: [] }, q = new THREE.Quaternion(), m4 = new THREE.Matrix4();
+    for (const p of sc.piles) for (const pc of p.pieces) { const g = new THREE.BoxGeometry(...pc.s); m4.compose(V(...pc.c), q.set(...pc.q), V(1, 1, 1)); g.applyMatrix4(m4); (geos[pc.m === 'brick' ? 'brick' : 'concrete']).push(g); }
+    for (const k of Object.keys(geos)) {   // one draw call per material: concatenate the non-indexed boxes
+      const parts = geos[k].map(g => g.toNonIndexed()), n = parts.reduce((a, g) => a + g.attributes.position.count, 0);
+      const pos = new Float32Array(n * 3), nor = new Float32Array(n * 3); let o = 0;
+      for (const g of parts) { pos.set(g.attributes.position.array, o * 3); nor.set(g.attributes.normal.array, o * 3); o += g.attributes.position.count; }
+      const mg = new THREE.BufferGeometry(); mg.setAttribute('position', new THREE.BufferAttribute(pos, 3)); mg.setAttribute('normal', new THREE.BufferAttribute(nor, 3));
+      scene.add(new THREE.Mesh(mg, mats[k]));
+    }
+  };
+  document.head.appendChild(s);
+}
+// LiDAR points
+const cloudMat = new THREE.PointsMaterial({ size: 0.12, vertexColors: true, transparent: true, opacity: 0.85, depthWrite: false });
+let cloud = null;
+async function loadCloud(url) {
+  try {
+    const buf = await (await fetch(DATA + url + '?_=' + Date.now(), { cache: 'no-store' })).arrayBuffer(), f = new Float32Array(buf), n = Math.floor(f.length / 3);
+    const pos = new Float32Array(n * 3), col = new Float32Array(n * 3);
+    for (let i = 0; i < n; i++) { const x = f[i * 3], y = f[i * 3 + 1], z = f[i * 3 + 2]; pos[i * 3] = x; pos[i * 3 + 1] = z; pos[i * 3 + 2] = -y; const b = 0.45 + 0.55 * clamp(z / 4.5, 0, 1); col[i * 3] = 0.61 * b; col[i * 3 + 1] = 0.42 * b; col[i * 3 + 2] = b; }
+    const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(pos, 3)); g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+    if (cloud) { scene.remove(cloud); cloud.geometry.dispose(); }
+    cloud = new THREE.Points(g, cloudMat); cloud.frustumCulled = false; scene.add(cloud);
+  } catch (e) { }
+}
+// dynamic overlays rebuilt per state (cheap: a few dozen objects)
+const dyn = new THREE.Group(); scene.add(dyn);
+const pileLbls = {}, pings = {};
+const lineLoop = (pts, color, opacity, dashed) => { const g = new THREE.BufferGeometry().setFromPoints(pts); const m = dashed ? new THREE.LineDashedMaterial({ color, transparent: true, opacity, dashSize: 0.8, gapSize: 0.55 }) : new THREE.LineBasicMaterial({ color, transparent: true, opacity }); const l = new THREE.LineLoop(g, m); if (dashed) l.computeLineDistances(); return l; };
+const ZCOL = { tasked: [C.zone, 1], unsearched: [C.zone, 1], surveying: [C.coord, 0], scanning: [C.coord, 0], in_progress: [C.coord, 0], searched_no_ping: [C.grey, 0], beyond_radar_reach: [C.grey, 1], ping: [C.detect, 0], lead: [C.acoustic, 0] };
+const PCOL = { ping: [C.detect, 0], lead: [C.acoustic, 0], surveying: [C.coord, 0], scanning: [C.coord, 0] };
+let firstSeen = {}, latestPing = null, latestPingWall = 0;
+function onState() {
+  const ld = $('loading'); if (ld && !ld.dataset.err) ld.remove();
+  const hm = S.heightmap; const hk = hm && hm.z ? `${hm.w}x${hm.h}@${hm.origin}` : '';
+  if (hk && hk !== hmKey) { hmKey = hk; buildTerrain(hm); if (S.site && S.site.kind === 'grid' && (S.mission || {}).seed === 7) loadRubble(); }
+  const pc = S.pointcloud || {}, pk = pc.url ? pc.url + ':' + pc.count : '';
+  if (pk && pk !== pcKey) { pcKey = pk; loadCloud(pc.url); }
+  for (const p of S.piles || []) if (!pileLbls[p.id]) pileLbls[p.id] = label(p.id, 'pile', scene, [p.xy[0], hmAt(p.xy[0], p.xy[1]) + 4.5, -p.xy[1]]);
+  ovKey = '';
+}
+let ovKey = '';
+const at = (x, T) => !REPLAY || x == null || x <= T;
+const tFound = c => c.t_found ?? Math.max(...(S.scans || []).filter(q => (c.evidence || []).includes(q.scan_id || q.id)).map(q => q.timestamp ?? q.t ?? 0), -1);
+function overlayKey(T) {
+  if (!REPLAY) return 'L' + S.t;
+  return (S.radar_candidates || []).filter(c => at(tFound(c), T)).length + ':' + (S.acoustic_clips || []).filter(c => at(c.t, T)).length;
+}
+function buildOverlays(T) {
+  // zones / piles
+  while (dyn.children.length) { const o = dyn.children.pop(); o.geometry && o.geometry.dispose(); }
+  const zones = (S.zones && S.zones.length ? S.zones.map(z => ({ id: z.id, poly: z.polygon, st: z.status })) : (S.piles || []).map(p => ({ id: p.id, poly: p.polygon, st: p.status })));
+  const visPings = (S.radar_candidates || []).filter(c => at(tFound(c), T)), visClips = (S.acoustic_clips || []).filter(c => at(c.t, T));
+  const pst = REPLAY ? {} : Object.fromEntries((S.piles || []).map(p => [p.id, p.status]));
+  if (REPLAY) {   // statuses from what has happened by T: ping > human-audio lead > tasked
+    for (const c of visClips) if ((c.scores?.human ?? 0) >= 0.4 && c.pile_id) pst[c.pile_id] = 'lead';
+    for (const c of visPings) if (c.pile_id) pst[c.pile_id] = 'ping';
+  }
+  for (const z of zones) {
+    if (!z.poly || z.poly.length < 3 || z.st === 'cancelled') continue;
+    const [col, dash] = PCOL[pst[z.id]] || (REPLAY ? [C.zone, 1] : ZCOL[z.st]) || [C.zone, 1];
+    const pts = []; for (let k = 0; k < z.poly.length; k++) { const a = z.poly[k], b = z.poly[(k + 1) % z.poly.length]; for (let s = 0; s < 6; s++) { const x = a[0] + (b[0] - a[0]) * s / 6, y = a[1] + (b[1] - a[1]) * s / 6; pts.push(T3(x, y, hmAt(x, y) + 0.25)); } }
+    dyn.add(lineLoop(pts, col, 0.9, dash));
+  }
+  // audio cones: latest listen; yellow = human audio (scores.human >= 0.4, dashboard rule), grey = non-human
+  const clips = visClips, L = clips.reduce((m, c) => Math.max(m, c.listen || 0), 0);
+  for (const c of clips) {
+    if ((c.listen || 0) !== L || c.bearing_deg == null || !c.origin) continue;
+    const human = (c.scores?.human ?? 0) >= 0.4, b = c.bearing_deg * D2R, hw = (c.width_deg || 20) * D2R / 2, len = human ? 26 : 12, o = c.origin, pos = [];
+    for (let i = 0; i < 12; i++) { const u0 = b - hw + 2 * hw * i / 12, u1 = b - hw + 2 * hw * (i + 1) / 12; pos.push(o[0], 0.5, -o[1], o[0] + len * Math.cos(u0), 0.5, -(o[1] + len * Math.sin(u0)), o[0] + len * Math.cos(u1), 0.5, -(o[1] + len * Math.sin(u1))); }
+    const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    const m = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ color: human ? C.cone : 0xc8d0d6, transparent: true, opacity: human ? 0.2 : 0.06, side: THREE.DoubleSide, depthTest: false, depthWrite: false })); m.renderOrder = 15; dyn.add(m);
+  }
+  // pings: red beacon + 2-sigma ring + label with the condition text
+  for (const P of Object.values(pings)) P.g.visible = false;
+  for (const c of visPings) {
+    let P = pings[c.id];
+    const zs = hmAt(c.xy[0], c.xy[1]), ze = c.z_est != null ? c.z_est : zs - 1.5, weak = c.status !== 'candidate';
+    if (!P) {
+      const g = new THREE.Group(); scene.add(g);
+      const sph = new THREE.Mesh(new THREE.SphereGeometry(0.35, 18, 12), new THREE.MeshBasicMaterial({ color: C.detect, transparent: true, depthTest: false })); sph.renderOrder = 30; g.add(sph);
+      const beam = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.15, 1, 10, 1, true), new THREE.MeshBasicMaterial({ color: C.detect, transparent: true, opacity: 0.55, blending: THREE.AdditiveBlending, depthWrite: false })); g.add(beam);
+      const ring = new THREE.Mesh(new THREE.RingGeometry(0.9, 1, 48).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: C.detect, transparent: true, side: THREE.DoubleSide, depthWrite: false })); g.add(ring);
+      const lb = label('', 'detect', g, [0, 0, 0]);
+      P = pings[c.id] = { g, sph, beam, ring, lb, ell: null };
+      if (!firstSeen[c.id]) { firstSeen[c.id] = NOW; latestPing = c.id; latestPingWall = firstSeen[c.id]; }
+    }
+    P.g.visible = true; P.g.position.copy(T3(c.xy[0], c.xy[1], 0)); P.sph.position.y = ze; P.beam.position.y = zs + 9; P.beam.scale.set(1, 18, 1); P.ring.position.y = zs + 0.2; P.zs = zs;
+    P.sph.material.color.setHex(weak ? 0xff9a7a : C.detect);
+    const v = c.vitals, cond = v && (v.condition_text || '').split('->')[0].trim();
+    const html = `<b>${c.id}</b> · ${weak ? 'weak candidate' : 'candidate search region'}${cond ? `<small>${cond}${v.triage_hint ? ' · ' + v.triage_hint : ''} · aid, not a diagnosis</small>` : ''}`;
+    if (P.lb.element.innerHTML !== html) P.lb.element.innerHTML = html;
+    P.lb.position.y = zs + 3.2;
+    if (P.ell) P.g.remove(P.ell);
+    const cov = c.cov || [[1, 0], [0, 1]], a = cov[0][0], b = cov[0][1], d = cov[1][1], tr = a + d, det = a * d - b * b, disc = Math.sqrt(Math.max(0, tr * tr / 4 - det));
+    const l1 = 2 * Math.sqrt(Math.max(0.04, tr / 2 + disc)), l2 = 2 * Math.sqrt(Math.max(0.04, tr / 2 - disc)), ang = 0.5 * Math.atan2(2 * b, a - d), pts = [];
+    for (let i = 0; i < 64; i++) { const u = i / 64 * TAU, x = l1 * Math.cos(u), y = l2 * Math.sin(u), X = x * Math.cos(ang) - y * Math.sin(ang), Y = x * Math.sin(ang) + y * Math.cos(ang); pts.push(V(X, hmAt(c.xy[0] + X, c.xy[1] + Y) + 0.18, -Y)); }
+    P.ell = lineLoop(pts, C.detect, 0.95, false); P.g.add(P.ell);
+  }
+}
+
+// ---------------- drones: pose from motion.json at the render clock (state.json pose as a fallback) ----------------
+const _q = new THREE.Quaternion(), _qy = new THREE.Quaternion(), _up = V(0, 1, 0), dTmp = V();
+function sampleDrone(id, t) {
+  const tl = MOT && MOT.drones[id]; if (!tl) return null;
+  const pc = pieceAt(tl, t), n = nominal(pc, t), ahead = nominal(pieceAt(tl, t + 1.5), t + 1.5);
+  return { p: n.p, v: n.v, a: n.a, va: ahead.v, rpm: rpmFrac(pc, t, MOT.spec), winch: winchAt(tl.winch, t, n.p, MOT.spec), phase: pc.kind };
+}
+function updateDrones(t, dt) {
+  for (const sd of S.drones || []) {
+    const d = droneOf(sd.id), s = sampleDrone(sd.id, t), pose = sd.pose;
+    let p, v = [0, 0, 0], a = [0, 0, 0], va = [0, 0, 0], rpm = 1, winch = null;
+    if (s && Math.hypot(s.p[0] - pose[0], s.p[1] - pose[1]) < 6 + clock.rate * 0.5) ({ p, v, a, va, rpm, winch } = s);
+    else {   // motion.json missing or stale: critically damped follow of the state pose
+      const tgt = T3(pose[0], pose[1], pose[2]); if (!d.have) { d.sp.copy(tgt); d.have = true; }
+      const prev = d.sp.clone(), k = 1 - Math.exp(-dt * 3); d.sp.lerp(tgt, k); const vel = d.sp.clone().sub(prev).divideScalar(Math.max(dt, 1e-3));
+      const acc = vel.clone().sub(d.sv).divideScalar(Math.max(dt, 1e-3)).clampLength(0, 4); d.sv.copy(vel);
+      p = [d.sp.x, -d.sp.z, d.sp.y]; v = [vel.x, -vel.z, vel.y]; a = [acc.x, -acc.z, acc.y]; va = v; rpm = /landed|docked|idle|listening_landed/.test(sd.state || '') ? 0 : 1;
+      if ((sd.winch_len_m || 0) > 0.05) winch = { L: sd.winch_len_m, pod: [p[0], p[1], p[2] - sd.winch_len_m] };
+    }
+    // attitude: thrust = acc + g + drag (8 deg at 10 m/s), clamped to 25 deg (sim/flight_motion.attitude)
+    const cd = G * Math.tan(8 * D2R) / 10;
+    let tx = a[0] + cd * v[0], ty = a[1] + cd * v[1], tz = a[2] + G; const hz = Math.hypot(tx, ty), lim = Math.tan(25 * D2R) * tz; if (hz > lim) { tx *= lim / hz; ty *= lim / hz; }
+    if (rpm < 0.5) { tx = 0; ty = 0; }
+    const sp = Math.hypot(va[0], va[1]);
+    if (sp > 0.8) { const want = Math.atan2(va[1], va[0]); let err = ((want - d.yaw + Math.PI) % TAU + TAU) % TAU - Math.PI; d.yaw += clamp(err * 1.2, -45 * D2R, 45 * D2R) * dt; }
+    const pos = T3(p[0], p[1], p[2]).add(V(0, LEGH - 0.15, 0));
+    d.g.position.copy(pos); _qy.setFromAxisAngle(_up, d.yaw); _q.setFromUnitVectors(_up, dTmp.set(tx, tz, -ty).normalize()); d.g.quaternion.copy(_q).multiply(_qy);
+    const blur = clamp((rpm - 0.35) / 0.45, 0, 1);
+    d.rotors.forEach((r, j) => { r.r.rotation.y += r.dir * dt * 40 * rpm * (blur < 0.9 ? 1 : 0); r.blades.visible = blur < 0.9; r.disc.material.opacity = 0.32 * blur; });
+    const surveying = /survey|recon_mapping|mapping/.test(S.phase || ''), listening = /listen|acoustic/.test(sd.state || '') || S.phase === 'acoustic';
+    d.lidarMat.emissiveIntensity = surveying && rpm > 0.5 ? 1.6 : 0.4; d.micMat.emissiveIntensity = listening ? 0.8 + 1.2 * Math.max(0, Math.sin((NOW * 1000) / 200)) : 0.3;
+    // pod + cable + radar wave
+    const anchor = V(0, -0.3, 0).applyQuaternion(d.g.quaternion).add(d.g.position);
+    if (winch) d.pod.position.copy(T3(winch.pod[0], winch.pod[1], winch.pod[2])); else d.pod.position.copy(V(0, -LEGH + 0.3, 0).applyQuaternion(d.g.quaternion).add(d.g.position));
+    const cp = d.cable.geometry.attributes.position; cp.setXYZ(0, anchor.x, anchor.y, anchor.z); cp.setXYZ(1, d.pod.position.x, d.pod.position.y + 0.3, d.pod.position.z); cp.needsUpdate = true; d.cable.visible = !!winch;
+    const scanning = !!(winch && winch.seated) && (REPLAY || /radar|rescan|scan/.test(S.phase || ''));
+    d.radarMat.emissiveIntensity = scanning ? 1.2 + 0.6 * Math.sin((NOW * 1000) / 120) : 0.3;
+    d.wave.visible = scanning; if (scanning) { const f = ((NOW * 1000) / 1400) % 1; d.wave.position.copy(d.pod.position); d.wave.scale.setScalar(0.3 + f * 4.5); d.wave.material.opacity = 0.32 * (1 - f); }
+    const hs = (S.comms?.hotspots || []).find(h => h.drone_id === sd.id && h.on);
+    d.hot.visible = !!hs; if (hs) { const r = clamp(hs.radius_m_est || 30, 8, 60); d.hot.position.set(pos.x, 0.3, pos.z); d.hot.scale.setScalar(r); }
+    const st = winch ? (winch.seated ? (scanning ? 'pod radar scan' : 'pod down') : 'winch') : (sd.state || '');
+    if (d.span.textContent !== st) d.span.textContent = st;
+  }
+}
+
+// ---------------- camera: one continuous spring-follow shot chosen from the state ----------------
+const cam = { eye: V(-40, 60, 90), tgt: V(0, 0, 0), ang: -2.2 };
+function chooseShot(nowW) {
+  const ds = Object.values(drones); if (!ds.length) return [V(-40, 60, 90), V(0, 0, 0)];
+  const c = V(); ds.forEach(d => c.add(d.g.position)); c.divideScalar(ds.length);
+  let spread = 0; ds.forEach(d => spread = Math.max(spread, d.g.position.distanceTo(c)));
+  const ev = LIVE && LIVE.last_event, evFresh = ev && ev.xyz && evWall && nowW - evWall < 6;
+  if (evFresh) { const p = T3(ev.xyz[0], ev.xyz[1], ev.xyz[2] || 0); return [p.clone().add(V(-16, 14, 18)), p]; }
+  if (latestPing && nowW - latestPingWall < 6 && pings[latestPing]) { const p = pings[latestPing].g.position.clone(); p.y = pings[latestPing].zs; return [p.clone().add(V(-14, 16, 16)), p]; }
+  const air = ds.filter(d => d.g.position.y > hmAt(d.g.position.x, -d.g.position.z) + 3), pods = ds.filter(d => d.cable.visible);
+  const ph = S.phase || '', act = (S.mission || {}).active_pile, pile = (S.piles || []).find(p => p.id === act);
+  cam.ang += 0.0016;
+  if (pods.length) { const pc = V(); pods.forEach(d => pc.add(d.pod.position)); pc.divideScalar(pods.length); return [pc.clone().add(V(32 * Math.cos(cam.ang), 16, 32 * Math.sin(cam.ang))), pc.add(V(0, 2.5, 0))]; }
+  if (/survey|mapping/.test(ph) && pile) { const p = T3(pile.xy[0], pile.xy[1], 2); return [p.clone().add(V(40 * Math.cos(cam.ang), 26, 40 * Math.sin(cam.ang))), p]; }
+  if (air.length && /dispatch|deploy|return|transit/.test(ph)) {   // follow the fleet from behind, looking ahead along the velocity
+    const vel = V(); air.forEach(d => vel.add(d.sv.lengthSq() ? d.sv : V())); const dir = cam.lastDir || V(0, 0, -1);
+    const vv = V(); air.forEach(d => vv.add(d.g.position)); vv.divideScalar(air.length);
+    if (cam.prevC) { const mv = vv.clone().sub(cam.prevC).setY(0); if (mv.lengthSq() > 1e-4) cam.lastDir = dir.lerp(mv.normalize(), 0.05).normalize(); } cam.prevC = vv.clone();
+    return [vv.clone().addScaledVector(cam.lastDir || dir, -26).add(V(0, 15 + spread * 0.3, 0)), vv.clone().addScaledVector(cam.lastDir || dir, 8)];
+  }
+  return [c.clone().add(V(48 * Math.cos(cam.ang), 30 + spread * 0.4, 48 * Math.sin(cam.ang))), c.setY(1.5)];
+}
+let evWall = 0, evKey = '', banWall = 0, banKey = '';
+
+// ---------------- HUD ----------------
+function updateHUD(nowW) {
+  if (REPLAY) return updateReplayHUD(nowW);
+  const head = HUD?.panels?.header?.text || `t ${Math.round(clock.shown)} s · ${S.phase || ''}`;
+  $('clock').textContent = head.replace(/^LIVE\s*/, '');
+  const badge = LIVE?.badge || HUD?.panels?.badge?.text; $('badge').hidden = !badge; if (badge) $('badge').textContent = badge;
+  const ev = LIVE?.last_event; const ek = ev ? ev.t + ':' + ev.id : ''; if (ek && ek !== evKey) { evKey = ek; evWall = nowW; }
+  const ban = LIVE?.banner?.text || (HUD?.panels?.banner?.active ? HUD.panels.banner.text : ''); const bk = ban || ''; if (bk && bk !== banKey) { banKey = bk; banWall = nowW; }
+  const rp = (LIVE?.replans || []).slice(-1)[0], rk = rp ? 'r' + rp.t : ''; if (rk && rk !== banKey && !ban) { banKey = rk; banWall = nowW; cam.rpText = `PLAN CHANGED: ${rp.from || 'next pile'} → ${rp.to} (${rp.why})`; }
+  const showBan = banKey && nowW - banWall < 7; $('banner').hidden = !showBan; if (showBan) $('banner').textContent = ban || cam.rpText || '';
+  let line = ''; const evText = HUD?.panels?.event?.text;
+  if (evKey && nowW - evWall < 10 && evText) { line = evText; $('event').className = 'hud'; }
+  else { const cz = (LIVE?.causal || HUD?.panels?.causal?.lines || [])[0]; if (cz) { line = `t ${Math.round(cz.t)}  ${cz.text}`; $('event').className = 'hud causal'; } }
+  $('event').hidden = !line; if (line && $('event').textContent !== line) $('event').textContent = line;
+}
+
+function updateReplayHUD(nowW) {
+  const T = clock.shown;
+  $('clock').textContent = `REPLAY of a live CPU run · t ${Math.round(T)} s · time-lapse ×${R_RATE}`;
+  const badge = LIVE?.badge; $('badge').hidden = !badge; if (badge) $('badge').textContent = badge.replace(/,? last at t \d+/, '');
+  const evs = (LIVE?.events || []).filter(e => e.t <= T), ev = evs[evs.length - 1];
+  if (ev && evKey !== ev.t + ':' + ev.id) { evKey = ev.t + ':' + ev.id; evWall = nowW; LIVE.last_event = ev; }
+  const rps = (LIVE?.replans || []).filter(r => r.t <= T), rp = rps[rps.length - 1];
+  const showBan = rp && T - rp.t < 6 * R_RATE; $('banner').hidden = !showBan; if (showBan) $('banner').textContent = `PLAN CHANGED: ${rp.from || 'next pile'} → ${rp.to} (${rp.why}, unscripted live input)`;
+  let line = '';
+  if (ev && T - ev.t < 10 * R_RATE) { line = `STAGE EVENT t ${Math.round(ev.t)}: ${ev.id} ${ev.what} near ${ev.sector || '?'} (${ev.cause || 'live input'})`; $('event').className = 'hud'; }
+  else { const cz = (LIVE?.causal || []).filter(c => c.t <= T).sort((a, b) => b.t - a.t)[0]; if (cz) { line = `t ${Math.round(cz.t)}  ${cz.text}`; $('event').className = 'hud causal'; } }
+  $('event').hidden = !line; if (line && $('event').textContent !== line) $('event').textContent = line;
+}
+
+// ---------------- loop ----------------
+function resize() { const w = app.clientWidth, h = app.clientHeight; renderer.setSize(w, h); labelR.setSize(w, h); camera.aspect = w / h; camera.fov = w < 700 ? 60 : 45; camera.updateProjectionMatrix(); }
+addEventListener('resize', resize); resize();
+let last = performance.now() / 1000, lastTick = 0;
+function frame() {
+  lastTick = performance.now(); const nowW = REPLAY && seekT != null ? seekT / R_RATE : lastTick / 1000, dt = fixedDt != null ? fixedDt : clamp(nowW - last, 0, 0.1); last = nowW; NOW = nowW;
+  if (S) {
+    // render clock: the mission's sim time extrapolated at the measured pace, eased so it never jumps
+    if (REPLAY) { if (!clock.rs) clock.rs = nowW; clock.rate = R_RATE; clock.shown = seekT != null ? seekT : Math.min(S.t, R_T0 + R_RATE * (nowW - clock.rs)); }
+    else {
+      const target = clock.t + clock.rate * clamp(nowW - clock.wall, 0, 4);
+      clock.shown += clamp(target - clock.shown, -0.5, 20) * (1 - Math.exp(-dt * 4)) + clock.rate * dt * 0.5;
+      if (clock.shown > target + 1) clock.shown = target + 1;
+    }
+    const ok = overlayKey(clock.shown); if (ok !== ovKey) { ovKey = ok; buildOverlays(clock.shown); }
+    updateDrones(clock.shown, dt);
+    const surveying = /survey|recon_mapping|mapping/.test(S.phase || '');
+    if (cloud) cloudMat.opacity += ((REPLAY ? 0.22 : surveying ? 0.9 : 0.18) - cloudMat.opacity) * (1 - Math.exp(-dt * 1.2));
+    Object.values(pings).forEach(P => { const f = (nowW * 0.8) % 1; P.ring.scale.setScalar(0.5 + f * 2.2); P.ring.material.opacity = 1 - f; P.beam.material.opacity = 0.35 + 0.25 * Math.sin(nowW * 2.5); P.sph.scale.setScalar(1 + 0.3 * Math.sin(nowW * 5)); });
+    const [eye, tgt] = chooseShot(nowW);
+    eye.y = Math.max(eye.y, hmAt(eye.x, -eye.z) + 4);
+    cam.eye.lerp(eye, 1 - Math.exp(-dt * Math.LN2 / 1.2)); cam.tgt.lerp(tgt, 1 - Math.exp(-dt * Math.LN2 / 0.6));
+    camera.position.copy(cam.eye); camera.lookAt(cam.tgt);
+    updateHUD(nowW);
+  }
+  renderer.render(scene, camera); labelR.render(scene, camera);
+  fixedDt = null;
+}
+function safe() { try { frame(); } catch (e) { console.error(e); window.__fail(e.message || String(e)); } }
+renderer.setAnimationLoop(safe);
+setInterval(() => { if (performance.now() - lastTick > 400) safe(); }, 50);   // keeps going where rAF is throttled
+window.__live = () => ({ data: DATA, t: S && S.t, shown: +clock.shown.toFixed(1), rate: +clock.rate.toFixed(2), phase: S && S.phase, drones: Object.keys(drones), motion: !!MOT, pings: Object.keys(pings), cloud: cloud ? cloud.geometry.attributes.position.count : 0, banner: !$('banner').hidden && $('banner').textContent });
+</script>

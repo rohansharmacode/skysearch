@@ -39,6 +39,10 @@ def test_srp_phat_doa_clean_source(src):
 
 
 def _two_source_cross(az_strong, az_weak, ratio, seed=0, n=16000):
+    return _mix_cross([(az_strong, 1.0), (az_weak, ratio)], seed, n)
+
+
+def _mix_cross(srcs, seed=0, n=16000):
     """Synthetic far-field mixture on the 6-mic array: PHAT cross-spectra (P, F) and cell counts."""
     from acoustic import dsp
     from acoustic.scene import FS, mic_offsets
@@ -48,13 +52,22 @@ def _two_source_cross(az_strong, az_weak, ratio, seed=0, n=16000):
     f = np.fft.rfftfreq(dsp.NFFT, 1 / FS)
     S = n // dsp.HOP
     X = 1e-3 * (rng.normal(size=(6, len(f), S)) + 1j * rng.normal(size=(6, len(f), S)))
-    for az, g in ((az_strong, 1.0), (az_weak, ratio)):
+    for az, g in srcs:
         u = np.array([np.cos(np.radians(az)), np.sin(np.radians(az))])
         lead = offs.T @ u / 343.0
         src = g * (rng.normal(size=(len(f), S)) + 1j * rng.normal(size=(len(f), S)))
         X += src[None] * np.exp(2j * np.pi * f[None, :, None] * lead[:, None, None])
     C = model.cross(X)
     return model, C.sum(axis=2), np.full(C.shape[1], float(S))
+
+
+def test_clean_finds_three_talkers_including_a_weak_one():
+    from acoustic import dsp
+    model, R, w = _mix_cross([(30.0, 1.0), (150.0, 0.8), (260.0, 0.35)], seed=1)
+    az = [c[0] for c in dsp.clean(model, R, w)]
+    for want in (30.0, 150.0, 260.0):        # the weak talker (-9 dB) survives two loud ones
+        assert any(abs(dsp.wrap180(a - want)) <= 4 for a in az), (want, az)
+    assert len(az) <= 5
 
 
 def test_clean_removes_sidelobes_and_keeps_weak_source():
@@ -263,3 +276,24 @@ def test_rotor_veto_and_bearing_skip():
     comps = {"d1": [(10.0, 0.6, 30.0), (95.0, 0.4, 30.0)], "d2": [(200.0, 0.5, 30.0)]}
     kept = dsp.skip_rotor_components(comps, {"d1": [12.0], "d2": [90.0]})
     assert kept == {"d1": [(95.0, 0.4, 30.0)], "d2": [(200.0, 0.5, 30.0)]}
+
+
+DUMMY_FIXTURE = __import__("os").path.join(__import__("os").path.dirname(__file__), "fixtures", "acoustic_dummy_seed7.json")
+
+
+def test_dummy_library_listens_keep_the_faint_voice_and_the_knock():
+    """Dummy-audio library (assets/audio/dummies) through build_scene(sources=): seed 7, the hidden
+    Vietnamese caller in C3 switching on, and a dog barking over the knocks."""
+    with open(DUMMY_FIXTURE) as f:
+        fx = json.load(f)
+    for name, plan in fx["plans"].items():
+        kinds, clips = plan["truth_kinds_evaluator_only"], plan["clips"]
+        b1 = clips.get("B1")
+        assert b1 and b1["human"] >= 0.4 and b1["association"] == "confident" and b1["priority"] >= 20, name
+        assert plan["dispatch"] == "A3", name
+        for p, c in clips.items():                       # no confident human lead without a person
+            if c["human"] >= 0.4 and c["association"] == "confident":
+                assert kinds[p] in HUMAN_KINDS, (name, p, c)
+    assert fx["plans"]["hidden_C3_vi"]["clips"]["C3"]["priority"] >= 20
+    for name in ("baseline", "stress_dog_over_knock"):
+        assert fx["plans"][name]["clips"]["B2"]["sound_class"] == "knocking"

@@ -4,9 +4,19 @@ Updated 2026-11-07 22:53 (real clock; earlier 23:xx/00:xx stamps in this file we
 - remote github.com/rohansharmacode/skysearch, branch `larpverse-sensing`, folder `larpverse/`;
 - local clone of the team repo at ~/Downloads/UCL/skysearch.
 
-## Pause history
+## PAUSED by user (8 Nov ~03:20 UTC)
 
-Paused by the user at about 23:15 and resumed at about 23:20. All 11 agents were resumed via SendMessage; watchdog and heartbeat cron (17a9724f) re-armed.
+All running agents are stopped and the heartbeat cron and watchdog are off. Uncommitted WIP in the main tree:
+- the live agent: isaac/live.py, hud.py, run_mission.py, van.py, tests/test_live.py, docs/VIDEO_PLAN.md (Rohan rehearsal fixes: trigger, redirect timing, garbled transcript, P0-2/3);
+- the audio agent: assets/audio/dummies/manifest.json.
+
+Collapse fixer worktree: /home/peroxide/Downloads/UCL/agentverse-wt-collapse (branch fix/collapse-coverage, 1 commit 635f563 plus WIP: sector ownership map).
+
+Not finished when paused:
+- the acoustic latency fix (agent a1dbd08c7726451da);
+- the fallback live-view.html (visual agent a9d09919957c913a4; recording not done).
+
+To resume: re-arm the watchdog, recreate the cron, then SendMessage each agent ID: "you were paused; check git status for your files and finish".
 
 ## Standing instructions (user)
 

@@ -41,9 +41,10 @@ HUMAN_FLOOR = 0.45         # fallback human score when YAMNet itself says voice 
 
 
 def wants_asr(vad, cls, heur):
-    """Whisper runs on clips with voice activity, OR a human YAMNet class / human-over-animal frame:
-    Silero misses shouted calls (VAD 0.00-0.09 on 6/13 real "help me" clips)."""
-    return vad >= 0.15 or cls in ("voice", "shout") or heur.get("human_minus_animal", 0.0) >= models.HMA_MIN
+    """Whisper runs only on clips whose headline class is voice/shout. That class already admits
+    shouted calls Silero misses (human-over-animal frame, models.classify); knocks, dogs, engines
+    and debris never reach Whisper (latency, and no hallucinated words on non-speech)."""
+    return cls in ("voice", "shout")
 
 
 def gate_transcript(text, vad, cls, heur=None):
@@ -250,6 +251,25 @@ def _knock_crosstalk(seps, blk, tol=0.08):
     return log
 
 
+def _dominated(det, blocks, others):
+    """Share of the clip's (remaining) blocks where another transient source was associated more
+    strongly than this pile (padding blocks: where any other source was active)."""
+    if not blocks:
+        return 0.0
+    idx = np.asarray(blocks, int)
+    other = np.zeros(len(idx))
+    for o in others:
+        if not o.get("continuous") and "block_score" in o:
+            other = np.maximum(other, o["block_score"][idx])
+    own_act = det["active_blocks"][idx]
+    own = det.get("block_score", det["active_blocks"].astype(float))[idx]
+    if det.get("continuous"):
+        dom = other > 0
+    else:
+        dom = np.where(own_act, other > own, other > 0)
+    return round(float(dom.mean()), 2)
+
+
 def finalise_association(det, dominated):
     """Fold the clip-content check into the detection's association (in place).
 
@@ -286,6 +306,7 @@ def analyse(scene, exclude_piles=(), mode="auto", whisper="base.en", save_clips=
     """Everything downstream of the microphones. Sees only the Scene (public geometry + signals).
     rotors: {id: (x, y)} of our own drones hovering during the listen (their bearings are skipped)."""
     T = timing if timing is not None else {}
+    models.reset_stages()
     t = time.time()
     dets, B = dsp.localise_piles(scene, exclude=set(exclude_piles), rotors=rotors)
     rotor_dets = [d for d in dets if d.get("rotor")]
@@ -313,12 +334,21 @@ def analyse(scene, exclude_piles=(), mode="auto", whisper="base.en", save_clips=
         if d.get("rotor"):
             continue                                    # nulled in every beam, never separated
         did, snr, clip, dom, idx = dsp.extract_clip(scene, d, B, [o for o in pool if o is not d])
-        if not d["excluded"]:
-            finalise_association(d, dom)
         seps.append({"det": d, "did": did, "snr": snr, "clip": clip, "blocks": list(idx),
                      "pos": {int(b): j for j, b in enumerate(idx)},
                      "speech": models.block_speech(clip, blk), "notes": []})
     log += remove_crosstalk(seps, blk)
+    for s_ in seps:                 # overlap judged on the blocks left after cross-talk removal
+        d = s_["det"]
+        if d["excluded"]:
+            continue
+        blocks = s_["blocks"]
+        own = set()
+        if s_.get("talker"):        # speech that survived the ownership test is this talker's own
+            own = {b for b, j in s_["pos"].items() if s_["speech"][j] >= SPEECH_BLOCK}
+        dom = _dominated(d, [b for b in blocks if b not in own], [o for o in pool if o is not d])
+        dom = round(dom * len([b for b in blocks if b not in own]) / max(len(blocks), 1), 2)
+        finalise_association(d, dom)
     T["separate"] = time.time() - t
 
     t = time.time()
@@ -326,7 +356,8 @@ def analyse(scene, exclude_piles=(), mode="auto", whisper="base.en", save_clips=
     ref_text = {}                                       # transcripts of excluded piles' talkers
     for s_ in seps:
         if s_["det"]["excluded"] and np.mean(s_["speech"] >= SPEECH_BLOCK) >= 0.2:
-            ref_text[s_["det"]["pile_id"]] = models.transcribe(s_["clip"], whisper)
+            ref_text[s_["det"]["pile_id"]] = (models.transcribe(s_["clip"], whisper),
+                                              models.vad_speech_ratio(s_["clip"]))
     for s_ in seps:
         d = s_["det"]
         if d["excluded"]:
@@ -349,11 +380,12 @@ def analyse(scene, exclude_piles=(), mode="auto", whisper="base.en", save_clips=
         w = _bigrams(f["transcript"])
         if not w:
             continue
-        rivals = [(p, t_, None) for p, t_ in ref_text.items()] + \
-                 [(g["pile_id"], g["transcript"], g) for g in feats if g is not f]
-        for p, t_, g in rivals:
+        # an excluded pile's talker or another clip owns the phrase when its clip has more speech
+        rivals = [(p, t_, v_) for p, (t_, v_) in ref_text.items()] + \
+                 [(g["pile_id"], g["transcript"], g["vad_speech_ratio"]) for g in feats if g is not f]
+        for p, t_, v_ in rivals:
             shared = len(w & _bigrams(t_))
-            if shared >= min(2, len(w)) and (g is None or g["vad_speech_ratio"] > f["vad_speech_ratio"]):
+            if shared >= min(2, len(w)) and v_ > f["vad_speech_ratio"]:
                 f["notes"].append(f"transcript repeats {p}'s talker: dropped as cross-talk")
                 log.append(f"{f['pile_id']}: suppressed cross-talk from {p} (transcript)")
                 f["transcript"] = ""
@@ -362,6 +394,11 @@ def analyse(scene, exclude_piles=(), mode="auto", whisper="base.en", save_clips=
     for f in feats:     # sparse speech that sounds like a voice to YAMNet: likely another talker's leak
         if f["sound_class"] in ("voice", "shout") and f["vad_speech_ratio"] < 0.3:
             f["notes"].append(f"sparse speech (VAD {f['vad_speech_ratio']:.2f}): direction of the voice not pinned")
+            f["_ambiguous"] = True
+        elif f["sound_class"] in ("voice", "shout") and f["continuous"]:
+            # speech is transient: a voice heard on a steady (whole-window) source is a leak into
+            # its beam from a talker too weak to be associated in those blocks
+            f["notes"].append("speech on a steady source: direction of the voice not pinned")
             f["_ambiguous"] = True
     for f in feats:
         if f.pop("_ambiguous", False):
@@ -421,10 +458,12 @@ def analyse(scene, exclude_piles=(), mode="auto", whisper="base.en", save_clips=
         items = [{"clip_id": c["clip_id"], "pile_id": c["pile_id"], "drone_id": c["drone_id"],
                   "audio": sep_by[c["pile_id"]]["clip"],
                   "background": scene.signals[c["drone_id"]][0].astype(np.float32),
-                  "reliability": c["reliability"], "association": c["association"]} for c in clips]
+                  "reliability": c["reliability"], "association": c["association"]} for c in clips
+                 if c["sound_class"] in ("voice", "shout")]          # non-speech never goes to Gemini
         add_gemini_audio(state, items, mode)
         T["gemini_audio"] = time.time() - t
     state["timing_s"] = {k: round(v, 2) for k, v in T.items()}
+    state["timing_stages_s"] = {k: round(v, 2) for k, v in sorted(models.STAGE.items(), key=lambda kv: -kv[1])}
     return state
 
 
@@ -483,14 +522,18 @@ def add_gemini_audio(state, items, mode="auto"):
 
 
 def listen_and_rank(scenario, drone_positions: dict | None = None, exclude_piles=(), seed: int | None = None,
-                    mode="auto", whisper="base.en", return_truth=False, gemini_audio=None, rotors=None):
+                    mode="auto", whisper="base.en", return_truth=False, gemini_audio=None, rotors=None,
+                    sources=None, duration=None):
     """Mission hook: listen from the landed drones and rank the piles. Returns the
     larpverse.acoustic/v1 dict (writes nothing). Only the scene synthesis reads scenario.truth;
     pass return_truth=True to also get the evaluation summary as a second value. rotors: {id: (x, y)}
-    of our own drones hovering during the listen (mission state); their bearings are skipped."""
+    of our own drones hovering during the listen (mission state); their bearings are skipped.
+    sources: live sources (isaac/live.py dummies) for scene.build_scene(sources=), replacing the
+    scenario's sounds; duration: listen window in s (default scene.DURATION; shorter = faster)."""
     T = {}
     t0 = time.time()
-    scene, truth = build_scene(scenario, drone_positions, seed, rotors=rotors)
+    kw = {"duration": duration} if duration else {}
+    scene, truth = build_scene(scenario, drone_positions, seed, rotors=rotors, sources=sources, **kw)
     T["scene"] = time.time() - t0
     state = analyse(scene, exclude_piles, mode, whisper, save_clips=False, timing=T, gemini_audio=gemini_audio,
                     rotors=rotors)

@@ -28,6 +28,28 @@ GROUPS = {
     "noise": [494, 277, 279, 507, 508, 509, 514, 515],
 }
 _cache = {}
+STAGE = {}                 # seconds per pipeline stage since the last reset_stages() (listen timings)
+
+
+def reset_stages():
+    STAGE.clear()
+
+
+def timed(name):
+    """Decorator: add the wall time of each call to STAGE[name]."""
+    import functools
+    import time as _t
+
+    def deco(fn):
+        @functools.wraps(fn)
+        def wrap(*a, **k):
+            t0 = _t.perf_counter()
+            try:
+                return fn(*a, **k)
+            finally:
+                STAGE[name] = STAGE.get(name, 0.0) + _t.perf_counter() - t0
+        return wrap
+    return deco
 # well-known Whisper outputs on non-speech audio
 HALLUCINATIONS = {"thank you", "thanks for watching", "you", "bye", "thank you for watching"}
 
@@ -39,6 +61,7 @@ def _norm(x, target_rms=0.05):
 
 
 # --------------------------------------------------------------------------- VAD
+@timed("vad")
 def vad_probs(x) -> np.ndarray:
     """Silero speech probability per 512-sample (32 ms) frame."""
     import onnxruntime as ort
@@ -81,6 +104,7 @@ def _yamnet_labels():
         return [r["display_name"] for r in csv.DictReader(f)]
 
 
+@timed("yamnet")
 def yamnet_scores(x):
     """Returns (frame scores (T, 521), labels)."""
     if "yam" not in _cache:
@@ -164,6 +188,7 @@ def knock_rhythm(x, lo=0.12, hi=0.45) -> float:
     return round(float(max(0.0, r[w].max())), 3) if w.any() else 0.0
 
 
+@timed("heuristics")
 def knock_periodicity(x, rhythm_ok=True) -> float:
     """Patterned-knock score in [0, 1]: the larger of a group score and a rhythm score.
 
@@ -191,6 +216,7 @@ def knock_periodicity(x, rhythm_ok=True) -> float:
     return round(float(max(group, rhythm)), 3)
 
 
+@timed("heuristics")
 def loudness_steadiness(x, frame_s=0.05) -> float:
     """p10/p90 of 50 ms band (150-4000 Hz) RMS. Rotors, engines, rain and wind are steady (ESC-50
     helicopter median 0.47, engine 0.73); speech, cries, coughs, knocks and debris have gaps
@@ -204,6 +230,7 @@ def loudness_steadiness(x, frame_s=0.05) -> float:
     return round(float(np.percentile(e, 10) / np.percentile(e, 90)), 3)
 
 
+@timed("heuristics")
 def blade_pass(x, fmin=40.0, fmax=400.0, band=(80.0, 2500.0)) -> float:
     """Blade-pass comb: share of 80-2500 Hz power in stationary spectral lines (>= 4x the local
     median, whole-clip Welch, 2 Hz bins) that sit on >= 3 harmonics of one f0 in 40-400 Hz.
@@ -237,6 +264,7 @@ def blade_pass(x, fmin=40.0, fmax=400.0, band=(80.0, 2500.0)) -> float:
     return round(best, 3)
 
 
+@timed("heuristics")
 def hum_harmonicity(x) -> float:
     """Fraction of 90-1000 Hz power that sits on 50 or 60 Hz harmonics (+-2 Hz); wind lives below."""
     f, P = sps.welch(x, FS, nperseg=8192)
@@ -292,22 +320,37 @@ def classify(x, vad=None):
     scores = {c: round(g[c] / tot, 3) for c in CLASSES}
     top = [(labels[i], round(float(agg[i]), 3)) for i in np.argsort(-agg)[:3]]
     fg = {c: v for c, v in scores.items() if c != "noise"}       # background only if nothing else
-    if vad is not None and vad < 0.1 and heur["human_minus_animal"] < HMA_MIN:
+    if vad is not None and vad < 0.1 and (heur["human_minus_animal"] < HMA_MIN or heur["knock_periodicity"] >= 0.5):
         # no voice activity and no human-over-animal YAMNet frame -> never a "voice" headline (R2-015);
-        # shouts that Silero misses (VAD ~0) keep it when YAMNet hears a human clearly
+        # shouts that Silero misses (VAD ~0) keep it when YAMNet hears a human clearly, unless the
+        # clip carries a clear knock pattern (a knocker under a distant talker's leak)
         fg = {c: v for c, v in fg.items() if c not in ("voice", "shout")}
     cls = max(fg, key=fg.get) if max(fg.values()) >= 0.15 else "noise"
     return cls, scores, heur, top
 
 
 # --------------------------------------------------------------------------- ASR
+ASR_MAX_S = 12.0          # Whisper sees at most the loudest 12 s of a clip (latency)
+
+
+def _asr_window(x, max_s=ASR_MAX_S):
+    n = int(max_s * FS)
+    if len(x) <= n:
+        return x
+    e = np.convolve(np.asarray(x, float) ** 2, np.ones(FS // 2), "valid")[::FS // 4]   # 0.5 s energy, 0.25 s hop
+    w = n // (FS // 4)
+    s = int(np.argmax(np.convolve(e, np.ones(max(w - 1, 1)), "valid"))) * (FS // 4)
+    return x[s:s + n]
+
+
+@timed("whisper")
 def transcribe(x, model="base.en") -> str:
     key = "asr:" + model
     if key not in _cache:
         from faster_whisper import WhisperModel
         _cache[key] = WhisperModel(model, device="cpu", compute_type="int8", cpu_threads=2,
                                    download_root=os.path.join(MODEL_DIR, "whisper"))
-    segs, _ = _cache[key].transcribe(_norm(x, 0.1), language="en", beam_size=1, temperature=0.0,
+    segs, _ = _cache[key].transcribe(_norm(_asr_window(x), 0.1), language="en", beam_size=1, temperature=0.0,
                                      condition_on_previous_text=False, vad_filter=False)
     # a segment must look like speech to Whisper itself: low no-speech probability AND a
     # reasonable average log-probability (hallucinations on barks/knocks fail one or the other)

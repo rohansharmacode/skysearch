@@ -23,9 +23,10 @@ import numpy as np
 from scipy import signal as sps
 from scipy.signal import find_peaks
 
+from .models import timed
 from .scene import C_SOUND
 
-ALGO_VERSION = "assoc-v12"        # bump when localisation / association changes (cache keys)
+ALGO_VERSION = "assoc-v16"        # bump when localisation / association changes (cache keys)
 NFFT = 512
 HOP = 256
 BLOCK_S = 0.5
@@ -39,12 +40,16 @@ CLEAN_GAIN = 0.8
 CLEAN_MAX = 6                    # components per map
 CLEAN_ABS = 0.05                 # coherence floor for a component
 CLEAN_REL = 0.2                  # ... and >= this x the strongest component of the same map
+CLEAN_WEAK = 0.08                # weak components (CLEAN_WEAK..CLEAN_REL x strongest) may only support a
+                                 # pile that EVERY drone agrees on: a weak talker under a loud one survives,
+                                 # drone-specific residual ghosts of the loud one do not
 SIG_MEAS = 3.5                   # deg, bearing noise of one component
 PILE_R = 2.0                     # m, typical offset of a source from its pile centre
 TOL_K = 2.5                      # association gate = TOL_K x combined sigma
 SINGLE_AMP = 0.35                # one-drone support needs this coherence and no other pile in the gate
 RIVAL = 0.5                      # rival pile with likelihood >= RIVAL x best on the same components: ambiguous block
 CONF_MIN = 0.6                   # association confidence for a "confident" pile assignment
+ROTOR_GATE = 8.0                 # deg: components this close to a hovering drone's bearing are its rotors
 POST_MIN = 0.2                   # below this bearing posterior the detection is rejected outright
 
 
@@ -98,6 +103,7 @@ class SrpModel:
         return p / max(p[a0], 1e-12)
 
 
+@timed("srp_gcc")
 def gcc_blocks(model: SrpModel, sig: np.ndarray, fs: int, mask_k=MASK_K):
     """Per-block masked cross-spectra and one unmasked whole-window set.
 
@@ -125,6 +131,7 @@ def _fwhm(m: np.ndarray, i: int) -> float:
     return float(left + right + 1)
 
 
+@timed("srp_clean")
 def clean(model: SrpModel, R: np.ndarray, w: np.ndarray, max_comp=CLEAN_MAX, gain=CLEAN_GAIN):
     """CLEAN on an SRP-PHAT map: iteratively take the strongest direction and subtract the
     array's point-spread function there. Returns [(az_deg, coherence, fwhm_deg)] strongest
@@ -149,7 +156,10 @@ def clean(model: SrpModel, R: np.ndarray, w: np.ndarray, max_comp=CLEAN_MAX, gai
             j = i
         comps[j][0] += gain * a
     out = sorted(((float(k), v[0], v[1]) for k, v in comps.items()), key=lambda c: -c[1])
-    return [c for c in out if c[1] >= max(CLEAN_ABS, CLEAN_REL * out[0][1])] if out else []
+    if not out:
+        return []
+    top = out[0][1]
+    return [(az, amp, w, amp < CLEAN_REL * top) for az, amp, w in out if amp >= max(CLEAN_ABS, CLEAN_WEAK * top)]
 
 
 def srp_blocks(sig: np.ndarray, offs: np.ndarray, fs: int, mask_k=MASK_K):
@@ -193,9 +203,11 @@ def triangulate(origins, bearings_deg):
 
 
 _FFT_CACHE: dict = {}
+_DS_CACHE: dict = {}
 _SOS_BAND = sps.butter(4, [300, 4000], "band", fs=16000, output="sos")
 
 
+@timed("beamform")
 def beamform(sig: np.ndarray, offs: np.ndarray, fs: int, bearing_deg: float, nulls=(), load=0.1) -> np.ndarray:
     """Far-field frequency-domain beamformer toward bearing_deg. Returns mono float32.
 
@@ -203,25 +215,41 @@ def beamform(sig: np.ndarray, offs: np.ndarray, fs: int, bearing_deg: float, nul
     each null bearing, diagonal loading `load` to bound white-noise gain at low frequency)."""
     M, N = sig.shape
     key = (id(sig), N, float(sig[:, :256].sum()), float(sig[:, -256:].sum()))   # id + fingerprint
-    if _FFT_CACHE.get("key") != key:                             # one FFT per drone signal
-        _FFT_CACHE.update(key=key, X=np.fft.rfft(sig.astype(np.float64), axis=1))
-    Xf = _FFT_CACHE["X"]                                         # (M, F)
+    if key not in _FFT_CACHE:                                    # one FFT per drone signal (all drones kept)
+        if len(_FFT_CACHE) > 8:
+            _FFT_CACHE.clear()
+        _FFT_CACHE[key] = np.fft.rfft(sig.astype(np.float64), axis=1)
+    Xf = _FFT_CACHE[key]                                         # (M, F)
     f = np.fft.rfftfreq(N, 1 / fs)
 
-    def steer(th):
+    def steer(th, ff):
         u = np.array([np.cos(np.radians(th)), np.sin(np.radians(th))])
         tau = (offs.T @ u) / C_SOUND                             # mic leads the centre by tau
-        return np.exp(2j * np.pi * f[:, None] * tau[None, :])    # (F, M)
+        return np.exp(2j * np.pi * ff[:, None] * tau[None, :])   # (F, M)
 
     if not len(nulls):
-        Y = np.mean(Xf * np.conj(steer(bearing_deg)).T, axis=0)
+        dk = (key, round(float(bearing_deg), 1))
+        if dk in _DS_CACHE:                                      # delay-and-sum beams recur (SNR, noise refs)
+            return _DS_CACHE[dk]
+        Y = np.mean(Xf * np.conj(steer(bearing_deg, f)).T, axis=0)
+        if len(_DS_CACHE) > 64:
+            _DS_CACHE.clear()
+        _DS_CACHE[dk] = np.fft.irfft(Y, n=N).astype(np.float32)
+        return _DS_CACHE[dk]
     else:
-        C = np.stack([steer(bearing_deg)] + [steer(n) for n in nulls], axis=2)   # (F, M, K)
+        # LCMV weights are smooth in frequency (array delays < 0.5 ms): solve on a 1025-bin grid,
+        # then put the coarse correction on top of the exact target steering. 30x faster than a
+        # solve per FFT bin of a 26 s signal, same nulls to within ~0.02 rad.
+        fc = np.linspace(0.0, fs / 2, 1025)
+        C = np.stack([steer(bearing_deg, fc)] + [steer(n, fc) for n in nulls], axis=2)   # (Fc, M, K)
         K = C.shape[2]
         G = np.conj(C).transpose(0, 2, 1) @ C + load * M * np.eye(K)[None]
         g = np.zeros((K, 1)); g[0] = 1.0
-        w = C @ np.linalg.solve(G, np.broadcast_to(g, (len(f), K, 1)))          # (F, M, 1)
-        Y = np.sum(np.conj(w[:, :, 0]).T * Xf, axis=0)
+        wc = (C @ np.linalg.solve(G, np.broadcast_to(g, (len(fc), K, 1))))[:, :, 0]    # (Fc, M)
+        rel = wc / steer(bearing_deg, fc)                         # weights relative to the target steering
+        w = np.stack([np.interp(f, fc, rel[:, m].real) + 1j * np.interp(f, fc, rel[:, m].imag)
+                      for m in range(M)], axis=1) * steer(bearing_deg, f)
+        Y = np.sum(np.conj(w).T * Xf, axis=0)
     return np.fft.irfft(Y, n=N).astype(np.float32)
 
 
@@ -244,13 +272,19 @@ def _sigma(rng_m: float) -> float:
 class _Geom:
     """Expected bearings, sigmas and gates from every drone to every pile (public geometry)."""
 
-    def __init__(self, scene):
+    def __init__(self, scene, rotors=None):
+        """rotors: {id: (x, y)} of hovering drones; they join as explainer points `rotor:<id>` that
+        can claim components (one drone is enough) but never become detections."""
         self.ids = list(scene.drones)
-        self.piles = list(scene.piles)
-        self.exp = {d: {p: bearing_to(scene.drones[d], scene.piles[p]) for p in self.piles} for d in self.ids}
-        rng = {d: {p: float(np.hypot(*(np.subtract(scene.piles[p], scene.drones[d])))) for p in self.piles}
+        pts = dict(scene.piles)
+        self.rotors = {f"rotor:{k}" for k in (rotors or {})}
+        pts.update({f"rotor:{k}": tuple(v) for k, v in (rotors or {}).items()})
+        self.piles = list(pts)
+        self.exp = {d: {p: bearing_to(scene.drones[d], pts[p]) for p in self.piles} for d in self.ids}
+        rng = {d: {p: float(np.hypot(*(np.subtract(pts[p], scene.drones[d])))) for p in self.piles}
                for d in self.ids}
-        self.sig = {d: {p: _sigma(rng[d][p]) for p in self.piles} for d in self.ids}
+        self.sig = {d: {p: (ROTOR_GATE / TOL_K if p in self.rotors else _sigma(rng[d][p])) for p in self.piles}
+                    for d in self.ids}
 
     def gate(self, d, p):
         return TOL_K * self.sig[d][p]
@@ -261,7 +295,7 @@ def _match(g: _Geom, comps: dict, used: dict, p: str, only=None):
     out = {}
     for d in g.ids:
         best = None
-        for i, (az, amp, _w) in enumerate(comps[d]):
+        for i, (az, amp, *_rest) in enumerate(comps[d]):
             if used[d][i] or (only is not None and only.get(d) != i):
                 continue
             err = float(wrap180(az - g.exp[d][p]))
@@ -274,6 +308,7 @@ def _match(g: _Geom, comps: dict, used: dict, p: str, only=None):
     return out
 
 
+@timed("associate")
 def associate(g: _Geom, comps: dict):
     """Greedy exclusive association of one block's CLEAN components {d: [(az, amp, w)]} to piles.
 
@@ -284,13 +319,18 @@ def associate(g: _Geom, comps: dict):
         cands = []
         for p in g.piles:
             m = _match(g, comps, used, p)
+            if (p not in g.rotors and len(m) < len(g.ids)
+                    and any(len(comps[d][v[0]]) > 3 and comps[d][v[0]][3] for d, v in m.items())):
+                continue                                 # weak components need every drone to agree
             if len(m) >= 2:
                 cands.append((sum(v[3] for v in m.values()), p, m))
             elif len(m) == 1:                            # one drone: strong and unambiguous only
                 (d, v), = m.items()
                 az = comps[d][v[0]][0]
                 others = [q for q in g.piles if q != p and abs(wrap180(az - g.exp[d][q])) <= g.gate(d, q)]
-                if v[2] >= SINGLE_AMP and not others:
+                if p in g.rotors:                        # our own rotor explains it from any drone
+                    cands.append((v[3], p, m))
+                elif v[2] >= SINGLE_AMP and not others:
                     cands.append((0.5 * v[3], p, m))     # half weight: no range information
         if not cands:
             return events
@@ -327,9 +367,6 @@ def bearing_posterior(g: _Geom, bearings: dict) -> dict:
 def _circ_mean(az, w):
     a = np.radians(np.asarray(az, float))
     return float(np.degrees(np.arctan2(np.sum(w * np.sin(a)), np.sum(w * np.cos(a)))) % 360.0)
-
-
-ROTOR_GATE = 8.0                 # deg: components this close to a hovering drone's bearing are its rotors
 
 
 def rotor_bearings(scene, rotors) -> dict:
@@ -372,7 +409,7 @@ def localise_piles(scene, exclude=(), rotors=None):
     rotors: {id: (x, y)} of our own drones hovering during the listen (from mission state). Their
     bearings are skipped (ROTOR_GATE) before association, and pseudo-detections flagged `rotor`
     come back so separation nulls them. Returns (detections, n_blocks)."""
-    g = _Geom(scene)
+    g = _Geom(scene, rotors)
     rb = rotor_bearings(scene, rotors)
     ids = g.ids
     model = SrpModel(scene.mic_offsets, scene.fs)
@@ -387,6 +424,8 @@ def localise_piles(scene, exclude=(), rotors=None):
 
     dets = []
     for pid in g.piles:
+        if pid in g.rotors:
+            continue
         evs = [(b, e) for b, (_c, es) in enumerate(blocks) for e in es if e["pile"] == pid]
         active = np.zeros(B, bool)
         score = np.zeros(B)
@@ -404,7 +443,7 @@ def localise_piles(scene, exclude=(), rotors=None):
         hits = {d: [] for d in ids}
         if continuous:
             for d, v in stat["match"].items():
-                az, amp, w = scomps[d][v[0]]
+                az, amp, w = scomps[d][v[0]][:3]
                 hits[d].append((az, amp, w))
             n_act = 1
             active = np.ones(B, bool)

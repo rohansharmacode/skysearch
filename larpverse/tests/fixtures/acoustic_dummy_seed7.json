@@ -1,0 +1,245 @@
+{
+ "schema": "larpverse.acoustic-dummy-fixture/v1",
+ "algo": "assoc-v16",
+ "seed": 7,
+ "listen": "drones around B2, nothing excluded",
+ "library": "assets/audio/dummies (build_scene sources=)",
+ "plans": {
+  "baseline": {
+   "truth_kinds_evaluator_only": {
+    "A1": "silent",
+    "A2": "silent",
+    "A3": "voice",
+    "B1": "weak_voice",
+    "B2": "knock",
+    "B3": "settling",
+    "C1": "generator",
+    "C2": "dog",
+    "C3": "silent"
+   },
+   "dispatch": "A3",
+   "clips": {
+    "B1": {
+     "sound_class": "voice",
+     "human": 0.94,
+     "priority": 58,
+     "association": "confident",
+     "association_conf": 1.0,
+     "transcript": "Did anyone?",
+     "notes": []
+    },
+    "C1": {
+     "sound_class": "engine",
+     "human": 0.01,
+     "priority": 0,
+     "association": "confident",
+     "association_conf": 1.0,
+     "transcript": "",
+     "notes": []
+    },
+    "B2": {
+     "sound_class": "knocking",
+     "human": 0.78,
+     "priority": 49,
+     "association": "confident",
+     "association_conf": 1.0,
+     "transcript": "",
+     "notes": []
+    },
+    "C2": {
+     "sound_class": "dog",
+     "human": 0.01,
+     "priority": 0,
+     "association": "confident",
+     "association_conf": 1.0,
+     "transcript": "",
+     "notes": []
+    },
+    "A3": {
+     "sound_class": "voice",
+     "human": 0.99,
+     "priority": 94,
+     "association": "confident",
+     "association_conf": 1.0,
+     "transcript": "Yo minma, yo may yo turn finger out, water, yo may ya too, hell, can anyone hear me, my leg is trapped",
+     "notes": []
+    },
+    "B3": {
+     "sound_class": "debris",
+     "human": 0.06,
+     "priority": 2,
+     "association": "confident",
+     "association_conf": 1.0,
+     "transcript": "",
+     "notes": []
+    }
+   },
+   "log": []
+  },
+  "hidden_C3_vi": {
+   "truth_kinds_evaluator_only": {
+    "A1": "silent",
+    "A2": "silent",
+    "A3": "voice",
+    "B1": "weak_voice",
+    "B2": "knock",
+    "B3": "settling",
+    "C1": "generator",
+    "C2": "dog",
+    "C3": "voice"
+   },
+   "dispatch": "A3",
+   "clips": {
+    "B1": {
+     "sound_class": "voice",
+     "human": 0.9,
+     "priority": 46,
+     "association": "confident",
+     "association_conf": 0.865,
+     "transcript": "Hello everyone here Wow",
+     "notes": [
+      "suppressed cross-talk from C3 (1 blocks)"
+     ]
+    },
+    "C1": {
+     "sound_class": "engine",
+     "human": 0.01,
+     "priority": 0,
+     "association": "confident",
+     "association_conf": 1.0,
+     "transcript": "",
+     "notes": []
+    },
+    "B2": {
+     "sound_class": "knocking",
+     "human": 0.78,
+     "priority": 49,
+     "association": "confident",
+     "association_conf": 1.0,
+     "transcript": "",
+     "notes": [
+      "suppressed cross-talk from B1 (1 blocks)"
+     ]
+    },
+    "C2": {
+     "sound_class": "dog",
+     "human": 0.01,
+     "priority": 0,
+     "association": "confident",
+     "association_conf": 1.0,
+     "transcript": "",
+     "notes": []
+    },
+    "A3": {
+     "sound_class": "voice",
+     "human": 0.98,
+     "priority": 94,
+     "association": "confident",
+     "association_conf": 1.0,
+     "transcript": "Yo minma, yo may yo turn finger out, water, yo may ya too, hell, can anyone hear me, my leg is trapped",
+     "notes": []
+    },
+    "B3": {
+     "sound_class": "voice",
+     "human": 0.45,
+     "priority": 14,
+     "association": "ambiguous",
+     "association_conf": 1.0,
+     "transcript": "",
+     "notes": [
+      "suppressed cross-talk from C3 (1 blocks)",
+      "sparse speech (VAD 0.00): direction of the voice not pinned"
+     ]
+    },
+    "C3": {
+     "sound_class": "voice",
+     "human": 1.0,
+     "priority": 65,
+     "association": "confident",
+     "association_conf": 1.0,
+     "transcript": "Please subscribe to my channel and I will see you guys in the next video.",
+     "notes": [
+      "suppressed cross-talk from B1 (1 blocks)"
+     ]
+    }
+   },
+   "log": [
+    "B1: suppressed cross-talk from C3 (1/11 blocks)",
+    "B2: suppressed cross-talk from B1 (1/4 blocks)",
+    "B3: suppressed cross-talk from C3 (1/10 blocks)",
+    "C3: suppressed cross-talk from B1 (1/8 blocks)"
+   ]
+  },
+  "stress_dog_over_knock": {
+   "truth_kinds_evaluator_only": {
+    "A1": "silent",
+    "A2": "silent",
+    "A3": "voice",
+    "B1": "weak_voice",
+    "B2": "knock",
+    "B3": "settling",
+    "C1": "generator",
+    "C2": "dog",
+    "C3": "silent"
+   },
+   "dispatch": "A3",
+   "clips": {
+    "B1": {
+     "sound_class": "voice",
+     "human": 0.96,
+     "priority": 58,
+     "association": "confident",
+     "association_conf": 1.0,
+     "transcript": "Hello, Did anyone?",
+     "notes": []
+    },
+    "C1": {
+     "sound_class": "engine",
+     "human": 0.02,
+     "priority": 1,
+     "association": "confident",
+     "association_conf": 1.0,
+     "transcript": "",
+     "notes": []
+    },
+    "B2": {
+     "sound_class": "knocking",
+     "human": 0.78,
+     "priority": 48,
+     "association": "confident",
+     "association_conf": 1.0,
+     "transcript": "",
+     "notes": []
+    },
+    "C2": {
+     "sound_class": "dog",
+     "human": 0.19,
+     "priority": 7,
+     "association": "confident",
+     "association_conf": 1.0,
+     "transcript": "",
+     "notes": []
+    },
+    "A3": {
+     "sound_class": "voice",
+     "human": 0.99,
+     "priority": 79,
+     "association": "confident",
+     "association_conf": 1.0,
+     "transcript": "Yo mina, yo mina yo, you're a ninja, how, what a yaw a yaw to, hell, and anyone tear me, my leg is trapped.",
+     "notes": []
+    },
+    "B3": {
+     "sound_class": "debris",
+     "human": 0.05,
+     "priority": 2,
+     "association": "confident",
+     "association_conf": 1.0,
+     "transcript": "",
+     "notes": []
+    }
+   },
+   "log": []
+  }
+ }
+}

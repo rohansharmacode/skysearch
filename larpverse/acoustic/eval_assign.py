@@ -102,15 +102,34 @@ def _path(algo, seed):
     return os.path.join(EVAL_DIR, algo, f"seed{seed}.json")
 
 
-def run_seed(seed: int, force=False, max_listens=3) -> dict:
-    algo = algo_version()
+def replay_listens(seed: int, ref_algo: str) -> list[dict]:
+    """The same listens (drone spots, exclusions, listen seeds) as a cached reference run, replayed
+    with the current code: an apples-to-apples before/after even when the mission's landing spots
+    have changed since the reference was taken."""
+    from acoustic.run import listen_and_rank
+    from sim.scenario import make_scenario
+    with open(_path(ref_algo, seed)) as f:
+        ref = json.load(f)
+    sc = make_scenario(seed)
+    out = []
+    for li in ref["listens"]:
+        t0 = time.time()
+        st = listen_and_rank(sc, {k: tuple(v) for k, v in li["drones"].items()}, li["exclude"], li["listen_seed"],
+                             mode="fallback", gemini_audio=False)
+        out.append({"drones": li["drones"], "exclude": li["exclude"], "listen_seed": li["listen_seed"],
+                    "start_pile": li.get("start_pile"), "wall_s": round(time.time() - t0, 1), "state": st})
+    return out
+
+
+def run_seed(seed: int, force=False, max_listens=3, replay=None) -> dict:
+    algo = algo_version() + (f"@{replay}" if replay else "")
     path = _path(algo, seed)
     if os.path.exists(path) and not force:
         with open(path) as f:
             return json.load(f)
     from sim.scenario import make_scenario
     t0 = time.time()
-    listens = mission_listens(seed, max_listens)
+    listens = replay_listens(seed, replay) if replay else mission_listens(seed, max_listens)
     roles = dict(make_scenario(seed).truth["roles"])     # EVALUATOR ONLY, after the analysis ran
     rec = {"algo": algo, "seed": seed, "wall_s": round(time.time() - t0, 1), "truth_roles": roles,
            "listens": listens}
@@ -256,6 +275,8 @@ def main(argv=None):
     ap.add_argument("--algos", default=None, help="comma-separated algorithm versions to report "
                                                     "(default: v1-baseline and the current one)")
     ap.add_argument("--force", action="store_true", help="recompute even if cached")
+    ap.add_argument("--replay", default=None, help="replay the listens of this cached algo version (same drone "
+                                                    "spots / exclusions / seeds) instead of re-running the mission")
     ap.add_argument("--quiet", action="store_true")
     a = ap.parse_args(argv)
     seeds = [int(s) for s in a.seeds.split(",") if s.strip()]
@@ -264,7 +285,7 @@ def main(argv=None):
     if a.cmd in ("run", "all"):
         for s in seeds:
             t = time.time()
-            run_seed(s, force=a.force)
+            run_seed(s, force=a.force, replay=a.replay)
             print(f"seed {s}: {algo_version()} done in {time.time() - t:.1f} s", flush=True)
     if a.cmd == "fixture":
         for s in seeds:

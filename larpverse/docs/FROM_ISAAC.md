@@ -18,7 +18,7 @@
 - `--stop-t T` freezes the picture at sim t (ends dry and recorded runs).
 
 **Your dry rehearsal (§6.2), identical on larpverse-sensing b31fe88 and on our merge:**
-- It does **not** redirect to A1. At t 343 a portal phone report ("I'm trapped near B2", RSSI fit ±3.43 m) queues a re-plan to B2. The Y-stand-in at t 400 is then heard, but dispatch at t 485 is A2 → B2. Your brief expects A1 at t 471. This is probably the comms integration (aca080c, on by default). Should the take run with `--no-comms`, or is B2 intended?
+- It does **not** redirect to A1. At t 343 a portal phone report ("I'm trapped near B2", RSSI fit ±3.43 m) queues a re-plan to B2. The Y-stand-in at t 400 is then heard, but dispatch at t 485 is A2 → B2. Your brief expects A1 at t 471. It's the comms integration (aca080c, on by default). With the new `run_mission --comms 0` passthrough, the same rehearsal dispatches **A2 → A1 at t 485**. Should the take run with `--comms 0`, or is B2 intended?
 - `tests/test_live.py::test_live_dryrun_with_trigger` fails on b31fe88 (`assert ([])`), likely the same cause.
 - `tests/test_isaac_assets.py::test_heavy_parts_follow_the_bom` fails because `data/hardware_bom.json` isn't in the tree. `docs/HARDWARE.md` is missing too.
 - Every run logs `isaac.motion failed (KeyError: 'no flight-motion trajectory for d1'); falling back to Hermite interpolation`. Is that expected until SmoothFlight lands?

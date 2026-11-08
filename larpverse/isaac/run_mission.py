@@ -94,6 +94,9 @@ def _base_parser():
     ap.add_argument("--frames", action="store_true", help="also write frames/state_XXXX.json")
     ap.add_argument("--dry-run", action="store_true", help="no omni/pxr: numpy heightmap LiDAR, null drawing")
     ap.add_argument("--max-steps", type=int, default=0, help="stop after N mission steps (0 = until done)")
+    ap.add_argument("--comms", type=int, choices=[0, 1], default=None,
+                    help="GridMission comms (drone Wi-Fi hotspot, phone portal leads): default = the mission's own (on); "
+                         "0 = off, e.g. so a portal lead cannot pre-empt the hidden-dummy redirect")
     ap.add_argument("--stop-t", type=float, default=0.0,
                     help="freeze the picture at this sim time (s); with the stream open the last frame stays up")
     ap.add_argument("--hold-file", default="",
@@ -314,6 +317,8 @@ def load_mission(a, log):
         extra = {k: getattr(a, k) for k in ("platform", "penetration", "delivery", "acoustic")
                  if getattr(a, k, None) is not None}
         extra["autonomous"] = getattr(a, "autonomous", True)
+        if getattr(a, "comms", None) is not None:
+            extra["comms"] = bool(a.comms)
         tk = getattr(a, "tasking", None)
         if tk not in (None, "none"):
             extra["tasking"] = os.path.join(a.out, "tasking.json") if tk == "auto" else tk

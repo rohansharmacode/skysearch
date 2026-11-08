@@ -1,5 +1,46 @@
 # From the Isaac Sim session (newest first)
 
+### 2026-11-08 03:45: rehearsals 1–4b, glitch list, fixes (larpverse-isaac 17df038, your 12577d6 merged)
+
+**Rehearsal footage.** Release `larpverse-rehearsal1`. The most representative is `reh4b_layoutB.mp4` (81 s, look (a) + Blender drone, layout B), which I reviewed frame by frame every 2 s. Rehearsal 5 with the fixes below is running now; its MP4 lands in the same release.
+
+**What each rehearsal showed** (grid, seed 7, real acoustic pipeline, `--live-pace clear --comms 0 --hud off --overlay-style simple`):
+
+| Run | Live change | Result |
+|---|---|---|
+| reh1–2 | Y key through the WebRTC viewer | Never reached Isaac (keys don't reach carb). reh2: no A2 ping by t349 |
+| reh3 | CLI activate at t242 | A2 needed 9 radar scans; ping only at t589 |
+| reh4a | CLI activate at t182 (rescans) | Listen t497: A1 49 vs B1 47, so the fleet went to A1, but only by 2 points, and the panel showed base.en's "Oh long, other young bees are better…" |
+| reh4b | **New live button** at video 20 s, event t121 | Button works. Listen t541: A1 56 (voice, human 0.98, **no transcript**) vs A3 **63** (answered the call-out, AVPU V), so the fleet went to **A3**. The plan didn't change on screen. Listen phase = 35 s of video |
+
+**Glitch list (reh4b frames) and status.**
+1. **Opening:** 8 s on a still van, with the clock at 0:01 for 6 s. Fixed: pre-roll 2.5 s with `--live-pace clear`.
+2. **Ping beacon:** a 14 m glowing column 0.3–0.5 m wide dominated every listen shot. Fixed in `--overlay-style simple`: 0.06 m radius, glow 2, 7 m tall.
+3. **Listen too long:** the pace was capped at ×4 for the whole 177 sim s (44 s of screen time), so the dispatch fell outside the take. Fixed: `LiveController.listen_pace` runs the listen at ×17 and slows only while the prefetched listen is still computing. That's about 15 s of video for a 15 s pipeline.
+4. **A1's words never came through.** The GPU diagnostic gave Whisper's own language id as zh / th / hu / km at p 0.16–0.79 on the eSpeak Indonesian. Translation with the auto-detected language hallucinated every time ("Thank you for watching"). Forcing `id` read the separated A1 clip as "Ada yang bisa dengar saya, kaki saya terjepit" (lp −0.76, but no_speech 0.76, so your keep rule dropped it). Fixed behind `--live-asr multi`:
+   - each voice clip is decoded once per language a Taiwan rescue team plans for (`LARPVERSE_ASR_LANGS`, default zh, en, id, vi);
+   - the best average log-probability wins;
+   - Whisper then translates with the source language forced;
+   - a clip the VAD calls speech (≥ 0.8) keeps a confident decode even when Whisper's no-speech score is high.
+   - The English text becomes the clip transcript (the judge's keywords are English). The language and the original words go to `live.json` `heard`, and the panel shows "“Help! …” / spoken in Indonesian: “Tolong! …” · machine-translated".
+   - Only the speech-to-text step of `recognise` is swapped, inside the Isaac worker. VAD, YAMNet, gates, scores and ranking are yours, unchanged.
+   - This replaces your planned "voice-like call (language not identified)" for the take. If the decode isn't confident, nothing is shown, as before.
+5. **Whisper on CUDA failed** (libcublas.so.12 not found). Fixed: `audio_env()` puts `.venv-audio`'s pip `nvidia/*/lib` on `LD_LIBRARY_PATH`. Measured: 10 s of audio in 1.7 s.
+6. **Where a listen's 16.5 s go** (`--profile-listen`, L40S, before your 12577d6 latency work): separate 9.4 s, DoA 4.3 s, scene 1.9 s, Whisper 0.9–1.6 s. A 10 s window costs about 3.5 s, but it never heard A1, because its loop started 9 s in. Quick listens now squeeze the source stagger into their window.
+7. **Quick listens never confirmed** (none in reh4b): two in a row outlast a 3-pod dwell. Now one clear listen confirms (priority ≥ 60 with ≥ 2 drones' bearings agreeing); weaker leads still need two.
+8. **Not explained yet:** the rescans t125–364 took about 21 s of video, not the planned 10 at ×24. The take log now prints `phase X at t=.. wall=..s xSPEED behind=..s`; rehearsal 5 will show whether the mission thread is the bottleneck.
+9. **Look:**
+   - haze and low contrast (darkest 1 % of pixels ≈ 90/255);
+   - the rubble reads as stacked flat slabs close up;
+   - the flat desert has no context.
+   Rehearsal 5 tries `--sky 600 --sun 2600 --fog-intensity 0.08 --fog-start 120`. `--town isaac/assets/town_kit` (1c897f0, off by default) adds streets, cracked asphalt, parked cars, poles and wires, and 2–3-storey damaged buildings with no colliders. The RC review: "a big step up in context; cars and buildings blocky up close". Stills are `town_*.jpg` on `larpverse-lookcheck`.
+10. **Panel:** the body went near-empty for a moment at about 25 s (caption transition). 'Plan changed' now uses your banner: "Before the new voice, the drones planned to search A3 next. They heard it themselves and now go to A1 instead."
+
+**Your paused live-agent WIP.** 17df038 merges your 12577d6 into larpverse-isaac. Conflicts were in `isaac/live.py` (submit, preflight, prefetch, `_handle_quick`), `isaac/run_mission.py` (runner.target) and `acoustic/models.py` (transcribe). Both sides are kept. Please merge larpverse-isaac before you commit the WIP on trigger / redirect timing / garbled transcript, since items 3, 4 and 7 above overlap with it. The live button is `isaac/hud/live_button.html` → `POST /api/live` in `scripts/serve.py` → `live_cmd.json`.
+
+**Take command (proposed; final after rehearsal 5).** ISAAC_BRIEF §4 take command plus:
+`--live-pace clear --comms 0 --hud off --overlay-style simple --live-asr multi --grid-look 0 --drone-style blender --take-open wide [--town isaac/assets/town_kit]`, env `LARPVERSE_WHISPER_DEVICE=cuda`. The teammate opens `/isaac/hud/live_button.html` and presses once while A2's pods are down.
+
 ### 2026-11-08 02:50: look check on the L40S, and fixes (9cc8c5e)
 
 **Stills.** Variants (a)–(d) rendered on the Nebius L40S; the stills are on release `larpverse-lookcheck`:

@@ -472,6 +472,12 @@ class DroneViz:
         self.heavy = heavy
         self.spin_rate = 1200.0 if heavy else 2400.0               # deg/s for spin() on the small model
         if heavy:
+            if STYLE == "blender":            # isaac/tools/blender_drone.py asset; None -> the models below
+                from isaac.blender_drone import build
+                rot = build(stage, self.model, did, log=print, emissive=EMISSIVE)
+                if rot is not None:
+                    self.rotors, self.rotor_ops = rot, [(r["op"], r["sign"]) for r in rot]
+                    return
             if STYLE == "mesh":
                 from isaac.drone_mesh import dji_parts
                 self._build_parts_mesh(dji_parts(spec, did))

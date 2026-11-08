@@ -66,9 +66,10 @@ def add_args(ap):
     g.add_argument("--clean-overlay", type=int, default=-1,
                    help="footage clarity: hide weak candidates, one radar ring per scan, lines ride over the rubble "
                         "(1 on, 0 off, -1 auto = on for the collapse map)")
-    g.add_argument("--drone-style", choices=["mesh", "heavy", "blocks"], default="mesh",
+    g.add_argument("--drone-style", choices=["mesh", "heavy", "blocks", "blender"], default="mesh",
                    help="mesh = smooth heavy-lift model (isaac/drone_mesh.py: rounded fuselage, carbon arms, coaxial "
-                        "motor pods, tapered props, gimbal, gear); blocks = the old primitive model")
+                        "motor pods, tapered props, gimbal, gear); blocks = the old primitive model; blender = the Cycles-built X8 asset "
+                        "(isaac/assets/drone/heavy_sar.usdc, isaac/tools/blender_drone.py)")
     g.add_argument("--prop-disc", type=float, default=0.06, help="opacity of the spinning-prop blur disc (0 = blades only)")
     g.add_argument("--record", default="", help="write PNG frames per camera to this folder (virtual clock)")
     g.add_argument("--rec-res", default="1920x1080")

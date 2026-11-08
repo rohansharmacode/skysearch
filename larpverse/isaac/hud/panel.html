@@ -1,0 +1,345 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Larpverse · what the drones sense</title>
+<!--
+  Plain-language perception panel for the single take (layout B: Isaac stream left, this panel right).
+  Rohan 2026-11-08: understandable with minimal robotics knowledge, never too fast, never overwhelming,
+  numbers that look like (and are) real measurements.
+
+  - One step at a time: a caption holds at least HOLD_S seconds; the measured rows refresh at most every ROWS_S.
+  - Every number is read from the run's own files: state.json (mission), live.json (stage events, last radar scan
+    with its breathing waveform), hud.json (LiDAR totals). Nothing here feeds back into the mission.
+  - Width 640 (or 960) x 1080; everything scales with the window width.
+
+    /isaac/hud/panel.html?state=../../dashboard/data/state.json      live.json / hud.json are read next to it
+    &speed=N   show "sped up xN" when the files carry no pace           &bg=0  transparent background
+-->
+<style>
+  :root { --lidar:#a98bff; --radar:#ff8a33; --sound:#2fc6d9; --ping:#ff5252;
+          --ok:#4fd18b; --amber:#ffb020; --grey:#a7b0b8; --line:rgba(255,255,255,0.10); }
+  html, body { margin:0; width:640px; height:1080px; overflow:hidden; background:#0c1014;
+               font-family: Inter, "Segoe UI", system-ui, sans-serif; color:#eef2f5; }
+  body.clear { background:transparent; }
+  .wrap { box-sizing:border-box; height:1080px; padding:26px 28px; display:flex;
+          flex-direction:column; gap:16px; }
+  .top { display:flex; justify-content:space-between; align-items:baseline; }
+  .live { font-size:15px; letter-spacing:.16em; font-weight:700; color:#ff6b6b; }
+  .clock { font-size:15px; color:var(--grey); text-align:right; line-height:1.4; }
+  .clock b { color:#fff; font-size:19px; }
+  .steps { display:flex; gap:5px; }
+  .steps div { flex:1; text-align:center; font-size:11px; letter-spacing:.04em; color:#6f7a83;
+               padding-top:7px; border-top:4px solid #2a3138; white-space:nowrap; }
+  .steps div.done { color:#aab4bc; border-color:#5b6670; }
+  .steps div.now { color:#fff; border-color:var(--amber); font-weight:700; }
+  .card { background:rgba(255,255,255,0.045); border:1px solid var(--line); border-radius:14px;
+          padding:18px 20px; }
+  #cap.ev { border-color:var(--amber); background:rgba(255,176,32,0.09); }
+  .t { font-size:33px; font-weight:700; line-height:1.12; }
+  .c { font-size:20px; line-height:1.42; color:#d5dde3; margin-top:9px; }
+  .h { font-size:13px; letter-spacing:.16em; text-transform:uppercase; color:#8d98a1; margin-bottom:10px; }
+  .chiprow { display:flex; gap:12px; align-items:center; }
+  .chip { font-size:14px; font-weight:800; letter-spacing:.12em; padding:5px 11px;
+          border-radius:7px; color:#0b0f13; white-space:nowrap; }
+  .say { font-size:21px; line-height:1.32; }
+  table { width:100%; border-collapse:collapse; margin-top:12px; }
+  td { font-size:17px; padding:5px 0; border-top:1px solid var(--line); vertical-align:top; }
+  td.l { color:#9aa5ae; width:44%; padding-right:10px; }
+  td.v { font-variant-numeric: tabular-nums; color:#fff; }
+  .q { font-size:18px; font-style:italic; color:#e9f6f8; margin-top:10px; line-height:1.35; }
+  .q small { display:block; font-style:normal; color:#8d98a1; font-size:13px; margin-top:3px; }
+  canvas { width:100%; height:104px; display:block; margin-top:12px; }
+  .wcap { font-size:13px; color:#8d98a1; margin-top:4px; }
+  .lead { display:flex; gap:12px; align-items:flex-start; margin-top:6px; }
+  .dot { width:13px; height:13px; border-radius:50%; background:var(--ping); margin-top:6px;
+         box-shadow:0 0 0 4px rgba(255,82,82,0.22); flex:none; }
+  .lead .a { font-size:19px; font-weight:700; }
+  .lead .b { font-size:16px; color:#d5dde3; line-height:1.38; margin-top:2px; }
+  .lead .n { font-size:13px; color:#8d98a1; margin-top:3px; }
+  .foot { margin-top:auto; font-size:13px; color:#8d98a1; line-height:1.4; }
+  .hide { display:none !important; }
+  .fade { animation: fade .6s ease; } @keyframes fade { from { opacity:0; transform:translateY(5px); } to { opacity:1; transform:none; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="top"><div class="live">● LIVE SIMULATION</div><div class="clock"><b id="clk">0:00</b><br><span id="pace"></span></div></div>
+  <div class="steps" id="steps"></div>
+  <div class="card" id="cap"><div class="t" id="capt">Waiting for the mission…</div><div class="c" id="capc"></div></div>
+  <div class="card" id="sense">
+    <div class="h">What the drones sense right now</div>
+    <div class="chiprow"><div class="chip" id="chip">—</div><div class="say" id="say"></div></div>
+    <table id="rows"></table>
+    <div id="wavebox" class="hide"><canvas id="wave" width="1200" height="200"></canvas><div class="wcap" id="wcap"></div></div>
+    <div class="q hide" id="quote"></div>
+  </div>
+  <div class="card hide" id="leads"><div class="h">Places for rescuers to check first</div><div id="leadlist"></div></div>
+  <div class="foot">Simulation. The trapped people, their voices and the radar returns are synthetic; the drones never
+    see where they are. A lead is a place to check, not a confirmed person.</div>
+</div>
+<script>
+const Q = new URLSearchParams(location.search);
+if (Q.get('bg') === '0') document.body.classList.add('clear');
+const SRC = Q.get('state') || '../../dashboard/data/state.json';
+const DIR = SRC.replace(/[^/]*$/, '');
+const SPEED = +(Q.get('speed') || 0);
+const HOLD_S = +(Q.get('hold') || 5), ROWS_S = +(Q.get('rows') || 1.5);
+const $ = id => document.getElementById(id);
+document.body.style.zoom = String(window.innerWidth / 640);     // 640 or 960 wide, same layout
+const vnow = () => (window.__vt != null ? window.__vt : performance.now() / 1000);   // burn.js sets the video clock
+
+const BEATS = ['Launch', 'Map', 'Radar', 'Listen', 'Live change', 'Re-plan', 'New area'];
+$('steps').innerHTML = BEATS.map(b => `<div>${b}</div>`).join('');
+const COL = { LIDAR: 'var(--lidar)', RADAR: 'var(--radar)', FOUND: 'var(--ping)', SOUND: 'var(--sound)', CHANGE: 'var(--amber)',
+              DECISION: 'var(--ok)', FLYING: 'var(--grey)', FLEET: 'var(--grey)' };
+const GLOSS = { voice: 'Help! Can anyone hear me?', weak_voice: 'Anyone there… water…', knock: '(knocking)', tapping: '(tapping)' };
+
+let SAID = [];                                     // [{text, en, lang}] from assets/audio/dummies/manifest.json
+fetch('../../assets/audio/dummies/manifest.json').then(r => r.json()).then(m => {
+  const C = m.clips || m.items || Object.values(m).find(v => Array.isArray(v)) || [];
+  SAID = C.filter(c => c.transcript).map(c => ({ text: c.transcript, en: c.transcript_en, lang: c.language }));
+}).catch(() => {});
+const LANG = { en: 'English', id: 'Indonesian', vi: 'Vietnamese', 'zh-TW': 'Mandarin', zh: 'Mandarin', nan: 'Taiwanese Hokkien', 'nan-TW': 'Taiwanese Hokkien' };
+function heard(c) {                                 // what was said, in English, plus the original when it differs
+  const tx = String(c.transcript || '').replace(/…$/, '').trim();
+  if (!tx) return null;
+  const hit = SAID.find(x => x.text && (x.text === tx || x.text.startsWith(tx)));
+  const en = c.text_en || (hit && hit.en) || (/^[\x00-\x7F’']*$/.test(tx) ? c.transcript : GLOSS[c.class] || null);
+  const lang = c.lang || c.language || (hit && hit.lang);
+  const orig = en && tx !== en.replace(/…$/, '') ? c.transcript : '';
+  return (en ? `“${esc(en)}”` : `“${esc(c.transcript)}”`) +
+         (orig ? `<small>heard${lang ? ' in ' + esc(LANG[lang] || lang) : ''}: “${esc(orig)}”</small>` : '');
+}
+let LIVE = null, HUD = null, firstEv = null, evSeenAt = null, opRev = null, opT = null;
+let shown = { beat: -1, at: -1e9, title: '' }, rowsAt = -1e9, sayKey = '', waveKey = '', maxBeat = -1;
+
+const esc = x => String(x ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const f0 = v => (v == null || isNaN(v)) ? '–' : Math.round(+v).toString();
+const f1 = v => (v == null || isNaN(v)) ? '–' : (+v).toFixed(1);
+const f2 = v => (v == null || isNaN(v)) ? '–' : (+v).toFixed(2);
+const pct = v => (v == null || isNaN(v)) ? '–' : `${Math.round(100 * v)}%`;
+const compass = b => { const c = ((90 - b) % 360 + 360) % 360;      // sim: deg counter-clockwise from east; map: y north
+  return `${['north', 'north-east', 'east', 'south-east', 'south', 'south-west', 'west', 'north-west'][Math.round(c / 45) % 8]} (${c.toFixed(0)}°)`; };
+const pings = s => (s.pings && s.pings.length ? s.pings : (s.radar_candidates || []).filter(c => c.status === 'candidate'));
+const humanClips = s => (s.acoustic_clips || []).filter(c => ((c.scores || {}).human ?? c.human ?? 0) >= 0.4)
+  .sort((a, b) => (b.priority ?? 0) - (a.priority ?? 0));
+
+function event(s) {
+  // the live, unscripted change: a stage event (hidden voice switched on, dummy moved) or a new operator zone
+  const ev = LIVE && LIVE.last_event;
+  if (ev && ['activated', 'moved', 'added'].includes(ev.what)) return { kind: 'stage', t: +ev.t, ev };
+  const rev = +((s.tasking || {}).revision || 0);
+  if (opRev === null) opRev = rev;
+  if (rev > opRev && opT === null) opT = +s.t;
+  if (opT !== null) return { kind: 'zone', t: opT };
+  return null;
+}
+
+function beatOf(s, ev) {
+  const ph = String(s.phase || ''), m = s.mission || {}, t = +s.t || 0;
+  const visited = m.visited || [], d = (s.dispatch || []).filter(x => x.to_pile);
+  const after = ev ? d.filter(x => +x.t >= ev.t - 1e-6) : [];
+  if (ev && evSeenAt !== null && vnow() - evSeenAt < 8 && !after.length) return 4;      // show the change itself
+  if (after.length) {
+    if (['deploy', 'dispatch'].includes(ph) || (m.in_transit)) return 5;
+    return 6;
+  }
+  if (ev && !after.length && (m.stage === 'listen' || ['acoustic', 'return', 'battery_swap'].includes(ph))) return 4;
+  if (m.stage === 'listen' || ph === 'acoustic' || ph.startsWith('recon_listen')) return 3;
+  if (['landing', 'radar', 'relocate', 'rescan'].includes(ph)) return visited.length > 1 && d.length ? 6 : 2;
+  if (ph === 'survey' || ph.startsWith('recon_mapping')) return visited.length > 1 && d.length ? 6 : 1;
+  if (['deploy', 'dispatch'].includes(ph)) return d.length ? 5 : 0;
+  return Math.max(0, maxBeat);
+}
+
+function caption(b, s, ev) {
+  const m = s.mission || {}, pile = m.active_pile || '';
+  const d = (s.dispatch || []).filter(x => x.to_pile).slice(-1)[0];
+  const here = pings(s).filter(p => !pile || p.pile_id === pile || String(p.id || '').startsWith(pile));
+  if (b === 0) return ['Launch', 'Three rescue drones take off from the command van and fly to the collapsed building.'];
+  if (b === 1) return ['Mapping the rubble', 'A laser scanner on each drone (LiDAR, the purple dots) builds a 3D map, so the drones know where they can safely put their sensors.'];
+  if (b === 2 && here.length) return ['Breathing-like signal found', 'The radar picked up a steady breathing rhythm under the rubble. Rescuers get a place to check first. It is a lead, not a confirmed person.'];
+  if (b === 2) return ['Feeling for breathing', 'Each drone lowers a radar pod onto the rubble on a cable. The radar can feel the tiny chest movement of breathing up to about 3 m down.'];
+  if (b === 3) return ['Listening', 'The drones land and switch their rotors off, so their microphones can hear voices and knocking from under the rubble.'];
+  if (b === 4 && ev && ev.kind === 'stage')
+    return ['Live change (unscripted)', `A teammate has just switched on a hidden voice near ${esc(ev.ev.sector || 'another pile')}. Nobody tells the drones. They have to hear it themselves.`];
+  if (b === 4) return ['Live change (unscripted)', 'The operator has just added a new search area. Nobody tells the drones what to do next.'];
+  if (b === 5) {
+    const why = ev && ev.kind === 'stage' && d && d.to_pile === ev.ev.sector ? ', because that is where the new voice came from'
+      : /voice|acoustic|heard|priority/i.test((d || {}).reason || '') ? ', because the strongest voice came from there' : '';
+    return ['The swarm re-plans', `The drones heard it and decided by themselves to search ${esc(d ? d.to_pile : 'a new area')} next${why}.`];
+  }
+  if (b === 6 && here.length) return ['Breathing-like signal found', `At ${esc(pile)} the radar picked up a breathing rhythm. Another place for rescuers to check. A lead, not a confirmed person.`];
+  return ['Searching the new area', `The same steps at ${esc(pile || 'the new area')}: map it, then lower the radar pods to feel for breathing.`];
+}
+
+function sense(b, s, ev) {
+  // [chip, plain sentence, [[label, value], ...], quote | null]
+  const m = s.mission || {}, ph = String(s.phase || ''), t = +s.t || 0, pile = m.active_pile || '';
+  const drones = s.drones || [];
+  if (b === 4 && ev && ev.kind === 'stage') {
+    const e = ev.ev;
+    return ['CHANGE', `Hidden voice switched on near ${esc(e.sector)}`, [['When', `mission time ${f0(e.t)} s`],
+            ['Who did it', 'a teammate, live (not scheduled)'], ['Drones told?', 'no: only their microphones can notice']], null];
+  }
+  if (b === 4) return ['CHANGE', 'New search area added by the operator', [['Tasking revision', f0((s.tasking || {}).revision)],
+            ['When', `mission time ${f0(ev ? ev.t : t)} s`], ['Drones told what to do?', 'no: they decide']], null];
+  if (b === 5) {
+    const d = (s.dispatch || []).filter(x => x.to_pile).slice(-1)[0] || {};
+    const c = humanClips(s).filter(c => c.pile_id === d.to_pile)[0];
+    const rows = [['Next area', d.to_pile || '–'], ['Decided at', `mission time ${f0(d.t)} s`]];
+    if (c) rows.push(['Voice priority', `${c.priority} / 100`], ['Drones agreeing on direction', String(c.doa_agree || '–')],
+                      ['Loudness above noise', c.snr_db != null ? `${f1(c.snr_db)} dB` : '–']);
+    return ['DECISION', `Flying to ${esc(d.to_pile || 'the new area')}`, rows, c ? heard(c) : null];
+  }
+  if (ph === 'deploy' || ph === 'dispatch' || ph === 'return' || ph === 'battery_swap') {
+    const bat = drones.map(q => `${Math.round(100 * (q.battery ?? 0))}%`).join(' · ');
+    const alt = drones.length ? drones.reduce((a, q) => a + q.pose[2], 0) / drones.length : null;
+    const say = (ph === 'return' || ph === 'battery_swap') ? 'Flying back to swap batteries' : `Flying to ${esc(pile || 'the search area')}`;
+    return ['FLYING', say, [['Drones', String(drones.length)], ['Battery', bat || '–'], ['Height', alt ? `${f0(alt)} m` : '–']], null];
+  }
+  if (ph === 'survey' || ph.startsWith('recon_mapping')) {
+    const L = (HUD && HUD.panels && HUD.panels.lidar) || {};
+    const z = (s.zones || []).find(z => ['surveying', 'scanning', 'in_progress'].includes(z.status));
+    const cov = L.coverage != null ? L.coverage : (z && z.coverage ? z.coverage.lidar_mapped : null);
+    const alt = drones.length ? drones.reduce((a, q) => a + q.pose[2], 0) / drones.length : null;
+    const rows = [['Area mapped', pct(cov)]];
+    if (L.total) rows.push(['Laser points measured', L.total > 1e6 ? `${(L.total / 1e6).toFixed(2)} million` : `${Math.round(L.total / 1000)} thousand`]);
+    rows.push(['Flying height', alt ? `${f0(alt)} m` : '–']);
+    return ['LIDAR', `Mapping ${esc(pile)} in 3D with laser scanners`, rows, null];
+  }
+  if (['landing', 'radar', 'relocate', 'rescan'].includes(ph)) {
+    const sc = LIVE && LIVE.last_scan && (!pile || LIVE.last_scan.pile === pile) ? LIVE.last_scan : null;
+    const st = (s.scans || []).filter(x => !pile || x.pile_id === pile).slice(-1)[0];
+    const pods = (s.pods || []).filter(p => ['scanning', 'resting', 'lowering'].includes(p.status));
+    const down = pods.filter(p => p.status !== 'lowering').length;
+    const here = pings(s).filter(p => !pile || p.pile_id === pile || String(p.id || '').startsWith(pile));
+    if (here.length) {
+      const p = here[here.length - 1], v = p.vitals || {};
+      return ['FOUND', 'Breathing-like rhythm under the rubble', [
+        ['Breathing rate', v.rate_bpm != null ? `${f1(v.rate_bpm)} per minute (range ${f1(v.rate_ci ? v.rate_ci[0] : v.rate_bpm)}–${f1(v.rate_ci ? v.rate_ci[1] : v.rate_bpm)})`
+                           : (p.breathing_hz ? `about ${f0(60 * p.breathing_hz)} per minute (first estimate)` : '–')],
+        ['Pattern', v.pattern ? String(v.pattern).replace(/_/g, ' ') : 'measuring (60 s scan)…'],
+        ['Scans that agree', p.support != null ? String(p.support) : '–']], null];
+    }
+    if (sc && sc.vitals) {
+      const v = sc.vitals;
+      return ['RADAR', v.rate_bpm ? `Pod ${esc(sc.drone_id)} feels a rhythm: ${f1(v.rate_bpm)} breaths per minute` : `Pod ${esc(sc.drone_id)}: no breathing rhythm in this scan`, [
+        ['Breaths counted', v.n_breaths != null ? `${v.n_breaths} in ${f0(v.duration_s)} s` : '–'],
+        ['Signal above noise', v.snr_db != null ? `${f1(v.snr_db)} dB` : '–'],
+        ['Scan', `${esc(sc.scan_id)} · quality ${f2(sc.quality)}`]], null];
+    }
+    if (pods.length) return ['RADAR', down ? `${down} radar pod${down > 1 ? 's' : ''} resting on the rubble, feeling for breathing` : 'Lowering radar pods on their cables', [
+        ['Pods on the rubble', `${down} of ${pods.length}`],
+        ['Cable out', drones.filter(d => pods.some(p => p.drone_id === d.id)).map(d => `${f1(d.winch_len_m)} m`).join(' · ') || '–'],
+        ['Last scan', st ? `${esc(st.scan_id)} · quality ${f2(st.quality)}` : 'none yet']], null];
+    return ['RADAR', 'Moving the drones over the rubble to drop the radar pods', [['Drones', String(drones.length)],
+        ['Radar reach', st && st.max_reliable_depth_m ? `about ${f1(st.max_reliable_depth_m)} m down` : 'about 3 m down']], null];
+  }
+  if (m.stage === 'listen' || ph === 'acoustic' || ph.startsWith('recon_listen')) {
+    const c = humanClips(s).filter(c => !LIVE || !LIVE.last_listen || true)[0];
+    const n = drones.filter(d => d.state === 'listening').length;
+    if (c) {
+      const sc = c.scores || {};
+      return ['SOUND', `Human voice heard near ${esc(c.pile_id || '?')}`, [
+        ['How sure it is a person', f2(sc.human ?? c.human)],
+        ['Direction', c.bearing_deg != null ? `${compass(c.bearing_deg)} ± ${f0(c.width_deg / 2)}° from ${esc(c.drone_id)}` : '–'],
+        ['Loudness above noise', c.snr_db != null ? `${f1(c.snr_db)} dB` : '–'],
+        ['Drones that agree', String(c.doa_agree || '–')]],
+        heard(c)];
+    }
+    const left = m.listen_ends != null ? Math.max(0, Math.round(m.listen_ends - t)) : null;
+    return ['SOUND', 'Rotors off. Listening for voices and knocking…', [['Drones listening', `${n} of ${drones.length}`],
+        ['Result in', left != null ? `${left} s (mission time)` : '–']], null];
+  }
+  return ['FLEET', 'Standing by', [['Drones', String(drones.length)]], null];
+}
+
+function drawWave(sc) {
+  const box = $('wavebox');
+  if (!sc || !sc.wave || !sc.wave.length) { box.classList.add('hide'); waveKey = ''; return; }
+  box.classList.remove('hide');
+  const key = sc.scan_id + ':' + sc.t;
+  const cv = $('wave'), g = cv.getContext('2d'), W = cv.width, H = cv.height, w = sc.wave;
+  const born = key === waveKey ? drawWave.born : vnow();
+  if (key !== waveKey) { waveKey = key; drawWave.born = born; }
+  const frac = Math.min(1, (vnow() - born) / 1.6);                 // draw the trace on over 1.6 s, not instantly
+  const lo = Math.min(...w), hi = Math.max(...w), sp = (hi - lo) || 1;
+  g.clearRect(0, 0, W, H);
+  g.strokeStyle = 'rgba(255,255,255,0.10)'; g.lineWidth = 2;
+  g.beginPath(); g.moveTo(0, H / 2); g.lineTo(W, H / 2); g.stroke();
+  g.strokeStyle = '#ff8a33'; g.lineWidth = 5; g.lineJoin = 'round'; g.beginPath();
+  const n = Math.max(2, Math.floor(w.length * frac));
+  for (let i = 0; i < n; i++) { const x = i / (w.length - 1) * W, y = H - 12 - (w[i] - lo) / sp * (H - 24); i ? g.lineTo(x, y) : g.moveTo(x, y); }
+  g.stroke();
+  const v = sc.vitals || {};
+  $('wcap').textContent = `Radar pod ${sc.drone_id}, scan ${sc.scan_id} at ${sc.pile}: chest-wall movement over ${f0(v.duration_s || 60)} s` +
+    (v.rate_bpm ? ` · ${f1(v.rate_bpm)} breaths/min` : '');
+}
+
+function leads(s) {
+  const P = pings(s).filter(p => p.vitals || p.breathing_hz);
+  $('leads').classList.toggle('hide', !P.length);
+  $('leadlist').innerHTML = P.slice(-2).map(p => {
+    const v = p.vitals || {}, rate = v.rate_bpm != null ? `${f0(v.rate_bpm)}/min` : (p.breathing_hz ? `about ${f0(60 * p.breathing_hz)}/min (first estimate)` : '');
+    const txt = v.condition_text ? v.condition_text.replace(/\s*->\s*/, ': ') : (v.pattern ? String(v.pattern).replace(/_/g, ' ') + ' breathing' : 'breathing-like rhythm');
+    return `<div class="lead"><div class="dot"></div><div><div class="a">${esc(p.id)}${rate ? ' · ' + rate : ''}${v.triage_hint ? ' · ' + esc(v.triage_hint) : ''}</div>` +
+           `<div class="b">${esc(txt.charAt(0).toUpperCase() + txt.slice(1))}</div><div class="n">Aid for rescuers, not a diagnosis.</div></div></div>`;
+  }).join('');
+}
+
+function render(s) {
+  const now = vnow(), t = +s.t || 0;
+  const ev = event(s);
+  if (ev && evSeenAt === null) evSeenAt = now;
+  let b = beatOf(s, ev);
+  const [title, text] = caption(b, s, ev);
+  // never faster than HOLD_S: a new caption waits until the current one has been on screen long enough
+  if (title !== shown.title && now - shown.at >= HOLD_S) {
+    $('capt').textContent = title; $('capc').innerHTML = text;
+    const el = $('cap'); el.classList.remove('fade'); void el.offsetWidth; el.classList.add('fade');
+    el.classList.toggle('ev', b === 4);
+    shown = { beat: b, at: now, title };
+    rowsAt = -1e9;                                  // the rows follow the caption at once
+  }
+  b = shown.beat >= 0 ? shown.beat : b;
+  maxBeat = Math.max(maxBeat, b);
+  [...$('steps').children].forEach((el, i) => { el.className = i === b ? 'now' : (i < b || i <= maxBeat && i !== b ? 'done' : ''); });
+  if (now - rowsAt >= ROWS_S) {
+    rowsAt = now;
+    const [chip, say, rows, quote] = sense(b, s, ev);
+    const k = chip + say;
+    $('chip').textContent = chip === 'FOUND' ? 'RADAR' : chip; $('chip').style.background = COL[chip] || 'var(--grey)';
+    if (k !== sayKey) { $('say').innerHTML = say; const el = $('sense'); el.classList.remove('fade'); void el.offsetWidth; el.classList.add('fade'); sayKey = k; }
+    $('rows').innerHTML = rows.map(([l, v]) => `<tr><td class="l">${l}</td><td class="v">${v}</td></tr>`).join('');
+    $('quote').classList.toggle('hide', !quote); $('quote').innerHTML = quote || '';
+    leads(s);
+  }
+  const pile = (s.mission || {}).active_pile;
+  const radarNow = ['landing', 'radar', 'relocate', 'rescan'].includes(String(s.phase)) && b !== 4 && b !== 5;
+  drawWave(radarNow && LIVE && LIVE.last_scan && (!pile || LIVE.last_scan.pile === pile) ? LIVE.last_scan : null);
+  const mm = Math.floor(t / 60), ss = Math.floor(t % 60);
+  $('clk').textContent = `mission time ${mm}:${String(ss).padStart(2, '0')}`;
+  const hdr = HUD && HUD.panels && HUD.panels.header && HUD.panels.header.text || '';
+  const lap = (hdr.match(/x([\d.]+)/) || [])[1] || (SPEED ? SPEED : '');
+  $('pace').textContent = lap && +lap > 1.01 ? `sped up ×${(+lap).toFixed(0)} (time-lapse)` : 'real time';
+  window._last = s;
+}
+
+async function getJSON(u) {
+  const r = await fetch(u + (u.includes('?') ? '&' : '?') + 'ts=' + Date.now(), { cache: 'no-store' });
+  if (!r.ok) throw new Error(r.status);
+  return r.json();
+}
+async function poll() {
+  try { render(await getJSON(SRC)); } catch (e) { /* keep the last frame */ }
+}
+async function pollSide() {
+  try { LIVE = await getJSON(DIR + 'live.json'); } catch (e) { }
+  try { HUD = await getJSON(DIR + 'hud.json'); } catch (e) { }
+}
+if (!window.__burn) { setInterval(poll, 250); setInterval(pollSide, 500); pollSide().then(poll); }
+</script>
+</body>
+</html>

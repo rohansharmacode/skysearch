@@ -1,5 +1,32 @@
 # From the Isaac Sim session (newest first)
 
+### 2026-11-08 01:15: merged your full brief (b31fe88) into larpverse-isaac (c3c148b); dry-run findings
+
+**Merge.** `larpverse-isaac` now has everything up to b31fe88 (live loop, director-take, HUD, van, dummies, heavy drone, PoseTrack motion, comms). Conflicts were only in `drone_viz.py` and `run_mission.py`:
+- **run_mission:** resolved on *your* structure (PoseTrack, mission thread, `--live`, `director-take`, `hud.py`). Our extras sit on top and are off unless asked for:
+  - `--camera story`;
+  - `--overlay-style simple`;
+  - `--line-scale` (renamed from `--viz-scale`; see below);
+  - `isaac/sensor_fx.py` (LiDAR beams, radar pulses, sound domes, belief hotspot; `--fx 0` turns it off).
+  - Our own Hermite smoothing (`--smooth`) is retired in favour of your PoseTrack.
+- **drone_viz:** your heavy model is the default. `--drone-style mesh` (photoreal) keeps our smooth DJI-class body (`_build_parts_mesh`). Your integrated winch pods are used whenever the model carries one.
+
+**Stream fixes from our on-box capture (live3, 1080p, 0 dropped frames), now in run_mission:**
+- `--viz kit` crashed with "--viz-scale: invalid float value: 'kit'" (argparse prefix match). Renamed our flag to `--line-scale`, so your `--viz kit` works again.
+- On the Lab route the stream was the whole Kit editor at 1440×900, with 739 frames dropped ("resolution differs from 1920x1080"). New `--stream-res 1920x1080` (default) adds `--/app/window/hideUi=true --/app/window/width=1920 --/app/window/height=1080` to `--kit_args` whenever `--livestream` is on, which gives a full-frame viewport.
+- The Lab route starts stepping as soon as Kit is up, about 27 s before the stream connects. New `--hold-file PATH` renders the opening frame and holds t at 0 (before your pre-roll) until the file exists. Arm OBS, then `touch` the file.
+- `--stop-t T` freezes the picture at sim t (ends dry and recorded runs).
+
+**Your dry rehearsal (§6.2), identical on larpverse-sensing b31fe88 and on our merge:**
+- It does **not** redirect to A1. At t 343 a portal phone report ("I'm trapped near B2", RSSI fit ±3.43 m) queues a re-plan to B2. The Y-stand-in at t 400 is then heard, but dispatch at t 485 is A2 → B2. Your brief expects A1 at t 471. This is probably the comms integration (aca080c, on by default). Should the take run with `--no-comms`, or is B2 intended?
+- `tests/test_live.py::test_live_dryrun_with_trigger` fails on b31fe88 (`assert ([])`), likely the same cause.
+- `tests/test_isaac_assets.py::test_heavy_parts_follow_the_bom` fails because `data/hardware_bom.json` isn't in the tree. `docs/HARDWARE.md` is missing too.
+- Every run logs `isaac.motion failed (KeyError: 'no flight-motion trajectory for d1'); falling back to Hermite interpolation`. Is that expected until SmoothFlight lands?
+
+**P1 (instanceable debris):** noted. We'll measure the survey-shot fps on the GPU first (the rehearsal running now) and do it if the fps is under 30.
+
+**GPU rehearsal of the brief (self-test, stream/HUD/audio, Y take, collapse fps):** running now on the L40S from a clean checkout of b31fe88. Results follow in the next entry.
+
 ### 2026-11-08 00:40: rehearsal results (take1, live1) and the fixes now on larpverse-isaac (753999a, d01dcc6)
 
 **Stream and capture (your Q1):**

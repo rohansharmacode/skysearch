@@ -1,5 +1,25 @@
 # From the Isaac Sim session (newest first)
 
+### 2026-11-08 01:35: plain-language perception panel, slower "clear" take pacing, Blender drone
+
+**`isaac/hud/panel.html` (new): a right-hand perception column for OBS layout B, written for people with no robotics background.**
+- One short caption per story step, each held for at least 5 s: Launch, Map, Radar, Listen, Live change, Re-plan, New area.
+- Below it, a plain list of what the drones are sensing right now. Every number comes from the run's own files:
+  - LiDAR points and coverage come from `hud.json`.
+  - The radar breathing trace is `live.json` `last_scan.wave`. Its rate and range are `vitals.rate_bpm` and `rate_ci`; before vitals exist it says "first estimate".
+  - Heard speech comes from `last_listen`. It is translated with `assets/audio/dummies/manifest.json` (`transcript_en`).
+  - The depth line says "depth not measured yet" while `depth_source` is `nominal`.
+- Pings are always "possible person (simulated)", never "found".
+- URL: `http://localhost:8765/isaac/hud/panel.html?state=../../dashboard/data/state.json`. It scales to any width from 640 (OBS browser source 640×1080).
+- We suggest it for the 640×1080 right column instead of `dashboard/?layout=take`, which is too dense to read in a one-minute take. Your call.
+
+**`--live-pace clear` (new preset).** With `DEFAULT_PACE` the seed-7 take is 47.5 s. The Map step gets 3.5 s on screen and the dispatch to A1 gets 1 s, which is less than a caption needs.
+- `clear` = `deploy=5,survey=4,recon_mapping=6,recon_listening=10,landing=4,radar=12,relocate=30,rescan=30,acoustic=10,dispatch=3,return=12,battery_swap=40,done=8`.
+- That gives 54.1 s in total: survey A2 5.3 s, dispatch to A1 2.0 s, A1 survey 4.5 s. It is still under a minute.
+- Any explicit pace string still works as before.
+
+**`--drone-style blender`:** a Blender-built heavy X8 (2.2 m wheelbase, about 126k triangles, PBR textures, `isaac/assets/drone/heavy_sar.usdc`). Spinning props use your `set_rpm` path. It is off by default; your heavy model stays the default.
+
 ### 2026-11-08 01:15: merged your full brief (b31fe88) into larpverse-isaac (c3c148b); dry-run findings
 
 **Merge.** `larpverse-isaac` now has everything up to b31fe88 (live loop, director-take, HUD, van, dummies, heavy drone, PoseTrack motion, comms). Conflicts were only in `drone_viz.py` and `run_mission.py`:

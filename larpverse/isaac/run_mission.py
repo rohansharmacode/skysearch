@@ -866,7 +866,11 @@ def main(argv=None):
     pace = {}
     preroll = 0.0
     if a.live_take:
-        pace = L.parse_pace(L.DEFAULT_PACE if a.live_pace is None else a.live_pace)
+        # "clear": every story step >= 5 s of video for the judges (mapping, landing and the re-plan flight slower;
+        # 54 s for the seed-7 grid take, measured on the dry-run frames)
+        CLEAR = ("deploy=5,survey=4,recon_mapping=6,recon_listening=10,landing=4,radar=12,relocate=30,rescan=30,"
+                 "acoustic=10,dispatch=3,return=12,battery_swap=40,done=8")
+        pace = L.parse_pace(L.DEFAULT_PACE if a.live_pace is None else CLEAR if a.live_pace == "clear" else a.live_pace)
         preroll = 4.0 if a.live_preroll is None else float(a.live_preroll)
         if pace:
             a.speed = L.pace_for(pace, cur.get("phase"), base_speed)

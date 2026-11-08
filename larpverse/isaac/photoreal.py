@@ -68,6 +68,9 @@ def add_args(ap):
     g.add_argument("--grid-look", type=int, default=1,
                    help="grid/weiguan sites: dusty textured rubble (facade-kit textures), neutral real-camera grade, "
                         "less orange sun (isaac/grid_look.py); 0 = the old MDL look")
+    g.add_argument("--town", default="",
+                   help="town kit folder for the grid site's streets, buildings and street furniture (isaac/town.py), "
+                        "e.g. isaac/assets/town_kit; default '' = off")
     g.add_argument("--crew", type=int, default=1, help="collapse map: rescue crew models at the staging area")
     g.add_argument("--props", type=int, default=1, help="collapse map: excavators, crawler crane, fire trucks")
     g.add_argument("--clean-overlay", type=int, default=-1,
@@ -484,6 +487,12 @@ def dress(stage, sc, a, log=print):
     if not urban_map:
         dress_rubble(stage, sc, mats, log, seed=sc.seed)
         scatter_debris(stage, sc, mats, log, seed=sc.seed)
+        try:                                          # earthquake-hit town around the grid (isaac/town.py)
+            if getattr(a, "town", ""):
+                from isaac import town
+                town.dress(stage, sc, a.town, log)
+        except Exception as e:
+            log(f"[photoreal] town skipped ({type(e).__name__}: {e})")
     veg = a.veg if a.veg in (0, 1) else int(not str(getattr(a, "site", "grid")).startswith(("collapse", "weiguan", "mesh:")))
     if veg:
         vegetation(stage, sc, nv, log, seed=sc.seed)

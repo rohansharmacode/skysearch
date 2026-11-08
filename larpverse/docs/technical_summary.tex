@@ -27,13 +27,14 @@
 {\small\color{cairngrey} Larpverse \;\textbullet\; AgentVerse 2026 Robotics \;\textbullet\; Figures are simulation or model results unless marked as real data.}
 
 \section*{What it is}
-CAIRN is a team of heavy-lift drones that search a collapsed building for survivors \textbf{by detecting their breathing}. A rescue lead circles an area on a tablet. The drones fly there on their own, land on the rubble, scan it with their onboard radar, and send back a ranked list of where to dig first, with the reason for each spot. It finds people who are unconscious or too weak to knock or shout, the people today's search misses.
+CAIRN is a team of heavy-lift drones that search a collapsed building for survivors \textbf{by detecting their breathing}. A rescue lead circles an area on a tablet. The drones fly there on their own, map the pile with \textbf{LiDAR}, land on it, and use a \textbf{micro-Doppler radar} to pick up the breathing motion of people buried underneath. They send back a ranked list of where to dig first, with the reason for each spot. It finds people who are unconscious or too weak to knock or shout, the people today's search misses.
 
 \section*{How it works}
 \begin{itemize}
   \item \textbf{Pick an area.} The rescue lead selects a pile on the dashboard. The drones leave the truck and fly to it.
-  \item \textbf{Land and scan.} Each drone finds a flat spot on the pile, lands, and its downward-facing radar senses the tiny chest movement of breathing up to about 3\,m down. It tells breathing apart from settling debris, machinery and rotor noise.
-  \item \textbf{Rank who to reach first.} Gemini reads each breathing pattern (rapid and shallow, slow and deep, irregular with pauses) and scores it 0--100 with a plain reason, e.g.\ ``irregular breathing with a 14\,s pause: check first''. Code checks every answer, and a rule-based fallback takes over if the AI is unavailable.
+  \item \textbf{Map and land (LiDAR).} A 128-channel LiDAR builds a 3D point-cloud map of the pile. The drones use it to find flat, stable spots (low slope and roughness) and land there.
+  \item \textbf{Sense breathing (micro-Doppler radar).} A downward-facing 0.4--2\,GHz radar looks through up to about 3\,m of rubble. Phase demodulation of the radar's slow-time signal recovers each person's \textbf{chest-motion waveform}, millimetres of movement in the 0.1--0.75\,Hz breathing band. Rate, depth, regularity and pauses classify the pattern, and debris shifts, machinery vibration and rotor reflections are rejected as ``not a person''.
+  \item \textbf{Rank who to reach first.} Gemini reads the breathing waveform together with what the microphones heard, and scores each spot 0--100 with a plain reason, e.g.\ ``irregular breathing with a 14\,s pause: check first''. Code checks every answer, and a rule-based fallback takes over if the AI is unavailable.
   \item \textbf{Adapt live.} When something new appears, such as a new voice or a new area, the plan changes on screen and the drones re-route. No one has to intervene.
   \item \textbf{Help on the spot.} Each drone carries a loudspeaker (``help is coming'') and an open Wi-Fi hotspot, so trapped people's phones can send ``I'm trapped''.
 \end{itemize}

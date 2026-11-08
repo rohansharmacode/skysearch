@@ -75,6 +75,12 @@
               background:var(--ping); box-shadow:0 0 0 2px #000, 0 0 0 6px rgba(255,82,82,0.35); }
   .mbox .ldl { position:absolute; left:0; top:0; font-size:12px; font-weight:800; color:#ff7b7b; white-space:nowrap; pointer-events:none;
                margin:-11px 0 0 13px; padding:1px 6px; border-radius:5px; background:rgba(0,0,0,0.78); }
+  .mbox svg .pz.x { fill:rgba(0,0,0,0.45); stroke:rgba(255,255,255,0.35); }
+  .mbox svg .xk { stroke:#000; stroke-width:8; stroke-linecap:round; pointer-events:none; }
+  .mbox svg .xw { stroke:#e9edf0; stroke-width:4; stroke-linecap:round; pointer-events:none; }
+  .mbox .pl.x { color:#e9edf0; }
+  .sc2.rst { margin-left:10px; border-color:#6b3a3a; color:#ffb9b9; }
+  .sc2.rst:hover { border-color:#ff6b6b; color:#fff; }
   .mbox .sc { position:absolute; left:10px; bottom:8px; font-size:12px; color:#c9d2d9; pointer-events:none; }
   .mbox .sc i { display:block; height:3px; background:#c9d2d9; margin-bottom:3px; }
   .mbox .nn { position:absolute; right:10px; top:8px; font-size:12px; font-weight:700; color:#c9d2d9; pointer-events:none; }
@@ -128,12 +134,12 @@
   <div class="wrap">
     <div class="top"><div class="live">● LIVE OPERATOR CONSOLE</div><div class="clock"><b id="clk">0:00</b><br><span id="pace"></span></div></div>
     <div class="steps" id="steps"></div>
-    <div class="sites"><span class="sl">Site</span><span id="sitechips"></span></div>
+    <div class="sites"><span class="sl">Site</span><span id="sitechips"></span><span class="sc2 rst" id="reset" title="Stop this run and put the drones back on their pads">↺ Reset</span></div>
     <div class="card" id="mapc">
       <div class="hrow"><div class="h">Site map · click a rubble pile to search it</div><div class="n" id="mapn"></div></div>
       <div class="mbox" id="mbox"><canvas id="lmap" width="1176" height="620"></canvas><svg id="msvg"></svg><div class="nn">N ↑</div>
         <div class="sc" id="msc"><i></i>10 m</div></div>
-      <div class="mleg">Dashed outlines: rubble piles. White dots: LiDAR laser hits (brighter = higher). Orange: drones. Red: radar leads.</div>
+      <div class="mleg">Dashed outlines: rubble piles. White dots: LiDAR laser hits (brighter = higher). Orange: drones. Red: radar leads. ✕: searched, nothing found.</div>
       <div id="toast"></div>
     </div>
     <div class="card" id="sense">
@@ -492,7 +498,7 @@ function drawWave(sc) {
 // drones there (POST /api/goto). Every white dot is one laser hit the drones' LiDAR fed to the mission
 // (pointcloud.bin; the prior map written at start, full_count 360000, is never drawn). Display + operator input only.
 const LM = { cv: $('lmap'), box: $('mbox'), svg: $('msvg'), have: 0, busy: false, at: -1e9, key: '', view: null, site: '',
-             img: null, drones: {}, labels: {}, leads: {}, zones: {}, ring: null, count: 0 };
+             img: null, drones: {}, labels: {}, leads: {}, zones: {}, ring: null, count: 0, xs: {} };
 LM.g = LM.cv.getContext('2d');
 function lmClear() { LM.g.fillStyle = '#000'; LM.g.fillRect(0, 0, LM.cv.width, LM.cv.height); }
 lmClear();
@@ -563,6 +569,34 @@ function lmBuild(s) {                               // (re)build the static laye
     lb.style.left = `${x}px`; lb.style.top = `${y}px`; LM.box.appendChild(lb); LM.labels[p.id] = lb;
   }
   const ring = document.createElement('div'); ring.className = 'ring hide'; LM.box.appendChild(ring); LM.ring = ring;
+  LM.xs = {};
+}
+// ✕ on a pile the drones searched (radar + listen) and left with nothing found: the mission marks it
+// no_signal_not_cleared / dismissed_nonhuman. The mission's own caveat stands: nothing found is not proof of absence.
+const EMPTY = ['no_signal_not_cleared', 'dismissed_nonhuman'];
+function searchedEmpty(s) {
+  const m = s.mission || {}, vis = new Set(m.visited || []), d = lastDispatch(s);
+  const leaving = d && ['dispatch', 'deploy'].includes(String(s.phase)) ? d.to_pile : null;
+  return new Set((s.piles || []).filter(p => vis.has(p.id) && EMPTY.includes(p.status)
+    && (p.id !== m.active_pile || (leaving && leaving !== p.id))).map(p => p.id));
+}
+function lmCross(s) {
+  const v = LM.view, X = held(s) ? new Set() : searchedEmpty(s);
+  for (const p of s.piles || []) {
+    const on = X.has(p.id) && p.xy, el = LM.xs[p.id];
+    if (LM.zones[p.id]) LM.zones[p.id].classList.toggle('x', !!on);
+    if (LM.labels[p.id]) LM.labels[p.id].classList.toggle('x', !!on);
+    if (!on) { if (el) { el.remove(); delete LM.xs[p.id]; } continue; }
+    if (el) continue;
+    const [cx, cy] = half(lmPx(v, p.xy[0], p.xy[1])), r = 5.5 * v.k / 2;
+    const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+    for (const c of ['xk', 'xw']) for (const [a, b, e, f] of [[-r, -r, r, r], [-r, r, r, -r]]) {
+      const ln = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+      ln.setAttribute('x1', cx + a); ln.setAttribute('y1', cy + b); ln.setAttribute('x2', cx + e); ln.setAttribute('y2', cy + f);
+      ln.setAttribute('class', c); g.appendChild(ln);
+    }
+    LM.svg.appendChild(g); LM.xs[p.id] = g;
+  }
 }
 function lmUpdate(s, b) {
   const site = JSON.stringify([(s.site || {}).name, (s.piles || []).map(p => p.id + (p.xy || []).join(','))]);
@@ -592,6 +626,7 @@ function lmUpdate(s, b) {
     e.forEach(el => { el.style.transform = `translate(${x.toFixed(1)}px, ${y.toFixed(1)}px)`; });
     e[1].textContent = r != null ? `${pshort(p.id)} · breathing ${f0(r)}/min` : (p.breathing_hz ? `${p.id} · breathing ~${f0(60 * p.breathing_hz)}/min` : p.id);
   }
+  lmCross(s);
   const pc = s.pointcloud || {};
   if (pc.full_count === 360000 || !pc.url) { if (LM.have || LM.count) lmReset(); return; }   // fresh run: nothing scanned yet
   const key = `${pc.count}/${pc.full_count || ''}`;
@@ -616,6 +651,7 @@ function render(s) {
     const el = $('cap'); el.className = 'hud ' + (cls || ''); el.classList.remove('fade'); void el.offsetWidth; el.classList.add('fade');
     shown = { key, at: now, b };
   }
+  if (held(s)) SEEN.clear();
   SEEN.add(b);
   [...$('steps').children].forEach((el, i) => { el.className = i === b ? 'now' : (SEEN.has(i) ? 'done' : ''); });
   const [chip, say, rows] = sense(s);
@@ -667,6 +703,24 @@ $('sitechips').addEventListener('click', async e => {
     SITE = { site: x.site, seed: x.seed, look: x.look, status: 'loading' }; siteOverlay();
   } catch (err) { toast(`Could not switch site: ${err.message}`, true); }
 });
+// Reset: stop this run and put the drones back on their pads (POST /api/reset; older boxes: reload the same site)
+const API_RESET = new URL('../../api/reset', location.href).href;
+let resetting = 0;
+$('reset').addEventListener('click', async () => {
+  if (resetting && vnow() - resetting < 10) return;
+  resetting = vnow(); sent = null; LM.svgSent(null);
+  toast('Resetting: the drones go back to their pads…');
+  try {
+    let r = await fetch(API_RESET, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+    if ((r.status === 404 || r.status === 405) && SITE) {
+      r = await fetch(API_SITE, { method: 'POST', headers: { 'Content-Type': 'application/json' },
+                                  body: JSON.stringify({ site: SITE.site, seed: +SITE.seed, look: SITE.look, force: true }) });
+    }
+    let j = {}; try { j = await r.json(); } catch (e) { }
+    if (!r.ok) throw new Error(j.error || j.message || r.status);
+    SEEN.clear(); toast('Reset. Click any pile to start again.'); toastAt = vnow();
+  } catch (err) { resetting = 0; toast(`Could not reset: ${err.message}`, true); }
+});
 let SITE = null;
 function siteOverlay() {
   const loading = SITE && SITE.status === 'loading', cur = siteOf(SITE);
@@ -674,7 +728,8 @@ function siteOverlay() {
   if (SITE && cur) SITE.label = cur.label;
   if (!loading && /^Loading /.test($('toast').textContent)) toast('');
   $('loading').classList.toggle('hide', !loading);
-  if (loading) { $('loadt').textContent = `Loading a new site: ${SITE.label || SITE.site}`;
+  if (!loading && resetting && vnow() - resetting > 15) resetting = 0;
+  if (loading) { $('loadt').textContent = resetting ? `Resetting: ${SITE.label || SITE.site}` : `Loading a new site: ${SITE.label || SITE.site}`;
     $('loadc').textContent = 'Isaac Sim is building the scene. The drones start when you click a pile.'; }
 }
 if (!window.__burn) { setInterval(poll, 300); setInterval(pollSide, 500); pollSide().then(poll); }

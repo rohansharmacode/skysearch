@@ -58,7 +58,7 @@ const STEPS = [
   ['Mapping the rubble', 'Each drone’s laser scanner (LiDAR, purple) builds a 3D map, to find safe spots for its sensors.'],
   ['Feeling for breathing', 'The drones lower radar pods onto the rubble. The radar senses the tiny movement of breathing up to about 3 m down (orange).'],
   ['Listening', 'Rotors off, microphones on: the drones listen for voices and knocking (teal).'],
-  ['Live change: a new search zone', 'The operator adds a zone where a voice was heard. Nobody tells the drones what to do next.'],
+  ['Live change: a new search zone', 'The operator adds a search zone live. Nobody tells the drones what to do next.'],
   ['The swarm re-plans', 'The drones choose the new zone on their own and fly there to search it (green arc).'],
   ['Searching the new zone', 'The same steps as before, now in the zone the operator added: map it, then lower the radar pods.'],
   ['Breathing-like signal', 'The radar marks a place for rescuers to dig first. It is a lead, not a confirmed person.'],
@@ -93,6 +93,11 @@ const f2 = v => (v == null || isNaN(v)) ? '–' : (+v).toFixed(2);
 const pctOf = v => (v == null) ? null : Math.round(100 * v);
 const compass = b => { const c = ((90 - b) % 360 + 360) % 360;       // sim bearing: deg CCW from +x (east)
   return `${c.toFixed(0)}° ${['N','NE','E','SE','S','SW','W','NW'][Math.round(c / 45) % 8]}`; };
+const posErr = c => { const v = c.cov; if (!v) return null;            // 1-sigma of the position fit (major axis)
+  const a = v[0][0], b = v[0][1], d = v[1][1], l = (a + d) / 2 + Math.sqrt(((a - d) / 2) ** 2 + b * b);
+  return `position ± ${Math.sqrt(l).toFixed(1)} m`; };
+const depth = c => c.depth_m == null ? null : (c.depth_source === 'radar_estimate'
+  ? `depth ${f1(c.depth_m)} ± ${f1(c.depth_sigma)} m` : 'depth not measured yet');   // 'nominal' = an assumed default
 const bpm = hz => hz ? `${(hz * 60).toFixed(0)} breaths/min (${f2(hz)} Hz)` : null;
 
 function data(s, st, chip) {
@@ -108,7 +113,7 @@ function data(s, st, chip) {
   if (chip === 'RADAR' && st !== 7) {
     const weak = (s.radar_candidates || []).find(c => c.status === 'insufficient_evidence');
     if (weak) return [`${weak.id}: ${weak.support} of ${weak.support_needed} required scans agree`, bpm(weak.breathing_hz),
-                      weak.depth_m != null ? `depth ${f1(weak.depth_m)} ± ${f1(weak.depth_sigma)} m` : null].filter(Boolean).join('  ·  ');
+                      posErr(weak), depth(weak)].filter(Boolean).join('  ·  ');
     const pods = (s.pods || []).filter(p => p.status === 'scanning' || p.status === 'lowering');
     if (pods.length) {
       const w = (s.drones || []).filter(d => pods.some(p => p.drone_id === d.id)).map(d => f1(d.winch_len_m));
@@ -126,7 +131,7 @@ function data(s, st, chip) {
   }
   if (chip === 'RADAR' && st === 7) {
     const c = firm(s)[0], v = c.vitals || {};
-    return [bpm(c.breathing_hz || (v.rate_bpm ? v.rate_bpm / 60 : null)), c.depth_m != null ? `depth ${f1(c.depth_m)} ± ${f1(c.depth_sigma)} m` : null,
+    return [bpm(c.breathing_hz || (v.rate_bpm ? v.rate_bpm / 60 : null)), posErr(c), depth(c),
             c.support != null ? `${c.support} scans agree` : null, v.pattern ? `pattern ${String(v.pattern).replace(/_/g, ' ')}` : null].filter(Boolean).join('  ·  ');
   }
   if (chip === 'SOUND') {

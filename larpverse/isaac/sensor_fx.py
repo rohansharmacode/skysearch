@@ -192,7 +192,7 @@ class NullFX:
 
 
 def set_scale(k, log=print):
-    """Thicker effects for wide shots (--viz-scale): widths x k, radar ring reach unchanged (it means ~3 m)."""
+    """Thicker effects for wide shots (--line-scale): widths x k, radar ring reach unchanged (it means ~3 m)."""
     global BEAM_W, SOUND_W, NOISE_W, RADAR_W
     k = float(k)
     if abs(k - 1.0) < 1e-6:

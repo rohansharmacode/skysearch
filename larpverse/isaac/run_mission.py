@@ -85,7 +85,7 @@ def _base_parser():
                     help="draw the scenario's hidden (invented) people as grey dummies, half sunk (display only)")
     ap.add_argument("--overlay-style", choices=["full", "simple"], default="full",
                     help="simple: only what matters now (current/new zone, latest dispatch, firm pings) for the judges")
-    ap.add_argument("--viz-scale", type=float, default=1.0, help="multiply overlay line and sensor-effect widths "
+    ap.add_argument("--line-scale", type=float, default=1.0, help="multiply overlay line and sensor-effect widths "
                     "(zones, dispatch arcs, rings, LiDAR beams, sound domes) for wide shots; the take uses ~4")
     ap.add_argument("--fx", type=int, default=1, help="live sensor effects (isaac/sensor_fx.py): LiDAR beams, "
                     "radar pulses, sound domes while listening, belief hotspot (0 = off)")
@@ -94,6 +94,14 @@ def _base_parser():
     ap.add_argument("--frames", action="store_true", help="also write frames/state_XXXX.json")
     ap.add_argument("--dry-run", action="store_true", help="no omni/pxr: numpy heightmap LiDAR, null drawing")
     ap.add_argument("--max-steps", type=int, default=0, help="stop after N mission steps (0 = until done)")
+    ap.add_argument("--stop-t", type=float, default=0.0,
+                    help="freeze the picture at this sim time (s); with the stream open the last frame stays up")
+    ap.add_argument("--hold-file", default="",
+                    help="render, but hold at t 0 (before the pre-roll) until this file exists: arm the stream capture, "
+                         "then touch it, so the take starts at launch")
+    ap.add_argument("--stream-res", default="1920x1080",
+                    help="--livestream: hide Kit's editor UI and size the window to this, so the stream is the full-frame "
+                         "viewport at a constant resolution ('' = leave Kit's window alone)")
     ap.add_argument("--camera", choices=["director", "director-take", "story", "free"], default="director",
                     help="director-take: one continuous spline camera for the single take (isaac/live.py TakeCamera); "
                          "story: state-driven framing of the active/new zone and dispatch, slow orbit, springs "
@@ -209,6 +217,12 @@ def parse_args(argv=None):
             setattr(a, k, photo if a.photoreal else basic)
     live = int(getattr(a, "livestream", 0) or 0)
     a.live = live > 0
+    if a.live and a.stream_res and hasattr(a, "kit_args"):     # Lab route: whole editor at 1440x900 otherwise
+        w, h = (int(v) for v in a.stream_res.lower().split("x"))
+        ka = str(a.kit_args or "")
+        extra = [f for f in ("--/app/window/hideUi=true", f"--/app/window/width={w}", f"--/app/window/height={h}")
+                 if f.split("=")[0] not in ka]
+        a.kit_args = " ".join([ka] + extra).strip()
     from isaac.lidar import profile as lidar_profile     # resolve the LiDAR profile once (selftest reads a.rays)
     a.lidar_prof = lidar_profile(a.lidar_profile, a.lidar_budget_ms, a.rays, a.lidar_range)
     a.rays, a.lidar_range = a.lidar_prof["n_rays"], a.lidar_prof["max_range"]
@@ -665,12 +679,12 @@ def main(argv=None):
         _sfx.SIMPLE = True
         say("[overlay] simple style: active/new zone outlines, latest dispatch arc, firm pings; sensor effects "
             "for human sounds only")
-    if float(a.viz_scale) != 1.0:                    # wide single-take shots: thicker lines and effects
+    if float(a.line_scale) != 1.0:                    # wide single-take shots: thicker lines and effects
         from isaac import overlay as _ov, sensor_fx as _sfx
-        _ov.LINE_W *= float(a.viz_scale)
-        _ov.BEACON_R *= float(a.viz_scale) ** 0.5
-        _sfx.set_scale(a.viz_scale, log=say)
-        say(f"[overlay] line width x{a.viz_scale:g}: zone outlines {_ov.LINE_W * _ov.ZONE_W * 100:.0f} cm")
+        _ov.LINE_W *= float(a.line_scale)
+        _ov.BEACON_R *= float(a.line_scale) ** 0.5
+        _sfx.set_scale(a.line_scale, log=say)
+        say(f"[overlay] line width x{a.line_scale:g}: zone outlines {_ov.LINE_W * _ov.ZONE_W * 100:.0f} cm")
     fx = NullFX() if (a.dry_run or not a.fx) else SensorFX(stage, sc, surface, show_truth=a.show_truth, log=say,
                                                           seed=a.seed)
     from isaac.site import base_xy
@@ -853,6 +867,7 @@ def main(argv=None):
             a.speed = L.pace_for(pace, cur.get("phase"), base_speed)
             say(f"take pacing (sim s per video s): {pace}; pre-roll {preroll:g} s")
 
+    hold_said = False
     try:
         while True:
             now = clock()
@@ -862,9 +877,15 @@ def main(argv=None):
                 sync_t = now
                 ctrl.live.source.sync()         # main thread: apply hotkey writes, re-read dummy prims, probe columns
                 ctrl.live.refresh(None, "sync")  # stage events show within 0.25 s
-            if preroll > 0:
+            held = bool(a.hold_file) and not os.path.exists(a.hold_file)
+            if held != hold_said:
+                say(f"holding at t 0 until {a.hold_file} exists" if held else f"{a.hold_file} found: take starts")
+                hold_said = held
+            if held:
+                pass                            # capture not armed yet: render the opening frame, keep the clock at 0
+            elif preroll > 0:
                 preroll -= rdt                  # opening shot: the mission has not started yet (shown on the HUD)
-            elif not runner.idle or t_render < track.t_last:
+            elif (not runner.idle or t_render < track.t_last) and not (a.stop_t and t_render >= a.stop_t):
                 t_render += rdt * a.speed
             runner.target(t_render + lead)
             for new in runner.drain():
@@ -885,7 +906,7 @@ def main(argv=None):
                         f"lidar={accum.total} pts")
             if t_render > track.t_last:         # the mission fell behind: slow the picture down, never jump
                 t_render = track.t_last
-            done = runner.idle and t_render >= track.t_last - 1e-6
+            done = (runner.idle and t_render >= track.t_last - 1e-6) or bool(a.stop_t and t_render >= a.stop_t)
             poses = track.poses(t_render)
             motion_drives = False
             pod_z = {p["drone_id"]: float(p["z"]) for p in cur.get("pods") or []

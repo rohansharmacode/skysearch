@@ -1,0 +1,9 @@
+12:00:59.170 loading grid 7 (TOUCHDOWN=1)
+12:02:31.391 site ready (held)
+12:02:42.420 recording started (start screen)
+12:02:45.449 card 0 glide+click sent
+12:02:49.978 hover B1 sent
+12:02:54.505 click A2 sent
+12:02:54.509 isaac: first click received
+12:04:45.878 first autonomous dispatch: [t= 186.0] Dispatch d1-d3 -> pile B1 at (0.4, 22.0): Dispatch to B1 (priority 72, score 72) as it is our strongest acoustic lead with a clear voice transcript (
+12:04:56.090 stopped: 133.433000 s, 91512564 B

@@ -1,0 +1,21 @@
+[t=   0.0] Deploy d1-d3 -> pile A2 at (-21.6, 0.7): operator-selected start pile, inside tasked zone A2 [zone A2]
+[isaac] INTERACTIVE: drones on the pads; waiting for the operator's first click (POST /api/goto -> /home/ubuntu/lv/larpverse/dashboard/data/goto.json)
+[;m[isaac] INTERACTIVE: first click -> launch pile A2; rebuilding the mission (same scenario)
+[t=   0.0] Deploy d1-d3 -> pile A2 at (-21.6, 0.7): operator-selected start pile, inside tasked zone A2 [zone A2]
+[isaac] phase deploy at t=1.0 wall=0.0s x6 behind=0.0s
+[isaac] phase survey at t=14.0 wall=1.4s x7 behind=0.0s
+[isaac] phase landing at t=49.0 wall=7.0s x6 behind=0.0s
+[isaac] LIDAR FLASH A2: 30000 points, red 11.4% yellow 3.0% (own points, slope/step)
+[isaac] phase radar at t=69.0 wall=9.6s x12 behind=0.0s
+[t=  89.0] Radar phase at A2 over; landed drones listen to the other piles for 26 s and stream clips to the acoustic agent
+[isaac] real acoustic pipeline: listen 1 submitted at t 89 (landing patches known); it overlaps the landing, the listen window and the call-out
+[isaac] phase acoustic at t=89.0 wall=13.3s x5.99778 behind=1.5s
+[isaac] Gemini calls: +1 (listen 3), 1 this run
+[isaac] Gemini calls: +1 (listen 4), 2 this run
+[t= 186.0] Decision (gemini, 9670 ms): dispatch B1 - Dispatch to B1 (priority 72, score 72) as it is our strongest acoustic lead with a clear voice transcript ("Hello, is anyone there?", human 0.95, d
+[t= 186.0] Dispatch d1-d3 -> pile B1 at (0.4, 22.0): Dispatch to B1 (priority 72, score 72) as it is our strongest acoustic lead with a clear voice transcript ("Hello, is anyone there?", human 0.95, d
+[isaac] phase dispatch at t=186.0 wall=104.8s x5 behind=76.4s
+[isaac] phase survey at t=207.0 wall=108.2s x7 behind=76.4s
+[isaac] phase landing at t=232.0 wall=112.4s x6 behind=76.4s
+[isaac] LIDAR FLASH B1: 30000 points, red 15.6% yellow 4.2% (own points, slope/step)
+[isaac] phase radar at t=250.0 wall=114.5s x12 behind=76.4s

@@ -793,17 +793,44 @@ import os, re
 ORIG_RECOGNISE, ORIG_CF = AR.recognise, AR.clip_features
 ASR = {"mode": "en", "last": None, "by_clip": {}}
 RESCUE_LANGS = [x.strip() for x in os.environ.get("LARPVERSE_ASR_LANGS", "zh,en,id,vi").split(",") if x.strip()]
-ASR_LP_MIN, ASR_NSP_MAX, ASR_VAD_SPEECH = -1.0, 0.6, 0.8
-def _decode(wm, xn, lang, task="transcribe"):
-    segs = [s for s in wm.transcribe(xn, language=lang, task=task, beam_size=1, temperature=0.0,
-                                     condition_on_previous_text=False, vad_filter=False)[0] if s.text.strip()]
-    if not segs:
+# tuned on the separated seed-7 clips (GPU, 2026-11-08 04:05, Whisper small, beam 5): with these settings only 'id'
+# survives on the hidden Indonesian voice, 'en' on B1's English, and nothing on A3's unclear voice (every language
+# decoded to garbage there, e.g. "Kill me, kill me..."); without them 'vi' won with a YouTube outro at lp -0.39
+ASR_LP_MIN, ASR_NSP_MAX, ASR_VAD_SPEECH = -0.9, 0.6, 0.8
+ASR_CR_MAX, ASR_MARGIN, ASR_MIN_S = 2.0, 0.10, 0.5
+# Whisper's stock hallucinations on noise / music (subtitle credits, video outros); never shown as words
+ASR_JUNK = re.compile(r"thank(s| you) for watching|subscri|like and share|see you (in the )?next|subtitles?|"
+                      r"captions?|amara|transcri|copyright|all rights|\bmusic\b|applause|i'?ll be back|just kidding|"
+                      r"\bvideo|\bchannel|kênh|hẹn gặp lại|留言|訂閱|订阅|下方|字幕|頻道|频道", re.I)
+def _looping(text):                                # repetition loop: few distinct words / characters
+    t = text.strip()
+    units = t.split() if len(t.split()) >= 4 else [c for c in t if not c.isspace()]
+    return len(units) >= 6 and len(set(units)) / len(units) < 0.5
+def _decode(wm, xn, lang, vad, task="transcribe"):
+    segs = wm.transcribe(xn, language=lang, task=task, beam_size=5, temperature=[0.0, 0.2, 0.4],
+                         compression_ratio_threshold=2.4, log_prob_threshold=-1.0,
+                         no_repeat_ngram_size=3, condition_on_previous_text=False, vad_filter=False)[0]
+    keep = []
+    for sg in segs:
+        txt = sg.text.strip()
+        if not txt or sg.compression_ratio >= ASR_CR_MAX or _looping(txt) or ASR_JUNK.search(txt):
+            continue
+        if sg.avg_logprob <= ASR_LP_MIN:
+            continue
+        if sg.no_speech_prob >= ASR_NSP_MAX and vad < ASR_VAD_SPEECH:      # separation residue: VAD decides
+            continue
+        keep.append(sg)
+    w = [max(sg.end - sg.start, 0.1) for sg in keep]
+    if not keep or sum(w) < ASR_MIN_S:
         return None
-    w = [max(s.end - s.start, 0.1) for s in segs]
-    lp = sum(s.avg_logprob * k for s, k in zip(segs, w)) / sum(w)
-    nsp = sum(s.no_speech_prob * k for s, k in zip(segs, w)) / sum(w)
-    return {"lang": lang, "lp": lp, "nsp": nsp, "text": re.sub(r"\s+", " ", " ".join(s.text.strip() for s in segs)).strip()}
+    text = re.sub(r"\s+", " ", " ".join(sg.text.strip() for sg in keep)).strip()
+    if _looping(text):
+        return None
+    return {"lang": lang, "lp": sum(sg.avg_logprob * k for sg, k in zip(keep, w)) / sum(w),
+            "nsp": sum(sg.no_speech_prob * k for sg, k in zip(keep, w)) / sum(w), "text": text}
 def asr_rescue(clip, vad):
+    # constrained language id (see above). Honest beats wrong: no words unless one language clearly wins (ASR_MARGIN
+    # in average log-probability over the runner-up) on clean, non-looping, non-stock segments
     from acoustic import gemini_audio as GA
     import numpy as np
     name = os.environ.get("LARPVERSE_ASR_MODEL") or GA.multilingual_whisper()
@@ -815,28 +842,25 @@ def asr_rescue(clip, vad):
     if hasattr(M, "_asr_window"):
         x = M._asr_window(x)
     xn = M._norm(x, 0.1)
-    tries = [d for d in (_decode(wm, xn, lg) for lg in RESCUE_LANGS) if d]
-    if not tries:
-        return None
-    best = max(tries, key=lambda d: d["lp"])
-    ok = best["lp"] > ASR_LP_MIN and (best["nsp"] < ASR_NSP_MAX or vad >= ASR_VAD_SPEECH)
-    if not ok or best["text"].lower().strip(" .!") in getattr(M, "HALLUCINATIONS", ()):
-        return None
+    tries = sorted([d for d in (_decode(wm, xn, lg, vad) for lg in RESCUE_LANGS) if d], key=lambda d: -d["lp"])
+    rec = {"tries": {d["lang"]: round(d["lp"], 2) for d in tries}, "asr": f"{name} (constrained language id: "
+           f"{','.join(RESCUE_LANGS)})"}
+    if not tries or (len(tries) > 1 and tries[0]["lp"] - tries[1]["lp"] < ASR_MARGIN):
+        return dict(rec, language=None, lang_p=None, original=None, english=None, unclear=True)
+    best = tries[0]
     en = best["text"] if best["lang"] == "en" else None
     if en is None:
-        tr = _decode(wm, xn, best["lang"], task="translate")
-        if tr and tr["lp"] > ASR_LP_MIN and tr["text"].lower().strip(" .!") not in getattr(M, "HALLUCINATIONS", ()):
-            en = tr["text"]
-    return {"language": best["lang"], "lang_p": round(float(best["lp"]), 2), "original": best["text"],
-            "english": en, "asr": f"{name} (constrained language id: {','.join(RESCUE_LANGS)})",
-            "tries": {d["lang"]: round(d["lp"], 2) for d in tries}}
+        tr = _decode(wm, xn, best["lang"], vad, task="translate")
+        en = tr["text"] if tr else None
+    return dict(rec, language=best["lang"], lang_p=round(float(best["lp"]), 2), original=best["text"], english=en,
+                unclear=False)
 def recognise_multi(clip, whisper="base.en"):
     vad = AR.models.vad_speech_ratio(clip)
     cls, scores, heur, top = AR.models.classify(clip, vad)
     raw, ASR["last"] = "", None
     if AR.wants_asr(vad, cls, heur):
         x = asr_rescue(clip, vad)
-        if x:
+        if x and not x.get("unclear"):
             raw = x["english"] or x["original"]
             ASR["last"] = x
     text, why = AR.gate_transcript(raw, vad, cls, heur)

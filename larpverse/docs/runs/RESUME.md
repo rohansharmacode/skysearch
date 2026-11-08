@@ -82,6 +82,8 @@ Done: tech report a56b6a6dcfe7aacab (`docs/TECHNICAL_REPORT.md`, about 11k words
 ## Integration queue (orchestrator does or forwards these)
 
 0. TODO after the mission eval finishes: widen drone pads to 4.5 m spacing (heavy drone span 3.1 m; currently 2.6 m, rotors overlap). Grid (-6,-49),(-1.5,-49),(3,-49); collapse (-62,-150),(-57.5,-150),(-53,-150). Clear of the van cones at base+5.4 m. Then regenerate scenario_seed7.js.
+0. REVIEW PASS 3 launched 01:40: ab92aa57d0a83f61a (demo path → docs/review/PASS3_DEMO.md) and ac6ef5ffe9e455c48 (claims/licences → docs/review/PASS3_CLAIMS.md). Then fix the P0s, post READY TO RE-RECORD, and fill the report placeholders.
+0. Mission DONE 01:35: smooth flight default, A1-A6, comms; seed 7 with physio = A2 + B1 ping, A3/B2 open leads; eval 17/60 vs 6/60, 5/60. Impact research DONE (IMPACT_EVIDENCE.md, impact_params.json): locating ≈ 18% of time, extrication 64%.
 0. USER 01:05: defend the idea with real-world comparison (time split in 72 h, survival, unconscious finds, Taiwan case, 10 sims, cost, retrofit on emergency vehicles, half-tank flight minutes). Impact agents running; then build a judge-facing 'Impact' artifact plus slides.
 0. FULL Isaac brief sent 01:00 (docs/ISAAC_BRIEF.md). READY TO RE-RECORD needs: mission R1 SmoothFlight + A5, pods in --live, real acoustics on live dummies.
 0. Quick Isaac brief sent: docs/ISAAC_QUICK.md (23:20). FULL brief due once van/dummies/live/motion land, about 00:30. Update ISAAC_BRIEF.md and send it to the user.

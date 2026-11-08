@@ -442,3 +442,13 @@ def test_nonhuman_radar_return_is_not_a_ping(monkeypatch):
     assert not [c for c in m.done_cands if c["status"] == "candidate"]
     noted = [p for p in m.piles.values() if p.get("radar_note")]
     assert noted and all("not a person" in p["radar_note"] and p.get("no_revisit") for p in noted)
+
+
+def test_order_wins_the_next_gate():
+    m = GridMission(seed=7, verbose=False, acoustic="stub", pile_budget=2, mission_scans=6, flight_model="kinematic")
+    assert not m.order("Z9", "nope")
+    assert m.order("C3", "live: caller heard near C3")
+    m.run()
+    assert m.visited[:2] == [m.start_pile, "C3"]
+    d = m.dispatch[0]
+    assert d["to_pile"] == "C3" and d["by"] == "operator" and d["reason"] == "live: caller heard near C3"

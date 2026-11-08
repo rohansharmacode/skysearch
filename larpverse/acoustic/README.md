@@ -62,11 +62,26 @@ sounds like a rotor (`heuristics.steadiness` >= 0.3, or a `blade_pass` comb >= 0
 without independent speech evidence (VAD < 0.3, human-minus-animal < 0.4). `scene.build_scene(rotors=)`
 synthesises blade-pass noise for testing; `python -m acoustic.run --rotor-xy '{"d4": [x, y]}'`.
 
+Weak talkers and live sources: CLEAN keeps components down to 0.08 x the strongest in a block, but one
+below 0.2 x may only support a pile that every drone agrees on (a weak caller under a loud one survives,
+drone-specific residual ghosts do not). `build_scene(sources=[...])` / `listen_and_rank(sources=...)`
+take live dummies (isaac/live.py, assets/audio/dummies) in place of the scenario's sounds; regression:
+`tests/fixtures/acoustic_dummy_seed7.json` (seed 7, hidden C3 caller, dog over the knocks).
+
+Latency (`state["timing_s"]`, per stage in `state["timing_stages_s"]`): pyroomacoustics output via one FFT
+per source and one inverse FFT per mic (`scene.fast_simulate`, identical to `room.simulate()`), LCMV
+weights solved on a 1025-bin grid and interpolated (0.03 % from the per-bin solve), per-drone FFT and
+delay-and-sum beam caches, Whisper only on voice/shout clips and their loudest 12 s, Gemini only on
+voice/shout clips. Hidden-C3 dummy listen on this laptop (warm, models loaded once): 43 s -> 15.8 s for
+26 s of audio, 7.2 s with `listen_and_rank(..., duration=13)`.
+
 Evaluation (reads truth, evaluator only): `acoustic/eval_assign.py` replays the numpy grid mission with
 the real pipeline and scores per-pile assignment over every listen, one heavy job per seed:
 
     scripts/heavy.sh .venv-audio/bin/python -m acoustic.eval_assign run --seeds 7
     .venv-audio/bin/python -m acoustic.eval_assign report        # v1-baseline vs current ALGO_VERSION
+    # same listens as a cached reference run (mission landing spots change between sim versions)
+    scripts/heavy.sh .venv-audio/bin/python -m acoustic.eval_assign run --replay v1-baseline --seeds 7
 
 Agent (`agent.py`, owned by the agents/ builder): per clip it sees only measurements and returns
 human/urgency/reliability + rationale through `agents/llm.py`: Gemini when `GEMINI_API_KEY` is set, else

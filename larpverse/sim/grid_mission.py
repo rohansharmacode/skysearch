@@ -392,6 +392,15 @@ class GridMission:
             self.acoustic_fn = keep
         self._say(f"Extra listen ({source}) folded in: {len(res.get('clips', []))} clips")
 
+    def order(self, pile, reason="operator order"):
+        """Operator / live order (VIDEO_PLAN A7): the next dispatch gate sends the fleet to ``pile`` (between piles;
+        the active pile finishes normally). Returns False for an unknown pile."""
+        if pile not in self.piles:
+            return False
+        self._order, self._order_reason = pile, reason
+        self._say(f"Order received: next pile {pile} ({reason})")
+        return True
+
     def preempt(self, reason, to_pile=None):
         """New evidence / operator order: end the active pile's radar phase once the dwell under way finishes, then
         run the dispatch gate (``to_pile`` wins it). The cut pile stays not cleared and open for a revisit."""
@@ -1215,9 +1224,11 @@ class GridMission:
         """Dispatch gate after a pile (and its listen): re-rank, then dispatch / revisit / swap / stop."""
         if getattr(self, "_order", None) and self._order in self.piles:
             to, self._order = self._order, None
+            why = getattr(self, "_order_reason", None) or "operator order / new evidence"
+            self._order_reason = None
             self.dispatch.append({"t": round(self.t, 1), "from_pile": self.visited[-1], "to_pile": to,
-                                  "reason": "operator order / new evidence", "by": "operator"})
-            return self._start_pile(to, "operator order / new evidence")
+                                  "reason": why, "by": "operator"})
+            return self._start_pile(to, why)
         self._order = None
         self._suggest_zone()
         tasked = self._tasked_piles()

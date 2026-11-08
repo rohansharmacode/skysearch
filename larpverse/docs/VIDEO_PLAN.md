@@ -22,7 +22,7 @@ python3 scripts/serve.py --port 8765 &                                          
 cd /workspace/isaaclab && ./isaaclab.sh -p $L/isaac/run_mission.py --live --livestream 2 --viz kit --enable_cameras \
     --site grid --seed 7 --photoreal 1 --veg 0 --camera director-take --hud overlay --overlay usd --radar dsp
 # client: <brev URL>/viewer (Isaac) + http://localhost:8765/dashboard/ (port-forwarded) side by side in OBS
-# the unscripted change: a teammate presses  Y  in the Isaac window (H2, A1) while A2's pods are down (video ~17-29 s)
+# the unscripted change: a teammate presses  Y  in the Isaac window (H2, A1) while A2's pods are down (video ~17-30 s)
 ```
 
 ## 1. What is on screen: two layouts (recommendation: B)
@@ -34,54 +34,74 @@ cd /workspace/isaaclab && ./isaaclab.sh -p $L/isaac/run_mission.py --live --live
 | Risk | omni.ui overlay in a `--livestream 2` stream is **unverified on 6.0.1**; if the viewport frame isn't in the streamed image, A shows no perception | Both halves are verified routes (dashboard on 8765 via the proxy / port-forward; Isaac /viewer). OBS composes the frame on the client, so nothing new runs on the GPU box |
 | Honesty | Perception and actions in the same pixels | Literally "perception next to the actions" |
 
+**What the judges should see in every frame.** These target perception-driven action, adaptation and autonomy. They appear on the HUD and in `live.json` / `hud.json` for the dashboard's event line.
+- **Causal line: every action with its perception reason.** Built only from the mission's decisions, clips, pings, landing sites and scan notes. Examples:
+  - "d1-d3 → A1 BECAUSE voice heard, 3/3 drones agree on bearing, priority 84"
+  - "pod d2 placed at A2-P3 BECAUSE best-scored flat seat on the LiDAR map (slope 6°, roughness 1.2 cm, winch 6.8 m)"
+  - "PING A2-R1 BECAUSE 3 agreeing radar ranges from 5 scans, breathing 9/min"
+  - "C3: not a person: settling debris → no dig", the radar rejection shown as a perception-driven action
+  - "new lead A1 (priority 84) BECAUSE a human-like sound was heard there twice where earlier listens heard nothing"
+- **PLAN CHANGED banner, for about 5 s.** Example: "PLAN CHANGED: B2 → A1 (new voice heard, unscripted live input)". It fires when, after a live input, the fleet's next pile differs from the one ranked before the input, or when the input triggers a re-plan.
+- **Autonomy badge.** It reads "AUTONOMOUS · no operator input" until a stage event, a tasking revision or a portal report arrives. Then it shows "LIVE INPUT · <what>" for 10 s, and afterwards "AUTONOMOUS · n live input(s), last at t …".
+- **Decision attribution.** `[by: argmax | gemini | operator]` on the agent line.
+
+**Speaker audio.** `--speaker-audio off` is the default with `--live`. The call-out renders use Piper voices with unclear or research-only licences (docs/DUMMY_AUDIO.md), so the take serves no call-out audio file. The call-out timing and the on-screen speaker ring are unchanged. `--speaker-audio espeak` serves eSpeak NG renders only; make them first with `python -m acoustic.speaker_assets --engine espeak --force`, which needs `espeak-ng` on the box.
+
 **Recommendation: B**, with `--hud overlay` left on.
 - If the rehearsal shows the overlay inside the streamed viewport, the left half carries the breathing waveform too.
 - If it doesn't, nothing is lost: the HUD still writes `dashboard/data/hud.json` and `live.json` every frame (Request D1 asks the dashboard to show them).
 - Use A only if the dashboard can't reach the client.
 
-## 2. Second by second (seed 7, grid site, smooth flight model, default pace)
+## 2. Second by second (seed 7, grid site, smooth flight, idle-drone listens, default pace)
 
-The timeline is measured on the CPU with the same mission, flight model (`sim/flight_motion.py`) and pace table (`isaac/live.py DEFAULT_PACE`). The "sim t" column is mission seconds. The pace column is sim seconds per video second, shown on the HUD.
+Measured on the CPU with the current mission (`fa4e74b`: smooth flight, idle drones land to listen during rescans, native live hooks) and the pace table `isaac/live.py DEFAULT_PACE`. "Sim t" is mission seconds; pace is sim seconds per video second, shown on the HUD.
 
 | Video s | Sim t | Pace | On screen (actions) | Perception panel | Camera (`director-take`, one spline) |
 |---|---|---|---|---|---|
-| 0–4 | 0 | pre-roll | Van at staging: open door, operator at three glowing screens, drones on the pads | "LIVE t 0"; zones on the dashboard | **van**: eye SW of the van at 1.7 m, through the door |
-| 4–8 | 1–20 | ×5 | Sequential lift-off, rotors spin up to blur, drones lean into the climb and head north | LiDAR 0 → first returns | **lift-off**: crane up beside the van, pan to the pads, then **follow** behind the fleet with look-ahead |
-| 8–15 | 20–65 | ×6 | Survey over A2: the purple LiDAR map paints in | LiDAR k pts/s, map coverage % rising | **survey**: 42 m out, 26 m up, slow orbit |
-| 15–23 | 65–137 | ×5, then ×14 | Pods winch down onto the rubble face, three radar dwells | Breathing waveform + range bins of the pod under way; pod-mic quick listens | **pods**: 32 m, 25° down, between the pods and the pile |
-| 23–30 | 137–342 | ×30 | Relocations and rescans (one pod at a time), then the 60 s vitals dwell | Waveform per scan; belief converging | slow orbit continues |
-| ≈30 | 342 | | **Red ping beacon at A2-R1** | **Vitals: "slow regular breathing (possibly unconscious) - check first"**, plus "aid for rescuers, not a diagnosis"; dig order 1. A2-R1 | |
-| 30–43 | 342–468 | ×10 | Drones land off the pile, rotors off; the loudspeaker call-out (zh-TW, nan-TW, en); knock and shout replies | Yellow bearing cones per drone; top clip with transcript and human score | **listen**: 48 m, 30 m up |
-| **17–29** | 85–330 | | **The unscripted change window (real acoustics)**: a teammate presses **Y** (or **U**) while A2's pods are down, or the operator draws a zone at any time (§4) | Stage-event line: "dummy H2_A1_id activated near A1 (hotkey Y)" | **event**: smooth re-target to the dummy, held 5 s |
-| ≈33 | 373 | | Drones down: the real pipeline's listen is **submitted now** on the live sources (prefetch), so it can answer by the gate | Listen panel: the cones of the previous listen; "real acoustic pipeline analysing…" if the gate has to wait | |
-| ≈43 | 468 | | Listen ends: **the fleet redirects** to the new sector (A1 for Y, C3 for U) instead of B2 | New cone toward the dummy; top clip / priority → A1; agent line "dispatching d1-d3 to A1: …" | **follow** with look-ahead toward A1 |
-| 43–53 | 468–530 | ×6 | Flight to A1, LiDAR survey of the new pile | Coverage rises again | **survey** at A1 |
-| 53–60 | 530–560 | ×5, then ×14 | Pods lower at A1; the take ends on the pods resting, with the dig order on screen | Waveform of the first A1 dwell; dig order (A2-R1 first; A1 is a lead) | **pods** at A1; stop recording at 60 s |
+| 0–4 | 0 | pre-roll | Van at staging: open door, operator at the three screens, drones on the pads | "LIVE t 0"; zones on the dashboard | **van**: through the door from the SW |
+| 4–8 | 1–20 | ×5 | Sequential lift-off; rotors spin up to blur; the drones lean into the climb | LiDAR 0 → first returns | **lift-off** crane, then **follow** with look-ahead |
+| 8–15 | 20–65 | ×6 | Survey over A2: the purple LiDAR map paints in | LiDAR k pts/s, map coverage % | **survey**: 42 m out, 26 m up, slow orbit |
+| 15–23 | 65–137 | ×5, then ×14 | Pods winch down; the first three radar dwells | The pod scan's chest displacement (red/white), "analysing breathing... (n s)" until 45 s of dwell, then the verdict; pod-mic listens | **pods**: 32 m, 25° down |
+| 23–31 | 137–364 | ×30 | Relocations and rescans: one pod scans; **the idle drones land rotors-off and listen** | Each scan's signal and verdict; pod-mic listens (pods + landed drones) | slow orbit |
+| ≈31 | 364 | | **Red ping beacon at A2-R1**. The listen landings are commanded, and with the real pipeline **the listen is submitted now** (prefetch on the landing patches) | **Vitals: "slow, regular breathing — deep rest or reduced consciousness — check responsiveness"** + "aid for rescuers, not a diagnosis"; dig order 1. A2-R1 | |
+| 31–44 | 364–494 | ×10 | Drones land (rotors off, ≈34 s); call-out (zh-TW, nan-TW, en); replies | Bearing cones per drone; the top clip exactly as the pipeline returned it: Gemini transcript when available, else e.g. "voice-like, language not identified" | **listen**: 48 m, 30 m up, orbiting |
+| ≈44 | 494 | | Gate: dispatch to the top-ranked pile (B2 without a change) | Agent line "dispatching d1-d3 to … [by: argmax or gemini or operator]: …" | **follow** toward the next pile |
+| 44–60 | 494–575 | ×6 / ×5 | Flight, LiDAR survey and pods at the next pile | Coverage; first dwell of the new pile | **survey**, then **pods** |
 
-**Measured on the CPU** with stub acoustics (timing logic only; the take uses the real pipeline, see the latency rule below):
+**The trigger window for the take (real acoustic pipeline): video ≈17–30 s, while A2's pods are down and before the ping.**
+- A press here is heard first by the **pod-mic listens** (pods resting + idle drones landed rotors-off), asynchronously on the real pipeline. Then it is heard by the gate listen, prefetched at ≈31 s, which already contains the changed world.
+- **Press after ≈31 s.** The prefetched listen predates the change, so the gate listen is synthesised again (never a stale world). The gate then waits a full pipeline run while the landed drones are held and the camera keeps orbiting (§4).
+- **Shifting window.** The acoustic agent is cutting the latency (target ≤ 8 s with per-stage timings). With ~8 s, a press up to ≈35 s still makes the gate. Re-measure with `--preflight` and move the window to suit.
 
-| Trigger | Stage event | Fleet redirects | Reaction (video) |
-|---|---|---|---|
-| Y (H2, A1) at video ≈35.8 s, during the listen | t 401 | t 468, to A1 | **6.8 s** |
-| U (H1, C3) at video ≈35.8 s | t 401 | t 468, to C3 (priority 71) | **6.8 s** |
-| Y earlier, at video ≈19.8 s, during the first 3-pod dwell | t 91 | Pod-mic quick listens hear a new call at A1 (t 105) and confirm it (t 125); the A2 dwell finishes (t 130) and the fleet goes to A1 | **2.8 s** |
+**What the dummy trigger guarantees, and what it doesn't.**
+- **Guaranteed:** perception. A new human-like lead at the dummy's sector, a new cone and a stage-event line. The pod-mic listen logs "NEW human-like sound at A1, confirmed by two consecutive listens".
+- **Not guaranteed:** the redirect. The redirect depends on the ranking, which is computed, not scripted. If the operator **draws a zone** (§4 b), that is an order, and the fleet goes there after the dwell under way.
 
-The early case has a cost: A2 has no ping yet, so the story changes (A2 stays "not cleared, open for a revisit"). That's still honest.
+**Measured with STUB acoustics** (instant listens). These test the timing logic only. **They are not the take's reaction times**: with the real pipeline, add its latency (§6.1b).
 
-**Why the window is earlier with the real pipeline.** One real listen takes about 50–62 s here (laptop CPU, Whisper on CPU, no Gemini). On the L40S it is unmeasured, and the pre-flight prints it. A rotors-off listen is therefore **submitted the moment the drones are down** (t 373, video ≈33 s), with the stage world as it is then. That gives the pipeline the ~66 sim s of listen + call-out before the gate.
-- **Press before that point.** The prefetched listen hears the dummy and the gate redirects at ≈43 s.
-- **Press after it.** The stage changed after the submission, so the listen is synthesised again, never from a stale world, and the gate waits a full pipeline run. The HUD says "real acoustic pipeline analysing… (n s); mission clock held".
-- **Press during the first 3-pod dwell** (video 17–23 s). Pod-mic quick listens also run on the real pipeline, asynchronously. With a ~60 s latency their answer usually lands after the dwell, so the listen at ≈43 s carries the reaction.
-- **Rescans** use one pod while the other drones hover, so no quick listen happens then (Request A4).
+| Trigger (stub) | Stage event | What follows |
+|---|---|---|
+| Y (H2, A1) during the rescans, t 251 (video ≈27 s) | t 251 | Pod-mic listens (pods + landed idle drones) confirm a new lead at A1, priority 84 (t 304). A2 has a firm ping in progress, so it is queued, not cut. At the gate (t 494) the ranking sent the fleet to **A3** (80): the gate listen heard A1 lower |
+| Y during the gate listen, t 400 (before the mission's R1/A4 change) | t 400 | Gate at t 542: **A1** (84). The old timeline gave 6.8 s of video from press to redirect, a stub-acoustics number |
+| Y in the first 3-pod dwell, t 91 | t 91 | Confirmed at t 125. A2 had no firm ping yet, so the radar phase is cut after the dwell and the fleet goes to A1. 2.8 s of video, stub only |
 
-**Latency rule (automatic).** `--live` sets the listen pace to at most `66 / (latency + 1)` (floor ×4), using the latency the pre-flight measured, and logs the change. At 5 s latency the listen stays at ×10. At 15 s it drops to ×4.1, which makes the listen ≈30 s of video. That doesn't fit 60 s, so fix the latency (§6.1b) rather than accept it.
+**Latency rule (automatic).** `--live` caps the listen pace at `66 / (latency + 1)` (floor ×4), using the warm latency the pre-flight measures (its second listen), and logs it.
+- **Pipeline overruns:** the mission clock is held only while the drones are landed. The camera keeps its slow orbit and the HUD shows "real acoustic pipeline analysing… (n s)" (§4).
+- **While the drones fly:** the mission runs ~0.75 s of video ahead of the picture (`--mission-thread 1`), so a slow step never freezes them.
 
-**Real-pipeline check here** (seed 7, three drones landed around A2, A2 excluded):
+**Real-pipeline check here** (seed 7; three drones landed around A2; A2 excluded; no Gemini):
 - H2 off: A1 `no_signal_not_cleared`, priority 8.
 - H2 on: A1 is the top pile at 56, with a voice clip from A1.
-- Whisper `base.en` transcribes the Mandarin and Indonesian clips badly, and A1's clip came back with no transcript. The HUD shows what the pipeline produced (Request AC2: a multilingual model).
+- Local Whisper is `base.en` (the multilingual download was declined), so zh/id/vi transcripts come only from **Gemini**. Without Gemini the HUD says "voice-like, language not identified" and promises nothing.
+- Warm listen latency on this laptop: 50–72 s. The pre-flight prints the box's figure.
 
-**Why these numbers move.** The real acoustic pipeline's priorities, its latency and a different seed or site all change them. Re-measure with the dry-run in §6 step 2 before the take. The ISAAC_BRIEF gate "A2 ping before t 110" is obsolete with smooth flight (the A2 ping comes at t 342).
+**Gemini budget.** The free tier allows about 20 requests per day per model.
+- `--live` uses Gemini only on the **gate listens** (about 2 per take); pod-mic listens never use it.
+- The pre-flight logs its own calls and projects the take's total.
+- Every listen logs "Gemini calls: +n, N this run". Past `--gemini-budget` (default 20 minus the pre-flight's calls) the listens run without the Gemini stage.
+- Run the pre-flight with `--gemini 0` (and `LLM_REPLAY=1`) on rehearsal days to save quota.
+
+The ISAAC_BRIEF gate "A2 ping before t 110" is obsolete: A2 pings at t 364.
 
 ## 3. The camera: `--camera director-take`
 
@@ -108,7 +128,7 @@ How it stays continuous:
 
 | Trigger | How | What the system perceives | Typical reaction |
 |---|---|---|---|
-| **(a) Hidden dummy switched on** (recommended) | A teammate presses **Y** (H2_A1_id, Indonesian voice at A1) or **U** (H1_C3_vi, Vietnamese voice at C3) in the Isaac window: carb.input hotkeys, `--live-keys`. Kit may bind **H** to hide the selection, so we avoid it. Fallbacks, in order: the HUD button "Unscripted: switch on a hidden dummy" (same dummy as the last key, Y); tick `larpverse:active` in the Property panel; `python3 isaac/live.py --cmd toggle --id H2_A1_id` in the VS Code terminal | From the next scan or listen, the acoustic and call-out generators synthesise its voice from its stage position (a fresh, uncached synthesis), and the radar generator gets its chest. The mission hears it either in the next rotors-off listen or in a pod-mic quick listen (confirmed twice) | Redirect at the next listen's gate: ≈43 s video if pressed before the drones land for the A2 listen (§2) |
+| **(a) Hidden dummy switched on** (recommended) | A teammate presses **Y** (H2_A1_id, Indonesian voice at A1) or **U** (H1_C3_vi, Vietnamese voice at C3) in the Isaac window: carb.input hotkeys, `--live-keys`. Kit may bind **H** to hide the selection, so we avoid it. Fallbacks, in order: the HUD button "Unscripted: switch on a hidden dummy" (same dummy as the last key, Y); tick `larpverse:active` in the Property panel; `python3 isaac/live.py --cmd toggle --id H2_A1_id` in the VS Code terminal | From the next scan or listen, the acoustic and call-out generators synthesise its voice from its stage position (a fresh, uncached synthesis), and the radar generator gets its chest. The mission hears it either in the next rotors-off listen or in a pod-mic quick listen (confirmed twice) | A new lead + cone (perception, guaranteed); a redirect at the gate (≈44 s video) if it outranks the others: computed, not scripted (§2) |
 | **(b) Operator zone** | Draw or edit a zone on the dashboard. `POST /api/tasking` writes a new revision of `dashboard/data/tasking.json` | Polled every 1 s (wall). The newest zone is an order: the radar dwell under way finishes, then the fleet goes to it | 1–4 s of video |
 | **(c) Drag a dummy or a debris slab** in the viewport | Select `/World/Dummies/<id>` (or a debris prim) and move it | The next radar scan uses the new position. A slab over a dummy is read by a PhysX column ray and deepens it. Debris needs a collider to count | Changes pings and cones from the next scan; the subtlest trigger to film |
 | **(d) Phone portal "I'm trapped"** | Only once the comms work feeds `state.comms.devices` | A new trapped device with an RSSI fit becomes an order for its sector | As (b) |
@@ -176,15 +196,17 @@ bash acoustic/setup.sh                                  # numpy scipy pyroomacou
 uv pip install --python .venv-audio noisereduce        # denoise stage (docs/ACOUSTIC_GEMINI.md); not in setup.sh
 .venv-audio/bin/python -c "from faster_whisper import WhisperModel as W; W('base.en', download_root='acoustic/models/whisper')"
 # optional, faster Whisper on the L40S:  .venv-audio/bin/pip install nvidia-cublas-cu12 nvidia-cudnn-cu12
-# LLM triage in the acoustic agent: no .env on the box = its deterministic scorer (fastest; still the real pipeline).
-#   With GEMINI_API_KEY in $L/.env it calls Gemini (+1-4 s per call, 10 RPM throttle): LLM_REPLAY=1 replays cached answers.
+# zh/id/vi transcripts come from Gemini only (local Whisper is base.en; the multilingual download was declined):
+#   put GEMINI_API_KEY in $L/.env (gitignored). Free tier ~20 calls/day/model: the take uses it on the ~2 gate listens
+#   only, counts every call and stops at --gemini-budget (§2). Without a key: deterministic scorer, "language not identified".
 ```
 
 **If the box cannot install it, copy ours.** `acoustic/models/` is 314 MB: `tar czf models.tgz acoustic/models`, then attach it to a Release and untar it on the box. Then run setup.sh, which skips existing files.
 
 **1b. Pre-flight (every session; it fails loudly):**
 ```bash
-python3 isaac/live.py --preflight         # starts the .venv-audio worker, switches a hidden dummy on, runs one listen
+python3 isaac/live.py --preflight         # starts the .venv-audio worker, switches a hidden dummy on, runs two listens
+                                          # (first with Gemini, counted; second warm, timed). --gemini 0 saves quota
 # PASS line: "real pipeline ... (mode auto, fed sources(build_scene)), warm listen N s"  -> note N (the latency)
 # FAIL: a banner "ACOUSTIC PRE-FLIGHT FAILED ... The take would use STUB acoustics" and exit 1
 ```
@@ -244,7 +266,7 @@ brev port-forward <instance> --port 8765:8765          # or: ssh -L 8765:localho
 4. Check the HUD overlay is visible **in the /viewer stream**. If not, use layout B with the dashboard carrying perception.
 5. Check frame time ≥ 30 fps on the survey shot (§5).
 6. Test the hotkey once in a scratch run: press **Y** and look for `STAGE EVENT … H2_A1_id activated (hotkey Y)` in the log and on the HUD. Then restart, so the take starts with the dummy off.
-7. Brief the teammate, who must not be the camera operator. Press Y once while A2's pods are down (video ≈17–29 s, before the drones land for the listen). They decide the exact moment, or whether to draw a zone instead.
+7. Brief the teammate, who must not be the camera operator. Press Y once while A2's pods are down (video ≈17–30 s, before the ping beacon). They decide the exact moment, or whether to draw a zone instead.
 8. OBS: both windows in frame, recording armed, the clock visible to the director.
 9. Close other /viewer tabs (only one client is allowed), then start.
 
@@ -262,7 +284,11 @@ brev port-forward <instance> --port 8765:8765          # or: ssh -L 8765:localho
 
 If the reaction misses the 60 s window, keep the take only if the change and its perception are both on screen: a new cone, the stage-event line and the lead's transcript. Otherwise re-take.
 
-## Appendix A. Requests: mission owner (`sim/grid_mission.py`)
+## Appendix A. Requests: mission owner (`sim/grid_mission.py`): A1–A6 LANDED in fa4e74b
+
+`isaac/live.py` now uses only the native hooks: `set_world_sources`, `ingest_listen` and `preempt`. The stub workarounds are removed, and `--live` refuses to start without the hooks. One small gap remains, **A7**: `preempt(reason, to_pile)` only acts while a pile is being searched. Between piles (listen, return), the live controller sets `mission._order` directly, which `_gate` honours first. A public `order(pile, reason)` would make that clean.
+
+The original requests, kept for reference:
 
 Today `isaac/live.py` installs a stub through the existing swap points (`scenario`, `sensor_factory`, `acoustic_fn`) and three private calls:
 - `_finish_listen(gate=False)`, as recon does;
@@ -332,7 +358,6 @@ These native hooks would replace them. `LiveController` uses them automatically 
 
 - **D1, dashboard owner.** Show `dashboard/data/live.json` (`last_event`, `replans`, `quick_listens`) and `hud.json` (`panels.radar.wave` / `range_db`: the live breathing waveform of the active pod scan). Ideally a narrow perception column for layout B: the event line, waveform, vitals label + "aid, not a diagnosis", agent line, dig order. Both files are rewritten every frame / step while `--live` runs. `dashboard/data/` is gitignored.
 - **AC1, acoustic owner.** Add `sources=` to `acoustic.run.listen_and_rank` and pass it on to `build_scene(sources=...)`. Today the worker (`isaac/live.py _SERVER`) wraps `acoustic.scene.build_scene` / `acoustic.run.build_scene` to inject them. It switches to the parameter automatically once it exists. Each source is `{xy, clip: abs WAV, kind, level_db: 0, depth_m: 0 (rubble variants carry the loss), loop, gap_s, t0_s, id}`.
-- **AC2, acoustic owner.** Use a multilingual Whisper (`small` or `base`) when on disk. `base.en` garbles the zh-TW, vi and id dummy clips; A1's Indonesian call came back with no transcript.
 - **AC3, acoustic owner.** Report per-stage timings (synthesis, VAD, YAMNet, Whisper, agent) in the result, so the pre-flight can say where the ~60 s goes.
 - **P1, photoreal owner.** Make debris and rubble pieces `instanceable` or use a PointInstancer for frame time (§5).
 - **O1, orchestrator.**

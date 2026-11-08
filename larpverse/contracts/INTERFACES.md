@@ -180,7 +180,7 @@ Written by `acoustic/run.py` (`ALGO_VERSION` in `acoustic/dsp.py`); every v1 fie
 
 ```jsonc
 {
-  "algo": "assoc-v14",                          // localisation/association version (cache keys should include it)
+  "algo": "assoc-v16",                          // localisation/association version (cache keys should include it)
   "clips": [ {
     "association": "confident",                // confident | ambiguous
     "association_conf": 0.97,                  // 0-1: bearing likelihood of this pile over all nine piles
@@ -201,6 +201,7 @@ Written by `acoustic/run.py` (`ALGO_VERSION` in `acoustic/dsp.py`); every v1 fie
 ```
 
 - `ambiguous` = fewer than two drones agree, the pile is not the most likely pile for the measured bearings, its association confidence is below 0.6, or most of the clip overlaps a more strongly associated source. Status stays `lead` / `radar_ping` (the status enum is unchanged); `why` starts with "Lead (ambiguous direction ...)"; clip priority is capped at 19 (below the grid mission's `priority_min` 20), so an ambiguous lead is listed but never triggers a dispatch on its own.
+- `timing_s` (per phase) and `timing_stages_s` (vad, yamnet, whisper, beamform, srp_gcc, srp_clean, associate, heuristics) give the listen latency.
 - Visited / excluded piles still take part in association, so their sources are nulled and never reported as clips.
 - `transcript` is empty unless the clip looks like speech (VAD >= 0.3, >= 0.5 for non-speech classes, Whisper `no_speech_prob` < 0.6 and `avg_logprob` > -1.0) and does not repeat another pile's talker.
 

@@ -107,8 +107,16 @@ def test_penetration_physics_numbers(literature):
     losses = [R.two_way_loss_db(L) for L in (0.0, 1.0, 2.0, 3.0, 10.0)]
     assert losses[0] == pytest.approx(0.0, abs=1e-6) and all(b > a for a, b in zip(losses, losses[1:]))
     assert losses[-1] > 120                                 # 10 m of rubble: hopeless at any range
+    # recalibrated with the physio chest waveform (docs/RADAR_PENETRATION.md): small legacy radar, 20 s dwell ~1.9 m;
+    # heavy_sar pod (0.48 m face, +7.6 dB) at the 45 s pod dwell ~2.9 m. Literature: ~0.5-3 m typical.
     beneath = R.reach_path_m(R.REACH_REF_RANGE_M, 0.95)
-    assert 2.0 <= beneath <= 4.0                            # literature: ~0.5-3 m typical, vendor claims to ~4.6 m
+    assert 1.7 <= beneath <= 2.2
+    old_gain = R._PEN["rx_gain_db"]
+    try:
+        R.use_rx_gain_db(7.63)
+        assert 2.7 <= R.reach_path_m(R.REACH_REF_RANGE_M, 0.95, dwell=45.0) <= 3.1
+    finally:
+        R.use_rx_gain_db(old_gain)
     assert R.reach_path_m(11.0, 0.95) < beneath - 1.0       # spreading eats reach at a stand-off
     assert R.reach_path_m(2.0, 0.3) <= beneath
 

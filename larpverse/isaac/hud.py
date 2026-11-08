@@ -30,6 +30,7 @@ import time
 import numpy as np
 
 AID_NOTE = "aid for rescuers, not a diagnosis"
+BANNER_S = 5.0                  # "PLAN CHANGED" banner on screen for this many video seconds
 VERDICT_AFTER_S = 45.0          # radar verdicts flip early in a dwell: show "analysing" before this (or the final)
 SIG_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "assets", "radar_signatures")
 _SIG_CACHE = {}
@@ -45,7 +46,7 @@ def load_signature(cls):
             _SIG_CACHE[cls] = None
     return _SIG_CACHE[cls]
 CONDITION_TEXT = {"irregular_apneic": "irregular breathing with pauses - check first",
-                  "unconscious_slow": "slow regular breathing (possibly unconscious) - check first",
+                  "unconscious_slow": "slow, regular breathing — deep rest or reduced consciousness — check responsiveness",
                   "distressed_tachypnea": "rapid shallow breathing - possible injury / distress",
                   "calm": "calm regular breathing - stable, waiting",
                   "unknown": "breathing pattern unclear - rescan"}
@@ -68,6 +69,76 @@ def _poly_mask(X, Y, poly):
         xi = (x0 - x1) * (Y - y1) / np.where(y0 == y1, 1e-12, y0 - y1) + x1
         inside ^= cond & (X < xi)
     return inside
+
+
+NONHUMAN_WORDS = {"debris_shift": "settling debris", "machinery": "machinery / generator vibration",
+                  "rotor": "a drone rotor", "small_animal": "a small animal", "no_signal": "no breathing-like return"}
+
+
+def _why_rejected(text):
+    t = str(text or "").lower()
+    for k, w in (("debris", "settling debris"), ("machin", "machinery vibration"), ("generator", "machinery vibration"),
+                 ("rotor", "a drone rotor"), ("animal", "a small animal"), ("dog", "a small animal")):
+        if k in t:
+            return w
+    return _short(text, 60)
+
+
+def causal_lines(state, lj=None, n=4):
+    """Every action with the perception that caused it ("X BECAUSE Y"), newest first. Built only from the mission
+    state (decisions, clips, pings, landing sites, scan notes) and the live controller's re-plans."""
+    st, lj = state or {}, lj or {}
+    out = []
+    clips = st.get("acoustic_clips") or []
+    for d in (st.get("dispatch") or [])[-2:]:
+        to, t = d.get("to_pile"), float(d.get("t") or 0)
+        if not to:
+            out.append((t, f"fleet returns BECAUSE {_short(d.get('reason'), 90)}"))
+            continue
+        cs = sorted((c for c in clips if c.get("pile_id") == to), key=lambda c: -(c.get("priority") or 0))
+        if d.get("by") == "operator":
+            why = "operator order / new evidence (live input)"
+        elif cs:
+            c = cs[0]
+            why = (f"{c.get('class') or 'sound'} heard" + (f", {c['doa_agree']} drones agree on bearing" if c.get("doa_agree") else "")
+                   + f", priority {c.get('priority')}")
+        else:
+            why = _short(d.get("reason"), 90)
+        out.append((t, f"d1-d3 → {to} BECAUSE {why}"))
+    pods = [p for p in (st.get("pods") or []) if p.get("status") in ("lowering", "scanning")]
+    sites = [x for x in (st.get("landing_sites") or []) if x.get("pod")]
+    for p in pods[:1]:
+        if not sites or not p.get("xy"):
+            continue
+        x = min(sites, key=lambda q: math.hypot(q["xy"][0] - p["xy"][0], q["xy"][1] - p["xy"][1]))
+        if math.hypot(x["xy"][0] - p["xy"][0], x["xy"][1] - p["xy"][1]) > 2.5:
+            continue
+        out.append((float(st.get("t") or 0) - 0.5,
+                    f"pod {p.get('drone_id')} placed at {x['id']} BECAUSE best-scored flat seat on the LiDAR map "
+                    f"(slope {x.get('slope_deg', 0):.0f}°, roughness {100 * float(x.get('roughness') or 0):.1f} cm, "
+                    f"winch {x.get('winch_m', 0):.1f} m)"))
+    for c in (st.get("pings") or [])[-2:]:
+        v = c.get("vitals") or {}
+        rate = v.get("rate_bpm") or (60 * c["breathing_hz"] if c.get("breathing_hz") else None)
+        out.append((float(c.get("t_found") or 0), f"PING {c['id']} BECAUSE {c.get('support', '?')} agreeing radar ranges "
+                    f"from {len(c.get('evidence') or [])} scans" + (f", breathing {rate:.0f}/min" if rate else "")))
+    for p in st.get("piles") or []:
+        note = p.get("radar_note") or ""
+        if note.startswith("radar return rejected"):
+            out.append((float(st.get("t") or 0) - 1.0, f"{p['id']}: not a person: {_why_rejected(note)} → no dig"))
+    sc = (lj.get("last_scan") or {})
+    fin = ((sc.get("sig") or {}).get("final") or {})
+    if fin.get("source") and fin["source"] not in ("human_breathing", "no_signal", "moving_person"):
+        out.append((float(sc.get("t") or 0), f"radar {sc.get('scan_id')}: not a person: "
+                    f"{NONHUMAN_WORDS.get(fin['source'], fin['source'])} → no dig"))
+    for q in (lj.get("quick_listens") or [])[-3:]:
+        for e in q.get("new") or []:
+            out.append((float(q.get("t_result", q.get("t")) or 0), f"new lead {e['pile']} (priority {e['priority']}) "
+                        "BECAUSE a human-like sound was heard there twice where earlier listens heard nothing"))
+    for r in (lj.get("replans") or [])[-2:]:
+        out.append((float(r.get("t") or 0), f"RE-PLAN BECAUSE {_short(r.get('why'), 100)}"))
+    out.sort(key=lambda e: -e[0])
+    return [{"t": round(t, 1), "text": txt} for t, txt in out[:n]]
 
 
 class HudModel:
@@ -144,6 +215,13 @@ class HudModel:
         P["vitals"] = self._vitals(st)
         P["decision"] = self._decision(st, lj)
         P["event"] = self._event(lj)
+        cl = causal_lines(st, lj)
+        P["causal"] = {"lines": cl, "text": "\n".join(f"t {c['t']:.0f}  {c['text']}" for c in cl)}
+        ban = (lj or {}).get("banner")
+        show = bool(ban) and (now - float(ban.get("since", -1e9))) <= BANNER_S
+        P["banner"] = {"text": ban["text"] if show else "", "active": show}
+        P["badge"] = {"text": (lj or {}).get("badge") or "AUTONOMOUS · no operator input",
+                      "live": "LIVE INPUT" in str((lj or {}).get("badge") or "")}
         P["source"] = {"text": self._sources(st, lj)}
         self.panels = P
         self.updates += 1
@@ -173,13 +251,18 @@ class HudModel:
         top = max(last, key=lambda c: c.get("priority") or 0)
         lang = top.get("lang") or top.get("language") or (top.get("gemini") or {}).get("language") or "-"
         hs = (top.get("scores") or {}).get("human")
-        tx = _short(top.get("transcript"), 70)
+        tx = _short(top.get("transcript"), 70)        # whatever the pipeline returned; nothing is promised
+        if not tx and top.get("class") in ("voice", "shout", "speech"):
+            tx = None
+            heard = "voice-like, language not identified" if lang in (None, "-", "", "und", "unknown") else f"voice-like ({lang})"
+        else:
+            heard = None
         line = (f"Top clip  {top.get('class', '?')}  |  lang {lang}  |  human {hs if hs is not None else '-'}  |  "
                 f"priority {top.get('priority')} -> {top.get('pile_id')}")
         cone_txt = "   ".join(f"{c['drone']} {c['bearing']}° ±{c['width'] // 2}° ({c['pile']})" for c in cones[:6]) or "no human-like bearing"
         return {"cones": cones, "top": {"class": top.get("class"), "lang": lang, "human": hs, "transcript": tx,
                                         "pile": top.get("pile_id"), "priority": top.get("priority")},
-                "text": f"Listen {n}  cones: {cone_txt}\n{line}" + (f"\n\"{tx}\"" if tx else "")}
+                "text": f"Listen {n}  cones: {cone_txt}\n{line}" + (f"\n\"{tx}\"" if tx else f"\n{heard}" if heard else "")}
 
     def _radar(self, st, lj, t):
         """The pod scan's own slow-time signal (vitals.identify on the actual IF cube), replayed from the moment
@@ -265,10 +348,12 @@ class HudModel:
         line = "Agent  -  searching"
         if dis:
             d = dis[-1]
+            dec = next((x for x in reversed(st.get("decisions") or []) if abs(float(x.get("t", -1)) - float(d.get("t", 0))) < 1e-6), None)
+            by = d.get("by") or (dec or {}).get("by") or "argmax"
             if d.get("to_pile"):
-                line = f"Agent  dispatching d1-d3 to {d['to_pile']}: {_short(d.get('reason'), 120)}"
+                line = f"Agent  dispatching d1-d3 to {d['to_pile']} [by: {by}]: {_short(d.get('reason'), 110)}"
             else:
-                line = f"Agent  stop: {_short(d.get('reason'), 120)}"
+                line = f"Agent  stop [by: {by}]: {_short(d.get('reason'), 110)}"
         if rp and (not dis or rp[-1]["t"] >= dis[-1].get("t", 0)):
             line = f"Agent  RE-PLAN t {rp[-1]['t']:.0f}: {_short(rp[-1]['why'], 120)}"
         pings = sorted((c for c in (st.get("pings") or []) if c.get("dig_score") is not None),
@@ -362,8 +447,11 @@ class OmniHud:
             self.lbl[key] = ui.Label("", word_wrap=wrap, height=0, style={"color": COL[color], "font_size": size})
 
         with ui.VStack(spacing=5, height=0):
+            label("badge", "green", 14)
+            label("banner", "yellow", 22)        # PLAN CHANGED: B2 -> A1 (new voice, unscripted input), ~5 s
             label("header", "white", 17)
             label("event", "blue", 15)
+            label("causal", "green", 15)          # action BECAUSE perception
             label("lidar", "purple")
             label("listen", "yellow")
             label("radar", "white")             # radar: red / white on dark (docs/img/radar_signatures.png)
@@ -393,6 +481,9 @@ class OmniHud:
     def draw(self, panels):
         for k, lab in self.lbl.items():
             lab.text = (panels.get(k) or {}).get("text", "")
+        if "badge" in self.lbl:                   # green while autonomous, blue on live input
+            live = (panels.get("badge") or {}).get("live")
+            self.lbl["badge"].style = {"color": COL["blue" if live else "green"], "font_size": 14}
         rd = panels.get("radar") or {}
         for key, src, n in (("wave", rd.get("wave"), self.WAVE_N), ("range", rd.get("range_db"), self.RANGE_N)):
             vals, (lo, hi) = self._fit(src, n)

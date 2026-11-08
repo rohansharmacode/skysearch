@@ -147,8 +147,15 @@ def _base_parser():
     g.add_argument("--allow-stub-acoustic", action="store_true",
                    help="--live outside --dry-run: start even if the REAL acoustic pipeline (.venv-audio worker) fails "
                         "its pre-flight. Rehearsal only: a take must not use the stub (docs/VIDEO_PLAN.md section 6)")
-    g.add_argument("--live-gemini", type=int, choices=[0, 1], default=0,
-                   help="--live real pipeline: Gemini audio stage on (adds seconds per listen + 10 RPM throttling)")
+    g.add_argument("--live-gemini", type=int, choices=[0, 1], default=1,
+                   help="--live real pipeline: Gemini audio stage on the gate listens (zh/id/vi transcripts come from "
+                        "Gemini; pod-mic listens never use it). Needs GEMINI_API_KEY in <repo>/.env")
+    g.add_argument("--gemini-budget", type=int, default=None,
+                   help="--live: max Gemini calls this run (default isaac/live.py GEMINI_BUDGET = 20, the free tier's "
+                        "~20/day/model, minus what the pre-flight used); past it listens run without the Gemini stage")
+    g.add_argument("--speaker-audio", choices=["off", "espeak", "any"], default=None,
+                   help="--live: loudspeaker call-out audio served to the dashboard. off (default with --live): none, "
+                        "Piper voice licences unclear; espeak: eSpeak NG renders only; any: as rendered. The ring stays")
     g.add_argument("--take-render", type=int, choices=[0, 1], default=None,
                    help="--live: stream frame-time settings (RTX real-time, DLSS performance, no reflections / "
                         "translucency / GI; isaac/live.py TAKE_RENDER). Default 1 with --live unless --rtx pathtracing")
@@ -833,6 +840,11 @@ def main(argv=None):
                                 else (a.live_quick_s or 1e12), preempt=a.preempt, acoustic=a.acoustic or "auto",
                                 radar=a.radar, keys=a.live_keys or L.DEFAULT_KEYS, log=say, clock=lambda: clock(),
                                 service=service)
+        if service is not None:
+            used = int((getattr(a, "acoustic_info", None) or {}).get("gemini_calls") or 0)
+            ctrl.gemini_budget = max(0, (a.gemini_budget if a.gemini_budget is not None else L.GEMINI_BUDGET) - used)
+            say(f"Gemini budget for the take: {ctrl.gemini_budget} call(s) (pre-flight used {used}); gate listens only")
+        L.set_speaker_audio(mission, a.speaker_audio or "off", log=say)
         if a.test_trigger:
             ctrl.test_triggers = L.parse_test_trigger(a.test_trigger)
             say(f"TEST TRIGGERS (dry run only, never in the take): {ctrl.test_triggers}")
@@ -965,7 +977,10 @@ def main(argv=None):
                 wall0 = now if wall0 is None else wall0
             if a.live_take and pace and ctrl is not None and cur.get("phase") == "acoustic":
                 a.speed = ctrl.listen_pace(t_render, L.pace_for(pace, "acoustic", base_speed))
-            runner.target(t_render + lead)
+            # the mission runs ahead of the picture: >= 1 sim s, and ~0.75 s of VIDEO in the threaded take, so a slow
+            # step (radar DSP, a scan signature) never catches up with the render while drones fly. A listen that
+            # waits for the acoustic pipeline holds only landed drones; the camera keeps its slow orbit.
+            runner.target(t_render + (max(lead, 0.75 * a.speed) if threaded else lead))
             for new in runner.drain():
                 prev, cur = cur, new
                 track.push(cur)

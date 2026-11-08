@@ -110,11 +110,19 @@ function heard(c) {                                 // what was said, in English
   let orig = en && tx !== en.replace(/…$/, '') ? c.transcript : '';
   // multilingual speech-to-text (live.json "heard"): the clip transcript is Whisper's English translation; the
   // words as spoken ride alongside. Show the meaning first, then the original language and words.
-  const H = LIVE && LIVE.heard && LIVE.heard[c.pile_id];
-  if (H && H.language && H.language !== 'en' && String(H.english || '').trim() === tx) { en = H.english; orig = H.original || ''; }
-  const nm = lang && lang !== 'en' ? esc(LANG[lang] || lang) : '';
-  const small = orig ? `<small>spoken${nm ? ' in ' + nm : ''}: “${esc(orig)}”${H && orig === H.original ? ' · machine-translated' : ''}</small>`
-                     : (nm ? `<small>spoken in ${nm} · machine-translated</small>` : '');
+  const H0 = LIVE && LIVE.heard && LIVE.heard[c.pile_id];
+  const H = H0 && H0.language && H0.language !== 'en' ? H0 : null;
+  let small = '';
+  if (H && H.english && String(H.english).trim() === tx) {          // translated: meaning first, then the words as spoken
+    en = H.english; orig = H.original || '';
+    small = `<small>spoken in ${esc(LANG[H.language] || H.language)}: “${esc(orig)}” · machine-translated</small>`;
+  } else if (H && !H.english && String(H.original || '').trim() === tx) {   // heard in a language, no translation
+    en = null;
+    small = `<small>spoken in ${esc(LANG[H.language] || H.language)} (not translated)</small>`;
+  } else {
+    const nm = lang && lang !== 'en' ? esc(LANG[lang] || lang) : '';
+    small = orig ? `<small>heard${nm ? ' in ' + nm : ''}: “${esc(orig)}”</small>` : '';
+  }
   return (en ? `“${esc(en)}”` : `“${esc(c.transcript)}”`) + small;
 }
 let LIVE = null, HUD = null, firstEv = null, evSeenAt = null, opRev = null, opT = null, listenT0 = null;
@@ -181,8 +189,12 @@ function caption(b, s, ev) {
   if (b === 5) {
     const to = esc(d ? d.to_pile : 'a new area');
     // "Plan changed" only when the re-plan really follows the change: the new voice's pile, or an operator zone
+    // live.json banner (LiveController._track_dispatch): what the fleet would have done without the live input
+    const bm = /PLAN CHANGED: (\S+) → (\S+)/.exec((LIVE && LIVE.banner && LIVE.banner.text) || '');
+    const was = bm && bm[2] === (d && d.to_pile) && /^[A-Z]\d$/.test(bm[1]) && bm[1] !== bm[2] ? esc(bm[1]) : null;
     if (ev && ev.kind === 'stage' && d && d.to_pile === ev.ev.sector)
-      return ['Plan changed', `The drones heard the new voice and decided by themselves to search ${to} next, because that is where it came from.`];
+      return ['Plan changed', was ? `Before the new voice, the drones planned to search ${was} next. They heard it themselves and now go to ${to} instead.`
+                                  : `The drones heard the new voice and decided by themselves to search ${to} next, because that is where it came from.`];
     if (ev && ev.kind === 'zone') return ['Plan changed', `The drones decided by themselves to search ${to} next.`];
     const why = /voice|acoustic|heard|priority/i.test((d || {}).reason || '') ? ', because the strongest voice came from there' : '';
     return ['The swarm decides', `The drones decided by themselves to search ${to} next${why}.`];

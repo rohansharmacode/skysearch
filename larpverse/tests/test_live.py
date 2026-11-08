@@ -146,7 +146,15 @@ def test_hud_noop_import():
     p = h.update(state, None, 1000, now=1.0, force=True)
     assert "irregular breathing with pauses - check first" in p["vitals"]["text"]
     assert "not a diagnosis" in p["vitals"]["text"]
-    assert "B1" in p["decision"]["text"] and "A2-R1" in p["decision"]["text"]
+    assert "B1" in p["decision"]["text"] and "A2-R1" in p["decision"]["text"] and "[by: argmax]" in p["decision"]["text"]
+    st2 = dict(state, pings=[{"id": "A2-R1", "t_found": 275.0, "dig_score": 0.4, "vitals": {"condition": "unconscious_slow"}}],
+               acoustic_clips=[{"listen": 2, "pile_id": "A1", "drone_id": "d2", "bearing_deg": 90, "width_deg": 20,
+                                "class": "voice", "transcript": "", "priority": 56, "scores": {"human": 0.8}}],
+               decisions=[{"t": 381.0, "by": "gemini"}])
+    p2 = HudModel(bounds=state["site"]["bounds"]).update(st2)
+    assert "deep rest or reduced consciousness" in p2["vitals"]["text"] and "possibly unconscious" not in p2["vitals"]["text"]
+    assert "voice-like, language not identified" in p2["listen"]["text"]                 # nothing promised
+    assert "[by: gemini]" in p2["decision"]["text"]
     assert p["listen"]["cones"][0]["drone"] == "d1" and p["lidar"]["coverage"] > 0
     assert HudModel(speed=8).update(state)["header"]["text"].count("sped up") == 1
     assert _no_omni()
@@ -244,6 +252,14 @@ def test_live_dryrun_with_trigger(tmp_path):
     sig = live["last_scan"]["sig"]
     assert sig["final"]["source"] and len(sig["wave_mm"]) >= 10 * 20
     assert s["camera_shots"][0][1] == "van"
+    # judging: perception-driven action, adaptation, autonomy - all visible
+    assert live["badge"].startswith(("LIVE INPUT", "AUTONOMOUS"))
+    assert live["badge"] != "AUTONOMOUS \u00b7 no operator input"            # the live input was registered
+    assert live["banner"] and live["banner"]["text"].startswith("PLAN CHANGED: A2 \u2192 A1")
+    assert any("BECAUSE" in c["text"] for c in live["causal"])
+    assert {"causal", "banner", "badge"} <= set(hud["panels"])
+    st = json.loads((out / "state.json").read_text())                        # speaker audio muted for the take
+    assert st.get("broadcasts") is not None and not any(b.get("audio_url") for b in st["broadcasts"])
     assert _no_omni()
 
 
@@ -268,3 +284,27 @@ def test_real_acoustic_preflight_fails_loudly(tmp_path):
         pytest.skip("dummy audio assets not present")
     assert all(os.path.exists(x["clip"]) and x["clip"].endswith(".wav") for x in src)
     assert {x["kind"] for x in src} >= {"voice", "weak_voice", "knock"}
+
+
+def test_causal_lines_and_rejection():
+    from isaac.hud import HudModel, causal_lines
+    st = {"t": 500.0,
+          "dispatch": [{"t": 494.0, "from_pile": "A2", "to_pile": "A1", "reason": "x", "by": "argmax"}],
+          "acoustic_clips": [{"listen": 2, "pile_id": "A1", "class": "voice", "doa_agree": "3/3", "priority": 84}],
+          "pings": [{"id": "A2-R1", "t_found": 364.0, "support": 3, "evidence": ["s4", "s5", "s6", "s7", "s9"],
+                     "vitals": {"rate_bpm": 9.0}}],
+          "piles": [{"id": "C3", "radar_note": "radar return rejected: level shift, settling debris (not a person)"}],
+          "pods": [{"drone_id": "d2", "xy": [-21.0, 3.0], "status": "scanning"}],
+          "landing_sites": [{"id": "A1-P3", "xy": [-21.2, 3.1], "pod": True, "slope_deg": 6.2, "roughness": 0.012,
+                             "winch_m": 6.8}]}
+    lines = [c["text"] for c in causal_lines(st, n=10)]
+    assert any(l.startswith("d1-d3 \u2192 A1 BECAUSE voice heard, 3/3 drones agree on bearing") for l in lines), lines
+    assert any(l.startswith("PING A2-R1 BECAUSE 3 agreeing radar ranges from 5 scans, breathing 9/min") for l in lines)
+    assert any("pod d2 placed at A1-P3 BECAUSE best-scored flat seat on the LiDAR map" in l for l in lines)
+    assert any(l == "C3: not a person: settling debris \u2192 no dig" for l in lines)
+    lj = {"last_scan": {"t": 501.0, "scan_id": "s12", "sig": {"final": {"source": "machinery"}}},
+          "badge": "AUTONOMOUS \u00b7 no operator input", "banner": {"text": "PLAN CHANGED: B2 \u2192 A1", "since": 0.0}}
+    p = HudModel().update(st, lj, now=3.0)
+    assert "radar s12: not a person: machinery / generator vibration \u2192 no dig" in p["causal"]["text"]
+    assert p["banner"]["active"] and HudModel().update(st, lj, now=9.0)["banner"]["text"] == ""   # ~5 s on screen
+    assert not p["badge"]["live"]

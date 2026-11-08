@@ -6,8 +6,8 @@
 set -u
 BROWSER=""; if [ "${1:-}" = "--browser" ]; then BROWSER=1; shift; fi
 [ $# -gt 0 ] || { echo "usage: scripts/heavy.sh [--browser] <command> [args...]" >&2; exit 2; }
-SLOTS=${HEAVY_SLOTS:-2}; MEM=${HEAVY_MEM:-4G}; SWAP=${HEAVY_SWAP:-512M}
-MIN_FREE_MB=${HEAVY_MIN_FREE_MB:-1500}
+SLOTS=${HEAVY_SLOTS:-1}; MEM=${HEAVY_MEM:-4G}; SWAP=${HEAVY_SWAP:-512M}
+MIN_FREE_MB=${HEAVY_MIN_FREE_MB:-1800}
 LOCKDIR=${XDG_RUNTIME_DIR:-/tmp}/larpverse-heavy; QDIR="$LOCKDIR/queue"; mkdir -p "$QDIR"
 export OMP_NUM_THREADS=${OMP_NUM_THREADS:-2} OPENBLAS_NUM_THREADS=${OPENBLAS_NUM_THREADS:-2} MKL_NUM_THREADS=${MKL_NUM_THREADS:-2}
 avail_mb() { awk '/^MemAvailable:/ { print int($2/1024) }' /proc/meminfo; }

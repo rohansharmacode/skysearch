@@ -40,6 +40,8 @@ SOUND_PERIOD = 2.2              # s (wall clock): one wave
 SOUND_WAVES = 2
 SIMPLE = False                  # --overlay-style simple: no grey non-human domes, fewer LiDAR beams
 BEAM_MAX = 28.0                 # m: LiDAR beams drawn at most this long (take2: far returns streaked to the frame edge)
+SIMPLE_BEAMS, SIMPLE_BEAM_MAX = 8, 18.0   # simple style: a short downward fan per drone; longer (shallow) rays are
+                                          # dropped, not cut (reh5b 10 s: rays to far returns read as rain / wires)
 RADAR_R = 3.5                   # m: pulse ring radius at the end (the literature reach ~3 m)
 RADAR_PERIOD = 1.3
 RADAR_WAVES = 3
@@ -287,10 +289,14 @@ class SensorFX(NullFX):
         P0, P1 = [], []
         for did, (o, pts) in self._beams.items():
             pts = np.asarray(pts, float)[:, :3]
-            nb = BEAMS_PER_DRONE // 2 if SIMPLE else BEAMS_PER_DRONE
+            o = np.asarray(o, float)
+            if SIMPLE and len(pts):
+                pts = pts[np.linalg.norm(pts - o[None], axis=1) <= SIMPLE_BEAM_MAX]
+                if not len(pts):
+                    continue
+            nb = SIMPLE_BEAMS if SIMPLE else BEAMS_PER_DRONE
             if len(pts) > nb:
                 pts = pts[np.linspace(0, len(pts) - 1, nb).astype(int)]
-            o = np.asarray(o, float)
             d = pts - o[None]
             L = np.linalg.norm(d, axis=1, keepdims=True)
             pts = o[None] + d * np.minimum(1.0, BEAM_MAX / np.maximum(L, 1e-6))

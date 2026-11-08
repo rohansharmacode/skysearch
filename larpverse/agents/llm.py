@@ -16,6 +16,12 @@ Audio (Gemini only): ``call_json_audio(prompt, wav_bytes, schema)`` sends one cl
 cache, keyed additionally by the SHA-256 of the audio bytes. ``meta["usage"]`` gets Gemini's token
 counts when the API reports them.
 
+On-drone model: ``LLM_PROVIDER=gemma`` routes every call (text and audio) to a local Gemma 4 server
+(GEMMA_URL, default http://127.0.0.1:8090/v1/chat/completions; OpenAI chat format, audio as an
+``input_audio`` part; see scripts/gemma_server.py). No key and no network: it stands in for the
+model running on each drone's own computer. Requests for "gemini" are served by it too, and every
+result is labelled provider "gemma", so nothing claims Gemini when Gemma answered.
+
 Stdlib only (urllib), no SDKs.
 """
 from __future__ import annotations
@@ -36,8 +42,9 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CACHE_PATH = os.path.join(ROOT, "agents", "cache", "llm.jsonl")
 GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
 ANTHROPIC_URL = "https://api.anthropic.com/v1/messages"
-DEFAULT_MODELS = {"gemini": "gemini-3.7-flash", "anthropic": "claude-opus-5-5"}
-PROVIDERS = ("gemini", "anthropic", "none")
+DEFAULT_MODELS = {"gemini": "gemini-3.7-flash", "anthropic": "claude-opus-5-5", "gemma": "gemma-4-E2B-it"}
+PROVIDERS = ("gemini", "anthropic", "gemma", "none")
+GEMMA_URL = "http://127.0.0.1:8090/v1/chat/completions"
 
 _env_loaded = False
 
@@ -85,6 +92,8 @@ def resolve(provider=None) -> tuple[str, str | None]:
     """(provider, model). provider 'none' means no LLM (callers use their deterministic fallback)."""
     load_dotenv()
     p = (provider or os.environ.get("LLM_PROVIDER") or "").strip().lower()
+    if os.environ.get("LLM_PROVIDER", "").strip().lower() == "gemma" and p != "none":
+        p = "gemma"                                   # on-drone Gemma answers every call, labelled as Gemma
     if p not in PROVIDERS:
         if os.environ.get("GEMINI_API_KEY"):
             p = "gemini"
@@ -94,7 +103,7 @@ def resolve(provider=None) -> tuple[str, str | None]:
             p = "gemini" if replay_only() else "none"     # replay a recorded Gemini run with no key
     if p == "none":
         return "none", None
-    model = os.environ.get("GEMINI_MODEL" if p == "gemini" else "ANTHROPIC_MODEL") or DEFAULT_MODELS[p]
+    model = os.environ.get({"gemini": "GEMINI_MODEL", "gemma": "GEMMA_MODEL"}.get(p, "ANTHROPIC_MODEL")) or DEFAULT_MODELS[p]
     return p, model
 
 
@@ -107,6 +116,8 @@ def available(provider=None) -> bool:
 
 
 def _key(p):
+    if p == "gemma":
+        return "local"                                # no key: the model runs on the drone's computer
     return os.environ.get("GEMINI_API_KEY" if p == "gemini" else "ANTHROPIC_API_KEY", "").strip()
 
 
@@ -213,7 +224,8 @@ def _retry_after(e, body):
 def _http_post(url, headers, body, timeout):
     """POST JSON, return the decoded JSON response. Raises HTTPError / OSError / ValueError.
     Real requests pass the provider's token bucket first (tests replace this function, so no throttling)."""
-    bucket("anthropic" if "anthropic.com" in url else "gemini").acquire()
+    if url.startswith("https://"):                  # cloud APIs only; the local Gemma server is not rate limited
+        bucket("anthropic" if "anthropic.com" in url else "gemini").acquire()
     req = urllib.request.Request(url, data=json.dumps(body).encode(), method="POST",
                                  headers=dict(headers, **{"content-type": "application/json"}))
     try:
@@ -326,6 +338,26 @@ def _anthropic(model, system, prompt, schema, timeout, max_tokens, temperature):
     return _parse_json_text(text)
 
 
+def _gemma(model, system, prompt, schema, timeout, max_tokens, temperature, audio=None, usage=None, **_):
+    """Local Gemma 4 (OpenAI chat format). audio: optional (mime, bytes) sent as an input_audio part."""
+    content = [{"type": "text", "text": prompt + ("\n\nAnswer with one JSON object only." if schema else "")}]
+    if audio is not None:
+        fmt = "mp3" if "mp3" in audio[0] or "mpeg" in audio[0] else "wav"
+        content.insert(0, {"type": "input_audio", "input_audio": {"data": base64.b64encode(audio[1]).decode(), "format": fmt}})
+    msgs = ([{"role": "system", "content": system}] if system else []) + [{"role": "user", "content": content}]
+    body = {"model": model, "messages": msgs, "max_tokens": max_tokens, "temperature": temperature,
+            "response_format": {"type": "json_object"}}
+    if schema:
+        body["json_schema"] = schema                      # advisory; the server may use it for guided output
+    url = os.environ.get("GEMMA_URL") or GEMMA_URL
+    resp = _post_retry(url, {}, body, timeout, retries=1)
+    if usage is not None and isinstance(resp.get("usage"), dict):
+        usage.update({k: v for k, v in resp["usage"].items() if isinstance(v, int)})
+    ch = (resp.get("choices") or [{}])[0]
+    text = ((ch.get("message") or {}).get("content")) or ""
+    return _parse_json_text(text)
+
+
 RETRY_STATUS = (429, 500, 502, 503, 504)
 
 
@@ -390,7 +422,7 @@ def call_json(prompt, schema=None, *, system=None, provider=None, timeout=25, ma
         return None
     t0 = time.time()
     try:
-        fn = _gemini if p == "gemini" else _anthropic
+        fn = {"gemini": _gemini, "gemma": _gemma}.get(p, _anthropic)
         out = fn(model, system, prompt, schema, timeout, max_tokens, temperature)
     except HTTPError as e:
         m["error"] = f"{p} HTTP {e.status}" + (" (daily quota)" if e.daily_quota else "")
@@ -427,19 +459,21 @@ def call_json_audio(prompt, wav_bytes: bytes, schema=None, *, system=None, mime=
     m = meta if meta is not None else {}
     p, _ = resolve(provider)
     model = model or resolve("gemini")[1]
+    if p == "gemma":
+        model = resolve("gemma")[1]
     asha = hashlib.sha256(wav_bytes or b"").hexdigest()
     m.update(provider=p, model=model, cached=False, latency_ms=0.0,
              error=None, busy=False, audio_sha=asha[:16], usage={}, throttled_ms=0.0)
     if p == "none":
         m["error"] = "no LLM provider configured"
         return None
-    if p != "gemini":
-        m["error"] = f"audio input needs gemini (provider is {p})"
+    if p not in ("gemini", "gemma"):
+        m["error"] = f"audio input needs gemini or gemma (provider is {p})"
         return None
     if not wav_bytes:
         m["error"] = "empty audio"
         return None
-    key = cache_key("gemini", model, system, f"{prompt}\n[audio {mime} sha256 {asha}]", schema)
+    key = cache_key(p, model, system, f"{prompt}\n[audio {mime} sha256 {asha}]", schema)
     if cache or replay_only():
         hit = cache_get(key, cache_path)
         if isinstance(hit, dict):
@@ -448,22 +482,22 @@ def call_json_audio(prompt, wav_bytes: bytes, schema=None, *, system=None, mime=
     if replay_only():
         m["error"] = "replay miss"
         return None
-    if not _key("gemini"):
+    if not _key(p):
         m["error"] = "no gemini API key"
         return None
     t0, w0 = time.time(), bucket("gemini").waited_s
     try:
-        out = _gemini(model, system, prompt, schema, timeout, max_tokens, temperature,
-                      audio=(mime, wav_bytes), usage=m["usage"], thinking=thinking, retries=retries)
+        out = (_gemma if p == "gemma" else _gemini)(model, system, prompt, schema, timeout, max_tokens, temperature,
+                                                    audio=(mime, wav_bytes), usage=m["usage"], thinking=thinking, retries=retries)
     except HTTPError as e:
-        m["error"] = f"gemini HTTP {e.status}" + (" (daily quota)" if e.daily_quota else "")
+        m["error"] = f"{p} HTTP {e.status}" + (" (daily quota)" if e.daily_quota else "")
         m["busy"] = e.status in RETRY_STATUS
         out = None
     except (OSError, ValueError, TypeError, KeyError, AttributeError) as e:
-        m["error"] = f"gemini {type(e).__name__}: {str(e)[:120]}"
+        m["error"] = f"{p} {type(e).__name__}: {str(e)[:120]}"
         out = None
     except Exception as e:                                      # noqa: BLE001
-        m["error"] = f"gemini {type(e).__name__}"
+        m["error"] = f"{p} {type(e).__name__}"
         out = None
     m["throttled_ms"] = round((bucket("gemini").waited_s - w0) * 1000, 1)       # client-side rate-limit wait
     m["latency_ms"] = round((time.time() - t0) * 1000 - m["throttled_ms"], 1)
@@ -471,5 +505,5 @@ def call_json_audio(prompt, wav_bytes: bytes, schema=None, *, system=None, mime=
         m["error"], out = "response is not a JSON object", None
     ok = out is not None and (validate is None or _safe_validate(validate, out))
     if ok and cache:
-        cache_put(key, "gemini", model, out, cache_path)
+        cache_put(key, p, model, out, cache_path)
     return out

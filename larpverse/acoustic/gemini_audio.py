@@ -389,7 +389,7 @@ def analyse_clip(clip, *, cand=None, mode="auto", whisper=None, cache_path=None,
         clip = resample_poly(clip, FS, fs)
     meta, err, busy = {}, None, False
     t0 = time.time()
-    use = mode in ("live", "replay") or (mode == "auto" and llm.resolve()[0] == "gemini" and llm.available())
+    use = mode in ("live", "replay") or (mode == "auto" and llm.resolve()[0] in ("gemini", "gemma") and llm.available())
     if use and mode != "replay" and not llm.replay_only() and _breaker_open():
         use, err, busy = False, "gemini HTTP 429: circuit open for 10 min", True
     if use:
@@ -422,7 +422,7 @@ def analyse_clip(clip, *, cand=None, mode="auto", whisper=None, cache_path=None,
                 finally:
                     if mode == "replay" and prev2 is None:
                         os.environ.pop("LLM_REPLAY", None)
-            out.update(by="gemini", model=meta.get("model"), cached=meta.get("cached", False),
+            out.update(by=meta.get("provider") if meta.get("provider") == "gemma" else "gemini", model=meta.get("model"), cached=meta.get("cached", False),
                        latency_ms=meta.get("latency_ms", 0.0), throttled_ms=meta.get("throttled_ms", 0.0), usage=meta.get("usage") or {},
                        audio_s=round(min(len(clip) / FS, MAX_CLIP_S), 2), error=None)
             return out
@@ -560,7 +560,7 @@ def analyse_sector_audio(items, *, mode="auto", whisper=None, max_forward=3, cac
         for g in groups:
             a = analyse_clip(g["clip"], cand=g, mode=mode, whisper=whisper, cache_path=cache_path)
             g["analysis"] = a
-            if a["by"] == "gemini":
+            if a["by"] in ("gemini", "gemma"):
                 st2["calls"] += 0 if a["cached"] else 1
                 st2["cached"] += 1 if a["cached"] else 0
             else:
@@ -643,10 +643,11 @@ def sector_rationale(tasks, mode="auto", cache_path=None):
         if mode == "replay" and prev is None:
             os.environ.pop("LLM_REPLAY", None)
     got = _valid_rationales(out, use) if out else {}
+    who = "gemma" if meta.get("provider") == "gemma" else "gemini"
     for t in use:
         if t["pile_id"] in got:
-            t["rationale"], t["rationale_by"] = got[t["pile_id"]], "gemini"
-    return {"by": "gemini" if got else "template", "error": meta.get("error"), "cached": meta.get("cached"),
+            t["rationale"], t["rationale_by"] = got[t["pile_id"]], who
+    return {"by": who if got else "template", "error": meta.get("error"), "cached": meta.get("cached"),
             "latency_ms": meta.get("latency_ms"), "model": meta.get("model")}
 
 

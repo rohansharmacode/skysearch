@@ -47,6 +47,7 @@ Paused by the user at about 23:15 and resumed at about 23:20. All 11 agents were
   - concept animation https://claude.ai/artifact/6bb51FL1ULwMKTcGqkVHz4
   - grid animation (seed 7) https://claude.ai/artifact/U5RX772n8VKTTGPA8yEWxZ (publish with `files={"scenario_seed7.js": …}`)
   - agent decision map https://claude.ai/artifact/2DJSXqUQfkZGjKfFifxjay
+  - evidence brief (docs/evidence/index.html) https://claude.ai/artifact/HYhY73KRdgBhbGxrbE1d8Q; republish after the impact re-run
 - **Videos:** in `media/`, gitignored. Uploaded to team release `larpverse-storyboard`: grid-search, concept and grid-seed7.
 - **Network outage recovery:** wait for `getent hosts api.anthropic.com`, then resume each agent with SendMessage by ID ("check git status, rerun what failed").
 

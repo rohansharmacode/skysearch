@@ -1,0 +1,59 @@
+<!doctype html>
+<!-- The take's unscripted change, from any browser (phone or laptop) that reaches scripts/serve.py:
+       http://localhost:8765/isaac/hud/live_button.html          (port-forwarded), or the Brev /proxy/8765/ URL
+     The teammate (not the camera operator) presses the button at a moment they choose. It writes
+     dashboard/data/live_cmd.json via POST /api/live, the same file `python3 isaac/live.py --cmd activate` writes;
+     the running take applies it within about 1 s and logs "STAGE EVENT ... activated". Nothing is scheduled.
+     ?id=H2_A1_id (default, Indonesian voice near A1) or ?id=H1_C3_vi (Vietnamese voice near C3). -->
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Larpverse: live change</title>
+<style>
+  body { margin:0; font:18px/1.4 Inter, system-ui, sans-serif; background:#0d1115; color:#e8edf1;
+         display:flex; flex-direction:column; align-items:center; justify-content:center; min-height:100vh; padding:20px; box-sizing:border-box; }
+  h1 { font-size:22px; margin:0 0 6px; } p { color:#a7b0b8; max-width:520px; text-align:center; margin:6px 0 22px; }
+  button { font:700 26px Inter, system-ui, sans-serif; padding:28px 36px; border-radius:18px; border:0; cursor:pointer;
+           background:#ffb020; color:#111; min-width:300px; } button:disabled { background:#4a5158; color:#c9ced2; cursor:default; }
+  #st { margin-top:22px; min-height:60px; text-align:center; max-width:560px; } .ok { color:#4fd18b; } .bad { color:#ff6b6b; }
+  small { color:#7d8790; }
+</style></head>
+<body>
+  <h1>Unscripted live change</h1>
+  <p>Press once, at a moment you choose, while the drones are working. It switches on a hidden simulated voice in the
+     rubble. Nobody tells the drones; they have to hear it themselves.</p>
+  <button id="go">Switch on the hidden voice</button>
+  <div id="st"><small id="who"></small></div>
+<script>
+const Q = new URLSearchParams(location.search);
+const ID = Q.get('id') || 'H2_A1_id';
+const NEAR = { H2_A1_id: 'near A1 (Indonesian)', H1_C3_vi: 'near C3 (Vietnamese)' }[ID] || ID;
+const API = new URL('../../api/live', location.href).href, LIVE = new URL('../../dashboard/data/live.json', location.href).href;
+document.getElementById('who').textContent = `Voice: ${NEAR}`;
+const st = document.getElementById('st'), go = document.getElementById('go');
+let sentAt = null;
+go.onclick = async () => {
+  go.disabled = true; st.innerHTML = 'Sending…';
+  try {
+    const r = await fetch(API, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ cmd: 'activate', id: ID }) });
+    if (!r.ok) throw new Error((await r.json()).error || r.status);
+    sentAt = Date.now() / 1000;
+    st.innerHTML = 'Sent. Waiting for the simulation to confirm…';
+    confirmLoop();
+  } catch (e) { st.innerHTML = `<span class="bad">Could not send: ${e.message}</span>`; go.disabled = false; }
+};
+async function confirmLoop() {
+  for (let i = 0; i < 20; i++) {
+    await new Promise(r => setTimeout(r, 500));
+    try {
+      const L = await (await fetch(LIVE + '?ts=' + Date.now(), { cache: 'no-store' })).json();
+      const ev = L.last_event;
+      if (ev && ev.id === ID && ev.what === 'activated') {
+        st.innerHTML = `<span class="ok">Done: the simulation switched the voice on at mission time ${Math.round(ev.t)} s.</span>`;
+        return;
+      }
+    } catch (e) { }
+  }
+  st.innerHTML = '<span class="bad">No confirmation from the simulation after 10 s. Is the take running? ' +
+                 'Fallback: <code>python3 isaac/live.py --cmd activate --id ' + ID + '</code></span>';
+}
+</script>
+</body></html>

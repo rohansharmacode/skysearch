@@ -1573,14 +1573,19 @@ class TakeCamera:
         if pile is not None:
             pz = float(self.surface(*pile))
             if ph in ("survey", "recon", "mapping"):
-                return "survey", np.array([pile[0], pile[1], pz + 2.0]), 42.0, 26.0, None
+                # 34 m out, 20 m up (was 42/26): rehearsal 1 showed the drones only 40-100 px wide at the old distance
+                return "survey", np.array([pile[0], pile[1], pz + 2.0]), 34.0, 20.0, None
             if ph in ("landing", "radar", "relocate", "rescan", "vitals"):
                 pods = [p for p in ((st or {}).get("pods") or []) if p.get("status") in ("lowering", "scanning")]
                 c = np.mean([[p["xy"][0], p["xy"][1]] for p in pods], 0) if pods else np.array(pile[:2])
                 look = np.array([0.5 * c[0] + 0.5 * pile[0], 0.5 * c[1] + 0.5 * pile[1], pz + 1.5])
-                return "pods", look, 32.0, 32.0 * math.tan(math.radians(self.MID_DOWN_DEG)), None
+                return "pods", look, 28.0, 28.0 * math.tan(math.radians(self.MID_DOWN_DEG)), None
             if ph == "acoustic":
-                return "listen", np.array([pile[0], pile[1], pz + 1.0]), 48.0, 30.0, None
+                # the landed drones (rotors off, one calling out) with the pile behind them, 28 m / 12 m: at the old
+                # 48 m / 30 m wide shot the landed drones were nearly invisible (rehearsal 1)
+                c = np.mean([p[:2] for p in P], 0) if P else np.array(pile[:2])
+                look = np.array([0.65 * c[0] + 0.35 * pile[0], 0.65 * c[1] + 0.35 * pile[1], pz + 1.0])
+                return "listen", look, 28.0, 12.0, None
         pings = (st or {}).get("pings") or []
         if ph in ("done", "battery_swap") or not P:
             c = np.mean([q["xy"] for q in pings], 0) if pings else self.base + [0, 40.0]
@@ -1594,6 +1599,16 @@ class TakeCamera:
             dz = (az - self.az + math.pi) % (2 * math.pi) - math.pi
             self.az += dz * 0.03                       # swing behind the direction of travel, gently
         eye = look + [d * math.cos(self.az), d * math.sin(self.az), h]
+        if self.pile_xy and name in ("survey", "pods", "listen", "event"):
+            # keep the low shots over the open site: the optional town (isaac/town.py) starts just outside the pile
+            # field, and a 12 m-high listen eye 28 m out must not end up inside a building
+            P = np.array(list(self.pile_xy.values()), float)[:, :2]
+            lo, hi = P.min(0) - 17.0, P.max(0) + 17.0
+            for _ in range(8):
+                if lo[0] <= eye[0] <= hi[0] and lo[1] <= eye[1] <= hi[1]:
+                    break
+                d, h = d * 0.88, h * 0.94
+                eye = look + [d * math.cos(self.az), d * math.sin(self.az), h]
         gz = float(self.surface(eye[0], eye[1])) + (1.5 if name in ("van", "liftoff") else 4.0)
         eye[2] = max(eye[2], gz)                       # never below the rubble
         if name != self.shot or np.linalg.norm(eye - self.goal[0]) > 20.0:

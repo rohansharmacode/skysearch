@@ -91,7 +91,7 @@ const vnow = () => (window.__vt != null ? window.__vt : performance.now() / 1000
 
 const BEATS = ['Launch', 'Map', 'Radar', 'Listen', 'Live change', 'Re-plan', 'New area'];
 $('steps').innerHTML = BEATS.map(b => `<div>${b}</div>`).join('');
-const COL = { LIDAR: 'var(--lidar)', RADAR: 'var(--radar)', FOUND: 'var(--ping)', SOUND: 'var(--sound)', CHANGE: 'var(--amber)',
+const COL = { LIDAR: 'var(--lidar)', RADAR: 'var(--radar)', FOUND: 'var(--ping)', SOUND: 'var(--sound)', SPEAKER: 'var(--sound)', CHANGE: 'var(--amber)',
               DECISION: 'var(--ok)', FLYING: 'var(--grey)', FLEET: 'var(--grey)' };
 const GLOSS = { voice: 'Help! Can anyone hear me?', weak_voice: 'Anyone there… water…', knock: '(knocking)', tapping: '(tapping)' };
 
@@ -113,7 +113,8 @@ function heard(c) {                                 // what was said, in English
 }
 let LIVE = null, HUD = null, firstEv = null, evSeenAt = null, opRev = null, opT = null, listenT0 = null;
 const SEEN = new Set();                            // story steps that have really been on screen
-let shown = { beat: -1, at: -1e9, title: '' }, rowsAt = -1e9, sayKey = '', waveKey = '', maxBeat = -1;
+let shown = { beat: -1, at: -1e9, title: '' }, rowsAt = -1e9, sayKey = '', waveKey = '', maxBeat = -1, sayAt = -1e9, forceSense = false;
+const SAY_HOLD_S = 3;                              // the sensing line never flips faster than this (pods up/down at x24)
 
 const esc = x => String(x ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const f0 = v => (v == null || isNaN(v)) ? '–' : Math.round(+v).toString();
@@ -167,7 +168,7 @@ function caption(b, s, ev) {
   if (b === 1) return ['Mapping the rubble', 'A laser scanner on each drone (LiDAR, the purple dots) builds a 3D map, so the drones know where they can safely put their sensors.'];
   if (b === 2 && here.length) return ['Breathing-like signal found', 'The radar picked up a steady breathing rhythm under the rubble. Rescuers get a place to check first. It is a lead, not a confirmed person.'];
   if (b === 2) return ['Feeling for breathing', 'Each drone lowers a radar pod onto the rubble on a cable. The radar can feel the tiny chest movement of breathing up to about 3 m down.'];
-  if (b === 3) return ['Listening', 'The drones land and switch their rotors off, so their microphones can hear voices and knocking from under the rubble.'];
+  if (b === 3) return ['Listening', 'The drones land and switch their rotors off. One calls out over its loudspeaker; then they all listen for voices and knocking from under the rubble.'];
   if (b === 4 && ev && ev.kind === 'stage')
     return ['Live change (unscripted)', `A teammate has just switched on a hidden voice near ${esc(ev.ev.sector || 'another pile')}. Nobody tells the drones. They have to hear it themselves.`];
   if (b === 4) return ['Live change (unscripted)', 'The operator has just added a new search area. Nobody tells the drones what to do next.'];
@@ -267,9 +268,28 @@ function sense(b, s, ev) {
         ['Drones that agree', String(c.doa_agree || '–')]],
         heard(c)];
     }
+    // no result yet: say what is happening now from the run's own call-out record (state.callouts / broadcasts)
+    const since = listenT0 != null ? listenT0 - 1 : t - 200;
+    const bc = (s.broadcasts || []).filter(x => +x.t >= since && +x.t <= t + 0.5).slice(-1)[0];
+    const co = (s.callouts || []).filter(x => +x.t_start - 30 <= t && t <= +x.t_end + 1).slice(-1)[0];
+    const step = co && (co.steps || []).find(x => +x.t0 <= t && t < +x.t1);
+    if (step && step.step === 'listen')
+      return ['SOUND', 'Silence again: listening for an answer to the call-out', [['Drones listening', `${n} of ${drones.length}`],
+          ['Listening for', 'knocking or a voice'], ['Time left', `${f0(+step.t1 - t)} s (mission time)`]], null];
+    if (bc && t - +bc.t < 30) {
+      const lang = LANG[bc.lang] || bc.lang, who = esc(bc.drone_id || 'a drone');
+      const quote = `“${esc(bc.text_en || bc.text)}”` + (bc.lang !== 'en' && bc.text ? `<small>said in ${esc(lang)}: “${esc(bc.text)}”</small>` : '');
+      if (bc.kind === 'callout')
+        return ['SPEAKER', `Loudspeaker call-out from drone ${who}`, [['Languages', 'Mandarin, Taiwanese Hokkien, English'],
+            ['Now', lang], ['Then', 'all drones listen in silence for knocks or a voice']], quote];
+      if (bc.kind === 'reassure')
+        return ['SPEAKER', 'Reassurance for anyone who answered', [['Now', lang], ['Why', 'an answer came from this direction']], quote];
+      if (bc.kind === 'guidance')
+        return ['SPEAKER', 'Directions for someone who can walk out', [['Now', lang], ['Route', 'kept clear of the rubble']], quote];
+    }
     const left = m.listen_ends != null ? Math.max(0, Math.round(m.listen_ends - t)) : null;
-    return ['SOUND', 'Rotors off. Listening for voices and knocking…', [['Drones listening', `${n} of ${drones.length}`],
-        ['Result in', left != null ? `${left} s (mission time)` : '–']], null];
+    return ['SOUND', 'Rotors off. Listening in silence for voices and knocking…', [['Drones listening', `${n} of ${drones.length}`],
+        ['Quiet time left', left != null && left > 0 ? `${left} s (mission time)` : 'analysing what was heard…']], null];
   }
   return ['FLEET', 'Standing by', [['Drones', String(drones.length)]], null];
 }
@@ -299,6 +319,8 @@ function drawWave(sc) {
   if (key !== waveKey) { waveKey = key; drawWave.born = born; }
   const frac = Math.min(1, (vnow() - born) / 1.6);                 // draw the trace on over 1.6 s, not instantly
   const v = sc.vitals || {};
+  // a scan with no breathing-like return (no rate, no range): its trace is noise, so say so and draw it grey, no dots
+  const none = !v.rate_bpm && !sc.breathing_hz && !(sc.ranges && sc.ranges.length);
   const dur = +v.duration_s || null;                               // scan window (s); unknown before vitals exist
   const L = 64, R = 14, T = 24, B = 44, pw = W - L - R, ph = H - T - B;
   const amp = Math.max(...w.map(Math.abs)) || 1;                   // symmetric scale: 0 = chest at rest position
@@ -308,7 +330,7 @@ function drawWave(sc) {
   g.beginPath(); g.moveTo(L, T + ph / 2); g.lineTo(L + pw, T + ph / 2); g.stroke();          // rest line
   g.beginPath(); g.moveTo(L, T); g.lineTo(L, T + ph); g.lineTo(L + pw, T + ph); g.stroke(); // axes
   g.save(); g.translate(22, T + ph / 2); g.rotate(-Math.PI / 2); g.textAlign = 'center';
-  g.fillText('chest', 0, 0); g.restore();
+  g.fillText(none ? 'signal' : 'chest', 0, 0); g.restore();
   if (dur) {                                                       // time axis in seconds of the radar scan
     g.textAlign = 'center';
     const step = dur > 40 ? 10 : 5;
@@ -318,14 +340,15 @@ function drawWave(sc) {
       g.fillText(s0 === dur ? `${s0} s` : `${s0}`, Math.min(x, W - R - 22), T + ph + 32);
     }
   }
-  g.strokeStyle = '#ff8a33'; g.lineWidth = 5; g.lineJoin = 'round'; g.beginPath();
+  g.strokeStyle = none ? '#6b7680' : '#ff8a33'; g.lineWidth = 5; g.lineJoin = 'round'; g.beginPath();
   const n = Math.max(2, Math.floor(w.length * frac));
   for (let i = 0; i < n; i++) { const x = X(i), y = Y(w[i]); i ? g.lineTo(x, y) : g.moveTo(x, y); }
   g.stroke();
-  const pk = dur ? breathPeaks(w, dur / (w.length - 1), v.rate_bpm || (sc.breathing_hz ? 60 * sc.breathing_hz : null)) : [];
+  const pk = dur && !none ? breathPeaks(w, dur / (w.length - 1), v.rate_bpm || (sc.breathing_hz ? 60 * sc.breathing_hz : null)) : [];
   g.fillStyle = '#ffffff';
   pk.filter(i => i < n).forEach(i => { g.beginPath(); g.arc(X(i), Y(w[i]) - 14, 6, 0, 2 * Math.PI); g.fill(); });
-  const parts = [`Measured by radar pod ${sc.drone_id} at ${sc.pile}: chest movement (relative scale)` + (dur ? ` over ${f0(dur)} s` : '')];
+  const parts = none ? [`Radar pod ${sc.drone_id} at ${sc.pile}: no breathing rhythm in this scan (only noise)`]
+    : [`Measured by radar pod ${sc.drone_id} at ${sc.pile}: chest movement (relative scale)` + (dur ? ` over ${f0(dur)} s` : '')];
   if (pk.length) parts.push('white dots = breaths');
   else if (sc.breathing_hz && !v.rate_bpm) parts.push(`about ${f0(60 * sc.breathing_hz)}/min (first estimate)`);
   if (v.apnea_events) parts.push(`${v.apnea_events} pause${v.apnea_events > 1 ? 's' : ''} in breathing`);
@@ -355,7 +378,7 @@ function render(s) {
     const el = $('cap'); el.classList.remove('fade'); void el.offsetWidth; el.classList.add('fade');
     el.classList.toggle('ev', b === 4);
     shown = { beat: b, at: now, title };
-    rowsAt = -1e9;                                  // the rows follow the caption at once
+    rowsAt = -1e9; forceSense = true;               // the rows follow the caption at once
   }
   b = shown.beat >= 0 ? shown.beat : b;
   maxBeat = Math.max(maxBeat, b); SEEN.add(b);
@@ -364,11 +387,16 @@ function render(s) {
     rowsAt = now;
     const [chip, say, rows, quote] = sense(b, s, ev);
     const k = chip + say;
+    if (k !== sayKey && !forceSense && now - sayAt < SAY_HOLD_S) { leads(s); }    // hold the current line a little longer
+    else {
+    if (k !== sayKey) sayAt = now;
+    forceSense = false;
     $('chip').textContent = chip === 'FOUND' ? 'RADAR' : chip; $('chip').style.background = COL[chip] || 'var(--grey)';
     if (k !== sayKey) { $('say').innerHTML = say; const el = $('sense'); el.classList.remove('fade'); void el.offsetWidth; el.classList.add('fade'); sayKey = k; }
     $('rows').innerHTML = rows.map(([l, v]) => `<tr><td class="l">${l}</td><td class="v">${v}</td></tr>`).join('');
     $('quote').classList.toggle('hide', !quote); $('quote').innerHTML = quote || '';
     leads(s);
+    }
   }
   const pile = (s.mission || {}).active_pile;
   const radarNow = ['landing', 'radar', 'relocate', 'rescan'].includes(String(s.phase)) && b !== 4 && b !== 5;

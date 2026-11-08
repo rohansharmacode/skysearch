@@ -19,6 +19,10 @@ GET  /api/portal/inbox?device=<token>  phone: vetted replies queued for that pho
 POST /api/comms/reply   (operator, localhost only) {device, template | text, lang, confirmed_by}: templates directly,
                         free text only with confirmed_by -> dashboard/data/comms_replies.json
 GET  /generate_204, /hotspot-detect.html, ...  captive-portal probes -> 302 to /dashboard/portal/
+POST /api/live          the take's unscripted change from any browser (isaac/hud/live_button.html):
+                        {cmd: activate|deactivate|toggle, id: <dummy id or hidden1/hidden2>} -> dashboard/data/live_cmd.json,
+                        the same file `python3 isaac/live.py --cmd ...` writes; the running take applies it within 1 s.
+                        (Hotkeys typed into the WebRTC viewer don't reach Kit's carb input on the headless box.)
 Stdlib only. Binds to 127.0.0.1 by default; --lan binds 0.0.0.0 for the live phone demo (prints a warning).
 """
 import argparse
@@ -147,6 +151,8 @@ class Handler(SimpleHTTPRequestHandler):
             return self._broadcast(route)
         if route in ("/api/portal", "/api/comms/reply"):
             return self._portal_post(route)
+        if route == "/api/live":
+            return self._live_cmd()
         if route != "/api/tasking":
             return self._json(HTTPStatus.NOT_FOUND, {"error": "unknown endpoint"})
         n = int(self.headers.get("Content-Length") or 0)
@@ -161,6 +167,32 @@ class Handler(SimpleHTTPRequestHandler):
         with open(tmp, "w") as f:
             json.dump(doc, f, indent=1)
         os.replace(tmp, TASKING)
+        return self._json(HTTPStatus.OK, doc)
+
+    def _live_cmd(self):
+        """The take's live change (isaac/live.py write_cmd format): a person presses a button, nothing is scheduled."""
+        import re
+        n = int(self.headers.get("Content-Length") or 0)
+        if n <= 0 or n > 4096:
+            return self._json(HTTPStatus.BAD_REQUEST, {"error": "empty or too large body"})
+        try:
+            body = json.loads(self.rfile.read(n))
+        except json.JSONDecodeError as e:
+            return self._json(HTTPStatus.BAD_REQUEST, {"error": str(e)})
+        cmd, did = body.get("cmd"), body.get("id")
+        if cmd not in ("activate", "deactivate", "toggle") or not isinstance(did, str) or not re.fullmatch(r"[A-Za-z0-9_]{1,40}", did):
+            return self._json(HTTPStatus.BAD_REQUEST, {"error": "cmd must be activate|deactivate|toggle and id a dummy id"})
+        path = os.path.join(os.path.dirname(TASKING), "live_cmd.json")
+        try:
+            with open(path) as f:
+                seq = int(json.load(f).get("seq", 0)) + 1
+        except (OSError, ValueError):
+            seq = 1
+        doc = {"seq": seq, "cmd": cmd, "id": did, "wall": time.time(), "by": "live_button"}
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path + ".tmp", "w") as f:
+            json.dump(doc, f)
+        os.replace(path + ".tmp", path)
         return self._json(HTTPStatus.OK, doc)
 
     def _broadcast(self, route):

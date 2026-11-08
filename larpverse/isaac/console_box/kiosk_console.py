@@ -6,6 +6,9 @@ click commands so the recording shows a real mouse moving and clicking on the co
     echo '{"seq": 1, "pile": "B1"}' > /tmp/console_cmd.json     # smooth move to pileCentre('B1'), then click
     echo '{"seq": 2, "xy": [900, 400]}' > /tmp/console_cmd.json  # screen pixels
     echo '{"seq": 3, "reload": true}' > /tmp/console_cmd.json    # reload the console (after a site switch)
+    echo '{"seq": 4, "at": "site:0", "park": false}' > ...        # start screen: click site card 0
+    echo '{"seq": 5, "at": "C2", "click": false, "glide_s": 2.5}' # 3D map: hover over pile C2 (dots turn yellow)
+    echo '{"seq": 6, "at": "B2", "park": false}'                  # 3D map: click pile B2 (sends the drones)
 
 The click is a real DOM click: the page POSTs /api/goto itself.
 """
@@ -86,6 +89,8 @@ async def main():
                         if (!e) return null; const r = e.getBoundingClientRect(); return [r.x + r.width / 2, r.y + r.height / 2]; }})()""")
                 if c.get("pile"):
                     xy = await pg.evaluate(f"window.pileCentre && window.pileCentre({json.dumps(c['pile'])})")
+                if c.get("at"):                                 # start screen card 'site:0..2' or a pile on the 3D map
+                    xy = await pg.evaluate(f"window.pickerAt && window.pickerAt({json.dumps(c['at'])})")
                 if not xy:
                     log(f"no screen position for {c}")
                     continue
@@ -98,14 +103,22 @@ async def main():
                         await pg.mouse.move(x0 + (x1 - x0) * e, y0 + (y1 - y0) * e)
                         await asyncio.sleep(dur / n)
                 await glide(mx, my, x, y, float(c.get("glide_s", 1.5)), int(c.get("steps", 45)))
+                if c.get("click") is False:                     # hover only (the 3D map lights up under the mouse)
+                    mx, my = x, y
+                    await asyncio.sleep(float(c.get("dwell_s", 0.5)))
+                    log(f"hovered {c.get('at') or c.get('pile') or ''} at ({x:.0f}, {y:.0f})")
+                    continue
                 await asyncio.sleep(0.4)
                 await pg.mouse.down()
                 await asyncio.sleep(0.12)
                 await pg.mouse.up()
                 await asyncio.sleep(0.6)
-                ox, oy = c.get("park", [1600, 960])              # off the map: the right column's empty area
-                await glide(x, y, float(ox), float(oy), 1.0, 30)
-                mx, my = float(ox), float(oy)
+                if c.get("park") is False:                      # stay put (the start screen / 3D map changes under it)
+                    mx, my = x, y
+                else:
+                    ox, oy = c.get("park", [1600, 960])          # off the map: the right column's empty area
+                    await glide(x, y, float(ox), float(oy), 1.0, 30)
+                    mx, my = float(ox), float(oy)
                 log(f"clicked {c.get('pile') or ''} at ({x:.0f}, {y:.0f})")
             except Exception as e:                         # noqa: BLE001
                 log(f"command failed {c}: {e}")

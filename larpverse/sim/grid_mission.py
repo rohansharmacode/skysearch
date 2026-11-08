@@ -1407,7 +1407,7 @@ class GridMission:
 
     def _decide_dispatch(self, ranked, res):
         opts, best, reason = self._options(ranked, res)
-        by, rationale, latency = "argmax", reason, 0.0
+        by, rationale, latency, model = "argmax", reason, 0.0, None
         chosen = best
         if self.decider is not None and len(opts) > 1:
             ctx = {"t": round(self.t, 1), "current_pile": self.visited[-1], "visited": list(self.visited),
@@ -1430,6 +1430,7 @@ class GridMission:
                 if out.get("choice") in ids:
                     chosen, by = out["choice"], str(out.get("by", "decider"))
                     rationale = str(out.get("rationale") or reason)
+                    model = out.get("model") if by != "fallback" else None     # display only (which LLM chose)
                 else:
                     by, rationale = "fallback", f"decider returned invalid choice {out.get('choice')!r}; argmax: {reason}"
             except Exception as e:                       # noqa: BLE001  (never let the agent stall the mission)
@@ -1437,7 +1438,8 @@ class GridMission:
             latency = (time.time() - t0) * 1000
         opt = next(o for o in opts if o["id"] == chosen)
         self.decisions.append({"t": round(self.t, 1), "gate": "dispatch", "options": opts, "chosen": chosen, "by": by,
-                               "rationale": rationale, "latency_ms": round(latency, 1)})
+                               "rationale": rationale, "latency_ms": round(latency, 1),
+                               **({"model": model} if model else {})})
         if by != "argmax":
             self._say(f"Decision ({by}, {latency:.0f} ms): {opt['action']} {opt['pile_id'] or ''} - {rationale}")
         if opt["action"] == "stop":

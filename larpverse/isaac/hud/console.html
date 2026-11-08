@@ -170,6 +170,7 @@
     <div class="foot">A lead is a place for rescuers to check, not a confirmed person.</div>
   </div>
 </div>
+<script src="picker.js"></script>
 <script>
 const Q = new URLSearchParams(location.search);
 const SRC = Q.get('state') || '../../dashboard/data/state.json';
@@ -254,7 +255,11 @@ const pn = id => String(id ?? '').replace(/_/g, ' ');          // weiguan: "A (p
 const pshort = id => String(id ?? '').split(' (')[0];
 const onDrone = s => ((s && s.mission) || {}).delivery === 'land';
 const RADAR_PH = ['landing', 'radar', 'relocate', 'rescan'];
-const byTag = by => by === 'gemini' ? '<span class="by gem">Gemini</span>'
+// two tiers: each drone's audio goes to a light, fast model; the police van's bigger model picks the next pile
+const isGem = by => String(by || '').startsWith('gemini');
+const mName = m => String(m || '').split('-').map(w => /^\d/.test(w) ? w : w[0].toUpperCase() + w.slice(1)).join(' ');
+const DRONE_M = 'gemini-3.5-flash', VAN_M = 'gemini-4-argon';
+const byTag = (by, model, where) => isGem(by) ? `<span class="by gem">${esc(mName(model || (where === 'van' ? VAN_M : DRONE_M)))}${where ? ' · ' + (where === 'van' ? 'police van' : 'on each drone') : ''}</span>`
                   : by ? '<span class="by box">on-box models</span>' : '';
 
 function heard(c) {                                 // what was said, in English, plus the original when it differs
@@ -316,7 +321,8 @@ async function gotoPile(pile) {
     let j = {}; try { j = await r.json(); } catch (e) { }
     if (!r.ok) throw new Error(j.error || r.status);
     toast(`Sent: ${pile}. Waiting for the simulation to confirm…`);
-  } catch (e) { sent = null; LM.svgSent(null); toast(`Could not send: ${e.message}`, true); }
+    return true;
+  } catch (e) { sent = null; LM.svgSent(null); toast(`Could not send: ${e.message}`, true); return false; }
 }
 function toast(msg, bad) { const el = $('toast'); el.textContent = msg || ''; el.classList.toggle('bad', !!bad); }
 
@@ -369,7 +375,7 @@ function caption0(b, s) {
     const to = d ? d.to_pile : pile;
     if (b === 1 || byOperator(s, d)) return ['You chose', `Flying to ${esc(pn(to))}`, `You picked ${esc(pn(to))}. The drones take off and fly there to search it.`, 'you'];
     const dec = lastDecision(s, d);
-    const who = dec && dec.by === 'gemini' ? 'Gemini, reading what the microphones heard,' : 'The drones, from what their microphones heard,';
+    const who = dec && isGem(dec.by) ? `${esc(mName(dec.model || VAN_M))} in the police van, reading what the drones heard,` : 'The drones, from what their microphones heard,';
     return ['The drones decide', `Next: ${esc(pn(to))}`, `${who} chose ${esc(pn(to))} as the next pile to search. Nobody told them where to go.`, 'auto'];
   }
   if (b === 2) return ['Step 1 · LiDAR', `Mapping ${esc(pn(pile))}`, 'Each drone’s laser scanner measures the rubble. The white dots on the map are its hits; the drones use them to find safe spots to land.', ''];
@@ -377,10 +383,11 @@ function caption0(b, s) {
   if (b === 4 && here.length) return ['Step 3 · Radar', 'Breathing-like signal found', `At ${esc(pn(pile))} the radar picked up a steady breathing rhythm. It is marked red on the map: a place for rescuers to check first, not a confirmed person.`, ''];
   if (b === 4) return ['Step 3 · Radar', 'Feeling for breathing', drone ? 'The radar on each landed drone senses the tiny chest movement of breathing up to about 3 m down.' : 'Each drone lowers a radar pod onto the rubble. The radar senses the tiny chest movement of breathing up to about 3 m down.', ''];
   if (b === 5) {
-    const gem = (s.acoustic_agent || {}).provider === 'gemini' || (s.acoustic_clips || []).some(c => c.by === 'gemini');
+    const gc = (s.acoustic_clips || []).find(c => isGem(c.by));
+    const gem = (s.acoustic_agent || {}).provider === 'gemini' || !!gc;
     const scanned = (s.scans || []).some(x => x.pile_id === pile);
     const pre = scanned && !here.length ? `The radar found no firm breathing signal at ${esc(pn(pile))}. ` : '';
-    return ['Step 4 · Listening', 'Listening for voices', `${pre}Rotors off. One drone calls out over its loudspeaker; then they all listen for voices and knocking. ${gem ? 'Gemini' : 'The on-box speech and sound models'} analyse the audio to choose the next pile.`, ''];
+    return ['Step 4 · Listening', 'Listening for voices', `${pre}Rotors off. One drone calls out over its loudspeaker; then they all listen for voices and knocking. ${gem ? `Each drone sends its audio to ${esc(mName((gc || {}).model || DRONE_M))}; ${esc(mName(VAN_M))} in the police van then picks the next pile.` : 'The on-box speech and sound models analyse the audio to choose the next pile.'}`, ''];
   }
   return ['Live simulation', 'Standing by', '', ''];
 }
@@ -446,8 +453,8 @@ function heardCard(s) {
   const chosen = d && +d.t >= tMax - 1 ? C.filter(c => c.pile_id === d.to_pile).sort((a, b) => (+b.t || 0) - (+a.t || 0) || (b.priority ?? 0) - (a.priority ?? 0))[0] : null;
   const best = chosen || cur.filter(c => ((c.scores || {}).human ?? 0) >= 0.4).sort((a, b) => (b.priority ?? 0) - (a.priority ?? 0))[0];
   $('heard').classList.remove('hide');
-  const by = (cur.find(c => c.by === 'gemini') ? 'gemini' : (cur[0] || {}).by);
-  $('hby').innerHTML = byTag(by);
+  const gc = cur.find(c => isGem(c.by)), by = gc ? 'gemini' : (cur[0] || {}).by;
+  $('hby').innerHTML = byTag(by, gc && gc.model, 'drone');
   if (!best) { $('hq').innerHTML = 'No human voice or knocking in the last listen.'; $('hwhy').textContent = ''; return; }
   const sc = best.scores || {};
   const cls = String(best.class || 'sound').replace(/_/g, ' ');
@@ -455,7 +462,7 @@ function heardCard(s) {
   const bits = [`${esc(String(best.class || 'sound').replace(/_/g, ' '))} near ${esc(pn(best.pile_id))}`, `how sure it is a person ${f2(sc.human)}`];
   if (best.bearing_deg != null) bits.push(`from the ${compass(best.bearing_deg).split(' (')[0]} of drone ${esc(best.drone_id)}`);
   if (best.doa_agree) bits.push(`${esc(best.doa_agree)} drones agree on the direction`);
-  $('hwhy').innerHTML = bits.join(' · ') + (by === 'gemini' && best.rationale ? `<br>Gemini: ${esc(best.rationale)}` : '');
+  $('hwhy').innerHTML = bits.join(' · ') + (by === 'gemini' && best.rationale ? `<br>${esc(mName(best.model || (gc || {}).model || DRONE_M))}: ${esc(best.rationale)}` : '');
 }
 
 // the latest next-pile decision: who chose it (decisions[].by: gemini | argmax | fallback) and why
@@ -464,7 +471,7 @@ function nextCard(s) {
   if (!d) { $('next').classList.add('hide'); return; }
   $('next').classList.remove('hide');
   const dec = lastDecision(s, d), op = byOperator(s, d);
-  $('nby').innerHTML = op ? '<span class="by box">you</span>' : byTag(dec && dec.by === 'gemini' ? 'gemini' : 'box');
+  $('nby').innerHTML = op ? '<span class="by box">you</span>' : byTag(dec && isGem(dec.by) ? 'gemini' : 'box', dec && dec.model, 'van');
   $('nto').textContent = op ? `${pn(d.to_pile)} (your click)` : pn(d.to_pile);
   const alt = dec && (dec.options || []).filter(o => o.action === 'dispatch' && o.pile_id && o.pile_id !== d.to_pile && o.priority != null)
                                         .sort((x, y) => y.priority - x.priority)[0];
@@ -744,6 +751,7 @@ const siteOf = S => S && SITES.find(x => x.site === S.site && x.seed === +S.seed
 $('sitechips').innerHTML = SITES.map((x, i) => `<span class="sc2" data-i="${i}">${esc(x.label)}</span>`).join('');
 $('sitechips').addEventListener('click', async e => {
   const el = e.target.closest('.sc2'); if (!el) return;
+  if (PICK_ON) { pkSite(PK.sites[+el.dataset.i]); return; }
   const x = SITES[+el.dataset.i];
   const cur = siteOf(SITE);
   if (cur === x && SITE.status !== 'loading') { toast(`Already on ${x.label}.`); return; }
@@ -771,6 +779,7 @@ $('reset').addEventListener('click', async () => {
     let j = {}; try { j = await r.json(); } catch (e) { }
     if (!r.ok) throw new Error(j.error || j.message || r.status);
     SEEN.clear(); toast('Reset. Click any pile to start again.'); toastAt = vnow();
+    if (PICK_ON) { const ps = PK.sites.find(x => x.ref === siteOf(SITE)); if (ps) { PK.wait = vnow(); pkTopo(ps); } }
   } catch (err) { resetting = 0; toast(`Could not reset: ${err.message}`, true); }
 });
 let SITE = null;
@@ -784,6 +793,84 @@ function siteOverlay() {
   if (loading) { $('loadt').textContent = resetting ? `Resetting: ${SITE.label || SITE.site}` : `Loading a new site: ${SITE.label || SITE.site}`;
     $('loadc').textContent = 'Isaac Sim is building the scene. The drones start when you click a pile.'; }
 }
+// ---------------------------------------------------------------- start screen + 3D LiDAR picker (picker.js)
+// A visitor starts on "Choose a disaster site", then a 3D LiDAR dot map of it: hover lights the dots yellow, a click
+// on a pile sends the drones (POST /api/goto, queued while Isaac loads). ?picker=0 turns it off.
+const PICK_ON = !!window.Picker && !window.__burn && !Q.has('still') && Q.get('picker') !== '0';
+const PK = { open: null, seq0: null, queued: null, busy: false, wait: 0, cur: null, failAt: 0,
+  sites: SITES.map(x => ({ key: `${x.site}-${x.seed}-${x.look}`, label: x.label, site: x.site, seed: x.seed, look: x.look, data: null, ref: x })) };
+const pkStage = () => $('stage');
+const pkSeq = () => { const g = lastGoto(); return g ? +g.seq || 0 : 0; };
+function pkData(ps) {
+  if (ps.data) return ps.data;
+  const L = window._last;                             // this site's live state.json also carries the heightmap
+  return L && L.heightmap && siteOf(SITE) === ps.ref ? L : null;
+}
+async function pkLoad() {
+  await Promise.all(PK.sites.map(async ps => {
+    if (ps.data) return;
+    try { ps.data = await getJSON(`${DIR}sites/${ps.site}-${ps.seed}.json`); } catch (e) { ps.data = null; }
+  }));
+}
+async function pkStart() {
+  PK.open = 'start'; PK.seq0 = pkSeq(); PK.queued = null;
+  const show = () => { if (PK.open === 'start') Picker.start({ stage: pkStage(), sites: PK.sites.map(ps => ({ ...ps, data: pkData(ps) })), onSite: pkSite }); };
+  show();
+  if (PK.sites.some(ps => !ps.data)) { await pkLoad(); show(); }
+}
+function pkTopo(ps) {
+  PK.open = 'topo'; PK.cur = ps; PK.seq0 = pkSeq(); PK.queued = null;
+  Picker.topo({ stage: pkStage(), data: pkData(ps) || { piles: [] }, title: ps.label, loading: !pkReady(),
+    onPick: p => { if (!p || !p.pile) return; PK.queued = p.pile; PK.failAt = 0; pkTry(); },
+    onBack: () => pkStart() });
+}
+// the chosen site is up and its run is waiting for the first click
+function pkReady() {
+  const L = window._last;
+  return !!(PK.cur && siteOf(SITE) === PK.cur.ref && SITE.status !== 'loading' && L && held(L) && vnow() - PK.wait > 6);
+}
+async function pkSite(ps) {
+  const x = ps.ref, same = siteOf(SITE) === x, L = window._last;
+  let url = null, body = null;
+  if (!same) { url = API_SITE; body = { site: x.site, seed: x.seed, look: x.look }; }
+  else if (SITE && SITE.status !== 'loading' && !(L && held(L))) { url = API_RESET; body = {}; }   // same site, used: reset it
+  if (url) PK.wait = vnow();
+  pkTopo(ps);
+  if (!url) return;
+  try {
+    let r = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    if (url === API_RESET && (r.status === 404 || r.status === 405)) {
+      r = await fetch(API_SITE, { method: 'POST', headers: { 'Content-Type': 'application/json' },
+                                  body: JSON.stringify({ site: x.site, seed: x.seed, look: x.look, force: true }) });
+    }
+    if (!r.ok) { let j = {}; try { j = await r.json(); } catch (e2) { } throw new Error(j.error || j.message || r.status); }
+    SITE = { site: x.site, seed: x.seed, look: x.look, status: 'loading', label: x.label }; SEEN.clear();
+  } catch (err) { toast(`Could not load ${x.label}: ${err.message}`, true); }
+}
+async function pkTry() {
+  if (!PK.queued || PK.busy) return;
+  if (!pkReady()) { Picker.setLoading(true); return; }
+  PK.busy = true;
+  const ok = await gotoPile(PK.queued);
+  PK.busy = false;
+  if (ok) { PK.queued = null; PK.open = null; Picker.close(); }
+  else if (!PK.failAt) PK.failAt = vnow();
+  else if (vnow() - PK.failAt > 45) { PK.queued = null; PK.failAt = 0; }
+}
+function pkTick() {
+  if (!PK.open) return;
+  if (REMOTE && ((REC && REC.recording) || (CONSOLE && CONSOLE.recording))) { PK.open = null; Picker.close(); return; }
+  if (PK.open === 'topo') { Picker.setLoading(!pkReady()); if (PK.queued) pkTry(); }
+  // someone else started the drones (another viewer, the recorder's API call): step aside and show the mission
+  if (!PK.queued && !PK.busy && pkSeq() > (PK.seq0 || 0) && !held(window._last || {})) { PK.open = null; Picker.close(); }
+}
+window.pickerAt = k => {                              // client px for the recorder's mouse: 'site:0' | a pile id
+  const st = pkStage().getBoundingClientRect(), sc = st.width / 1920;
+  if (/^site:/.test(k)) { const c = document.querySelectorAll('.pk-card')[+k.slice(5)]; if (!c) return null;
+    const r = c.getBoundingClientRect(); return [r.x + r.width / 2, r.y + r.height * 0.4]; }
+  const q = window.Picker && Picker._screenOf(k); return q ? [st.x + q[0] * sc, st.y + q[1] * sc] : null;
+};
+if (PICK_ON) { setInterval(pkTick, 400); pkStart(); }
 if (!window.__burn) { setInterval(poll, 300); setInterval(pollSide, 500); pollSide().then(poll); }
 </script>
 </body>

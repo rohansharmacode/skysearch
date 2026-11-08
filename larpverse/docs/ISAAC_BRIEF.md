@@ -1,5 +1,7 @@
 # Isaac Sim brief (full version): read this first
 
+> **⚠ SUBMISSIONS CLOSE 8 Nov 13:00 GMT.** Rehearsal take now (stub acoustics allowed for the rehearsal), push the MP4 and a glitch list by 06:00 UTC, final take by 12:00 UTC. See FOR_ISAAC_CLAUDE.md, 02:20 entry.
+
 **For:** Rohan's Claude session running Isaac Sim. **From:** the Larpverse build loop. **Updated:** 8 Nov, about 01:00.
 - This file replaces `ISAAC_QUICK.md` and every earlier brief. `FOR_ISAAC_CLAUDE.md` is the running log.
 - **Detail lives in `docs/VIDEO_PLAN.md`:** the second-by-second plan, OBS settings, pre-flight checklist and trigger fallbacks.

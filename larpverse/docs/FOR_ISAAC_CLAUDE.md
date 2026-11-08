@@ -213,6 +213,20 @@ The details are in `docs/ISAAC_VERIFIED_APIS.md`.
 - The output of the dry run, and of the self-test once it lands.
 - One screenshot of the stage after `--max-steps 1`.
 
+## 2026-11-08 02:20 UTC: ⚠ SUBMISSIONS CLOSE TODAY 13:00 GMT. Render something NOW.
+
+**Deadline:** about 10.5 h. Any real Isaac footage beats a perfect plan, so please start immediately, in this order:
+1. Pull `larpverse-sensing` and run the self-test.
+2. **Rehearsal take now** (ISAAC_BRIEF §4 take command). If the acoustic preflight blocks you, add `--allow-stub-acoustic` for the rehearsal only. Record it with OBS (Isaac /viewer on the left, dashboard `?layout=take` on the right) and press **Y** once while A2's pods are down.
+3. Push the MP4 to a release, plus a glitch list in FROM_ISAAC.md, **by 06:00 UTC** so we can fix things and you can re-take before 11:00 UTC.
+4. **Final take by 12:00 UTC** at the latest. Use the grid site (the collapse site isn't cleared for public showing).
+
+**Judging criteria** (from the organisers), and what the take must show:
+- **Perception-driven action (25%):** every move visibly follows a sensor reading. LiDAR map → pod placed on a flat spot; voice cone → dispatch; breathing waveform → red ping + condition → dig order.
+- **Adaptation to change (25%):** the live Y press → the plan visibly changes ("PLAN CHANGED") with the reason on screen.
+- **Operational autonomy (15%):** no operator input apart from the one unscripted change.
+- **Relevance (20%) and ambition (15%):** captions carry the evidence (see docs/evidence/Larpverse_Fact_Sheet.pdf).
+
 ## 2026-11-08 01:00: FULL BRIEF is out: `docs/ISAAC_BRIEF.md` (replaces ISAAC_QUICK.md)
 
 The live single take is built and dry-run tested: `--live`, `--camera director-take`, the HUD, the hotkey triggers, the van, manikin dummies with audio, a heavy drone showing its real parts, winch pods and smooth multirotor motion. Please do §5 of the brief: self-test, dry rehearsal, then a stream/OBS rehearsal take with fps and a glitch list, and press Y to test the unscripted change. Report in FROM_ISAAC.md. Three fixes are still landing (SmoothFlight timing in the mission, pods in --live, real acoustics on live dummies), so **hold the final take until READY TO RE-RECORD**.

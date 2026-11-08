@@ -1,0 +1,23 @@
+/home/ubuntu/lv/larpverse/dashboard/data/tasking.json
+serve /isaac/hud/panel.html 200
+serve /assets/audio/dummies/manifest.json 200
+serve /dashboard/ 200
+09:05:01 mission launched (held)
+09:05:16 stream up: 1
+09:06:15 scene ready (take pacing logged)
+09:06:23 GO (t released)
+09:06:41 +18s (t=120.0 phase=radar ) -> live button clicked
+09:07:43 +80s (t=820.0 phase=rescan ) stop
+[t=   0.0] Grid mission start (seed 7, dsp radar, acoustic dispatch): 3 drones at the staging area, start pile A2 (operator choice); autonomous: up to 36 radar scans, 3600 s, battery reserve 25% with swaps at the pads
+[isaac] [overlay] simple style: active/new zone outlines, latest dispatch arc, firm pings; sensor effects for human sounds only
+[isaac] hotkeys armed in the Isaac window: U -> hidden1, Y -> hidden2
+[isaac] take pacing (sim s per video s): {'deploy': 6.0, 'survey': 7.0, 'recon_mapping': 6.0, 'recon_listening': 10.0, 'landing': 6.0, 'radar': 12.0, 'relocate': 24.0, 'rescan': 24.0, 'acoustic': 17.0, 'dispatch': 5.0, '
+[isaac] STAGE EVENT t=131.0: dummy H2_A1_id activated near A1 (stage edit); the generators see it from the next scan / listen
+[t= 351.0] RE-PLAN requested: new human-like call at B1 (priority 53) outranks A2 (0); A1 (56) now ranks first; finishing the radar dwell under way at A2, then the gate
+[t= 501.0] RE-PLAN: new human-like call at B1 (priority 53) outranks A2 (0); A1 (56) now ranks first; radar phase at A2 cut short after 8 scans
+[isaac] phase dispatch at t=501.0 wall=49.1s x5 behind=4.3s
+[isaac] step 520 t=520.0 phase=dispatch pile=A1 lidar=94095 pts wall=52.0s x5 behind=4.3s
+Terminated
+-rw-rw-r-- 1 ubuntu ubuntu 35591367 Nov  8 09:07 final_e.mkv
+CAPTURE_DONE
+exit 0

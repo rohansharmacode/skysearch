@@ -63,6 +63,8 @@ QUICK_LISTEN_DUR = float(os.environ.get("LARPVERSE_QUICK_LISTEN_DUR", "10"))
 NEW_EVIDENCE_RISE = 15           # a pile's priority must rise this much over the most it was ever heard at
 NEW_EVIDENCE_NEAR_M = 5.0        # ... and an earlier listen from no further than this extra must have heard it silent
 PREEMPT_MARGIN = 5               # ... and beat the current pile's priority by this to cut its radar phase short
+QUICK_STRONG = 60                # one quick listen is enough when the new lead is this strong AND >= 2 drones' bearings
+                                 # agree on it (the real pipeline needs ~6 s per quick listen: two in a row outlast a dwell)
 POLL_WALL_S = 1.0                # tasking / command-file / stage poll (wall seconds)
 DEFAULT_KEYS = "U=hidden1,Y=hidden2"   # carb key -> dummy ("hiddenN" = N-th hidden dummy, sorted by id: grid H1_C3_vi,
                                        # H2_A1_id; collapse H1_RW_vi, H2_M39_id). H is Kit's hide key: not used.
@@ -1064,6 +1066,8 @@ class LiveController:
         self.heard = {}                    # pile -> highest priority ever heard (outputs only)
         self.silent_from = {}              # pile -> closest listening distance at which it was heard silent
         self._cand_prev = set()            # new-evidence candidates of the previous quick listen (need 2 in a row)
+        self.strong = set()                # piles confirmed by one clear quick listen (QUICK_STRONG)
+        self._pf = None                    # the prefetched full listen in flight: {jid, wall, need_t} (listen pace)
         self.quick = []                    # quick-listen summaries (HUD / live.json)
         self.replans = []                  # [{t, why, from, to}]
         self.order = None                  # (pile, reason) operator order applied at the next gate
@@ -1279,8 +1283,30 @@ class LiveController:
             key = listen_key(drones, exclude, seed, self.live.sig)
             if key not in self.live.prefetch:
                 self.live.prefetch[key] = self.service.submit(self.live.truth(), drones, exclude, seed)
+                self._pf = {"jid": self.live.prefetch[key], "wall": time.time(), "t": m.t, "need_t": m.listen_end}
                 self.say(f"real acoustic pipeline: listen {m.n_listen + 1} submitted at t {m.t:.0f} "
                          f"(drones down; result needed at t {m.listen_end:.0f})")
+
+    def listen_latency(self):
+        """Expected wall seconds of one full real listen: the mean of the last three, else the pre-flight's."""
+        lat = [x for x in (getattr(self.service, "latency", None) or []) if x][-3:]
+        return (sum(lat) / len(lat)) if lat else float(getattr(self, "preflight_latency", 0.0) or 15.0)
+
+    def listen_pace(self, t_now, base, floor=2.0):
+        """Take pacing while the drones listen (rotors off, nothing moves): run the phase at ``base`` and slow it only
+        while the prefetched real listen is still computing, just enough that the mission reaches the listen gate
+        when the result is due. Replaces a fixed cap for the whole phase (rehearsal 4b: x4 for 177 sim s = 44 s of
+        screen time; this is ~15 s for a 15 s pipeline)."""
+        pf = self._pf
+        if self.service is None or pf is None or pf.get("need_t") is None:
+            return base
+        if self.service.poll(pf["jid"]) is not None:
+            return base
+        left_sim = float(pf["need_t"]) - float(t_now)
+        if left_sim <= 0:
+            return base
+        left_wall = max(0.75, self.listen_latency() + 0.5 - (time.time() - pf["wall"]))
+        return max(floor, min(base, left_sim / left_wall))
 
     def _quick_listen(self, state):
         m = self.m
@@ -1329,9 +1355,11 @@ class LiveController:
         else:
             self.live.preset = res
             m._finish_listen(drones=pts, gate=False)          # as recon does: clips + priorities, no gate
+        how = ("heard clearly in one listen, bearings from several drones agree" if pile in self.strong
+               else "confirmed by two consecutive listens")
         m._say(f"Pod-mic quick listen {self._ql_n}: NEW human-like sound at {pile} (priority {pr}; earlier listens from "
-               f"as close heard {'nothing human-like' if not was else f'at most {was}'} there), confirmed by two "
-               "consecutive listens; not a confirmed person")
+               f"as close heard {'nothing human-like' if not was else f'at most {was}'} there), {how}; not a "
+               "confirmed person")
         cur = m.pm.pile
         cp = m.piles[cur]["priority"] or 0
         firm = any(c.get("status") == "candidate" for c in m.pm.cands)
@@ -1352,6 +1380,13 @@ class LiveController:
         m = self.m
         pts = points or {d["id"]: tuple(d["xy"][:2]) for d in res.get("listening_drones") or []} or m._drone_xy()
         pxy = m.world.pile_xy
+        clip_by = {c.get("clip_id"): c for c in res.get("clips", [])}
+
+        def agree(p):                                   # drones whose bearings agree on the pile's top clip
+            try:
+                return int(str((clip_by.get(p.get("top_clip")) or {}).get("doa_agree", "0/0")).split("/")[0])
+            except ValueError:
+                return 0
         for p in res.get("piles", []):
             pid, pr = p.get("pile_id"), int(p.get("priority") or 0)
             if pid is None or pid not in pxy:
@@ -1363,9 +1398,12 @@ class LiveController:
             if fold and lead and pid not in m.visited and quiet is not None and quiet <= d + NEW_EVIDENCE_NEAR_M \
                     and pr >= was + NEW_EVIDENCE_RISE:
                 cands.add(pid)
-                if pid in self._cand_prev:                 # confirmed by two consecutive quick listens
+                strong = pr >= QUICK_STRONG and agree(p) >= 2
+                if pid in self._cand_prev or strong:       # two consecutive quick listens, or one clear one
                     new.append((pid, pr, was))
-            if lead and (not fold or pid not in cands or pid in self._cand_prev):
+                    if strong and pid not in self._cand_prev:
+                        self.strong.add(pid)
+            if lead and (not fold or pid not in cands or pid in self._cand_prev or pid in self.strong):
                 self.heard[pid] = max(was, pr)
             else:
                 self.silent_from[pid] = min(quiet if quiet is not None else 1e9, d)

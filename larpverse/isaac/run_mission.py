@@ -919,7 +919,12 @@ def main(argv=None):
         pace = L.parse_pace(L.DEFAULT_PACE if a.live_pace is None else CLEAR if a.live_pace == "clear" else a.live_pace)
         preroll = 4.0 if a.live_preroll is None else float(a.live_preroll)
         info = getattr(a, "acoustic_info", None)
-        if pace and info and info.get("latency_s"):
+        if ctrl is not None and info and info.get("latency_s"):
+            ctrl.preflight_latency = float(info["latency_s"])
+        if pace and info and info.get("latency_s") and ctrl is not None and ctrl.service is not None:
+            say(f"real acoustic pipeline answers in {info['latency_s']:.0f} s: the listen runs at x{pace.get('acoustic', base_speed):g} "
+                "and slows only while that listen is still computing (LiveController.listen_pace)")
+        elif pace and info and info.get("latency_s"):
             # the prefetched listen starts when the drones are down; ~66 sim s later (26 s listen + call-out) the gate
             # needs it. Slow the listen phase so the real pipeline answers inside that window (floor x4: below that
             # the mission clock is simply held, shown on the HUD).
@@ -933,6 +938,7 @@ def main(argv=None):
             say(f"take pacing (sim s per video s): {pace}; pre-roll {preroll:g} s")
 
     hold_said = False
+    wall0, behind_s, last_phase = None, 0.0, None      # take timing in the log: wall s since the mission clock started
     try:
         while True:
             now = clock()
@@ -952,6 +958,9 @@ def main(argv=None):
                 preroll -= rdt                  # opening shot: the mission has not started yet (shown on the HUD)
             elif (not runner.idle or t_render < track.t_last) and not (a.stop_t and t_render >= a.stop_t):
                 t_render += rdt * a.speed
+                wall0 = now if wall0 is None else wall0
+            if a.live_take and pace and ctrl is not None and cur.get("phase") == "acoustic":
+                a.speed = ctrl.listen_pace(t_render, L.pace_for(pace, "acoustic", base_speed))
             runner.target(t_render + lead)
             for new in runner.drain():
                 prev, cur = cur, new
@@ -966,10 +975,16 @@ def main(argv=None):
                     from isaac.photoreal import WARP_PHASES
                     a.speed = base_speed * (a.live_warp if cur.get("phase") in WARP_PHASES else 1.0)
                 active = overlay.update(cur)
+                wall = f" wall={now - wall0:.1f}s x{a.speed:g} behind={behind_s:.1f}s" if wall0 is not None else ""
                 if steps % 20 == 0:
                     say(f"step {steps} t={cur.get('t')} phase={cur.get('phase')} pile={active} "
-                        f"lidar={accum.total} pts")
+                        f"lidar={accum.total} pts{wall}")
+                if cur.get("phase") != last_phase:
+                    say(f"phase {cur.get('phase')} at t={cur.get('t')}{wall}")
+                    last_phase = cur.get("phase")
             if t_render > track.t_last:         # the mission fell behind: slow the picture down, never jump
+                if wall0 is not None and not runner.idle:
+                    behind_s += rdt * max(0.0, 1.0 - (track.t_last - (t_render - rdt * a.speed)) / max(rdt * a.speed, 1e-6))
                 t_render = track.t_last
             done = (runner.idle and t_render >= track.t_last - 1e-6) or bool(a.stop_t and t_render >= a.stop_t)
             poses = track.poses(t_render)

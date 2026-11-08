@@ -1,0 +1,289 @@
+WARNING: All log messages before absl::InitializeLog() is called are written to STDERR
+E0000 00:00:1794128070.518973  705714 descriptor_database.cc:633] File already exists in database: grpc/health/v1/health.proto
+W0000 00:00:1794128070.519035  705714 message.cc:301] Protobuf GeneratedMessageFactory: File is already registered: grpc/health/v1/health.proto
+Warning: Possible version incompatibility. Attempting to load omni::fabric::IStageReaderWriter with version v0.16 against v0.14.
+Loading user config located at: '/home/ubuntu/isaac/lib/python3.12/site-packages/isaacsim/kit/data/Kit/IsaacLab/3.0/user.config.json'
+2026-11-08T08:54:30Z [Info] [carb] Logging to file: /home/ubuntu/isaac/lib/python3.12/site-packages/isaacsim/kit/logs/Kit/IsaacLab/3.0/kit_20261108_085430.log
+2026-11-08T08:54:30Z [6ms] [Warning] [omni.ext.plugin] [ext: isaaclab_visualizers] Extensions config 'extension.toml' doesn't exist '/home/ubuntu/IsaacLab/source/isaaclab_visualizers' or '/home/ubuntu/IsaacLab/source/isaaclab_visualizers/config'
+2026-11-08T08:54:30Z [592ms] [Warning] [omni.platforminfo.plugin] failed to open the default display.  Can't verify X Server version.
+
+|---------------------------------------------------------------------------------------------|
+| Driver Version: 580.173.02    | Graphics API: Vulkan
+|=============================================================================================|
+| GPU | Name                             | Active | LDA | GPU Memory | Vendor-ID | LUID       |
+|     |                                  |        |     |            | Device-ID | UUID       |
+|     |                                  |        |     |            | Bus-ID    |            |
+|---------------------------------------------------------------------------------------------|
+| 0   | NVIDIA L40S                      | Yes: 0 |     | 46068   MB | 10de      | 0          |
+|     |                                  |        |     |            | 26b9      | 4cb7bc21.. |
+|     |                                  |        |     |            | 8d        |            |
+|=============================================================================================|
+| OS: 24.04.5 LTS (Noble Numbat) ubuntu, Version: 24.04.5, Kernel: 6.11.0-1016-nvidia
+| Processor: AMD EPYC-Genoa Processor
+| Cores: 16 | Logical Cores: 32
+|---------------------------------------------------------------------------------------------|
+| Total Memory (MB): 193222 | Free Memory: 185190
+| Total Page/Swap (MB): 0 | Free Page/Swap: 0
+|---------------------------------------------------------------------------------------------|
+2026-11-08T08:54:31Z [1,363ms] [Warning] [omni.rtx] ECC is enabled on physical device 0
+2026-11-08T08:54:32Z [2,022ms] [Warning] [carb.windowing-glfw.plugin] GLFW initialization failed.
+2026-11-08T08:54:32Z [2,022ms] [Warning] [carb] Failed to startup plugin carb.windowing-glfw.plugin (interfaces: [carb::windowing::IGLContext v1.0],[carb::windowing::IWindowing v1.5]) (impl: carb.windowing-glfw.plugin)
+2026-11-08T08:54:32Z [2,054ms] [Warning] [carb.windowing-glfw.plugin] GLFW initialization failed.
+2026-11-08T08:54:32Z [2,055ms] [Warning] [carb] Failed to startup plugin carb.windowing-glfw.plugin (interfaces: [carb::windowing::IGLContext v1.0],[carb::windowing::IWindowing v1.5]) (impl: carb.windowing-glfw.plugin)
+2026-11-08T08:54:32Z [2,056ms] [Warning] [carb.windowing-glfw.plugin] GLFW initialization failed.
+2026-11-08T08:54:32Z [2,056ms] [Warning] [carb] Failed to startup plugin carb.windowing-glfw.plugin (interfaces: [carb::windowing::IGLContext v1.0],[carb::windowing::IWindowing v1.5]) (impl: carb.windowing-glfw.plugin)
+2026-11-08T08:54:33Z [3,407ms] [Warning] [omni.log] Source: omni.hydra was already registered.
+2026-11-08T08:54:34Z [3,778ms] [Warning] [pxr.Semantics] pxr.Semantics is deprecated - please use Semantics instead
+2026-11-08T08:54:34Z [3,874ms] [Warning] [omni.replicator.core.scripts.extension] No material configuration file, adding configuration to material settings directly.
+2026-11-08T08:54:35Z [4,748ms] [Warning] [omni.usd] Encountered USD Warnings but USD Diagnostics are currently muted. To view USD Warnings, please set the '/persistent/app/usd/muteUsdDiagnostics' setting to false in Preferences page.
+
+Active user not found. Using default user [kiosk]2026-11-08T08:54:38Z [7,814ms] [Warning] [rtx.hydra] RenderDelegate : Warning /rtx/hydra/readTransformsFromFabricInRenderDelegate and geometry streaming are enabled together but this can cause issues with dynamic objects not streaming correctly due to problems in the transform update.
+[ISAACLAB] AppLauncher initialization complete
+[isaac] launcher=lab {'kit': '110.1.2+production.326809.f9bf0dda.gl', 'isaacsim': '6.0.1.rc.7.6', 'isaaclab': '6.1.14'}
+[isaac] operator tasking: /home/ubuntu/lv/larpverse/dashboard/data/tasking.json
+[t=   0.0] Grid mission start (seed 7, dsp radar, acoustic dispatch): 3 drones at the staging area, start pile A2 (operator choice); autonomous: up to 36 radar scans, 3600 s, battery reserve 25% with swaps at the pads
+[t=   0.0] Radar penetration model 'literature': a good scan sees a breathing chest through about 2.9 m of rubble directly beneath it and 0.7 m from an 11 m stand-off; deeper than that is beyond radar reach (acoustic lead only)
+[t=   0.0] Operator tasking: 9 active zone(s) (scenario-default, revision 1) from /home/ubuntu/lv/larpverse/dashboard/data/tasking.json; the drones search only inside tasked zones
+[t=   0.0] Zones: zone A2: search started (visit 1)
+[t=   0.0] Deploy d1-d3 -> pile A2 at (-21.6, 0.7): operator-selected start pile, inside tasked zone A2 [zone A2]
+[isaac] site grid: 9 sectors; heightmap 144x180 in 0.1 s
+[isaac] stage built: 621 rubble pieces, 630 material bindings
+[isaac] [photoreal] sky https://omniverse-content-production.s3-us-west-2.amazonaws.com/Assets/Isaac/6.0/NVIDIA/Assets/Skies/Clear/evening_road_01_4k.hdr at 600.0, sun 2600.0 at 24.0 deg elevation
+[isaac] [photoreal] crushed-concrete ground under the piles: 4572 of 34272 terrain faces
+[33mmain: thread_init: already added for thread
+[;m[isaac] [photoreal] rubble: 621 irregular pieces (183 with rebar) replace the scenario boxes, same poses
+[isaac] [photoreal] debris: 34200 stones and fragments scattered over 9 piles (visual only)
+[isaac] [town] plan: {'bldg': 288, 'debris': 241, 'wall': 22, 'sheet': 53, 'gate': 1, 'stub': 2, 'litter': 71, 'car': 321, 'pole': 199, 'light': 165, 'manhole': 186, 'truck': 18, 'tree': 36, 'wreck': 4, 'post': 12}, 415 wires, dropped {'drone': 69, 'pile': 73, 'staging': 7, 'wire': 6}
+[isaac] [town] placed under /World/Town: {'ground_tris': 88794, 'decal_tris': 3210, 'wire_tris': 16422, 'bldg': 288, 'car': 321, 'truck': 18, 'wreck': 4, 'pole': 199, 'light': 165, 'tree': 36, 'wall': 22, 'gate': 1, 'stub': 2, 'debris': 241, 'sheet': 53, 'litter': 71, 'manhole': 186, 'post': 12}
+[isaac] [photoreal] vegetation off (urban site or --veg 0)
+[isaac] [photoreal] haze: start 120 m, end 700 m, intensity 0.08
+[isaac] command van at (10.0, -49.0) yaw -90: 12482 tris
+[isaac] dummies: 9 prims under /World/Dummies (21300 tris); hidden: ['H1_C3_vi', 'H2_A1_id']
+[blender_drone] /World/Drones/d1/Model: heavy_sar.usdc (8 rotors)
+[blender_drone] /World/Drones/d2/Model: heavy_sar.usdc (8 rotors)
+[blender_drone] /World/Drones/d3/Model: heavy_sar.usdc (8 rotors)
+[isaac] [overlay] simple style: active/new zone outlines, latest dispatch arc, firm pings; sensor effects for human sounds only
+[isaac] [fx] sensor effects: LiDAR beams, radar pulses, 6 sound sources (3 human), belief hotspot
+[INFO]: Registered backend 'kit' for factory Visualizer.
+[isaac] PhysX raycast self-test ok: hit z=3.63 at pile B2
+[isaac] take render settings: 10/10 applied (RTX real-time, DLSS performance)
+[isaac] live world: 9 dummy prims on the stage (7 active, hidden ['H1_C3_vi', 'H2_A1_id'])
+[isaac] acoustic pre-flight PASS: real pipeline in /home/ubuntu/lv/larpverse/.venv-audio/bin/python (mode auto, fed sources, speech-to-text multi), warm listen 8.5 s (first one 11.4 s incl. the model load), 6 clips, timing {'scene': 1.02, 'doa': 1.59, 'separate': 1.22, 'recognise': 4.69, 'agent': 0.0, 'total': 8.51}
+[isaac] Gemini: 0 call(s) in the pre-flight listen (Gemini stage on); a take makes ~2 gate listens -> ~0 calls (+ 0 here) against a free-tier budget of ~20/day/model
+[isaac] Gemini budget for the take: 20 call(s) (pre-flight used 0); gate listens only
+[isaac] speaker audio for the take: off (0 eSpeak NG renders available); the on-screen call-out ring stays
+[isaac] hotkeys armed in the Isaac window: U -> hidden1, Y -> hidden2
+[isaac] LIVE take: hook=native, world source=stage, hidden dummies ['H1_C3_vi', 'H2_A1_id'], tasking=/home/ubuntu/lv/larpverse/dashboard/data/tasking.json, quick listen every 20 s, preempt=on; keys {'U': 'hidden1', 'Y': 'hidden2'}
+[isaac] drone poses from isaac.motion.pose_at (render-time trajectories)
+[isaac] mission steps on a worker thread (--mission-thread 1); USD stays on the main thread
+[isaac] real acoustic pipeline answers in 9 s: the listen runs at x17 and slows only while that listen is still computing (LiveController.listen_pace)
+[isaac] take pacing (sim s per video s): {'deploy': 6.0, 'survey': 7.0, 'recon_mapping': 6.0, 'recon_listening': 10.0, 'landing': 6.0, 'radar': 12.0, 'relocate': 24.0, 'rescan': 24.0, 'acoustic': 17.0, 'dispatch': 5.0, 'return': 12.0, 'battery_swap': 40.0, 'done': 8.0}; pre-roll 2.5 s
+[isaac] holding at t 0 until /tmp/go exists
+[isaac] phase deploy at t=1.0
+[isaac] /tmp/go found: take starts
+[t=  20.0] [A2] All drones airborne; starting LiDAR survey of the rubble
+[isaac] step 20 t=20.0 phase=survey pile=A2 lidar=0 pts wall=2.5s x7 behind=0.0s
+[isaac] phase survey at t=20.0 wall=2.5s x7 behind=0.0s
+[isaac] step 40 t=40.0 phase=survey pile=A2 lidar=50618 pts wall=5.3s x7 behind=0.0s
+[isaac] step 60 t=60.0 phase=survey pile=A2 lidar=86449 pts wall=8.2s x7 behind=0.0s
+[t=  64.0] [A2] Heightmap window rebuilt from 28375 LiDAR points
+[t=  64.0] [A2] Survey complete: 16 pod placements on the pile surface from the fresh map (slope <= 30 deg, clear winch corridor, hover point within winch reach, near the lead)
+[t=  65.0] [A2] Initial sites chosen: best trilateration geometry (E[log det FIM]=-2.57): P6 q~0.95, P7 q~0.91, P10 q~0.83
+[t=  65.0] [A2] d1 -> P10 for a radar scan
+[t=  65.0] [A2] d2 -> P6 for a radar scan
+[t=  65.0] [A2] d3 -> P7 for a radar scan
+[isaac] phase landing at t=65.0 wall=9.3s x6 behind=0.0s
+[isaac] step 80 t=80.0 phase=landing pile=A2 lidar=94925 pts wall=11.3s x6 behind=0.0s
+[isaac] phase radar at t=85.0 wall=12.2s x12 behind=0.0s
+[isaac] step 100 t=100.0 phase=radar pile=A2 lidar=94925 pts wall=13.1s x12 behind=0.0s
+[isaac] step 120 t=120.0 phase=radar pile=A2 lidar=94925 pts wall=14.8s x12 behind=0.0s
+[t= 129.0] [A2] Scan s1 d1@P10: quality 0.52, ranges 2.8 m (c=0.29)
+[t= 129.0] [A2] Belief ambiguous after s1: ambiguity: 2 significant modes, top two 3.6 m apart
+[isaac] STAGE EVENT t=130.0: dummy H2_A1_id activated near A1 (stage edit); the generators see it from the next scan / listen
+[t= 130.0] [A2] Scan s2 d2@P6: quality 0.85, ranges no detection
+[t= 130.0] [A2] Belief ambiguous after s2: ambiguity: 2 significant modes, top two 3.6 m apart
+[t= 130.0] [A2] Scan s3 d3@P7: quality 0.03, ranges no detection
+[t= 130.0] [A2] Scan s3 quality 0.03 is low (rough touchdown or platform motion at P7): its ranges are down-weighted
+[t= 130.0] [A2] Belief ambiguous after s3: ambiguity: 2 significant modes, top two 3.6 m apart
+[isaac] take pace capped at x10 while the pod mics check the live change
+[t= 137.0] [A2] Rescan needed: ambiguity: 2 significant modes, top two 3.6 m apart. Evidence: 3 scan(s); 0 strong breathing-like range(s) agree on R1 (none; 3 needed); 1 agree but are too weak to count (s1); 2 heard nothing (s2, s3; no detection is not absence); 1 low quality from rough touchdowns (s3 q 0.03)
+[t= 137.0] [A2] Relocate d1 -> P5: separates two modes 3.6 m apart: predicted ranges 5.3 vs 2.2 m (EIG 0.38 nats, 24 s flight)
+[isaac] phase relocate at t=137.0 wall=18.2s x10 behind=1.2s
+[isaac] step 140 t=140.0 phase=relocate pile=A2 lidar=94925 pts wall=18.6s x10 behind=1.4s
+[isaac] quick listen 1: leads C1 28 (heard before at 0)
+[isaac] phase rescan at t=156.0 wall=19.6s x10 behind=1.4s
+[isaac] step 160 t=160.0 phase=rescan pile=A2 lidar=94925 pts wall=20.0s x10 behind=1.4s
+[isaac] step 180 t=180.0 phase=rescan pile=A2 lidar=94925 pts wall=21.9s x10 behind=1.4s
+[isaac] step 200 t=200.0 phase=rescan pile=A2 lidar=94925 pts wall=24.0s x10 behind=1.4s
+[t= 201.0] [A2] Scan s4 d1@P5: quality 0.76, ranges no detection
+[t= 201.0] [A2] Belief ambiguous after s4: ambiguity: 2 significant modes, top two 3.6 m apart
+[t= 201.0] [A2] Rescan needed: ambiguity: 2 significant modes, top two 3.6 m apart. Evidence: 4 scan(s); 0 strong breathing-like range(s) agree on R1 (none; 3 needed); 1 agree but are too weak to count (s1); 3 heard nothing (s2, s3, s4; no detection is not absence); 1 low quality from rough touchdowns (s3 q 0.03)
+[t= 201.0] [A2] Relocate d2 -> P8: separates two modes 3.6 m apart: predicted ranges 2.5 vs 4.9 m (EIG 0.30 nats, 38 s flight)
+[isaac] phase relocate at t=201.0 wall=25.5s x10 behind=2.1s
+[isaac] quick listen 2: leads B1 53 (silent from 27 m, now 24 m, agree 2), B2 48 (silent from 18 m, now 8 m, agree 2), B3 39 (silent from 29 m, now 24 m, agree 2); NEW B1; candidates B1, B3
+[t= 203.0] Acoustic agent (custom, mode auto): 7 clips from 8 unvisited piles
+[t= 203.0] Clip 1-ac-A1 (d1, bearing 105°): voice; human 1.00, urgency 0.35 -> priority 57 for A1 [fallback]
+[t= 203.0] Clip 1-ac-B1 (d2, bearing 61°): voice "Thank you"; human 0.99, urgency 0.35 -> priority 53 for B1 [fallback]
+[t= 203.0] Clip 1-ac-C1 (d1, bearing 26°): voice "I'm sorry. I'm so sorry."; human 0.90, urgency 0.33 -> priority 19 for C1 [fallback]
+[t= 203.0] Clip 1-ac-B2 (d2, bearing 342°): knocking; human 0.80, urgency 0.48 -> priority 48 for B2 [fallback]
+[t= 203.0] Clip 1-ac-C2 (d2, bearing 1°): knocking; human 0.45, urgency 0.37 -> priority 14 for C2 [fallback]
+[t= 203.0] Clip 1-ac-A3 (d2, bearing 245°): voice; human 0.95, urgency 0.34 -> priority 19 for A3 [fallback]
+[t= 203.0] Clip 1-ac-B3 (d2, bearing 298°): voice; human 0.86, urgency 0.32 -> priority 39 for B3 [fallback]
+[t= 203.0] Extra listen (pod-mic) folded in: 7 clips
+[t= 203.0] Pod-mic quick listen 2: NEW human-like sound at B1 (priority 53; earlier listens from as close heard nothing human-like there), heard clearly in one listen, bearings from several drones agree; not a confirmed person
+[isaac] PLAN CHANGED: A2 → A1 (new voice heard, unscripted live input)
+[t= 203.0] RE-PLAN requested: new human-like call at B1 (priority 53) outranks A2 (0); A1 (57) now ranks first; finishing the radar dwell under way at A2, then the gate
+[isaac] take pace back to normal (the pod mics have checked the live change)
+[isaac] step 220 t=220.0 phase=relocate pile=A2 lidar=94925 pts wall=26.1s x24 behind=2.1s
+[isaac] phase rescan at t=231.0 wall=26.7s x24 behind=2.1s
+[isaac] step 240 t=240.0 phase=rescan pile=A2 lidar=94925 pts wall=26.9s x24 behind=2.1s
+[isaac] step 260 t=260.0 phase=rescan pile=A2 lidar=94925 pts wall=27.7s x24 behind=2.1s
+[t= 276.0] [A2] Scan s5 d2@P8: quality 0.97, ranges 1.4 m (c=0.98)
+[t= 276.0] [A2] Belief not conclusive: 1 of 3 strong ranges support R1 so far; need 3 for an independent fix
+[t= 276.0] [A2] Rescan needed: 1 of 3 strong ranges support R1 so far; need 3 for an independent fix. Evidence: 5 scan(s); 1 strong breathing-like range(s) agree on R1 (s5; 3 needed); 1 agree but are too weak to count (s1); 3 heard nothing (s2, s3, s4; no detection is not absence); 1 low quality from rough touchdowns (s3 q 0.03)
+[t= 276.0] [A2] Relocate d1 -> P9: tightens the dominant region (sigma 0.9 m) with a look 68 deg from earlier scans (EIG 0.61 nats, 37 s flight)
+[isaac] phase relocate at t=276.0 wall=29.4s x24 behind=2.8s
+[isaac] step 280 t=280.0 phase=relocate pile=A2 lidar=94925 pts wall=29.6s x24 behind=2.8s
+[isaac] step 300 t=300.0 phase=relocate pile=A2 lidar=94925 pts wall=30.1s x24 behind=2.8s
+[isaac] phase rescan at t=306.0 wall=30.5s x24 behind=2.8s
+[isaac] quick listen 3: leads B1 53 (silent from 27 m, now 30 m, agree 2), B2 47 (silent from 18 m, now 22 m, agree 2), B3 33 (silent from 24 m, now 25 m, agree 2)
+[isaac] step 320 t=320.0 phase=rescan pile=A2 lidar=94925 pts wall=30.8s x24 behind=2.8s
+[isaac] step 340 t=340.0 phase=rescan pile=A2 lidar=94925 pts wall=31.7s x24 behind=2.8s
+[t= 351.0] [A2] Scan s6 d1@P9: quality 0.73, ranges 1.7 m (c=0.98)
+[t= 351.0] [A2] Belief not conclusive: 2 of 3 strong ranges support R1 so far; need 3 for an independent fix
+[t= 351.0] [A2] Rescan needed: 2 of 3 strong ranges support R1 so far; need 3 for an independent fix. Evidence: 6 scan(s); 2 strong breathing-like range(s) agree on R1 (s5, s6; 3 needed); 1 agree but are too weak to count (s1); 3 heard nothing (s2, s3, s4; no detection is not absence); 1 low quality from rough touchdowns (s3 q 0.03)
+[t= 351.0] [A2] Relocate d2 -> P1: tightens the dominant region (sigma 0.6 m) with a look 66 deg from earlier scans (EIG 0.36 nats, 37 s flight)
+[isaac] phase relocate at t=351.0 wall=33.1s x24 behind=3.3s
+[isaac] step 360 t=360.0 phase=relocate pile=A2 lidar=94925 pts wall=33.4s x24 behind=3.4s
+[isaac] step 380 t=380.0 phase=relocate pile=A2 lidar=94925 pts wall=34.3s x24 behind=3.4s
+[isaac] phase rescan at t=381.0 wall=34.3s x24 behind=3.4s
+[isaac] step 400 t=400.0 phase=rescan pile=A2 lidar=94925 pts wall=35.0s x24 behind=3.4s
+[isaac] step 420 t=420.0 phase=rescan pile=A2 lidar=94925 pts wall=35.9s x24 behind=3.4s
+[t= 426.0] [A2] Scan s7 d2@P1: quality 0.64, ranges 2.5 m (c=0.71)
+[t= 426.0] [A2] Belief: R1 at (-22.4, 2.3) holds 100%
+[t= 426.0] [A2] Localisation converged: R1 at (-22.4, 2.3) holds 100%. d1 lowers the pod again at P8 for a 60 s vitals look (breathing pattern to help order the dig; rescuers check on site)
+[isaac] phase relocate at t=426.0 wall=36.6s x24 behind=3.6s
+[isaac] quick listen 4: leads B1 53 (silent from 27 m, now 32 m, agree 3), B3 39 (silent from 24 m, now 25 m, agree 3), B2 30 (silent from 18 m, now 22 m, agree 3)
+[isaac] step 440 t=440.0 phase=relocate pile=A2 lidar=94925 pts wall=37.0s x24 behind=3.6s
+[isaac] phase rescan at t=455.0 wall=37.7s x24 behind=3.6s
+[isaac] step 460 t=460.0 phase=rescan pile=A2 lidar=94925 pts wall=37.7s x24 behind=3.6s
+[isaac] step 480 t=480.0 phase=rescan pile=A2 lidar=94925 pts wall=38.4s x24 behind=3.6s
+[isaac] step 500 t=500.0 phase=rescan pile=A2 lidar=94925 pts wall=39.4s x24 behind=3.6s
+[t= 515.0] [A2] Scan s8 d1@P8: quality 0.67, ranges 1.4 m (c=0.98)
+[t= 515.0] [A2] Belief: R1 at (-22.4, 2.3) holds 100%
+[t= 515.0] [A2] Localisation converged: R1 at (-22.4, 2.3) holds 100%; stopping radar scans (7 used)
+[t= 515.0] RE-PLAN: new human-like call at B1 (priority 53) outranks A2 (0); A1 (57) now ranks first; radar phase at A2 cut short after 8 scans
+[t= 515.0] Vitals at A2-R1 from s8 (60 s look): pattern slow_regular, rate 7.9/min, hint urgent (confidence 0.8); dig score 0.419. A triage aid for rescuers to check
+[t= 515.0] PING A2-R1 at pile A2: (-22.4, 2.3), depth not measured (assumed 1.5 m; the ranges cannot separate depth from position), belief share 1.00 -> sent to the operator dashboard
+[t= 515.0] Zones: zone A2: ping A2-R1
+[t= 515.0] Pile priority: A1 57, B1 53, B2 48, B3 39, A3 19, C1 19
+[t= 515.0] Zones: zone A1: search started (visit 1)
+[t= 515.0] Dispatch d1-d3 -> pile A1 at (-22.9, 21.0): highest acoustic priority (57) among open piles: Voice; human 1.00, urgency 0.35, reliability 0.97. [zone A1]
+[isaac] phase dispatch at t=515.0 wall=40.8s x5 behind=4.2s
+[isaac] step 520 t=520.0 phase=dispatch pile=A1 lidar=94925 pts wall=41.0s x5 behind=4.4s
+[isaac] quick listen 5: leads B1 49 (silent from 27 m, now 30 m, agree 2), B2 47 (silent from 18 m, now 22 m, agree 2), B3 31 (silent from 24 m, now 25 m, agree 2)
+[t= 535.0] [A1] All drones airborne; starting LiDAR survey of the rubble
+[isaac] step 540 t=540.0 phase=survey pile=A1 lidar=94925 pts wall=45.0s x7 behind=4.4s
+[isaac] phase survey at t=540.0 wall=45.0s x7 behind=4.4s
+[isaac] step 560 t=560.0 phase=survey pile=A1 lidar=137761 pts wall=47.7s x7 behind=4.4s
+[t= 577.0] [A1] Heightmap window rebuilt from 45831 LiDAR points
+[t= 577.0] [A1] Survey complete: 16 pod placements on the pile surface from the fresh map (slope <= 30 deg, clear winch corridor, hover point within winch reach, near the lead)
+[t= 578.0] [A1] Initial sites chosen: best trilateration geometry (E[log det FIM]=-1.86): P6 q~0.90, P7 q~0.90, P11 q~0.56
+[t= 578.0] [A1] d1 -> P11 for a radar scan
+[t= 578.0] [A1] d2 -> P6 for a radar scan
+[t= 578.0] [A1] d3 -> P7 for a radar scan
+[isaac] phase landing at t=578.0 wall=50.6s x6 behind=4.4s
+[isaac] step 580 t=580.0 phase=landing pile=A1 lidar=169361 pts wall=50.7s x6 behind=4.4s
+[isaac] phase radar at t=599.0 wall=53.7s x12 behind=4.4s
+[isaac] step 600 t=600.0 phase=radar pile=A1 lidar=169361 pts wall=53.9s x12 behind=4.4s
+[isaac] step 620 t=620.0 phase=radar pile=A1 lidar=169361 pts wall=55.2s x12 behind=4.4s
+[isaac] step 640 t=640.0 phase=radar pile=A1 lidar=169361 pts wall=56.9s x12 behind=4.4s
+[t= 642.0] [A1] Scan s9 d1@P11: quality 0.52, ranges no detection
+[t= 643.0] [A1] Scan s10 d2@P6: quality 0.97, ranges no detection
+[isaac] quick listen 6: leads C2 30 (silent from 32 m, now 48 m, agree 2), C3 27 (silent from 40 m, now 62 m, agree 2); candidates C2, C3
+[t= 644.0] [A1] Scan s11 d3@P7: quality 0.03, ranges no detection
+[t= 644.0] [A1] Scan s11 quality 0.03 is low (rough touchdown or platform motion at P7): its ranges are down-weighted
+[t= 650.0] [A1] Rescan needed: no respiration-like returns yet. Evidence: 3 scan(s); 3 heard nothing (s9, s10, s11; no detection is not absence); 1 low quality from rough touchdowns (s11 q 0.03)
+[t= 650.0] [A1] Relocate d1 -> P15: no localisation yet: gather a return from a new vantage (EIG 0.24 nats, 25 s flight)
+[isaac] phase relocate at t=650.0 wall=59.6s x24 behind=5.6s
+[isaac] step 660 t=660.0 phase=relocate pile=A1 lidar=169361 pts wall=60.3s x24 behind=5.9s
+[isaac] phase rescan at t=670.0 wall=60.6s x24 behind=5.9s
+[isaac] step 680 t=680.0 phase=rescan pile=A1 lidar=169361 pts wall=60.9s x24 behind=5.9s
+[isaac] step 700 t=700.0 phase=rescan pile=A1 lidar=169361 pts wall=61.6s x24 behind=5.9s
+[t= 715.0] [A1] Scan s12 d1@P15: quality 0.74, ranges no detection
+[t= 715.0] [A1] Rescan needed: no respiration-like returns yet. Evidence: 4 scan(s); 4 heard nothing (s9, s10, s11, s12; no detection is not absence); 1 low quality from rough touchdowns (s11 q 0.03)
+[t= 715.0] [A1] Relocate d2 -> P16: no localisation yet: gather a return from a new vantage (EIG 0.18 nats, 39 s flight)
+[isaac] phase relocate at t=715.0 wall=63.4s x24 behind=6.7s
+[isaac] step 720 t=720.0 phase=relocate pile=A1 lidar=169361 pts wall=63.7s x24 behind=6.7s
+[isaac] step 740 t=740.0 phase=relocate pile=A1 lidar=169361 pts wall=64.2s x24 behind=6.7s
+[isaac] phase rescan at t=746.0 wall=64.6s x24 behind=6.7s
+[isaac] step 760 t=760.0 phase=rescan pile=A1 lidar=169361 pts wall=65.0s x24 behind=6.7s
+[isaac] quick listen 7: leads none
+[isaac] step 780 t=780.0 phase=rescan pile=A1 lidar=169361 pts wall=65.7s x24 behind=6.7s
+[t= 791.0] [A1] Scan s13 d2@P16: quality 0.80, ranges no detection
+[t= 791.0] [A1] Rescan needed: no respiration-like returns yet. Evidence: 5 scan(s); 5 heard nothing (s9, s10, s11, s12, s13; no detection is not absence); 1 low quality from rough touchdowns (s11 q 0.03)
+[t= 791.0] [A1] Relocate d1 -> P2: no localisation yet: gather a return from a new vantage (EIG 0.23 nats, 36 s flight)
+[isaac] phase relocate at t=791.0 wall=67.4s x24 behind=7.5s
+[isaac] step 800 t=800.0 phase=relocate pile=A1 lidar=169361 pts wall=67.8s x24 behind=7.5s
+[isaac] step 820 t=820.0 phase=rescan pile=A1 lidar=169361 pts wall=68.6s x24 behind=7.5s
+[isaac] phase rescan at t=820.0 wall=68.6s x24 behind=7.5s
+[isaac] step 840 t=840.0 phase=rescan pile=A1 lidar=169361 pts wall=69.3s x24 behind=7.5s
+[isaac] step 860 t=860.0 phase=rescan pile=A1 lidar=169361 pts wall=69.9s x24 behind=7.5s
+[t= 865.0] [A1] Scan s14 d1@P2: quality 0.59, ranges 3.4 m (c=0.96)
+[t= 865.0] [A1] Belief ambiguous after s14: ambiguity: 2 significant modes, top two 3.8 m apart
+[t= 865.0] [A1] Rescan needed: ambiguity: 2 significant modes, top two 3.8 m apart. Evidence: 6 scan(s); 1 strong breathing-like range(s) agree on R1 (s14; 3 needed); 5 heard nothing (s9, s10, s11, s12, s13; no detection is not absence); 1 low quality from rough touchdowns (s11 q 0.03)
+[t= 865.0] [A1] Relocate d2 -> P3: separates two modes 3.8 m apart: predicted ranges 2.1 vs 4.2 m (EIG 0.41 nats, 37 s flight)
+[isaac] phase relocate at t=865.0 wall=71.2s x24 behind=8.2s
+[isaac] step 880 t=880.0 phase=relocate pile=A1 lidar=169361 pts wall=71.9s x24 behind=8.2s
+[isaac] quick listen 8: leads B3 40 (silent from 24 m, now 38 m, agree 3), C2 29 (silent from 32 m, now 44 m, agree 3); candidates C2
+[isaac] phase rescan at t=895.0 wall=72.2s x24 behind=8.2s
+[isaac] step 900 t=900.0 phase=rescan pile=A1 lidar=169361 pts wall=72.7s x24 behind=8.2s
+[isaac] step 920 t=920.0 phase=rescan pile=A1 lidar=169361 pts wall=73.4s x24 behind=8.2s
+[t= 940.0] [A1] Scan s15 d2@P3: quality 0.32, ranges 1.8 m (c=0.23)
+[t= 940.0] [A1] Scan s15 quality 0.32 is low (rough touchdown or platform motion at P3): its ranges are down-weighted
+[t= 940.0] [A1] Belief not conclusive: 1 of 3 strong ranges support R1 so far; need 3 for an independent fix
+[t= 940.0] [A1] Rescan needed: 1 of 3 strong ranges support R1 so far; need 3 for an independent fix. Evidence: 7 scan(s); 1 strong breathing-like range(s) agree on R1 (s14; 3 needed); 1 agree but are too weak to count (s15); 5 heard nothing (s9, s10, s11, s12, s13; no detection is not absence); 2 low quality from rough touchdowns (s11 q 0.03, s15 q 0.32)
+[t= 940.0] [A1] Relocate d1 -> P9: tightens the dominant region (sigma 1.4 m) with a look 110 deg from earlier scans (EIG 0.52 nats, 37 s flight)
+[isaac] step 940 t=940.0 phase=relocate pile=A1 lidar=169361 pts wall=75.2s x24 behind=9.1s
+[isaac] phase relocate at t=940.0 wall=75.2s x24 behind=9.1s
+[isaac] step 960 t=960.0 phase=relocate pile=A1 lidar=169361 pts wall=76.0s x24 behind=9.1s
+[isaac] phase rescan at t=969.0 wall=76.3s x24 behind=9.1s
+[isaac] step 980 t=980.0 phase=rescan pile=A1 lidar=169361 pts wall=76.7s x24 behind=9.1s
+[isaac] step 1000 t=1000.0 phase=rescan pile=A1 lidar=169361 pts wall=77.6s x24 behind=9.1s
+[t=1014.0] [A1] Scan s16 d1@P9: quality 0.65, ranges no detection
+[t=1014.0] [A1] Belief not conclusive: 1 of 3 strong ranges support R1 so far; need 3 for an independent fix
+[t=1014.0] [A1] Scan budget (8) used without a firm fix (1 of 3 strong ranges support R1 so far; need 3 for an independent fix). Evidence: 8 scan(s); 1 strong breathing-like range(s) agree on R1 (s14; 3 needed); 1 agree but are too weak to count (s15); 6 heard nothing (s9, s10, s11, s12, s13, s16; no detection is not absence); 2 low quality from rough touchdowns (s11 q 0.03, s15 q 0.32). Reporting insufficient_evidence: the region stays open, not cleared
+[t=1014.0] No firm radar ping at A1 (1 of 3 strong ranges support R1 so far; need 3 for an independent fix). Evidence: 8 scan(s); 1 strong breathing-like range(s) agree on R1 (s14; 3 needed); 1 agree but are too weak to count (s15); 6 heard nothing (s9, s10, s11, s12, s13, s16; no detection is not absence); 2 low quality from rough touchdowns (s11 q 0.03, s15 q 0.32). Radar reached 74% of the pile volume (83% of its top 2 m) from the pod placements used; per-scan reach ≈2.7 m of rubble directly beneath. Pile stays not cleared; its acoustic lead stays open for a revisit
+[t=1014.0] Zones: zone A1: lead (lidar 100%, radar 48%, listened; not cleared)
+[t=1014.0] Radar phase at A1 over; drones land off the pile (rotors off) to listen to the other piles for 26 s
+[isaac] real acoustic pipeline: listen 2 submitted at t 1014 (landing patches known); it overlaps the landing, the listen window and the call-out
+[isaac] phase acoustic at t=1014.0 wall=78.7s x17 behind=9.5s
+[isaac] quick listen 9: leads C2 24 (silent from 32 m, now 48 m, agree 3); NEW C2; candidates C2
+[isaac] step 1020 t=1020.0 phase=acoustic pile=A1 lidar=169361 pts wall=79.0s x17 behind=9.6s
+[isaac] step 1040 t=1040.0 phase=acoustic pile=A1 lidar=169361 pts wall=79.7s x17 behind=9.6s
+[t=1049.0] All drones down, rotors off: listening for 26 s
+[t=1049.0] Call-out C1 planned: after the passive listen d3 plays the rescue call-out (zh-TW, nan-TW, en) towards A1, then all drones listen 20 s for knocks or voices (+70 s landed incl. reassurance / guidance)
+[isaac] step 1060 t=1060.0 phase=acoustic pile=A1 lidar=169361 pts wall=81.6s x10.0572 behind=9.6s
+[isaac] step 1080 t=1080.0 phase=acoustic pile=A1 lidar=169361 pts wall=83.6s x10.0571 behind=9.6s
+[isaac] step 1100 t=1100.0 phase=acoustic pile=A1 lidar=169361 pts wall=85.5s x10.0623 behind=9.6s
+2026-11-08T08:54:41Z [11,525ms] [Warning] [isaaclab_physx.physics.physx_manager] TGS solver with enable_external_forces_every_iteration=False may cause noisy velocities.
+2026-11-08T08:54:41Z [11,525ms] [Warning] [isaaclab_physx.physics.physx_manager] Large timestep without stabilization may cause physics issues.
+2026-11-08T08:54:48Z [17,765ms] [Warning] [omni.kit.livestream.webrtc.plugin] Cannot stream video frame because the video stream is not connected.
+2026-11-08T08:55:19Z [49,405ms] [Warning] [omni.fabric.plugin] Unsupported type encountered during VtValue extraction
+2026-11-08T08:55:19Z [49,405ms] [Warning] [omni.fabric.plugin] Attempting to set an invalid data source to array attribute
+
+2026-11-08T08:55:19Z [49,434ms] [Warning] [omni.fabric.plugin] Unsupported type encountered during VtValue extraction
+2026-11-08T08:55:19Z [49,434ms] [Warning] [omni.fabric.plugin] Attempting to set an invalid data source to array attribute
+
+2026-11-08T08:57:21Z [170,943ms] [Error] [omni.kit.livestream.webrtc.plugin] NVST Error: NVST_R_BUSY
+2026-11-08T08:57:21Z [170,959ms] [Error] [omni.kit.livestream.webrtc.plugin] NVST Error: NVST_R_BUSY
+2026-11-08T08:57:21Z [170,974ms] [Error] [omni.kit.livestream.webrtc.plugin] NVST Error: NVST_R_BUSY
+2026-11-08T08:57:21Z [170,989ms] [Error] [omni.kit.livestream.webrtc.plugin] NVST Error: NVST_R_BUSY
+2026-11-08T08:57:21Z [171,007ms] [Error] [omni.kit.livestream.webrtc.plugin] NVST Error: NVST_R_BUSY
+2026-11-08T08:57:21Z [171,024ms] [Error] [omni.kit.livestream.webrtc.plugin] NVST Error: NVST_R_BUSY
+2026-11-08T08:57:21Z [171,052ms] [Error] [omni.kit.livestream.webrtc.plugin] NVST Error: NVST_R_BUSY
+2026-11-08T08:57:21Z [171,061ms] [Error] [omni.kit.livestream.webrtc.plugin] NVST Error: NVST_R_BUSY
+2026-11-08T08:57:21Z [171,072ms] [Error] [omni.kit.livestream.webrtc.plugin] NVST Error: NVST_R_BUSY
+2026-11-08T08:57:21Z [171,109ms] [Error] [omni.kit.livestream.webrtc.plugin] NVST Error: NVST_R_BUSY
+2026-11-08T08:57:21Z [171,124ms] [Warning] [carb.windowing-glfw.plugin] GLFW initialization failed.
+2026-11-08T08:57:21Z [171,124ms] [Warning] [carb] Failed to startup plugin carb.windowing-glfw.plugin (interfaces: [carb::windowing::IGLContext v1.0],[carb::windowing::IWindowing v1.5]) (impl: carb.windowing-glfw.plugin)

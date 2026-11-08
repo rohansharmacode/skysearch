@@ -37,8 +37,8 @@
   #cap .k { font-size:14px; letter-spacing:.18em; text-transform:uppercase; color:#b8c3cc; }
   #cap .t { font-size:38px; font-weight:700; margin:6px 0 8px; line-height:1.1; }
   #cap .c { font-size:21px; line-height:1.42; color:#e6ecf0; }
-  #wavebox { left:28px; bottom:24px; width:640px; padding:14px 18px 12px; }
-  #wavebox canvas { width:100%; height:120px; display:block; }
+  #wavebox { left:24px; right:24px; bottom:96px; padding:10px 14px 8px; background:rgba(13,14,17,0.93); }
+  #wavebox canvas { width:100%; height:205px; display:block; }
   .wcap { font-size:14px; color:#aab4bc; margin-top:4px; }
   #honest { right:24px; bottom:24px; padding:9px 14px; font-size:13px; color:#c9d2d9; max-width:460px; line-height:1.35; }
   /* ---- right column */
@@ -111,6 +111,8 @@
   .by { display:inline-block; font-size:11px; font-weight:800; letter-spacing:.1em; padding:2px 7px; border-radius:5px;
         text-transform:uppercase; vertical-align:2px; margin-left:6px; }
   .by.gem { background:var(--gem); color:#0b0f13; } .by.box { background:#3a434b; color:#dfe5ea; }
+  .only1 .sites { display:none !important; }
+  .only1 .pk-back, .only1 [data-act="back"] { display:none !important; }
   #pops { position:absolute; right:20px; top:20px; width:430px; display:flex; flex-direction:column; gap:10px; z-index:6; pointer-events:none; }
   .pop { background:rgba(10,14,18,0.86); border:1px solid rgba(255,255,255,0.12); border-left:5px solid var(--pc,#5b8cff); border-radius:14px;
          padding:11px 15px 12px; box-shadow:0 14px 40px -12px rgba(0,0,0,.7); backdrop-filter:blur(6px); animation:popin .45s cubic-bezier(.2,.9,.3,1.2) both; }
@@ -158,7 +160,7 @@
     <div id="nostream">Connecting to the live simulation…</div>
     <img id="isaac" alt="">
     <div class="hud" id="cap"><div class="k" id="capk">Live simulation</div><div class="t" id="capt">Waiting for the mission…</div><div class="c" id="capc"></div></div>
-    <div class="hud hide" id="wavebox"><canvas id="wave" width="1280" height="240"></canvas><div class="wcap" id="wcap"></div></div>
+    <div class="hud hide" id="wavebox"><canvas id="wave" width="2464" height="410"></canvas><div class="wcap" id="wcap"></div></div>
     <div id="loading" class="hide"><div><div class="lt" id="loadt">Loading a new site…</div><div class="lc" id="loadc"></div></div></div>
     <div id="pops"></div>
     <div class="hud" id="honest">Simulation. The trapped people, their voices and the radar returns are synthetic; the drones never see where they are.</div>
@@ -526,44 +528,96 @@ function nextCard(s) {
   $('nwhy').innerHTML = esc(why) + (alt && !op ? `<br><span style="color:#8d98a1">Next best: ${esc(alt.pile_id)} (priority ${alt.priority})</span>` : '');
 }
 
-let waveKey = '';
-function drawWave(sc) {
-  const box = $('wavebox');
-  if (!sc || !sc.wave || !sc.wave.length || !scanHit(sc)) { box.classList.add('hide'); waveKey = ''; return; }
-  box.classList.remove('hide');
-  const key = sc.scan_id + ':' + sc.t;
-  const cv = $('wave'), g = cv.getContext('2d'), W = cv.width, H = cv.height, w = sc.wave;
-  if (key !== waveKey) { waveKey = key; drawWave.born = vnow(); }
-  const frac = Math.min(1, (vnow() - drawWave.born) / 1.6);
-  const v = sc.vitals || {}, dur = +v.duration_s || null;
-  const L = 64, R = 14, T = 20, B = 40, pw = W - L - R, ph = H - T - B;
-  const amp = Math.max(...w.map(Math.abs)) || 1;
-  const X = i => L + i / (w.length - 1) * pw, Y = val => T + ph / 2 - val / amp * (ph / 2 - 6);
-  g.clearRect(0, 0, W, H);
-  g.font = '22px Inter, system-ui, sans-serif'; g.fillStyle = '#8d98a1'; g.strokeStyle = 'rgba(255,255,255,0.13)'; g.lineWidth = 2;
-  g.beginPath(); g.moveTo(L, T + ph / 2); g.lineTo(L + pw, T + ph / 2); g.stroke();
-  g.beginPath(); g.moveTo(L, T); g.lineTo(L, T + ph); g.lineTo(L + pw, T + ph); g.stroke();
-  g.save(); g.translate(22, T + ph / 2); g.rotate(-Math.PI / 2); g.textAlign = 'center'; g.fillText('chest', 0, 0); g.restore();
-  if (dur) {
-    g.textAlign = 'center';
-    const st = dur > 40 ? 10 : 5;
-    for (let s0 = 0; s0 <= dur + 1e-6; s0 += st) {
-      const x = L + s0 / dur * pw;
-      g.beginPath(); g.moveTo(x, T + ph); g.lineTo(x, T + ph + 8); g.stroke();
-      g.fillText(s0 === dur ? `${s0} s` : `${s0}`, Math.min(x, W - R - 22), T + ph + 30);
-    }
+let waveKey = '', waveSpec = null;
+// Radar read-out in the style of docs/img/radar_signatures.png: range vs time, chest movement, micro-Doppler.
+// All three come from the scan the drone's radar just finished (LIVE.last_scan.sig: 10 fps phase, range profile).
+function specOf(w, fps) {                           // short-time spectrum of the chest movement, 0..fps/2 Hz
+  const N = 64, hop = 6, F = 33, out = [];
+  for (let s0 = 0; s0 + N <= w.length; s0 += hop) {
+    const seg = w.slice(s0, s0 + N), m = seg.reduce((a, b) => a + b, 0) / N, col = [];
+    for (let k = 0; k < F; k++) { let re = 0, im = 0;
+      for (let n = 0; n < N; n++) { const h = 0.5 - 0.5 * Math.cos(2 * Math.PI * n / (N - 1)), v = (seg[n] - m) * h, a = 2 * Math.PI * k * n / N; re += v * Math.cos(a); im -= v * Math.sin(a); }
+      col.push(Math.log10(1e-3 + Math.hypot(re, im))); }
+    out.push(col);
   }
-  g.strokeStyle = '#ff8a33'; g.lineWidth = 5; g.lineJoin = 'round'; g.beginPath();
-  const n = Math.max(2, Math.floor(w.length * frac));
-  for (let i = 0; i < n; i++) { const x = X(i), y = Y(w[i]); i ? g.lineTo(x, y) : g.moveTo(x, y); }
-  g.stroke();
-  const pk = dur ? breathPeaks(w, dur / (w.length - 1), v.rate_bpm || (sc.breathing_hz ? 60 * sc.breathing_hz : null)) : [];
-  g.fillStyle = '#ffffff';
-  pk.filter(i => i < n).forEach(i => { g.beginPath(); g.arc(X(i), Y(w[i]) - 14, 6, 0, 2 * Math.PI); g.fill(); });
-  const who = onDrone(window._last) ? `the radar on drone ${sc.drone_id}` : `radar pod ${sc.drone_id}`;
-  const parts = [`Radar trace from ${who} at ${sc.pile}: chest movement` + (dur ? ` over ${f0(dur)} s` : '')];
-  if (pk.length) parts.push('white dots = breaths');
-  $('wcap').textContent = parts.join(' · ');
+  const all = out.flat(), hi = Math.max(...all), lo = hi - 2.2;
+  return out.map(c => c.map(v => Math.max(0, Math.min(1, (v - lo) / (hi - lo)))));
+}
+const heat = v => v < 0.5 ? `rgb(${Math.round(30 + 450 * v)},${Math.round(20 + 60 * v)},${Math.round(22 + 50 * v)})`
+  : `rgb(255,${Math.round(50 + 410 * (v - 0.5))},${Math.round(45 + 410 * (v - 0.5))})`;
+function drawWave(sc) {
+  const box = $('wavebox'), sig = sc && sc.sig, w = sig && sig.wave_mm;
+  if (!sc || !w || w.length < 70) { box.classList.add('hide'); waveKey = ''; return; }
+  box.classList.remove('hide');
+  const key = sc.scan_id + ':' + sc.t, fps = +sig.fps || 10, dur = +sig.dwell_s || w.length / fps;
+  if (key !== waveKey) { waveKey = key; drawWave.born = vnow(); waveSpec = specOf(w, fps); }
+  const frac = Math.min(1, (vnow() - drawWave.born) / 2.2);
+  const cv = $('wave'), g = cv.getContext('2d'), W = cv.width, H = cv.height;
+  const hit = scanHit(sc), fin = sig.final || {}, v = sc.vitals || {};
+  const bpm = v.rate_bpm != null ? v.rate_bpm : (sc.breathing_hz ? 60 * sc.breathing_hz : null);
+  g.clearRect(0, 0, W, H);
+  // title row
+  g.textBaseline = 'alphabetic'; g.textAlign = 'left'; g.font = '700 30px Inter, system-ui, sans-serif';
+  const who = onDrone(window._last) ? `drone ${sc.drone_id}` : `pod ${sc.drone_id}`;
+  const verdict = hit ? `BREATHING-LIKE RHYTHM${bpm ? `  ${f0(bpm)} per minute` : ''}` : 'NO CLEAR BREATHING';
+  g.fillStyle = hit ? '#ff4d42' : '#e8edf0'; g.fillText(verdict, 6, 34);
+  const vw = g.measureText(verdict).width;
+  g.font = '500 25px Inter, system-ui, sans-serif'; g.fillStyle = '#8d98a1';
+  const sub = hit ? 'a place for rescuers to check, not a confirmed person' : String(fin.text || 'noise only').split('->')[0].trim();
+  g.fillText(`  ·  ${sub}`, 6 + vw, 34);
+  g.textAlign = 'right'; g.fillText(`Radar on ${who} at ${pn(sc.pile)} · ${f0(dur)} s scan · simulated returns`, W - 6, 34);
+  // three panels
+  const T = 76, B = 40, gap = 40, L0 = 76, PW = (W - 2 * gap - 3 * L0) / 3, PH = H - T - B;
+  const px = k => L0 + k * (PW + L0 + gap);
+  const tl = ['range vs time, 1–10 m (bright = strongest return)', 'chest / surface movement (mm)', 'micro-Doppler: rhythm frequencies 0–5 Hz (breathing band marked)'];
+  g.font = '500 22px Inter, system-ui, sans-serif';
+  for (let k = 0; k < 3; k++) {
+    const x0 = px(k); g.fillStyle = k === 1 ? '#17191e' : '#0b0c0f'; g.fillRect(x0, T, PW, PH);
+    g.strokeStyle = 'rgba(255,255,255,0.12)'; g.lineWidth = 2; g.strokeRect(x0, T, PW, PH);
+    g.fillStyle = '#8d98a1'; g.textAlign = 'left'; g.fillText(tl[k], x0, T - 12);
+    g.textAlign = 'center';
+    for (let t0 = 0; t0 <= dur + 1e-6; t0 += 10) { const x = x0 + t0 / dur * PW; g.fillText(String(t0), x, H - 10); }
+  }
+  const reveal = x0 => x0 + PW * frac;
+  // 1) range vs time
+  { const x0 = px(0), ax = sc.range_axis || [], db = sc.range_db || [];
+    const rows = ax.map((r, i) => [r, db[i]]).filter(([r]) => r >= 1 && r <= 10);
+    const vals = rows.map(r => r[1]).sort((a, b) => a - b), med = vals[Math.floor(vals.length / 2)] || 0, top = vals[vals.length - 1] || 1;
+    const cols = 110, cw = PW / cols;
+    for (const [r, d] of rows) {
+      const y = T + PH - (r - 1) / 9 * PH, q = Math.max(0, (d - med) / Math.max(1, top - med)) ** 2.2;
+      if (q < 0.04) continue;
+      for (let c = 0; c < cols * frac; c++) {
+        const f = 0.55 + 0.45 * Math.abs(Math.sin(c * 12.9898 + r * 78.233));
+        g.fillStyle = heat(Math.min(1, q * f)); g.globalAlpha = Math.min(1, 0.25 + q);
+        g.fillRect(x0 + c * cw, y - 3, cw * 0.72, 6);
+      }
+    }
+    g.globalAlpha = 1;
+    if (sig.range_m) { const y = T + PH - (sig.range_m - 1) / 9 * PH; g.fillStyle = '#8d98a1'; g.textAlign = 'right'; g.fillText(`${(+sig.range_m).toFixed(1)} m`, x0 - 6, y + 8); }
+    g.textAlign = 'right'; g.fillStyle = '#5c666e'; g.fillText('10', x0 - 6, T + 18); g.fillText('1', x0 - 6, T + PH);
+  }
+  // 2) chest movement
+  { const x0 = px(1), amp = Math.max(...w.map(Math.abs)) || 1, n = Math.max(2, Math.floor(w.length * frac));
+    g.strokeStyle = 'rgba(255,255,255,0.10)'; g.beginPath(); g.moveTo(x0, T + PH / 2); g.lineTo(x0 + PW, T + PH / 2); g.stroke();
+    g.strokeStyle = '#f4f6f8'; g.lineWidth = 2.6; g.lineJoin = 'round'; g.beginPath();
+    for (let i = 0; i < n; i++) { const x = x0 + i / (w.length - 1) * PW, y = T + PH / 2 - w[i] / amp * (PH / 2 - 8); i ? g.lineTo(x, y) : g.moveTo(x, y); }
+    g.stroke();
+    g.fillStyle = '#5c666e'; g.textAlign = 'right'; g.fillText(`${f0(amp)}`, x0 - 6, T + 18); g.fillText(`-${f0(amp)}`, x0 - 6, T + PH);
+  }
+  // 3) micro-Doppler spectrogram
+  { const x0 = px(2), S = waveSpec || [], nf = S.length ? S[0].length : 0, nyq = fps / 2;
+    const cw = PW / Math.max(1, S.length), rh = PH / Math.max(1, nf);
+    for (let c = 0; c < S.length * frac; c++) for (let k = 0; k < nf; k++) {
+      const q = S[c][k]; if (q < 0.08) continue;
+      g.fillStyle = heat(q); g.fillRect(x0 + c * cw, T + PH - (k + 1) * rh, cw + 0.6, rh + 0.6);
+    }
+    const yb = hz => T + PH - hz / nyq * PH;
+    g.fillStyle = 'rgba(255,255,255,0.10)'; g.fillRect(x0 - 10, yb(0.7), 8, yb(0.1) - yb(0.7));
+    g.fillStyle = '#5c666e'; g.textAlign = 'right'; g.fillText(`${nyq}`, x0 - 14, T + 18); g.fillText('0', x0 - 14, T + PH);
+  }
+  $('wcap').textContent = hit ? 'Red dots on the left = the radar return under the rubble; the white line is its tiny up-and-down chest movement; the bright low band on the right is a breathing rhythm.'
+    : 'No steady breathing rhythm stands out from the noise in this scan, so the drones move or listen next.';
 }
 
 // ---------------------------------------------------------------- the site map: click a pile; LiDAR dots fill in
@@ -927,10 +981,13 @@ async function pollSide() {
 }
 // site switch (POST /api/site on the box writes site.json {site, seed, look, status: loading|ready|running})
 // ?sites=grid:7:day:Rubble street|weiguan:7:day:Collapsed tower|grid:11:dusk:Street at dusk
-const SITES = (Q.get('sites') || 'grid:7:day:Rubble street|weiguan:7:day:Collapsed tower|grid:11:dusk:Street at dusk, dust')
+// ?only=site:seed:look:Label  -> one site, no site selection: the page opens straight on its 3D LiDAR map
+const ONLY = Q.get('only');
+if (ONLY) document.documentElement.classList.add('only1');
+const SITES = (ONLY || Q.get('sites') || 'grid:7:day:Rubble street|weiguan:7:day:Collapsed tower|grid:11:dusk:Street at dusk, dust')
   .split('|').map(x => { const [site, seed, look, ...l] = x.split(':'); return { site, seed: +seed, look, label: l.join(':') }; });
 const API_SITE = new URL('../../api/site', location.href).href;
-const siteOf = S => S && SITES.find(x => x.site === S.site && x.seed === +S.seed && x.look === S.look);
+const siteOf = S => S && SITES.find(x => x.site === S.site && (ONLY || (x.seed === +S.seed && x.look === S.look)));
 $('sitechips').innerHTML = SITES.map((x, i) => `<span class="sc2" data-i="${i}">${esc(x.label)}</span>`).join('');
 $('sitechips').addEventListener('click', async e => {
   const el = e.target.closest('.sc2'); if (!el) return;
@@ -996,6 +1053,7 @@ async function pkLoad() {
   }));
 }
 async function pkStart() {
+  if (ONLY) { await pkLoad(); return pkSite(PK.sites[0]); }   // one site: straight to its 3D map
   PK.open = 'start'; PK.seq0 = pkSeq(); PK.queued = null;
   const show = () => { if (PK.open === 'start') Picker.start({ stage: pkStage(), sites: PK.sites.map(ps => ({ ...ps, data: pkData(ps) })), onSite: pkSite }); };
   show();
@@ -1005,7 +1063,7 @@ function pkTopo(ps) {
   PK.open = 'topo'; PK.cur = ps; PK.seq0 = pkSeq(); PK.queued = null;
   Picker.topo({ stage: pkStage(), data: pkData(ps) || { piles: [] }, title: ps.label, loading: !pkReady(),
     onPick: p => { if (!p || !p.pile) return; PK.queued = p.pile; PK.failAt = 0; if (!/switched|recording|Could not load/.test(PK.err)) PK.err = ''; pkTry(); },
-    onBack: () => pkStart() });
+    onBack: () => { if (!ONLY) pkStart(); } });
 }
 // the chosen site is up and its run is waiting for the first click
 function pkReady() {
@@ -1024,7 +1082,7 @@ async function pkSite(ps, again) {
   PK.err = ''; if (!again) PK.retry = 0;
   const x = ps.ref, same = siteOf(SITE) === x, L = window._last;
   let url = null, body = null;
-  if (!same) { url = API_SITE; body = { site: x.site, seed: x.seed, look: x.look }; }
+  if (!same && !ONLY) { url = API_SITE; body = { site: x.site, seed: x.seed, look: x.look }; }   // one-site mode never switches sites
   else if (SITE && SITE.status !== 'loading' && !(L && held(L))) { url = API_RESET; body = {}; }   // same site, used: reset it
   if (url) PK.wait = vnow();
   if (!again) pkTopo(ps);

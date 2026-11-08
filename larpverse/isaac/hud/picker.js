@@ -388,7 +388,7 @@ function topo(opts) {
     <canvas class="pk-dots"></canvas><div class="pk-vig"></div><canvas class="pk-ov"></canvas>
     <div class="pk-top">
       <button class="pk-back" type="button">← Sites</button>
-      <div class="pk-tt"><div class="pk-kick">Step <b>2</b> of 2 · ${esc(nm)}</div><h2>Where should the drones search first?</h2></div>
+      <div class="pk-tt"><div class="pk-kick">${document.documentElement.classList.contains("only1") ? "Live LiDAR map" : "Step <b>2</b> of 2"} · ${esc(nm)}</div><h2>Where should the drones search first?</h2></div>
       <div class="pk-status"><i></i><span></span></div>
     </div>
     <div class="pk-legend"><div><span style="color:#fff">●</span>Brighter dots = higher rubble</div>

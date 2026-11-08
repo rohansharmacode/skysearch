@@ -600,6 +600,38 @@ def nearest_pile(pile_xy, x, y, max_d=22.0):
     return best if math.hypot(pile_xy[best][0] - x, pile_xy[best][1] - y) <= max_d else None
 
 
+RISK_RED_DEG, RISK_YELLOW_DEG, RISK_STEP_M, RISK_CELL_M = 35.0, 20.0, 0.8, 0.5
+RISK_RGB = {"red": (1.0, 0.12, 0.08), "yellow": (1.0, 0.82, 0.10), "white": (0.92, 0.92, 0.92)}
+
+
+def lidar_risk(P, cell=RISK_CELL_M):
+    """Landing risk per LiDAR point from the drones' OWN points (never truth): grid them into cell x cell max-height
+    columns, slope from the height gradient and the largest step to a neighbour. red = slope > 35 deg or a step
+    > 0.8 m (unstable / unsafe to land), yellow = 20-35 deg, white = below. Returns (colours Nx3, red%, yellow%)."""
+    P = np.asarray(P, np.float32)
+    if len(P) == 0:
+        return np.zeros((0, 3), np.float32), 0.0, 0.0
+    ij = np.floor((P[:, :2] - P[:, :2].min(0)) / cell).astype(np.int64)
+    W, H = ij[:, 0].max() + 1, ij[:, 1].max() + 1
+    Z = np.full((W, H), np.nan, np.float32)
+    np.fmax.at(Z, (ij[:, 0], ij[:, 1]), P[:, 2])
+    Zf = np.where(np.isnan(Z), np.nanmin(Z), Z)
+    gx, gy = np.gradient(Zf, cell)
+    slope = np.degrees(np.arctan(np.hypot(gx, gy)))
+    pad = np.pad(Zf, 1, mode="edge")
+    step = np.max([np.abs(pad[1 + dx:W + 1 + dx, 1 + dy:H + 1 + dy] - Zf) for dx in (-1, 0, 1) for dy in (-1, 0, 1)], 0)
+    s, st = slope[ij[:, 0], ij[:, 1]], step[ij[:, 0], ij[:, 1]]
+    red = (s > RISK_RED_DEG) | (st > RISK_STEP_M)
+    yel = ~red & (s > RISK_YELLOW_DEG)
+    C = np.tile(np.array(RISK_RGB["white"], np.float32), (len(P), 1))
+    C[yel] = RISK_RGB["yellow"]
+    C[red] = RISK_RGB["red"]
+    return C, round(100.0 * red.mean(), 1), round(100.0 * yel.mean(), 1)
+
+
+VAN_MID_X, VAN_SCALE = 1.15, (1.15, 1.05)            # police van: middle pad 1.15 m behind the origin; x/y scale
+
+
 def budgeted_decider(budget, log):
     """agents.gemini_decider.make_decider with a hard cap on LLM calls. No key (checked per call, so a key added to
     .env mid-run is used from the next gate), or the cap reached: the same module's deterministic fallback, by='fallback'."""
@@ -671,6 +703,19 @@ def main(argv=None):
     hm = sc.heightmap(0.5)                  # public geometry: overlay draping + dry-run LiDAR target
     say(f"site {getattr(sc, 'site', 'grid')}: {len(sc.piles)} sectors; heightmap {hm.w}x{hm.h} in {time.time() - t0:.1f} s")
     surface = hm.height_at
+    ROOF = VAN_POSE = None                  # LV_VAN_STYLE=police: {"pads", "top"} of the van roof the drones launch from
+
+    def roof_lift(x, y, z):
+        """Visual z offset (m): on the van roof at the pads, fading out once the climb passes roof height or the
+        drone is > ~3 m from a pad. Display only: the mission's poses and pads are unchanged."""
+        if ROOF is None:
+            return 0.0
+        d = min(math.hypot(x - px, y - py) for px, py in ROOF["pads"])
+        w = min(1.0, max(0.0, 1.0 - (d - 1.2) / 2.0))
+        if w <= 0.0:
+            return 0.0
+        g = float(surface(x, y))
+        return w * max(0.0, (ROOF["top"] - g) - max(0.0, z - g))
     from isaac.site import site_name
 
     stage, dd, rtx, dust = None, None, None, None
@@ -700,11 +745,31 @@ def main(argv=None):
         if a.photoreal:                     # visual only; colliders keep the scenario's piece poses
             from isaac import photoreal
             photoreal.dress(stage, sc, a, say)
+        ROOF = VAN_POSE = None
         if a.van:                           # command van + staging dressing (visual only, no colliders)
             from isaac import van
             vx, vy, vz, vyaw = van.staging_pose(sc)
             van.hide_legacy_staging(stage)
-            info = van.build_van(stage, "/World/Van", (vx, vy), vyaw, z=vz, mdl=bool(a.van_mdl))
+            police = van.STYLE == "police"
+            if police:                      # LV_VAN_STYLE=police: the van stands over the drone pads (same pad xy);
+                from isaac.site import drone_pads   # the drones sit on its roof and lift off from there (visual z only)
+                pads = [tuple(map(float, p[:2])) for p in drone_pads(sc)]
+                (x0, y0), (x2, y2) = pads[0], pads[-1]
+                L = math.hypot(x2 - x0, y2 - y0) or 1.0
+                dx, dy = (x2 - x0) / L, (y2 - y0) / L
+                mx, my = sum(p[0] for p in pads) / len(pads), sum(p[1] for p in pads) / len(pads)
+                vx, vy = mx + VAN_MID_X * dx, my + VAN_MID_X * dy   # middle pad over the cargo roof's middle square
+                vyaw = math.degrees(math.atan2(dy, dx))
+                vz = float(max(surface(px, py) for px, py in pads))
+            info = van.build_van(stage, "/World/Van", (vx, vy), vyaw, z=vz, mdl=bool(a.van_mdl),
+                                 outside=not police)
+            if police:
+                from pxr import UsdGeom as _UG
+                _UG.Xformable(stage.GetPrimAtPath("/World/Van")).AddScaleOp().Set((VAN_SCALE[0], VAN_SCALE[1], 1.0))
+                ROOF = {"pads": pads, "top": vz + van.CARGO["z1"] + 0.03}
+                say(f"[van] police van over the pads at ({vx:.1f}, {vy:.1f}) yaw {vyaw:.0f}; roof launch at "
+                    f"z {ROOF['top']:.2f} (visual only; mission pads unchanged)")
+            VAN_POSE = (vx, vy, vz, vyaw)
             say(f"command van at ({vx:.1f}, {vy:.1f}) yaw {vyaw:g}: {info.get('total')} tris")
         if a.dummies:                       # the victims as stage prims: the live take's source of truth
             from isaac import dummies as DM
@@ -770,7 +835,7 @@ def main(argv=None):
         from isaac.van import staging_pose
         cam = TakeCamera(stage, pile_xy, base_xy=base_xy(sc), pads=drone_pads(sc), surface=surface,
                          mirrors=[] if a.dry_run else [compat.PERSP], switch_viewport=True,
-                         van=staging_pose(sc) if (a.van or a.dry_run) else None)
+                         van=(VAN_POSE or staging_pose(sc)) if (a.van or a.dry_run) else None)
     elif a.camera == "story":
         cam = StoryCamera(stage, start=(*base_xy(sc)[:2], 3.0), mirrors=mirrors, switch_viewport=True)
     else:
@@ -896,6 +961,14 @@ def main(argv=None):
             say(f"INTERACTIVE: drones on the pads; waiting for the operator's first click (POST /api/goto -> {gp})")
             g = None
             cam_warned, cam_t = False, time.monotonic()
+            for d0 in cur.get("drones", []):        # on the pads (the police van's roof when LV_VAN_STYLE=police)
+                dr0, p0 = drones.get(d0.get("id")), d0.get("pose")
+                if dr0 is not None and p0 and hasattr(dr0, "set_pose"):
+                    try:
+                        dr0.set_pose(float(p0[0]), float(p0[1]), float(p0[2]) + roof_lift(p0[0], p0[1], p0[2]),
+                                     float(p0[3]) if len(p0) > 3 else 0.0)
+                    except Exception:               # noqa: BLE001
+                        pass
             while g is None:
                 try:                                # the opening shot, as the take's hold-file branch frames it
                     now_h = time.monotonic()
@@ -1055,6 +1128,40 @@ def main(argv=None):
         return ctrl.listen_pace(t_render, s0) if phase == "acoustic" else ctrl.quick_pace(s0)
 
     hold_said = False
+    flash_req = False                                   # --interactive: LiDAR risk flash when a pile's survey ends
+    flash_hold, flash_restore, flash_w0 = None, None, None
+    # LV_TOUCHDOWN=1 (opt-in, visual only): a landed drone settles onto the rubble it actually stands on. Four leg-tip
+    # PhysX raycasts (the same colliders the LiDAR sees; heightmap fallback) -> least-squares ground plane -> body
+    # height and roll/pitch, eased in with a short damped follow; eased back to level on lift-off. Same xy, same
+    # mission poses and landing spots (sim/landing.py chose them from the LiDAR topology).
+    TOUCH = os.environ.get("LV_TOUCHDOWN") == "1" and not a.dry_run
+    touch_fit, touch_cur = {}, {}
+
+    def touchdown(did, x, y, z, yaw, landed, dt):
+        tgt = (0.0, 0.0, 0.0)
+        if landed:
+            key = (did, round(x, 1), round(y, 1))
+            fit = touch_fit.get(key)
+            if fit is None:
+                c, sn = math.cos(math.radians(yaw)), math.sin(math.radians(yaw))
+                pts = []
+                for lx, ly in ((0.55, 0.55), (0.55, -0.55), (-0.55, 0.55), (-0.55, -0.55)):
+                    wx, wy = x + c * lx - sn * ly, y + sn * lx + c * ly
+                    h = lidar.cast((wx, wy, z + 6.0), (0, 0, -1), 30.0) if hasattr(lidar, "cast") else None
+                    pts.append((lx, ly, float(h[2]) if h is not None else float(surface(wx, wy))))
+                A = np.array([[p[0], p[1], 1.0] for p in pts])
+                (ax, ay, c0), *_ = np.linalg.lstsq(A, np.array([p[2] for p in pts]), rcond=None)
+                pitch = max(-18.0, min(18.0, -math.degrees(math.atan(ax))))
+                roll = max(-18.0, min(18.0, math.degrees(math.atan(ay))))
+                dz = max(-0.4, min(0.4, float(c0) - float(surface(x, y))))
+                fit = touch_fit[key] = (dz, roll, pitch)
+            tgt = fit
+        cur0 = touch_cur.get(did, (0.0, 0.0, 0.0))
+        k = 1.0 - math.exp(-max(dt, 1e-3) / 0.15)
+        new = tuple(v + (t - v) * k for v, t in zip(cur0, tgt))
+        touch_cur[did] = new
+        return new
+    FLASH_HOLD_S, FLASH_W = 1.2, 0.30                   # s at full strength, then overlay's fade; point width (m)
     OV_ONCE = os.environ.get("LV_OVERLAY_ONCE") == "1"          # fps opt-in: one overlay rebuild per frame, not per drained state
     PHYSX_DIV = max(1, int(os.environ.get("LV_PHYSX_DIV", "1")))  # fps opt-in: step PhysX every Nth frame, render-only otherwise
     ov_dirty, fps_t0, fps_n, fps_now = False, clock(), 0, 0.0
@@ -1105,6 +1212,9 @@ def main(argv=None):
                 if steps % 20 == 0:
                     say(f"step {steps} t={cur.get('t')} phase={cur.get('phase')} pile={active} "
                         f"lidar={accum.total} pts{wall} fps={fps_now:.1f}")
+                if cur.get("phase") != last_phase and a.interactive and last_phase == "survey" \
+                        and cur.get("phase") == "landing":
+                    flash_req = True
                 if cur.get("phase") != last_phase:
                     say(f"phase {cur.get('phase')} at t={cur.get('t')}{wall}")
                     last_phase = cur.get("phase")
@@ -1125,10 +1235,21 @@ def main(argv=None):
                 dr = drones.get(did)
                 if dr is None:
                     continue
+                zo = roof_lift(x, y, z)             # police van: on the roof until the climb passes roof height
                 raw = pz[8] if len(pz) > 8 else None
                 if raw is not None and raw.get("quat") is not None and hasattr(dr, "set_state"):
                     # flight motion (sim/flight_motion.py via isaac/motion.py): attitude, per-rotor rpm, winch
-                    dr.set_state(raw["xyz"], raw["quat"], raw.get("rotor_rpm"), raw.get("winch_len"), rdt,
+                    xyz = list(raw["xyz"])
+                    xyz[2] = float(xyz[2]) + zo
+                    q = raw["quat"]
+                    if TOUCH and zo < 0.01:
+                        landed = st in GROUNDED and (z - float(surface(x, y))) < 0.8
+                        tdz, troll, tpitch = touchdown(did, x, y, z, yaw, landed, rdt)
+                        if abs(troll) + abs(tpitch) > 0.05 or abs(tdz) > 0.005:
+                            from isaac.drone_viz import quat_ypr
+                            xyz[2] += tdz
+                            q = quat_ypr(yaw, tpitch, troll)
+                    dr.set_state(xyz, q, raw.get("rotor_rpm"), raw.get("winch_len"), rdt,
                                  sway_deg=raw.get("sway_deg"), ground_z=raw.get("ground_z", pod_z.get(did)))
                     motion_drives = motion_drives or raw.get("winch_len") is not None
                     tilt_f[did] = tuple(raw.get("tilt") or (0.0, 0.0))
@@ -1143,7 +1264,7 @@ def main(argv=None):
                     tf = tilt_f[did]
                     tilt_f[did] = (tf[0] + (want[0] - tf[0]) * k, tf[1] + (want[1] - tf[1]) * k)
                 if raw is None or raw.get("quat") is None or not hasattr(dr, "set_state"):
-                    dr.set_pose(x, y, z, yaw, tilt_f[did])
+                    dr.set_pose(x, y, z + zo, yaw, tilt_f[did])
                     air = z - float(surface(x, y)) > 0.4
                     dr.spin(rdt, on=air or st not in GROUNDED)
                 sx = start_xy.get(did, (x, y, z))
@@ -1187,6 +1308,38 @@ def main(argv=None):
             hud.update(cur, ctrl, accum.total, now=clock(), speed=a.speed, sim_t=t_render)
             if rigs is not None:
                 rigs.update(poses, focus, rdt)
+            if flash_req:                       # the survey just ended: the pile's own LiDAR points, coloured by risk
+                flash_req = False
+                try:
+                    P = accum.points(active)
+                    if len(P) > 30000:
+                        P = P[np.random.default_rng(0).choice(len(P), 30000, replace=False)]
+                    C, red_pct, yel_pct = lidar_risk(P)
+                    if len(P):
+                        import isaac.overlay as _ovm
+                        flash_w0 = _ovm.POINT_W if flash_w0 is None else flash_w0
+                        _ovm.POINT_W = FLASH_W          # thick enough to read from the wide take camera
+                        flash_hold, flash_restore = now + FLASH_HOLD_S, now + FLASH_HOLD_S + _ovm.LIDAR_FADE_S + 0.3
+                        overlay.b.clear_points()
+                        overlay.b.add_points(np.asarray(P, np.float32), C)
+                        overlay.b.set_points_alpha(1.0)
+                        overlay._alpha, overlay._lidar_shown, overlay._new_pts = 1.0, True, False
+                        overlay._live_t = now           # overlay.tick fades it out over LIDAR_FADE_S
+                    lf = {"pile": active, "t": cur.get("t"), "wall": time.time(), "points": int(len(P)),
+                          "red_pct": red_pct, "yellow_pct": yel_pct}
+                    if ctrl is not None:
+                        ctrl.lidar_flash = lf
+                    say(f"LIDAR FLASH {active}: {len(P)} points, red {red_pct}% yellow {yel_pct}% (own points, slope/step)")
+                except Exception as e:          # noqa: BLE001  (display only: never stop the run)
+                    say(f"LIDAR FLASH failed ({type(e).__name__}: {e})")
+            if flash_hold is not None:
+                if now < flash_hold:
+                    overlay._new_pts = True             # keeps overlay.tick from starting the fade yet
+                else:
+                    flash_hold = None
+            if flash_restore is not None and now >= flash_restore:
+                import isaac.overlay as _ovm
+                _ovm.POINT_W, flash_restore = flash_w0, None
             overlay.tick(now)
             frame += 1
             fps_n += 1

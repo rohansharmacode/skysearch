@@ -4,6 +4,8 @@
 NAME=${NAME:?}; SITE=${SITE:-grid}; SEED=${SEED:-7}; LOOK=${LOOK:-day}; PILE=${PILE:?}
 HOLD=${HOLD:-10}; AFTER=${AFTER:-15}; MAXT=${MAXT:-240}
 C=/home/ubuntu/live2; D=/home/ubuntu/lv/larpverse/dashboard/data; cd $C
+touch /tmp/recording.lock; echo '{"recording": true}' > $D/recording.json   # public clicks get 423; viewers see the take
+trap "rm -f /tmp/recording.lock; echo {\\\"recording\\\": false} > $D/recording.json" EXIT
 T0=$(date +%s)
 [ "${SKIP_SITE:-0}" = 1 ] || curl -s -X POST -d "{\"site\":\"$SITE\",\"seed\":$SEED,\"look\":\"$LOOK\"}" http://127.0.0.1:8765/api/site; echo
 sleep 8
@@ -21,10 +23,7 @@ sleep $HOLD
 SEQ=$(date +%s%N); echo "{\"seq\": $SEQ, \"pile\": \"$PILE\"}" > /tmp/console_cmd.json
 echo "$(date +%T) +$(( $(date +%s) - R0 ))s click $PILE"
 N0=$(grep -ac 'Dispatch d1-d3' ~/console.log)
-until [ $(grep -ac "Dispatch d1-d3" ~/console.log) -gt $N0 ]; do   # first autonomous dispatch (the launch line says Deploy)
-  kill -0 $FF 2>/dev/null || break; sleep 1; done
-echo "$(date +%T) +$(( $(date +%s) - R0 ))s autonomous dispatch: $(grep -a 'Dispatch d1-d3' ~/console.log | tail -1 | cut -c1-140)"
-sleep $AFTER
+. /home/ubuntu/live2/wait_stop.sh                    # stop rule (first own dispatch, lead, cross, cap)
 kill -INT $FF; wait $FF 2>/dev/null
 echo "$(date +%T) stopped; $(ffprobe -v error -show_entries format=duration -of csv=p=0 $NAME.mkv) s, $(stat -c %s $NAME.mkv) B"
 grep -aE 'Deploy d1|Decision \(|Dispatch d1|RE-PLAN|Gemini' ~/console.log | cut -c1-200 | tail -6

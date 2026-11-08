@@ -21,8 +21,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 UP = ("127.0.0.1", 8765)
 CONSOLE = "/isaac/hud/console.html"
 HOME = CONSOLE + "?state=../../dashboard/data/state.json&stream=/stream.mjpg"
-GET_OK = {CONSOLE, "/stream.mjpg", "/frame.jpg", "/assets/audio/dummies/manifest.json"} | {f"/dashboard/data/{n}" for n in (
-    "state.json", "live.json", "hud.json", "site.json", "goto.json", "console.json", "pointcloud.bin")}
+GET_OK = {CONSOLE, "/isaac/hud/picker.js", "/stream.mjpg", "/stream_full.mjpg", "/frame.jpg", "/assets/audio/dummies/manifest.json"} | {f"/dashboard/data/{n}" for n in (
+    "state.json", "live.json", "hud.json", "site.json", "goto.json", "console.json", "pointcloud.bin", "recording.json")} | {f"/dashboard/data/sites/{n}.json" for n in ("grid-7", "weiguan-7", "grid-11")}
 POST_GAP = {"/api/goto": 3.0, "/api/site": 90.0, "/api/reset": 20.0}
 LOCK = "/tmp/recording.lock"
 _last, _mu = {}, threading.Lock()
@@ -43,6 +43,28 @@ class H(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    def _relay(self, method, path, body=None):
+        c = http.client.HTTPConnection(*UP, timeout=30)
+        hdrs = {"Content-Type": "application/json"} if body is not None else {}
+        c.request(method, path, body=body, headers=hdrs)
+        r = c.getresponse()
+        self.send_response(r.status)
+        for k in ("Content-Type", "Content-Length", "Cache-Control"):
+            if r.getheader(k):
+                self.send_header(k, r.getheader(k))
+        self.end_headers()
+        try:
+            while True:
+                chunk = r.read1(65536) if hasattr(r, "read1") else r.read(65536)
+                if not chunk:
+                    break
+                self.wfile.write(chunk)
+                self.wfile.flush()
+        except (BrokenPipeError, ConnectionResetError):
+            pass
+        finally:
+            c.close()
+
     def _relay_json(self, path):
         """Small files (state.json ~240 KB, polled 3x/s): ETag -> 304 when unchanged, gzip otherwise (~6x smaller),
         so the tunnel's bandwidth goes to the video stream."""
@@ -53,6 +75,8 @@ class H(BaseHTTPRequestHandler):
             data, status, ctype = r.read(), r.status, r.getheader("Content-Type") or "application/json"
         finally:
             c.close()
+        if status == 404 and path.endswith("/recording.json"):   # no take running: say so (no 404 spam)
+            data, status, ctype = b'{"recording": false}', 200, "application/json"
         tag = '"' + hashlib.md5(data).hexdigest()[:16] + '"'
         if status == 200 and self.headers.get("If-None-Match") == tag:
             self.send_response(304)
@@ -76,28 +100,6 @@ class H(BaseHTTPRequestHandler):
             self.wfile.write(out)
         except (BrokenPipeError, ConnectionResetError):
             pass
-
-    def _relay(self, method, path, body=None):
-        c = http.client.HTTPConnection(*UP, timeout=30)
-        hdrs = {"Content-Type": "application/json"} if body is not None else {}
-        c.request(method, path, body=body, headers=hdrs)
-        r = c.getresponse()
-        self.send_response(r.status)
-        for k in ("Content-Type", "Content-Length", "Cache-Control"):
-            if r.getheader(k):
-                self.send_header(k, r.getheader(k))
-        self.end_headers()
-        try:
-            while True:
-                chunk = r.read1(65536) if hasattr(r, "read1") else r.read(65536)
-                if not chunk:
-                    break
-                self.wfile.write(chunk)
-                self.wfile.flush()
-        except (BrokenPipeError, ConnectionResetError):
-            pass
-        finally:
-            c.close()
 
     def do_GET(self):
         route, _, query = self.path.partition("?")

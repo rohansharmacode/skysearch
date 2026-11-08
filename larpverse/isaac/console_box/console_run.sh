@@ -6,6 +6,9 @@ SITE=${SITE:-grid}; SEED=${SEED:-7}; LOOK=${LOOK:-day}
 C=/home/ubuntu/live2; cd $C
 . ~/isaac/bin/activate; export OMNI_KIT_ACCEPT_EULA=YES ACCEPT_EULA=Y LARPVERSE_WHISPER_DEVICE=cuda
 export LV_OVERLAY_ONCE=1 LV_RPM_DIV=2 LV_PHYSX_DIV=2
+export GEMINI_MODEL=${GEMINI_MODEL:-gemini-4-argon}
+export GEMINI_AUDIO_MODEL=${GEMINI_AUDIO_MODEL:-gemini-3.5-flash}   # drones: audio analysis + transcription check   # live runs only (not a code default: replay caches are keyed by model)
+export LV_VAN_STYLE=${VAN_STYLE:-police}            # generic police van; the drones launch from its roof
 export LARPVERSE_PEOPLE=${PEOPLE:-3}          # simulated people, each under a different pile (sim/scenario.py)
 L=~/lv/larpverse; D=$L/dashboard/data
 mkdir -p $D

@@ -43,6 +43,56 @@ SCREEN_SOURCES = {"dash_recon.jpg": "docs/review/img/dash-b3-recon-1440.png",
                   "dash_map.jpg": "docs/review/img/dash-b3-fixture-1920.png",
                   "dash_detail.jpg": "docs/review/img/dash-b3-detail-1440.png"}
 LIVERY = ("van_livery_full.png", "van_livery_panel.png", "van_livery_stripes.png", "van_rear.png")
+# LV_VAN_STYLE=police: a GENERIC police van (white, blue/yellow Battenburg checks, "POLICE", blue light bar), no real
+# force's name or crest; a clean roof (no mast, dish or A/C) that carries the three drone pads.
+STYLE = os.environ.get("LV_VAN_STYLE", "rescue")
+LIVERY_POLICE = ("van_police_full.png", "van_police_panel.png", "van_police_stripes.png", "van_police_rear.png")
+
+
+def make_police_textures(out_dir=TEX_DIR, force=False):
+    """Generic police livery (PIL): white body, two rows of blue / yellow Battenburg checks, POLICE lettering."""
+    from PIL import Image, ImageDraw, ImageFont
+    os.makedirs(out_dir, exist_ok=True)
+    try:
+        import matplotlib
+        bold = os.path.join(os.path.dirname(matplotlib.__file__), "mpl-data", "fonts", "ttf", "DejaVuSans-Bold.ttf")
+        ImageFont.truetype(bold, 10)
+    except Exception:
+        bold = None
+    font = (lambda px: ImageFont.truetype(bold, px)) if bold else (lambda px: ImageFont.load_default())
+    WHITE, BLUE, YELLOW, GREY = (240, 242, 244), (18, 52, 150), (250, 210, 20), (60, 66, 74)
+
+    def checks(im, v_lo=0.16, v_hi=0.36, n=None):
+        W, H = im.size
+        d = ImageDraw.Draw(im)
+        y0, y1 = int(H * (1 - v_hi)), int(H * (1 - v_lo))
+        h = (y1 - y0) // 2
+        n = n or max(4, int(round(W / h)))
+        w = W / n
+        for row in range(2):
+            for k in range(n):
+                col = BLUE if (k + row) % 2 == 0 else YELLOW
+                d.rectangle([int(k * w), y0 + row * h, int((k + 1) * w), y0 + (row + 1) * h], fill=col)
+        d.rectangle([0, H - int(H * 0.035), W, H], fill=GREY)
+        return d
+
+    def centred(d, W, y, text, px, fill=BLUE):
+        f = font(px)
+        d.text(((W - d.textlength(text, font=f)) / 2, y), text, font=f, fill=fill)
+    out = {}
+    for name, size, words in ((LIVERY_POLICE[0], (2048, 1014), (("POLICE", 230, 300),)),
+                              (LIVERY_POLICE[1], (1024, 1066), (("POLICE", 300, 190),)),
+                              (LIVERY_POLICE[2], (256, 1024), ()),
+                              (LIVERY_POLICE[3], (1024, 1024), (("POLICE", 260, 170),))):
+        p = os.path.join(out_dir, name)
+        if force or not os.path.exists(p):
+            im = Image.new("RGB", size, WHITE)
+            d = checks(im)
+            for text, y, px in words:
+                centred(d, size[0], y, text, px)
+            im.save(p)
+            out[name] = p
+    return out
 TRI_BUDGET = 50_000
 
 
@@ -572,6 +622,7 @@ VAN_MATS = {
     "alu": dict(rgb=(0.70, 0.72, 0.74), rough=0.3, metal=0.9),
     "headlight": dict(rgb=(0.9, 0.9, 0.85), rough=0.2, emissive=(3.0, 2.9, 2.6)),
     "amber_lamp": dict(rgb=(0.95, 0.55, 0.05), rough=0.2, emissive=(4.0, 1.9, 0.15)),
+    "blue_lamp": dict(rgb=(0.10, 0.25, 0.95), rough=0.2, emissive=(0.3, 0.8, 5.0)),
     "white_lamp": dict(rgb=(0.95, 0.95, 0.95), rough=0.2, emissive=(3.5, 3.5, 3.4)),
     "beacon_green": dict(rgb=(0.2, 0.8, 0.3), rough=0.3, emissive=(0.4, 3.0, 0.6)),
     "led_green": dict(rgb=(0.2, 0.8, 0.3), rough=0.3, emissive=(0.3, 2.2, 0.4)),
@@ -776,9 +827,13 @@ def _van_textured(stage, root, looks, A):
     yaw = math.degrees(math.atan2(dv[1], dv[0]))
     A.g("paint").box((wd, 0.045, DOOR["z1"] - DOOR["z0"]), cen, R=Rz(yaw))
     A.g("glass").box((0.45, 0.05, 0.5), cen + (0, 0, 0.45), R=Rz(yaw))           # door window
+    liv = LIVERY
+    if STYLE == "police":
+        make_police_textures()
+        liv = LIVERY_POLICE
     for nm, g in (("livery_full", full), ("livery_panel", panel), ("livery_stripes", stripes), ("livery_rear", rear)):
-        tex = tex_path({"livery_full": LIVERY[0], "livery_panel": LIVERY[1], "livery_stripes": LIVERY[2],
-                        "livery_rear": LIVERY[3]}[nm])
+        tex = tex_path({"livery_full": liv[0], "livery_panel": liv[1], "livery_stripes": liv[2],
+                        "livery_rear": liv[3]}[nm])
         m = looks.get(nm, rgb=(0.86, 0.87, 0.86), rough=0.35, tex=tex, clearcoat=0.6)
         n = emit(stage, f"{root}/Body/{nm}", g, m, (0.86, 0.87, 0.86))
         A.tris["Body"] = A.tris.get("Body", 0) + n
@@ -854,6 +909,16 @@ def _van_roof(A, mast_h):
         A.g("alu", G).box((4.6, 0.04, 0.04), (-1.0, sy * 1.02, z1 + 0.08))
         for xx in (-3.1, -1.0, 1.1):
             A.g("alu", G).box((0.04, 0.04, 0.08), (xx, sy * 1.02, z1 + 0.04))
+    if STYLE == "police":                                                       # clean roof: the drone pads
+        A.g("trim", G).box((0.30, 1.70, 0.06), (2.2, 0, 2.79))                 # light bar: blue ends, white middle
+        for sy in (-1, 1):
+            A.g("blue_lamp", G).box((0.26, 0.55, 0.07), (2.2, sy * 0.55, 2.855))
+        A.g("white_lamp", G).box((0.26, 0.40, 0.07), (2.2, 0, 2.855))
+        for xx in (-3.25, -1.0, 1.25):                                          # three pad squares on the cargo roof
+            A.g("trim", G).box((1.30, 1.30, 0.012), (xx, 0, z1 + 0.012))
+            A.g("amber_lamp", G).box((1.10, 0.05, 0.004), (xx, 0, z1 + 0.02))
+            A.g("amber_lamp", G).box((0.05, 1.10, 0.004), (xx, 0, z1 + 0.02))
+        return
     A.g("interior", G).box((0.9, 0.8, 0.22), (0.4, 0.2, z1 + 0.11))             # A/C unit
     A.g("trim", G).box((0.5, 0.5, 0.01), (0.4, 0.2, z1 + 0.225))
     # light bar on the cab roof: amber ends, white work lights in the middle (no red: red = radar ping)

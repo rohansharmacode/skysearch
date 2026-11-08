@@ -1722,7 +1722,8 @@ class LiveController:
                              "latency_s": (self.service.latency[-5:] if self.service is not None else None)},
                 "keys": self.keys, "badge": self.badge(),
                 "banner": None if self.banner is None else dict(self.banner),
-                "causal": _causal(self._state, self)}
+                "causal": _causal(self._state, self),
+                "lidar_flash": getattr(self, "lidar_flash", None)}
 
     def write(self):
         if not self.out:

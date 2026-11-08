@@ -216,7 +216,7 @@ class Handler(SimpleHTTPRequestHandler):
         if self.path.split("?")[0] == "/api/broadcast":
             from sim.guidance import queue_load          # stdlib-only part of sim.guidance (numpy optional)
             return self._json(HTTPStatus.OK, queue_load(BROADCAST_Q))
-        if self.path.split("?")[0] in ("/stream.mjpg", "/frame.jpg"):
+        if self.path.split("?")[0] in ("/stream.mjpg", "/frame.jpg", "/stream_full.mjpg"):
             return self._mjpeg_proxy(self.path.split("?")[0])
         if self.path.split("?")[0] == "/api/site":
             return self._json(HTTPStatus.OK, _read_json(SITE_JSON, {"status": "unknown"}))
@@ -318,6 +318,8 @@ class Handler(SimpleHTTPRequestHandler):
         private port-forward to this server carries the dashboard, the API and the video."""
         import urllib.request
         port = int(os.environ.get("LARPVERSE_MJPEG_PORT", "8766"))
+        if route == "/stream_full.mjpg":          # the whole 1920x1080 screen (recording view), scripts/mjpeg.py :8767
+            port, route = int(os.environ.get("LARPVERSE_MJPEG_FULL_PORT", "8767")), "/stream.mjpg"
         try:
             up = urllib.request.urlopen(f"http://127.0.0.1:{port}{route}", timeout=5)
         except Exception as e:                                   # noqa: BLE001

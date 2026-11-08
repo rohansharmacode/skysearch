@@ -405,7 +405,8 @@ function heardCard(s) {
   $('hby').innerHTML = byTag(by);
   if (!best) { $('hq').innerHTML = 'No human voice or knocking in the last listen.'; $('hwhy').textContent = ''; return; }
   const sc = best.scores || {};
-  $('hq').innerHTML = heard(best) || `${esc(String(best.class || 'sound').replace(/_/g, ' '))} near ${esc(best.pile_id)}`;
+  const cls = String(best.class || 'sound').replace(/_/g, ' ');
+  $('hq').innerHTML = heard(best) || `A ${esc(cls)} near ${esc(best.pile_id)}` + (cls === 'voice' ? ' <small>no words made out</small>' : '');
   const bits = [`${esc(String(best.class || 'sound').replace(/_/g, ' '))} near ${esc(best.pile_id)}`, `how sure it is a person ${f2(sc.human)}`];
   if (best.bearing_deg != null) bits.push(`from the ${compass(best.bearing_deg).split(' (')[0]} of drone ${esc(best.drone_id)}`);
   if (best.doa_agree) bits.push(`${esc(best.doa_agree)} drones agree on the direction`);
@@ -422,7 +423,9 @@ function nextCard(s) {
   $('nto').textContent = op ? `${d.to_pile} (your click)` : d.to_pile;
   const alt = dec && (dec.options || []).filter(o => o.action === 'dispatch' && o.pile_id && o.pile_id !== d.to_pile && o.priority != null)
                                         .sort((x, y) => y.priority - x.priority)[0];
-  const why = op ? 'You sent the drones here.' : (dec && dec.rationale) || d.reason || '';
+  // the on-box fallback says "Fallback (no LLM configured): highest valid priority: A3 (62)": keep the reason only
+  const why = op ? 'You sent the drones here.' : String((dec && dec.rationale) || d.reason || '')
+    .replace(/^fallback \([^)]*\):\s*/i, '').replace(/^highest valid priority: (\S+) \((\d+)\)/i, 'Highest sound priority: $1 ($2 of 100)');
   $('nwhy').innerHTML = esc(why) + (alt && !op ? `<br><span style="color:#8d98a1">Next best: ${esc(alt.pile_id)} (priority ${alt.priority})</span>` : '');
 }
 
@@ -580,11 +583,12 @@ function lmUpdate(s, b) {
 }
 
 // ---------------------------------------------------------------- render
-let shown = { key: '', at: -1e9 }, SEEN = new Set(), senseKey = '';
+let shown = { key: '', at: -1e9 }, SEEN = new Set(), senseKey = '', toastAt = 0;
 function render(s) {
   window._last = s;
   const now = vnow(), t = +s.t || 0;
-  if (sent && lastGoto() && lastGoto().pile === sent.pile) { toast(`Confirmed: the simulation took ${sent.pile} at mission time ${f0(lastGoto().t)} s.`); sent = null; LM.svgSent(null); }
+  if (sent && lastGoto() && lastGoto().pile === sent.pile) { toast(`Confirmed: the drones are on their way to ${sent.pile}.`); sent = null; LM.svgSent(null); toastAt = now; }
+  else if (!sent && toastAt && now - toastAt > 8) { toast(''); toastAt = 0; }
   else if (sent && now - sent.at > 12) { toast(`No confirmation from the simulation for ${sent.pile} yet. Is it running?`, true); }
   const b = step(s);
   const [k, title, text, cls] = caption(b, s);

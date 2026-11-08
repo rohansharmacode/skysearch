@@ -29,6 +29,7 @@ button { font: inherit; color: inherit; }
 
 #shell { height: 100%; display: grid; grid-template-columns: 1fr 340px; grid-template-rows: auto auto minmax(0, 1fr);
   grid-template-areas: "hdr hdr" "ban ban" "map side"; }
+#bars { grid-area: ban; min-width: 0; }
 #hdr { grid-area: hdr; display: flex; align-items: center; gap: 14px; min-height: 48px; padding: 6px 16px; border-bottom: 1px solid var(--line); background: var(--ink-2); min-width: 0; }
 .brand { font: 600 15px var(--f-ui); letter-spacing: 0.12em; text-transform: uppercase; display: flex; align-items: center; gap: 8px; }
 .brand i { width: 9px; height: 9px; border-radius: 50%; background: var(--detect); box-shadow: 0 0 10px var(--detect); }
@@ -40,7 +41,7 @@ button { font: inherit; color: inherit; }
 .conn.demo { color: var(--radar); }
 .conn.demo::before { background: var(--radar); }
 
-#banner { grid-area: ban; padding: 8px 16px; font: 500 13px/1.35 var(--f-ui); border-bottom: 1px solid; }
+#banner { padding: 8px 16px; font: 500 13px/1.35 var(--f-ui); border-bottom: 1px solid; }
 #banner.warn { background: var(--warn-bg); color: #ffd9a6; border-color: rgba(255, 159, 67, 0.6); }
 #banner.demo { background: #12233a; color: #bcd8ff; border-color: rgba(90, 169, 255, 0.5); }
 #banner b { font-weight: 600; }
@@ -557,3 +558,51 @@ details.rej summary { cursor: pointer; font: 500 11px var(--f-mono); color: var(
 .sigth img { width: 100%; height: auto; border-radius: 3px; border: 1px solid var(--line); display: block; }
 .sigth figcaption { font: 10.5px var(--f-ui); color: var(--muted); margin-top: 3px; }
 .vkv dd small.sr { display: block; margin-left: 0; }
+/* LIVE event line + live radar waveform (live.json / hud.json, docs/VIDEO_PLAN.md D1) */
+#liveBar { display: flex; align-items: baseline; gap: 10px; padding: 7px 16px; background: #1b0f12; border-bottom: 1px solid rgba(255, 69, 69, 0.45); font: 500 14px/1.3 var(--f-ui); color: #ffe3e3; min-width: 0; }
+#liveBar > b { font: 700 11px/1 var(--f-mono); letter-spacing: 0.12em; color: #fff; background: var(--detect); padding: 4px 6px; border-radius: 2px; flex: none; animation: livepulse 1.6s ease-in-out infinite; }
+@keyframes livepulse { 50% { opacity: 0.55; } }
+#liveBar .lt { font: 12px var(--f-mono); color: #d9a3a3; flex: none; }
+#liveBar .lx { min-width: 0; }
+#liveBar .lx.k-stage { color: #e3eaef; font-style: italic; }
+#hud { display: flex; flex-direction: column; gap: 5px; }
+#hud .hh { font: 11px/1.35 var(--f-mono); color: var(--muted); }
+#hud .hh .ref { color: var(--radar); }
+#hud .hw { width: 100%; height: 64px; display: block; background: #0d1319; border: 1px solid var(--line); border-radius: 3px; }
+#hud .rb { display: flex; gap: 1px; height: 8px; }
+#hud .rb i { flex: 1; background: #ff8a8a; }
+#hud .rb i.pk { background: #fff; }
+#hud .vl { font: 14px/1.3 var(--f-ui); color: var(--fg); }
+#hud .vl b { font-weight: 600; }
+#hud .vl b.an { color: #ffd0d0; font-weight: 500; }
+#hud .vl b.nh { color: var(--muted); }
+#hud .vl small { color: var(--muted); font-size: 11px; }
+#hud .aid { font: italic 11px var(--f-ui); color: #b6c3cc; }
+#secTopClip { display: none; }
+#topClip { display: flex; flex-direction: column; gap: 4px; }
+#topClip .th { font: 12px var(--f-mono); color: var(--muted); display: flex; flex-wrap: wrap; gap: 2px 7px; align-items: baseline; }
+#topClip .th b { color: var(--fg); font-size: 14px; }
+#topClip .cls { color: var(--cone); }
+#topClip .lg { color: #cfe7ec; background: rgba(34, 195, 214, 0.12); border-radius: 2px; padding: 0 4px; }
+#topClip .pr { color: var(--teal); }
+#topClip q { font: italic 16px/1.3 var(--f-ui); color: #f2f6f8; quotes: "“" "”"; }
+
+/* ?layout=take: the split-screen right half (tuned for 960x1080; also works at 1920x1080) */
+body.take #shell { grid-template-columns: 1fr; grid-template-rows: auto auto minmax(0, 1fr) auto; grid-template-areas: "hdr" "ban" "map" "side"; height: 100%; }
+body.take #hdr { min-height: 40px; padding: 4px 12px; gap: 10px; }
+body.take .site, body.take #caseBtn .long, body.take #conn .src { display: none; }
+body.take #caseBtn .short { display: inline; }
+body.take #tools, body.take #zoom, body.take #cursor, body.take #help, body.take #plan { display: none !important; }
+body.take #legend { left: 10px; right: 10px; bottom: 6px; max-width: none; justify-content: flex-start; flex-wrap: nowrap; overflow: hidden; white-space: nowrap; gap: 12px; padding: 3px 8px; font-size: 11px; }
+body.take #legend .lx, body.take #legendGrid { display: none; }
+body.take #side { grid-area: side; border-left: 0; border-top: 1px solid var(--line); display: grid !important; grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr); align-content: start; overflow: hidden; max-height: 47vh; }
+body.take #side .col { display: contents !important; }
+body.take #side > *, body.take #side .col > * { display: none; }
+body.take #secCands { display: block !important; grid-column: 1; grid-row: 1 / span 2; border-right: 1px solid var(--line); overflow: hidden; }
+body.take #secHud:not([hidden]) { display: block !important; grid-column: 2; grid-row: 1; }
+body.take #secTopClip:not([hidden]) { display: block !important; grid-column: 2; grid-row: 2; }
+body.take #side section { padding: 10px 12px; }
+body.take #cands > .dig:nth-of-type(n+4), body.take #cands details.rej, body.take #cands .dignote, body.take .dig .l3, body.take .dig .l4 .cv, body.take .dig .l4 .go { display: none; }
+body.take .dig { padding: 6px 8px; margin-bottom: 5px; }
+body.take .dig .l2 { font-size: 15px; }
+body.take #liveBar { font-size: 15px; padding: 8px 12px; }

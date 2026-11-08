@@ -94,9 +94,9 @@ Defaults that `--live` sets for you: van on (with `--photoreal 1`), dummies on, 
 ```bash
 brev port-forward <instance> --port 8765:8765      # or: ssh -L 8765:localhost:8765 <brev-host>
 # window 1: <brev URL>/viewer                         (Isaac stream; ONE viewer tab only)
-# window 2: http://localhost:8765/dashboard/          (same run, live)
+# window 2: http://localhost:8765/dashboard/?layout=take&state=data/state.json   (same run, live; take layout)
 ```
-OBS: one scene at 1920×1080 / 30 fps. Put the viewer at 0,0 sized 1280×1080 and the dashboard at 1280,0 sized 640×1080. Full settings are in `VIDEO_PLAN.md` §6.5.
+OBS: one scene at 1920×1080 / 30 fps. Put the viewer at 0,0 sized 1280×1080 and the dashboard (`?layout=take`: a LIVE event line, a big map, the top dig order, the live radar breathing waveform, the top clip) at 1280,0 sized 640×1080. The take layout is also checked at 960×1080 if you prefer a 50/50 split. Full settings are in `VIDEO_PLAN.md` §6.5.
 
 ## 5. 🎯 Your to-do, in order
 

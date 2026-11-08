@@ -20,7 +20,7 @@
     <button class="case" id="caseBtn" aria-expanded="false" aria-controls="casePop"><span class="long">Case study (layout synthetic): Weiguan Jinlong collapse, Tainan, 2016</span><span class="short">Case study (layout synthetic)</span></button>
     <div class="meta"><span id="simT">t = 0.0 s</span><span id="conn" class="conn">connecting</span></div>
   </header>
-  <div id="banner" role="status" hidden></div>
+  <div id="bars"><div id="banner" role="status" hidden></div><div id="liveBar" role="status" aria-live="polite" hidden></div></div>
 
   <div id="casePop" role="dialog" aria-labelledby="caseTitle" hidden>
     <div class="hh"><h3 id="caseTitle">Case study: Weiguan Jinlong building, Tainan</h3><button class="btn" id="caseClose" aria-label="Close case study">Close</button></div>
@@ -130,6 +130,10 @@
       </section>
     </div>
     <div class="col colB">
+      <section id="secHud" hidden>
+        <h2>Radar · breathing, live</h2>
+        <div id="hud"></div>
+      </section>
       <section id="secCands">
         <h2><span id="candsTitle">Radar candidates</span> <span id="nCand" class="count">0</span></h2>
         <div id="cands"></div>
@@ -139,6 +143,10 @@
         <div id="agentMeta"></div>
         <div id="listens" role="tablist" aria-label="Listen"></div>
         <div id="clips"></div>
+      </section>
+      <section id="secTopClip" hidden>
+        <h2>Top clip · latest listen</h2>
+        <div id="topClip"></div>
       </section>
       <section id="secSpeaker" hidden>
         <h2>Speaker <span id="nSpk" class="count"></span></h2>
